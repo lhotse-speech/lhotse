@@ -1,17 +1,12 @@
 __all__ = (
     "TrimmingTree",
     "to_trimming_tree",
-    "trim_recording",
-    "trim_segmental",
-    "trim_supervision_segment",
-    "trim_supervisions",
     "TrimmingDetails",
-    "trim_inactivity_in_cut",
-    "move_recording_to_disc",
-    "trim_inactivity_in_cut_and_save_audio",
     "TrimmingException",
     "trim_inactivity",
 )
+
+
 from dataclasses import dataclass
 from functools import partial
 from io import BytesIO
@@ -126,61 +121,15 @@ def _extract_action_intervals(
     return np.concatenate(sliced_data, axis=-1)
 
 
-def trim_recording(recording: Recording, activities: IntervalTree) -> Recording:
-    if recording.has_video:  # pragma: no cover
-        msg = "Trimming of video recordings is not implemented yet."
-        raise NotImplementedError(msg)
-
-    audio = recording.load_audio()
-
-    # keep the original sampling rate
-    sampling_rate = recording.sampling_rate
-
-    # keep the original number of channels
-    channel_ids = recording.channel_ids
-    if isinstance(channel_ids, int):
-        channel_ids = [channel_ids]
-    channel_ids = tuple(channel_ids)
-
-    # transform audio by removing silence according to activity tree
-    trimmed = _extract_action_intervals(
-        data=audio,
-        sampling_rate=sampling_rate,
-        activities=activities,
-    )
-    num_samples = trimmed.shape[-1]
-    duration = num_samples / sampling_rate
-
-    # convert to flac and save to memory
-    stream = BytesIO()
-    torchaudio_save_flac_safe(
-        dest=stream,
-        src=torch.from_numpy(trimmed),
-        sample_rate=sampling_rate,
-        format="flac",
-    )
-
-    # make new recording storing the trimmed audio
-    memory_sources = [
-        AudioSource(
-            type="memory",
-            channels=channel_ids,
-            source=stream.getvalue(),
-        )
-    ]
-    return Recording(
-        id=recording.id,
-        sources=memory_sources,
-        sampling_rate=sampling_rate,
-        num_samples=num_samples,
-        duration=duration,
-    )
-
-
 SegmentalT = TypeVar("SegmentalT")
+CutT = TypeVar("CutT", bound=Cut)
 
 
-def trim_segmental(obj: SegmentalT, trimmer: TrimmingTree, **kwargs: Any) -> SegmentalT:
+def _trim_segmental(
+    obj: SegmentalT,
+    trimmer: TrimmingTree,
+    **kwargs: Any,
+) -> SegmentalT:
     start = trimmer(obj.start)
     duration_ = trimmer(obj.start + obj.duration) - start
     return fastcopy(
@@ -191,135 +140,205 @@ def trim_segmental(obj: SegmentalT, trimmer: TrimmingTree, **kwargs: Any) -> Seg
     )
 
 
-def trim_supervision_segment(
-    segment: SupervisionSegment,
-    trimmer: TrimmingTree,
-) -> SupervisionSegment:
-    # keep the additional supervision information (e.g., speaker, language, etc.)
-    new_segment = trim_segmental(
-        obj=segment,
-        trimmer=trimmer,
-        alignment=None,
-    )
+class InactivityTrimmer:
+    def __init__(
+        self,
+        detector: ActivityDetector,
+        protect_outside: bool = True,
+        storage_dir: Optional[Path] = None,
+        save_with_extension: str = "flac",
+    ):
+        self._detector = detector
+        self._protect_outside = protect_outside
+        self._storage_dir = storage_dir
+        self._extension = save_with_extension
 
-    # transform alignment according to the trimming tree
-    if segment.alignment is not None:
-        trimm = partial(trim_segmental, trimmer=trimmer)
-        new_segment.alignment = {
-            key: list(map(trimm, alignment_items))
-            for key, alignment_items in segment.alignment.items()
-        }
+    def _trim_recording(self, recording: Recording) -> Tuple[Recording, IntervalTree]:
+        track = _to_mono(recording, sampling_rate=self._detector.sampling_rate)
+        audio = track.load_audio()  # type: ignore
+        activities = self._detector(audio)
+        activity_tree = _to_activity_tree(activities)
+        recording = self.__trim_recording(recording, activity_tree)
+        return recording, activity_tree
 
-    return new_segment
+    def __trim_recording(
+        self, recording: Recording, activities: IntervalTree
+    ) -> Recording:
+        if recording.has_video:  # pragma: no cover
+            msg = "Trimming of video recordings is not implemented yet."
+            raise NotImplementedError(msg)
 
+        audio = recording.load_audio()
 
-def trim_supervisions(
-    supervisions: Iterable[SupervisionSegment],
-    trimmer: TrimmingTree,
-) -> List[SupervisionSegment]:
-    supervisions = map(
-        partial(trim_supervision_segment, trimmer=trimmer),
-        supervisions,
-    )
+        # keep the original sampling rate
+        sampling_rate = recording.sampling_rate
 
-    # drop supervisions that are have zero duration
-    supervisions = (segment for segment in supervisions if segment.duration > 1e-8)
-    return list(supervisions)
+        # keep the original number of channels
+        channel_ids = recording.channel_ids
+        if isinstance(channel_ids, int):
+            channel_ids = [channel_ids]
+        channel_ids = tuple(channel_ids)
 
-
-CutT = TypeVar("CutT", bound=Cut)
-
-
-# TODO: Make sure that the method works with non-data cuts
-def _trim_inactivity_in_cut(
-    cut: CutT, *, model: ActivityDetector, protect_outside: bool
-) -> CutT:
-    # analyse the recording and get the activity tree
-    recording = cut.recording
-    if recording is None:
-        msg = f"Cut {cut.id} does not have a recording"
-        raise ValueError(msg)
-    if not isinstance(recording, Recording):
-        rec_type = type(recording)
-        rec_type_repr = f"{rec_type.__module__}.{rec_type.__name__}"
-        msg = f"Cut {cut.id!r} has an invalid recording type: {rec_type_repr!r}"
-        raise ValueError(msg)
-
-    # detect activities
-    track = _to_mono(recording, sampling_rate=model.sampling_rate)
-    audio = track.load_audio()  # type: ignore
-    activities = model(audio)
-    activity_tree = _to_activity_tree(activities)
-
-    # trim and redefine the recording
-    recording = trim_recording(
-        recording=recording,
-        activities=activity_tree,
-    )
-
-    trimming_tree = to_trimming_tree(
-        activity_tree,
-        anchor=0.0,
-        # if supervisions have a duration that exceeds the recording duration, we need to protect it
-        duration=recording.duration,
-        # if supervisions have a negative start, we need to protect it
-        protect_outside=protect_outside,
-    )
-
-    # trim and redefine the supervisions
-    supervisions = trim_supervisions(
-        supervisions=cut.supervisions,
-        trimmer=trimming_tree,
-    )
-    # TODO: Drop supervisions that are not part of the new audio
-
-    # copy the cut, but replace the recording and supervisions
-    return fastcopy(
-        cut,
-        recording=recording,
-        supervisions=supervisions,
-        duration=recording.duration,
-    )
-
-
-def _trim_inactivity_in_mixedcut(
-    cut: MixedCut, *, model: ActivityDetector, protect_outside: bool
-) -> MixedCut:
-    raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
-
-
-def _trim_inactivity_in_monocut(
-    cut: MonoCut, *, model: ActivityDetector, protect_outside: bool
-) -> MonoCut:
-    return _trim_inactivity_in_cut(
-        cut=cut, model=model, protect_outside=protect_outside
-    )
-
-
-def _trim_inactivity_in_multicut(
-    cut: MultiCut, *, model: ActivityDetector, protect_outside: bool
-) -> MultiCut:
-    raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
-
-
-def _trim_inactivity_in_datacut(
-    cut: DataCut, *, model: ActivityDetector, protect_outside: bool
-) -> DataCut:
-    if isinstance(cut, MonoCut):
-        return _trim_inactivity_in_monocut(
-            cut=cut, model=model, protect_outside=protect_outside
+        # transform audio by removing silence according to activity tree
+        trimmed = _extract_action_intervals(
+            data=audio,
+            sampling_rate=sampling_rate,
+            activities=activities,
         )
-    if isinstance(cut, MultiCut):
-        return _trim_inactivity_in_multicut(
-            cut=cut, model=model, protect_outside=protect_outside
+
+        if self._storage_dir is None:
+            # convert to flac and save to memory
+            stream = BytesIO()
+            torchaudio_save_flac_safe(
+                dest=stream,
+                src=torch.from_numpy(trimmed),
+                sample_rate=sampling_rate,
+                format="flac",
+            )
+
+            # make new recording storing the trimmed audio
+            source = AudioSource(
+                type="memory",
+                channels=channel_ids,
+                source=stream.getvalue(),
+            )
+        else:
+            filename = f"{recording.id}.{self._extension}"
+            path = self._storage_dir / filename
+            if path.exists():
+                raise ValueError(f"File {path} already exists.")
+            try:
+                torchaudio_save(
+                    path,
+                    Tensor(trimmed),
+                    sample_rate=recording.sampling_rate,
+                    format=self._extension,
+                    channels_first=True,
+                )
+                source = AudioSource(
+                    type="file",
+                    channels=channel_ids,
+                    source=str(Path(path.parent.name) / path.name),
+                )
+            except Exception as exc:
+                if path.exists():
+                    path.unlink()
+                raise exc
+
+        num_samples = trimmed.shape[-1]
+        duration = num_samples / sampling_rate
+        return Recording(
+            id=recording.id,
+            sources=[source],
+            sampling_rate=sampling_rate,
+            num_samples=num_samples,
+            duration=duration,
         )
-    raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
+    def _trim_supervision_segment(
+        self,
+        segment: SupervisionSegment,
+        trimmer: TrimmingTree,
+    ) -> SupervisionSegment:
+        # keep the additional supervision information (e.g., speaker, language, etc.)
+        new_segment = _trim_segmental(
+            obj=segment,
+            trimmer=trimmer,
+            alignment=None,
+        )
 
-def _trim_inactivity_in_paddingcut(
-    cut: PaddingCut, *, detector: ActivityDetector, protect_outside: bool
-) -> PaddingCut:
-    raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
+        # transform alignment according to the trimming tree
+        if segment.alignment is not None:
+            trimm = partial(_trim_segmental, trimmer=trimmer)
+            new_segment.alignment = {
+                key: list(map(trimm, alignment_items))
+                for key, alignment_items in segment.alignment.items()
+            }
+
+        return new_segment
+
+    def _trim_supervisions(
+        self,
+        supervisions: Iterable[SupervisionSegment],
+        trimmer: TrimmingTree,
+    ) -> List[SupervisionSegment]:
+        trim = partial(self._trim_supervision_segment, trimmer=trimmer)
+        supervisions = map(trim, supervisions)
+
+        # drop supervisions that are have zero duration
+        supervisions = (segment for segment in supervisions if segment.duration > 1e-8)
+        return list(supervisions)
+
+    def trim_recording(self, recording: Recording) -> Recording:
+        recording, _ = self._trim_recording(recording)
+        return recording
+
+    def trim(
+        self,
+        recording: Recording,
+        supervisions: Optional[Iterable[SupervisionSegment]] = None,
+    ) -> Tuple[Recording, Optional[List[SupervisionSegment]]]:
+        # trim and redefine the recording
+        recording, activity_tree = self._trim_recording(recording)
+
+        # trim and redefine the supervisions
+        if supervisions is not None:
+            trimming_tree = to_trimming_tree(
+                activity_tree,
+                anchor=0.0,
+                # if supervisions have a duration that exceeds the recording duration, we need to protect it
+                duration=recording.duration,
+                # if supervisions have a negative start, we need to protect it
+                protect_outside=self._protect_outside,
+            )
+            supervisions = self._trim_supervisions(
+                supervisions=supervisions,
+                trimmer=trimming_tree,
+            )
+            # TODO: Drop supervisions that are not part of the new audio
+
+        return recording, supervisions
+
+    def _trim_mixedcut(self, cut: MixedCut) -> MixedCut:
+        raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
+
+    def _trim_monocut(self, cut: MonoCut) -> MonoCut:
+        recording, supervisions = self.trim(
+            recording=cut.recording,
+            supervisions=cut.supervisions,
+        )
+        # copy the cut, but replace the recording and supervisions
+        return fastcopy(
+            cut,
+            recording=recording,
+            supervisions=supervisions,
+            duration=recording.duration,
+        )
+
+    def _trim_multicut(self, cut: MultiCut) -> MultiCut:
+        raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
+
+    def _trim_datacut(self, cut: DataCut) -> DataCut:
+        if isinstance(cut, MonoCut):
+            return self._trim_monocut(cut=cut)
+        if isinstance(cut, MultiCut):
+            return self._trim_multicut(cut=cut)
+        raise NotImplementedError("Trimming of this data cut is not implemented yet.")
+
+    def _trim_paddingcut(self, cut: PaddingCut) -> PaddingCut:
+        raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
+
+    def trim_cut(self, cut: Cut) -> Cut:
+        cut = cut.drop_features()
+        if isinstance(cut, MixedCut):
+            trim = self._trim_mixedcut(cut)
+        elif isinstance(cut, DataCut):
+            trim = self._trim_datacut(cut)
+        elif isinstance(cut, PaddingCut):
+            trim = self._trim_paddingcut(cut)
+        else:
+            raise NotImplementedError()
+        return trim
 
 
 @dataclass
@@ -330,39 +349,25 @@ class TrimmingDetails:
     elapsed_time: float
 
 
-def trim_inactivity_in_cut(
+def _trim_inactivity(
     cut: Cut,
     *,
     model: ActivityDetector,
-    protect_outside: bool = True,
+    storage_dir: Optional[Path],
+    save_with_extension: str,
+    protect_outside: bool,
+    skip_exceptions: bool,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
-    cut = cut.drop_features()
-    if not isinstance(cut, Cut):  # type: ignore
-        details = TrimmingDetails(
-            cut_id=getattr(cut, "id", "unknown"),
-            error=True,
-            reason=f"Cut is not an instance of {Cut.__name__!r}",
-            elapsed_time=0.0,
-        )
-        return None, details
-
     start_triming_time = time()
     try:
         try:
-            if isinstance(cut, MixedCut):
-                trim = _trim_inactivity_in_mixedcut(
-                    cut, model=model, protect_outside=protect_outside
-                )
-            elif isinstance(cut, DataCut):
-                trim = _trim_inactivity_in_datacut(
-                    cut, model=model, protect_outside=protect_outside
-                )
-            elif isinstance(cut, PaddingCut):
-                trim = _trim_inactivity_in_paddingcut(
-                    cut, detector=model, protect_outside=protect_outside
-                )
-            else:
-                raise NotImplementedError()
+            trimmer = InactivityTrimmer(
+                detector=model,
+                storage_dir=storage_dir,
+                protect_outside=protect_outside,
+                save_with_extension=save_with_extension,
+            )
+            trim = trimmer.trim_cut(cut)
 
             completed_in = time() - start_triming_time
             details = TrimmingDetails(
@@ -380,6 +385,8 @@ def trim_inactivity_in_cut(
             raise NotImplementedError(msg) from exc
 
     except Exception as exc:
+        if not skip_exceptions:
+            raise exc
         completed_in = time() - start_triming_time
         return None, TrimmingDetails(
             cut_id=cut.id,
@@ -389,85 +396,7 @@ def trim_inactivity_in_cut(
         )
 
 
-def move_recording_to_disc(
-    recording: Recording,
-    root: Union[str, Path],
-    extension: str = "flac",
-) -> Recording:
-    # save recording to root
-
-    if recording.has_video:  # pragma: no cover
-        msg = "Saving of video recordings is not implemented yet."
-        raise NotImplementedError(msg)
-    root = Path(root).expanduser().resolve().absolute()
-    if not root.is_dir():
-        raise ValueError(f"Saving root '{root}' is not a directory.")
-    path = root / f"{recording.id}.{extension}"
-    if path.exists():
-        raise ValueError(f"File {path} already exists.")
-
-    try:
-        # if ext == "flac":
-        #     recording = recording.move_to_memory(format=ext)
-        #     data = recording.sources[0].source
-        #     if not isinstance(data, bytes):
-        #         raise ValueError(f"Recording {recording.id} has invalid data type.")
-        #     with path.open("wb") as file:
-        #         file.write(data)
-        torchaudio_save(
-            path,
-            Tensor(recording.load_audio()),
-            sample_rate=recording.sampling_rate,
-            format=extension,
-            channels_first=True,
-        )
-
-        # use relative path to the root
-        source = AudioSource(
-            type="file",
-            channels=recording.channel_ids,
-            source=str(Path(path.parent.name) / path.name),
-        )
-        return Recording(
-            id=recording.id,
-            sources=[source],
-            sampling_rate=recording.sampling_rate,
-            num_samples=recording.num_samples,
-            duration=recording.duration,
-        )
-
-    except Exception as exc:
-        if path.exists():
-            path.unlink()
-        raise exc
-
-
-def trim_inactivity_in_cut_and_save_audio(
-    cut: Cut,
-    *,
-    storage_dir: Optional[Path] = None,
-    model: ActivityDetector,
-    save_with_extension: str = "flac",
-    protect_outside: bool = True,
-) -> Tuple[Optional[Cut], TrimmingDetails]:
-    trim, details = trim_inactivity_in_cut(
-        cut=cut,
-        model=model,
-        protect_outside=protect_outside,
-    )
-    if trim is not None and storage_dir is not None:
-        # FIXME: trim may not have a recording
-        recording = move_recording_to_disc(
-            recording=trim.recording,
-            root=storage_dir,
-            extension=save_with_extension,
-        )
-        trim.recording = recording
-
-    return trim, details
-
-
-class TrimmingException(ValueError):
+class TrimmingException(Exception):
     def __init__(self, details: TrimmingDetails):
         self.details = details
         reason = f"{details.reason}" if details.reason else "Unknown error."
@@ -513,13 +442,14 @@ def trim_inactivity(
         "storage_dir": storage_dir,
         "save_with_extension": output_recordings_extension,
         "protect_outside": protect_outside,
+        "skip_exceptions": skip_exceptions,
     }
 
     detector_ = ActivityDetector.get_detector(detector)
 
     worker = ProcessWorker(
         gen_model=partial(detector_, device=device),
-        do_work=trim_inactivity_in_cut_and_save_audio,
+        do_work=_trim_inactivity,
         warnings_mode=warnings_mode,
     )
 
