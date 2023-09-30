@@ -75,9 +75,7 @@ def detect_activity(
         do_work=detect_acitvity_segments,
         warnings_mode="ignore",
     )
-    processor = Processor(
-        worker, num_jobs=num_jobs, verbose=verbose, mp_context="spawn"
-    )
+    processor = Processor(worker, num_jobs=num_jobs, verbose=verbose)
     segments = chain.from_iterable(processor(recordings))
     supervisions = SupervisionSet.from_segments(segments)
 
