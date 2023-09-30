@@ -3,18 +3,7 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from functools import partial
-from multiprocessing.context import BaseContext
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Iterable,
-    Optional,
-    Sequence,
-    TypeVar,
-    Union,
-)
+from typing import Any, Callable, Dict, Generic, Iterable, Optional, Sequence, TypeVar
 
 CaseT = TypeVar("CaseT")
 PredictT = TypeVar("PredictT")
@@ -26,6 +15,10 @@ DoWork = Callable[[CaseT, Callable[[CaseT], PredictT], Any], ResultT]
 
 class ProcessWorker(Generic[CaseT, PredictT, ResultT]):
     """A wrapper for a function that does the actual work in a multiprocessing context."""
+
+    # NOTE: We don't use multiprocessing.Manager because
+    # some models are not picklable by built-in pickler
+    _models: Dict[Optional[int], Callable[[CaseT], PredictT]] = {}
 
     def __init__(
         self,
@@ -40,21 +33,17 @@ class ProcessWorker(Generic[CaseT, PredictT, ResultT]):
         self._model = None
 
     def _get_model(self) -> Callable[[CaseT], PredictT]:
-        if self._model is None:
-            self._model = self._gen_model()
-        return self._model
+        pid = multiprocessing.current_process().pid
+        model = self._models.get(pid)
+        if model is None:
+            model = self._gen_model()
+            self._models[pid] = model
+        return model
 
     def __call__(self, obj: CaseT, **kwargs: Any) -> ResultT:
         if self._warnings_mode is not None:
             warnings.simplefilter(self._warnings_mode)  # type: ignore
         return self._do_work(obj, model=self._get_model(), **kwargs)
-
-    def clear(self):
-        del self._model
-        self._model = None
-
-    def __del__(self):
-        self.clear()
 
 
 class Processor(Generic[CaseT, PredictT, ResultT]):
