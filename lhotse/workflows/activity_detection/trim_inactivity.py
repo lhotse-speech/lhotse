@@ -101,16 +101,17 @@ def _extract_action_intervals(
     *,
     sampling_rate: int,
     activities: IntervalTree,
-) -> np.ndarray:
+) -> Optional[np.ndarray]:
     activities = activities.copy()
     activities.merge_overlaps()  # type: ignore
-    activity_time_stamps = np.array(sorted(activities))[:, :2].astype(np.float64)
+    activities_ = sorted(activities)
+    if len(activities) == 0:
+        raise ValueError("Activities are empty. Cannot trim the data.")
+
+    activity_time_stamps = np.array(activities_)[:, :2].astype(np.float64)
     activity_sample_stamps_raw = activity_time_stamps * sampling_rate
     activity_sample_stamps = activity_sample_stamps_raw.round().astype(np.int64)
-    sliced_data = [
-        np.take(data, np.arange(start, end), axis=-1)
-        for start, end in activity_sample_stamps
-    ]
+    sliced_data = [data[:, start:end] for start, end in activity_sample_stamps]
     return np.concatenate(sliced_data, axis=-1)
 
 
@@ -154,6 +155,8 @@ class InactivityTrimmer:
         if recording.has_video:  # pragma: no cover
             msg = "Trimming of video recordings is not implemented yet."
             raise NotImplementedError(msg)
+        if len(activities) == 0:
+            raise ValueError("Activities are empty.")
 
         audio = recording.load_audio()
 
@@ -226,7 +229,7 @@ class InactivityTrimmer:
         cut = recording.to_cut()
         if isinstance(cut, MultiCut):
             cut = cut.to_mono()
-        audio = cut.load_audio()
+        audio = cut.resample(self._detector.sampling_rate).load_audio()
         activities = self._detector(audio)
         activity_tree = _to_activity_tree(activities)
         recording = self.__trim_recording(recording, activity_tree)
