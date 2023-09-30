@@ -137,6 +137,7 @@ def test_trim_inactivity_workflow_with_silero_vad(temporary_directory: str):
         + ["--jobs", "1"]
         + ["--protect-outside"],
     )
+
     assert result.exit_code == 0
 
     temp = Path(temporary_directory)

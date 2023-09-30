@@ -16,7 +16,6 @@ from typing import Any, Iterable, List, Optional, Tuple, Type, TypeVar, Union
 import numpy as np
 import torch
 from intervaltree import IntervalTree  # type: ignore
-from torchaudio import save as torchaudio_save  # type: ignore
 
 from lhotse.audio import Recording
 from lhotse.audio.backend import torchaudio_save_flac_safe
@@ -141,12 +140,16 @@ class InactivityTrimmer:
         self,
         detector: ActivityDetector,
         protect_outside: bool = True,
-        storage_dir: Optional[Path] = None,
+        output_dir: Optional[Path] = None,
         save_with_extension: str = "flac",
     ):
         self._detector = detector
         self._protect_outside = protect_outside
-        self._storage_dir = storage_dir
+        self._output_root = output_dir
+        self._storage_root = None
+        if self._output_root is not None:
+            self._storage_root = self._output_root / "storage"
+            self._storage_root.mkdir(parents=False, exist_ok=True)
         self._extension = save_with_extension
 
     def __trim_recording(
@@ -176,44 +179,21 @@ class InactivityTrimmer:
             activities=activities,
         )
 
-        if self._storage_dir is None:
-            # convert to flac and save to memory
-            stream = BytesIO()
-            torchaudio_save_flac_safe(
-                dest=stream,
-                src=torch.from_numpy(trimmed),
-                sample_rate=sampling_rate,
-                format="flac",
-            )
+        # convert to flac and save to memory
+        stream = BytesIO()
+        torchaudio_save_flac_safe(
+            dest=stream,
+            src=torch.as_tensor(trimmed),
+            sample_rate=sampling_rate,
+            format="flac",
+        )
 
-            # make new recording storing the trimmed audio
-            source = AudioSource(
-                type="memory",
-                channels=channel_ids,
-                source=stream.getvalue(),
-            )
-        else:
-            filename = f"{recording.id}.{self._extension}"
-            path = self._storage_dir / filename
-            if path.exists():
-                raise ValueError(f"File {path} already exists")
-            try:
-                torchaudio_save(
-                    path,
-                    torch.from_numpy(trimmed),
-                    sample_rate=recording.sampling_rate,
-                    format=self._extension,
-                    channels_first=True,
-                )
-                source = AudioSource(
-                    type="file",
-                    channels=channel_ids,
-                    source=str(Path(path.parent.name) / path.name),
-                )
-            except Exception as exc:
-                if path.exists():
-                    path.unlink()
-                raise exc
+        # make new recording storing the trimmed audio
+        source = AudioSource(
+            type="memory",
+            channels=channel_ids,
+            source=stream.getvalue(),
+        )
 
         num_samples = trimmed.shape[-1]
         duration = num_samples / sampling_rate
@@ -313,12 +293,18 @@ class InactivityTrimmer:
             supervisions=cut.supervisions,
         )
         # copy the cut, but replace the recording and supervisions
-        return fastcopy(
+        cut = fastcopy(
             cut,
             recording=recording,
             supervisions=supervisions,
             duration=recording.duration,
         )
+        if self._output_root is not None and self._storage_root is not None:
+            filename = f"{cut.id}.{self._extension}"
+            path = self._storage_root / filename
+            cut = cut.save_audio(storage_path=path)
+            cut.recording.sources[0].source = str(path.relative_to(self._output_root))
+        return cut
 
     def _trim_mixedcut(self, cut: MixedCut) -> MonoCut:
         self._trim_datacut(cut=cut.to_mono())
@@ -352,7 +338,7 @@ def _trim_inactivity(
     cut: Cut,
     *,
     model: ActivityDetector,
-    storage_dir: Optional[Path],
+    output_dir: Optional[Path],
     save_with_extension: str,
     protect_outside: bool,
     skip_exceptions: bool,
@@ -361,7 +347,7 @@ def _trim_inactivity(
     try:
         trimmer = InactivityTrimmer(
             detector=model,
-            storage_dir=storage_dir,
+            output_dir=output_dir,
             protect_outside=protect_outside,
             save_with_extension=save_with_extension,
         )
@@ -413,24 +399,20 @@ def trim_inactivity(
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
     output_dir = assert_output_dir(output_dir, "output_dir")
 
-    if output_dir is None:
-        if output_recordings_extension != "flac":
-            msg = "When keeping recordings in memory, only flac is supported."
-            msg += f" Please provide output_dir to save recordings as {output_recordings_extension}."
-            raise ValueError(msg)
+    if output_dir is None and output_recordings_extension != "flac":
+        msg = "When keeping recordings in memory, only flac is supported."
+        msg += f" Please provide output_dir to save recordings as {output_recordings_extension}."
+        raise ValueError(msg)
 
-    storage_dir = None
     output_report_path = None
     output_cuts_manifest_path = None
 
     if output_dir is not None:
-        storage_dir = output_dir / "storage"
-        storage_dir.mkdir(parents=False, exist_ok=True)
         output_report_path = output_dir / "speach-only-report.csv"
         output_cuts_manifest_path = output_dir / "cuts.json.gz"
 
     options = {
-        "storage_dir": storage_dir,
+        "output_dir": output_dir,
         "save_with_extension": output_recordings_extension,
         "protect_outside": protect_outside,
         "skip_exceptions": skip_exceptions,
