@@ -7,7 +7,7 @@ import pytest
 import torch
 from click.testing import CliRunner
 
-from lhotse import CutSet, RecordingSet, SupervisionSegment
+from lhotse import CutSet, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.bin.modes.workflows import detect_activity as detect_activity_cli
 from lhotse.bin.modes.workflows import trim_inactivity as trim_inactivity_cli
 from lhotse.workflows.activity_detection import (
@@ -148,4 +148,19 @@ def test_trim_inactivity_workflow_with_silero_vad(temporary_directory: str):
     original = CutSet.from_file(libri_cuts_path)
     trimmed = CutSet.from_file(temp / "cuts.json.gz")
     assert len(original) == len(trimmed)
+
     assert original[0].duration > trimmed[0].duration
+    assert original[0].supervisions[0].duration > trimmed[0].supervisions[0].duration
+    assert original[0].supervisions[0].text == trimmed[0].supervisions[0].text
+    assert trimmed[0].supervisions[0].start == 0.0
+
+    recordings = RecordingSet.from_file(temp / "recordings.jsonl.gz")
+    assert len(recordings) == 1
+    assert recordings[0].duration == trimmed[0].duration
+    assert recordings[0].num_samples == trimmed[0].num_samples
+
+    supervisions = SupervisionSet.from_file(temp / "supervisions.jsonl.gz")
+    assert len(supervisions) == 1
+    assert supervisions[0].duration == trimmed[0].duration
+    assert supervisions[0].start == 0.0
+    assert supervisions[0].text == trimmed[0].supervisions[0].text
