@@ -11,6 +11,7 @@ from lhotse import CutSet, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.bin.modes.workflows import detect_activity as detect_activity_cli
 from lhotse.bin.modes.workflows import trim_inactivity as trim_inactivity_cli
 from lhotse.workflows.activity_detection import (
+    ActivityDetector,
     SileroVAD16k,
     detect_acitvity_segments,
     detect_activity,
@@ -166,3 +167,14 @@ def test_trim_inactivity_workflow_with_silero_vad(temporary_directory: str):
     assert supervisions[0].duration == trimmed[0].duration
     assert supervisions[0].start == 0.0
     assert supervisions[0].text == trimmed[0].supervisions[0].text
+
+
+def test_activity_detector_list_known():
+    detectors = ActivityDetector.list_detectors()
+    assert "silero_vad_8k" in detectors
+    assert "silero_vad_16k" in detectors
+
+
+def test_activity_detector_not_known():
+    with pytest.raises(ValueError):
+        ActivityDetector.get_detector("123")
