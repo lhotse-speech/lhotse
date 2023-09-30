@@ -30,7 +30,7 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import fastcopy
 from lhotse.workflows.backend import Processor, ProcessWorker
 
-from ._tools import PathLike, assert_output_dir
+from ._tools import PathLike, assert_output_dir, resolve_path
 from .base import Activity, ActivityDetector
 
 
@@ -389,7 +389,7 @@ def trim_inactivity(
     output_dir: Optional[PathLike] = None,
     output_recordings_extension: str = "flac",
     # options
-    protect_outside: bool = True,
+    protect_outside: bool = False,
     # mode
     device: str = "cpu",
     num_jobs: int = 1,
@@ -397,6 +397,9 @@ def trim_inactivity(
     skip_exceptions: bool = False,
     warnings_mode: Optional[str] = None,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
+    output_dir = resolve_path(output_dir)
+    if output_dir is not None:
+        output_dir.mkdir(parents=False, exist_ok=True)
     output_dir = assert_output_dir(output_dir, "output_dir")
 
     if output_dir is None and output_recordings_extension != "flac":

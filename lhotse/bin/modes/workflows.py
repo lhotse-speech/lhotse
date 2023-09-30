@@ -558,7 +558,7 @@ def detect_activity(
 @click.option(
     "-o",
     "--output-dir",
-    type=click.Path(exists=True, dir_okay=True, file_okay=False, allow_dash=True),
+    type=click.Path(exists=False, dir_okay=True, file_okay=False, allow_dash=True),
     help="Path to the output directory where results will be saved.",
 )
 @click.option(
