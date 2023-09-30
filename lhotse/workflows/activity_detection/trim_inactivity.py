@@ -1,6 +1,5 @@
 __all__ = (
-    "TrimmingTree",
-    "to_trimming_tree",
+    "InactivityTrimmer",
     "TrimmingDetails",
     "TrimmingException",
     "trim_inactivity",
@@ -76,6 +75,7 @@ def _to_mono(recording: Recording, *, sampling_rate: int) -> Recording:
 
 
 def _to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
+    """Converts a list of activities to an activity tree"""
     tree = IntervalTree()
     for activity in activities:
         tree.addi(  # type: ignore
@@ -86,12 +86,13 @@ def _to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
     return tree
 
 
-def to_trimming_tree(
+def _to_trimming_tree(
     activities: IntervalTree,
     anchor: float = 0.0,
     duration: Optional[float] = None,
     protect_outside: bool = False,
 ) -> TrimmingTree:
+    """Converts an activity tree to a trimming tree"""
     tree = TrimmingTree(anchor)
     for interval in activities:  # type: ignore
         tree.protect_interval(interval.begin, interval.end)  # type: ignore
@@ -141,6 +142,8 @@ def _trim_segmental(
 
 
 class InactivityTrimmer:
+    """Trims a recording and its supervisions based on the activity detector."""
+
     def __init__(
         self,
         detector: ActivityDetector,
@@ -152,14 +155,6 @@ class InactivityTrimmer:
         self._protect_outside = protect_outside
         self._storage_dir = storage_dir
         self._extension = save_with_extension
-
-    def _trim_recording(self, recording: Recording) -> Tuple[Recording, IntervalTree]:
-        track = _to_mono(recording, sampling_rate=self._detector.sampling_rate)
-        audio = track.load_audio()  # type: ignore
-        activities = self._detector(audio)
-        activity_tree = _to_activity_tree(activities)
-        recording = self.__trim_recording(recording, activity_tree)
-        return recording, activity_tree
 
     def __trim_recording(
         self, recording: Recording, activities: IntervalTree
@@ -206,7 +201,7 @@ class InactivityTrimmer:
             filename = f"{recording.id}.{self._extension}"
             path = self._storage_dir / filename
             if path.exists():
-                raise ValueError(f"File {path} already exists.")
+                raise ValueError(f"File {path} already exists")
             try:
                 torchaudio_save(
                     path,
@@ -234,6 +229,14 @@ class InactivityTrimmer:
             num_samples=num_samples,
             duration=duration,
         )
+
+    def _trim_recording(self, recording: Recording) -> Tuple[Recording, IntervalTree]:
+        track = _to_mono(recording, sampling_rate=self._detector.sampling_rate)
+        audio = track.load_audio()  # type: ignore
+        activities = self._detector(audio)
+        activity_tree = _to_activity_tree(activities)
+        recording = self.__trim_recording(recording, activity_tree)
+        return recording, activity_tree
 
     def _trim_supervision_segment(
         self,
@@ -278,15 +281,17 @@ class InactivityTrimmer:
         recording: Recording,
         supervisions: Optional[Iterable[SupervisionSegment]] = None,
     ) -> Tuple[Recording, Optional[List[SupervisionSegment]]]:
+        """Trims a recording and its supervisions based on the activity detector"""
         # trim and redefine the recording
         recording, activity_tree = self._trim_recording(recording)
 
         # trim and redefine the supervisions
         if supervisions is not None:
-            trimming_tree = to_trimming_tree(
+            trimming_tree = _to_trimming_tree(
                 activity_tree,
                 anchor=0.0,
-                # if supervisions have a duration that exceeds the recording duration, we need to protect it
+                # if supervisions have a duration that exceeds
+                # the recording duration, we need to protect it
                 duration=recording.duration,
                 # if supervisions have a negative start, we need to protect it
                 protect_outside=self._protect_outside,
@@ -300,11 +305,14 @@ class InactivityTrimmer:
         return recording, supervisions
 
     def _trim_mixedcut(self, cut: MixedCut) -> MixedCut:
-        raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
+        raise NotImplementedError("Trimming of MixedCut is not implemented yet")
 
     def _trim_monocut(self, cut: MonoCut) -> MonoCut:
+        recording = cut.recording
+        if recording is None:
+            raise ValueError("Cannot trim a cut without a recording")
         recording, supervisions = self.trim(
-            recording=cut.recording,
+            recording=recording,
             supervisions=cut.supervisions,
         )
         # copy the cut, but replace the recording and supervisions
@@ -316,29 +324,30 @@ class InactivityTrimmer:
         )
 
     def _trim_multicut(self, cut: MultiCut) -> MultiCut:
-        raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
+        raise NotImplementedError("Trimming of MultiCut is not implemented yet")
 
     def _trim_datacut(self, cut: DataCut) -> DataCut:
         if isinstance(cut, MonoCut):
             return self._trim_monocut(cut=cut)
         if isinstance(cut, MultiCut):
             return self._trim_multicut(cut=cut)
-        raise NotImplementedError("Trimming of this data cut is not implemented yet.")
+        raise NotImplementedError("Trimming of DataCut is not implemented yet")
 
     def _trim_paddingcut(self, cut: PaddingCut) -> PaddingCut:
-        raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
+        raise NotImplementedError("Trimming of PaddingCut is not implemented yet")
 
-    def trim_cut(self, cut: Cut) -> Cut:
+    def trim_cut(self, cut: CutT) -> CutT:
+        """Trims a cut based on the activity detector"""
         cut = cut.drop_features()
         if isinstance(cut, MixedCut):
-            trim = self._trim_mixedcut(cut)
-        elif isinstance(cut, DataCut):
-            trim = self._trim_datacut(cut)
-        elif isinstance(cut, PaddingCut):
-            trim = self._trim_paddingcut(cut)
-        else:
-            raise NotImplementedError()
-        return trim
+            return self._trim_mixedcut(cut)
+        if isinstance(cut, DataCut):
+            return self._trim_datacut(cut)
+        if isinstance(cut, PaddingCut):
+            return self._trim_paddingcut(cut)
+        cut_type = f"{cut.__class__.__module__}.{cut.__class__.__name__}"
+        msg = f"Cut has an unsupported type {cut_type!r}"
+        raise NotImplementedError(msg)
 
 
 @dataclass
@@ -360,30 +369,22 @@ def _trim_inactivity(
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     start_triming_time = time()
     try:
-        try:
-            trimmer = InactivityTrimmer(
-                detector=model,
-                storage_dir=storage_dir,
-                protect_outside=protect_outside,
-                save_with_extension=save_with_extension,
-            )
-            trim = trimmer.trim_cut(cut)
+        trimmer = InactivityTrimmer(
+            detector=model,
+            storage_dir=storage_dir,
+            protect_outside=protect_outside,
+            save_with_extension=save_with_extension,
+        )
+        trim = trimmer.trim_cut(cut)
 
-            completed_in = time() - start_triming_time
-            details = TrimmingDetails(
-                cut_id=cut.id,
-                error=False,
-                reason=None,
-                elapsed_time=completed_in,
-            )
-            return trim, details
-
-        except NotImplementedError as exc:
-            cut_type = f"{cut.__class__.__module__}.{cut.__class__.__name__}"
-            exc_string = f" {exc}" if str(exc) != "" else ""
-            msg = f"Cut has an unsupported type {cut_type!r}.{exc_string}"
-            raise NotImplementedError(msg) from exc
-
+        completed_in = time() - start_triming_time
+        details = TrimmingDetails(
+            cut_id=cut.id,
+            error=False,
+            reason=None,
+            elapsed_time=completed_in,
+        )
+        return trim, details
     except Exception as exc:
         if not skip_exceptions:
             raise exc
@@ -414,10 +415,10 @@ def trim_inactivity(
     # options
     protect_outside: bool = True,
     # mode
-    skip_exceptions: bool = False,
     device: str = "cpu",
     num_jobs: int = 1,
     verbose: bool = False,
+    skip_exceptions: bool = False,
     warnings_mode: Optional[str] = None,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
     output_dir = assert_output_dir(output_dir, "output_dir")
