@@ -14,11 +14,11 @@ def assert_output_dir(path: Optional[PathLike], name: str) -> Optional[Path]:
     path = resolve_path(path)
     if path is None:
         return None
-    if path.is_file():
+    if path.is_file():  # pragma: no cover
         msg = f"Path {name}={path} is a file."
         msg += " Please provide a directory path."
         raise ValueError(msg)
-    if not path.exists():
+    if not path.exists():  # pragma: no cover
         msg = f"Directory {name}={path} does not exist."
         msg += " Please create {path} first or provide a different path."
         raise ValueError(msg)
@@ -30,12 +30,12 @@ def assert_output_file(path: Optional[PathLike], name: str) -> Optional[Path]:
     path = resolve_path(path)
     if path is None:
         return None
-    if path.is_dir():
+    if path.is_dir():  # pragma: no cover
         msg = f"Path {name}={path} is a directory."
         msg += " Please provide a file path."
         raise ValueError(msg)
 
-    if not path.parent.exists():
+    if not path.parent.exists():  # pragma: no cover
         msg = f"Parent directory of {name}={path} does not exist."
         msg += " Please create {path.parent} first or provide a different path."
         raise ValueError(msg)
