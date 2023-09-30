@@ -9,6 +9,7 @@ from click.testing import CliRunner
 
 from lhotse import CutSet, RecordingSet, SupervisionSegment
 from lhotse.bin.modes.workflows import detect_activity as detect_activity_cli
+from lhotse.bin.modes.workflows import trim_inactivity as trim_inactivity_cli
 from lhotse.workflows.activity_detection import (
     SileroVAD16k,
     detect_acitvity_segments,
@@ -118,3 +119,33 @@ def test_trim_inactivity_with_silero_vad_in_parallel():
     )
     assert trim[0].duration == cuts[0].duration
     assert trim[1].duration < cuts[1].duration
+
+
+def test_trim_inactivity_workflow_with_silero_vad(temporary_directory: str):
+    if not _check_torch_version("1.12"):
+        pytest.skip("torch >= 1.12 is required for this test")
+
+    runner = CliRunner()
+    libri_cuts_path = "test/fixtures/libri/cuts.json"
+    result = runner.invoke(
+        trim_inactivity_cli,
+        ["--cuts-manifest", libri_cuts_path]
+        + ["--output-dir", temporary_directory]
+        + ["--model-name", "silero_vad_16k"]
+        + ["--device", "cpu"]
+        + ["--jobs", "1"],
+    )
+    assert result.exit_code == 0
+
+    temp = Path(temporary_directory)
+    paths = [str(path.relative_to(temp)) for path in temp.rglob("*")]
+    assert "speach-only-report.csv" in paths
+    assert "cuts.json.gz" in paths
+    assert "recordings.jsonl.gz" in paths
+    assert "supervisions.jsonl.gz" in paths
+    assert "storage/recording-1.flac" in paths
+
+    original = CutSet.from_file(libri_cuts_path)
+    trimmed = CutSet.from_file(temp / "cuts.json.gz")
+    assert len(original) == len(trimmed)
+    assert original[0].duration > trimmed[0].duration

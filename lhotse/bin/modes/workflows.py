@@ -637,6 +637,12 @@ def trim_inactivity(
     if not (cuts_manifest or recordings_manifest):
         print("At least one of --cuts-manifest or --recordings-manifest is required")
         sys.exit(1)
+    if cuts_manifest and recordings_manifest:
+        print("Only one of --cuts-manifest or --recordings-manifest can be provided")
+        sys.exit(1)
+    if cuts_manifest and supervisions_manifest:
+        print("Only one of --cuts-manifest or --supervisions-manifest can be provided")
+        sys.exit(1)
     if not output_dir:
         print("--output-dir is required")
         sys.exit(1)
@@ -649,15 +655,15 @@ def trim_inactivity(
 
     if cuts_manifest:
         cutset = CutSet.from_file(cuts_manifest)
-    if recordings_manifest:
+    else:
         recordings = RecordingSet.from_file(recordings_manifest)
-    if supervisions_manifest:
-        supervisions = SupervisionSet.from_file(supervisions_manifest)
-
-    cutset = CutSet.from_manifests(
-        recordings=recordings if cutset is None else cutset.recordings,
-        supervisions=supervisions if cutset is None else cutset.supervisions,
-    )
+        supervisions = None
+        if supervisions_manifest:
+            supervisions = SupervisionSet.from_file(supervisions_manifest)
+        cutset = CutSet.from_manifests(
+            recordings=recordings,
+            supervisions=supervisions,
+        )
     if recordings_path_prefix:
         cutset = cutset.with_recording_path_prefix(recordings_path_prefix)
 
