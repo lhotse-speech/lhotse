@@ -13,6 +13,7 @@ from lhotse.workflows.activity_detection import (
     SileroVAD16k,
     detect_acitvity_segments,
     detect_activity,
+    trim_inactivity,
 )
 
 
@@ -42,7 +43,7 @@ def test_silero_vad_init():
     assert activity[0].start + activity[0].duration < recording.duration
 
 
-def test_silero_vad_in_parallel():
+def test_detect_activity_with_silero_vad_in_parallel():
     if not _check_torch_version("1.12"):
         pytest.skip("torch >= 1.12 is required for this test")
 
@@ -73,7 +74,7 @@ def temporary_directory():
         yield temp_dir
 
 
-def test_silero_vad_workflow_simple(temporary_directory: str):
+def test_detect_activity_workflow_with_silero_vad(temporary_directory: str):
     if not _check_torch_version("1.12"):
         pytest.skip("torch >= 1.12 is required for this test")
 
@@ -101,3 +102,19 @@ def test_silero_vad_workflow_simple(temporary_directory: str):
         assert segment["duration"] > 0
         assert segment["recording_id"] == "recording-1"
         assert segment["id"] == f"recording-1-silero_vad_16k-0-{i:05}"
+
+
+def test_trim_inactivity_with_silero_vad_in_parallel():
+    if not _check_torch_version("1.12"):
+        pytest.skip("torch >= 1.12 is required for this test")
+
+    cuts = CutSet.from_file("test/fixtures/ljspeech/cuts.json")
+
+    trim, _ = trim_inactivity(
+        cuts,
+        detector="silero_vad_8k",
+        num_jobs=2,
+        device="cpu",
+    )
+    assert trim[0].duration == cuts[0].duration
+    assert trim[1].duration < cuts[1].duration
