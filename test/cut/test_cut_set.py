@@ -18,6 +18,7 @@ from lhotse import (
     load_manifest,
 )
 from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, MultiCut
+from lhotse.cut.describe import CutSetStatistics
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
@@ -380,6 +381,25 @@ def test_cut_set_describe_runs(cut_set, full, capfd):
     out, err = capfd.readouterr()
     assert out != ""
     assert err == ""
+
+
+@pytest.mark.parametrize("full", [True, False])
+def test_cut_set_stats_combine(cut_set, full, capfd):
+
+    # Describe a "large" cut set containing two parts
+    cs = cut_set.repeat(2)
+    cs.describe(full=full)
+    out, err = capfd.readouterr()
+
+    # Describe a combination of stats from two parts of that cut set
+    stats1 = CutSetStatistics(full=full).accumulate(cut_set)
+    stats2 = CutSetStatistics(full=full).accumulate(cut_set)
+    stats = stats1.combine(stats2)
+    stats.describe()
+    out2, err2 = capfd.readouterr()
+
+    assert out == out2
+    assert err == err2
 
 
 def test_cut_map_supervisions(cut_set):

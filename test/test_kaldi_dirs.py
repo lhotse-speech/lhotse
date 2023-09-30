@@ -9,6 +9,7 @@ import lhotse.audio.recording
 import lhotse.audio.recording_set
 import lhotse.audio.source
 import lhotse.audio.utils
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.audio import get_audio_duration_mismatch_tolerance
 
 pytest.importorskip(
@@ -161,6 +162,32 @@ def test_multi_channel_recording(
         assert segments == multi_channel_kaldi_dir["segments"]
 
 
+def test_resample_recording(tmp_path, multi_channel_recording, multi_channel_kaldi_dir):
+    with working_directory(tmp_path):
+        recording = Recording.from_file(
+            recording_id="mono_c0",
+            path=os.path.join(os.path.dirname(__file__), "fixtures", "mono_c0.wav"),
+        ).resample(16000)
+        segment = SupervisionSegment(
+            id="Segment-c0",
+            recording_id=recording.id,
+            start=0,
+            duration=recording.duration,
+            channel=0,
+            text="SIL",
+        )
+        lhotse.kaldi.export_to_kaldi(
+            RecordingSet.from_recordings([recording]),
+            SupervisionSet.from_segments([segment]),
+            output_dir=".",
+            map_underscores_to=None,
+            prefix_spk_id=False,
+        )
+
+        wavs = open_and_load("wav.scp")
+        assert "16000" in wavs["mono_c0"]
+
+
 @contextlib.contextmanager
 def working_directory(path):
     """Changes working directory and returns to previous on exit."""
@@ -231,7 +258,7 @@ def test_fail_on_unknown_source_type(tmp_path):
         type="unknown", channels=[0], source="http://example.com/"
     )
     with pytest.raises(ValueError):
-        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
 
 
 def test_fail_on_url_source_type(tmp_path):
@@ -239,7 +266,7 @@ def test_fail_on_url_source_type(tmp_path):
         type="url", channels=[0], source="http://example.com/"
     )
     with pytest.raises(ValueError):
-        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
 
 
 def test_fail_on_command_multichannel_source_type(tmp_path):
@@ -247,14 +274,14 @@ def test_fail_on_command_multichannel_source_type(tmp_path):
         type="command", channels=[0, 1], source="false"
     )
     with pytest.raises(ValueError):
-        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
 
 
 def test_ok_on_command_singlechannel_source_type(tmp_path):
     source = lhotse.audio.source.AudioSource(
         type="command", channels=[0], source="true"
     )
-    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
     assert list(out.keys()) == [0]
     assert out[0] == "true |"
 
@@ -264,7 +291,7 @@ def test_ok_on_file_singlechannel_wav_source_type(tmp_path, channel):
     source = lhotse.audio.source.AudioSource(
         type="file", channels=[channel], source="nonexistent.wav"
     )
-    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
     assert list(out.keys()) == [channel]
     assert out[channel] == "nonexistent.wav"
 
@@ -274,7 +301,7 @@ def test_ok_on_file_singlechannel_sph_source_type(tmp_path, channel):
     source = lhotse.audio.source.AudioSource(
         type="file", channels=[channel], source="nonexistent.sph"
     )
-    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
     assert list(out.keys()) == [channel]
     assert out[channel].startswith("sph2pipe")
     assert "nonexistent.sph" in out[channel]
@@ -286,7 +313,7 @@ def test_ok_on_file_singlechannel_mp3_source_type(tmp_path, channel):
     source = lhotse.audio.source.AudioSource(
         type="file", channels=[channel], source="nonexistent.mp3"
     )
-    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
     assert list(out.keys()) == [channel]
     assert out[channel].startswith("ffmpeg")
     assert "nonexistent.mp3" in out[channel]
@@ -297,7 +324,7 @@ def test_ok_on_file_multichannel_wav_source_type(tmp_path):
     source = lhotse.audio.source.AudioSource(
         type="file", channels=[0, 1, 2], source="nonexistent.wav"
     )
-    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000, None)
     assert list(out.keys()) == [0, 1, 2]
     for channel in out.keys():
         assert out[channel].startswith("ffmpeg")
