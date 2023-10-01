@@ -47,7 +47,7 @@ def _get_activity_maker(sampling_rate: int):
     return make_activity
 
 
-class _SileroVAD(ActivityDetector, name="_silero_vad"):
+class _SileroVAD(ActivityDetector, detector_name="_silero_vad"):
     """Silero Voice Activity Detector model wrapper"""
 
     def __init__(
@@ -136,7 +136,7 @@ class _SileroVAD(ActivityDetector, name="_silero_vad"):
         cls._get_model(force_download=True)
 
 
-class SileroVAD8k(_SileroVAD, name="silero_vad_8k", sampling_rate=8_000):
+class SileroVAD8k(_SileroVAD, detector_name="silero_vad_8k", sampling_rate=8_000):
     def __init__(self, device: str = "cpu", *, force_download: bool = False):
         super().__init__(
             device=device,
@@ -145,7 +145,7 @@ class SileroVAD8k(_SileroVAD, name="silero_vad_8k", sampling_rate=8_000):
         )
 
 
-class SileroVAD16k(_SileroVAD, name="silero_vad_16k", sampling_rate=16_000):
+class SileroVAD16k(_SileroVAD, detector_name="silero_vad_16k", sampling_rate=16_000):
     def __init__(self, device: str = "cpu", *, force_download: bool = False):
         super().__init__(
             device=device,

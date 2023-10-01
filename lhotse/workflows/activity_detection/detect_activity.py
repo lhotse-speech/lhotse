@@ -34,7 +34,7 @@ def detect_acitvity_segments(
         for i, activity in enumerate(activities):
             uid = uid_template.format(
                 recording_id=recording.id,
-                detector_name=model.name,
+                detector_name=model.detector_name,
                 channel=channel,
                 number=i,
             )
@@ -60,7 +60,8 @@ def detect_activity(
     verbose: bool = False,
     device: str = "cpu",
 ) -> SupervisionSet:
-    if path := as_path(recordings):
+    path = as_path(recordings)
+    if path is not None:
         if verbose:
             print(f"Loading recordings from {path}...")
         recordings = RecordingSet.from_file(str(path))
@@ -80,7 +81,7 @@ def detect_activity(
     supervisions = SupervisionSet.from_segments(segments)
 
     if verbose:
-        print(f"Saving {detector_kls.name!r} results ...")
+        print(f"Saving {detector_kls.detector_name!r} results ...")
     if output_supervisions_manifest:
         supervisions.to_file(str(output_supervisions_manifest))
     return supervisions

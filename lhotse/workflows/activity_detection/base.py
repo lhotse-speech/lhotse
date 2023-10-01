@@ -17,7 +17,7 @@ class Activity:
 
 
 class ActivityDetector(ABC):
-    name: str = "base"
+    detector_name: str = "base"
     sampling_rate: int = 0
     _known_detectors: Dict[str, Type["ActivityDetector"]] = {}
 
@@ -26,13 +26,13 @@ class ActivityDetector(ABC):
 
     def __init_subclass__(
         cls,
-        name: Optional[str] = None,
+        detector_name: Optional[str] = None,
         sampling_rate: int = 0,
     ) -> None:
-        name = name.lower().replace("-", "_")
-        cls.name = name or cls.__name__
+        detector_name = detector_name.lower().replace("-", "_")
+        cls.detector_name = detector_name or cls.__name__
         cls.sampling_rate = sampling_rate
-        cls._known_detectors[cls.name] = cls
+        cls._known_detectors[cls.detector_name] = cls
         # TODO: check detector __init__ signature
 
     @property
