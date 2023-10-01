@@ -6,6 +6,7 @@ __all__ = (
 )
 
 
+import csv
 from dataclasses import dataclass
 from functools import partial
 from io import BytesIO
@@ -465,9 +466,12 @@ def trim_inactivity(
 
     if output_report_path is not None:
         try:
-            import pandas as pd  # pylint: disable=C0415
-
-            pd.DataFrame(report).to_csv(output_report_path, index=False)
+            fieldnames = ["cut_id", "error", "reason", "elapsed_time"]
+            with output_report_path.open("w", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for detail in report:
+                    writer.writerow(detail.__dict__)
 
         except Exception as exc:
             if output_report_path.exists():
