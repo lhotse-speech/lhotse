@@ -49,6 +49,18 @@ def prepare_slu(
         str(corpus_dir) + "/" + path_to_wav
         for path_to_wav in data["test"]["path"].tolist()
     ]
+    # train_wavs = [
+    #     path_to_wav
+    #     for path_to_wav in data["train"]["path"].tolist()
+    # ]
+    # valid_wavs = [
+    #     path_to_wav
+    #     for path_to_wav in data["valid"]["path"].tolist()
+    # ]
+    # test_wavs = [
+    #     path_to_wav
+    #     for path_to_wav in data["test"]["path"].tolist()
+    # ]
 
     transcripts = {
         "train": data["train"]["transcription"].tolist(),
@@ -120,7 +132,9 @@ def prepare_slu(
 
     if output_dir is not None:
         for name in ["train", "valid", "test"]:
-            recording_set.to_file(output_dir / ("slu_recordings_" + name + ".jsonl.gz"))
-            supervision_set.to_file(
+            manifests[name]["recordings"].to_file(
+                output_dir / ("slu_recordings_" + name + ".jsonl.gz")
+            )
+            manifests[name]["supervisions"].to_file(
                 output_dir / ("slu_supervisions_" + name + ".jsonl.gz")
             )
