@@ -167,8 +167,8 @@ def extract_cuts(
 
 
 @feat.command(context_settings=dict(show_default=True))
-@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_cutset", type=click.Path())
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.argument("output_cutset", type=click.Path(allow_dash=True))
 @click.argument("storage_path", type=click.Path())
 @click.option(
     "-f",
