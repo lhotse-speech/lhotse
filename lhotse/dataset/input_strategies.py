@@ -148,7 +148,14 @@ class PrecomputedFeatures(BatchIO):
                 for sup in cut.supervisions
             )
         )
+
         sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
+
+        # Take `nums_frames` from `cut.num_frames` not from `cut.supervisions`
+        # -> `cut.num_frames` is also used in `collate_features()` for loading feature matrices
+        # -> this is to avoid +/- 1 frame error for `x`, `x_lens` in `Zipformer::forward()`
+        nums_frames = [cut.num_frames for cut in cuts]
+
         return {
             "sequence_idx": torch.tensor(sequence_idx, dtype=torch.int32),
             "start_frame": torch.tensor(start_frames, dtype=torch.int32),
