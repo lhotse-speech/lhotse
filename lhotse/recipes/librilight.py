@@ -8,7 +8,7 @@ It contains a large dataset of 60K hours of unlabelled speech from audiobooks in
 English and a small labelled dataset (10h, 1h, and 10 min) plus metrics,
 trainable baseline models, and pretrained models that use these datasets.
 
-It is covered in more detail at https://arxiv.org/abs/1912.07875.
+It is covered in more detail at https://arxiv.org/abs/1912.07875
 
 This data is very huge - please download manually at LIBRILIGHT_URL.
 """

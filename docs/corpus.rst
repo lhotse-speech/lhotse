@@ -121,6 +121,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_hifitts`
   * - HI-MIA (including HI-MIA-CW)
     - :func:`lhotse.recipes.prepare_himia`
+  * - ICMC-ASR
+    - :func:`lhotse.recipes.prepare_icmcasr`
   * - ICSI
     - :func:`lhotse.recipes.prepare_icsi`
   * - IWSLT22_Ta
