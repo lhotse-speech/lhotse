@@ -11,12 +11,13 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
+from tqdm.auto import tqdm
+
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
-from tqdm.auto import tqdm
 
 ICMCASR = ("train",)  # TODO: Support all subsets when released
 POSITION = ("DA01", "DA02", "DA03", "DA04")
