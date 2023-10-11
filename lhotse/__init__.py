@@ -11,7 +11,7 @@ from .cut import CutSet, MonoCut, MultiCut, create_cut_set_eager, create_cut_set
 from .features import *
 from .kaldi import load_kaldi_data_dir
 from .manipulation import combine, split_parallelize_combine, to_manifest
-from .qa import fix_manifests, validate, validate_recordings_and_supervisions
+from .qa import fix_manifests, validate, validate_recordings_and_supervisions, validate_recording, validate_supervision
 from .serialization import load_manifest, load_manifest_lazy, store_manifest
 from .supervision import SupervisionSegment, SupervisionSet
 from .tools.env import add_tools_to_path as _add_tools_to_path
