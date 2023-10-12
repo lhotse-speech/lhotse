@@ -201,8 +201,12 @@ def download_audio(
             )
         elif mic == "mdm":
             for array in MDM_ARRAYS:
-                for channel in MDM_CHANNELS:
-                    wav_name = f"{item}.{array}-{channel}.wav"
+                if item == "IB4001" and array == "Array2":
+                    channel_num = 4
+                else:
+                    channel_num = 8
+                for channel_index in range(channel_num):
+                    wav_name = f"{item}.{array}-{MDM_CHANNELS[channel_index]}.wav"
                     wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
                     wav_dir = target_dir / "wav_db" / item / "audio"
                     wav_dir.mkdir(parents=True, exist_ok=True)
