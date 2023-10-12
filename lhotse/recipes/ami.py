@@ -207,9 +207,14 @@ def download_audio(
                     wav_dir = target_dir / "wav_db" / item / "audio"
                     wav_dir.mkdir(parents=True, exist_ok=True)
                     wav_path = wav_dir / wav_name
-                    resumable_download(
-                        wav_url, filename=wav_path, force_download=force_download
-                    )
+                    try:
+                        resumable_download(
+                            wav_url, filename=wav_path, force_download=force_download
+                        )
+                    except:
+                        logging.warning(
+                            f"Could not download {wav_url}. Skipping this file."
+                        )
         elif mic == "mdm8-bf":
             wav_name = f"{item}_MDM8.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/beamformed/{item}/{wav_name}"
