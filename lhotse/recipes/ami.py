@@ -211,10 +211,13 @@ def download_audio(
                         resumable_download(
                             wav_url, filename=wav_path, force_download=force_download
                         )
-                    except:
-                        logging.warning(
-                            f"Could not download {wav_url}. Skipping this file."
-                        )
+                    except urllib.error.HTTPError as err:
+                        if err.code == 404:
+                            logging.warning(
+                                f"{wav_url} does not exist. Skipping this file."
+                            )
+                        else:
+                            raise err
         elif mic == "mdm8-bf":
             wav_name = f"{item}_MDM8.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/beamformed/{item}/{wav_name}"
