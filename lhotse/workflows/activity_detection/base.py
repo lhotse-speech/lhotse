@@ -78,13 +78,13 @@ class ActivityDetectionProcessor:
         device: str = "cpu",
         verbose: bool = False,
     ):
-        self._make_detecor = partial(detector_kls, device=device)
+        self._make_detector = partial(detector_kls, device=device)
         self._num_jobs = num_jobs
         self._verbose = verbose
 
     def _init_detector(self):
         pid = multiprocessing.current_process().pid
-        self._detectors[pid] = self._make_detecor()
+        self._detectors[pid] = self._make_detector()
 
     def _process_recording(self, record: Recording) -> List[SupervisionSegment]:
         pid = multiprocessing.current_process().pid
