@@ -146,7 +146,7 @@ def gapped_mixed_cut():
         id="gapped-mixed-cut",
         tracks=[
             MixTrack(cut=dummy_cut(0, duration=10.0)),
-            MixTrack(cut=dummy_cut(1, duration=10.0), offset=15.0),
+            MixTrack(cut=dummy_cut(1, duration=10.0).pad(12.0).pad(15.0), offset=15.0),
         ],
     )
 
@@ -226,12 +226,16 @@ def test_truncate_mixed_cut_with_small_offset_and_duration(simple_mixed_cut):
     assert truncated_cut.duration == 13.0
 
 
-def test_truncate_mixed_cut_inside_gap(gapped_mixed_cut):
-    truncated_cut = gapped_mixed_cut.truncate(offset=11.0, duration=3.0)
+@pytest.mark.parametrize("offset", [11.0, 26.0])
+def test_truncate_mixed_cut_gap_or_padding(gapped_mixed_cut, offset):
+    print(gapped_mixed_cut.duration)
+    truncated_cut = gapped_mixed_cut.truncate(offset=offset, duration=3.0)
     assert isinstance(truncated_cut, PaddingCut)
     assert truncated_cut.start == 0.0
     assert truncated_cut.duration == 3.0
     assert truncated_cut.end == 3.0
+    audio = truncated_cut.load_audio()
+    assert audio is not None
 
 
 def test_truncate_cut_set_offset_start(cut_set):
