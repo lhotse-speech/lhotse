@@ -497,14 +497,15 @@ class MixedCut(Cut):
                 )
             )
 
-        # Edge case: no tracks left after truncation. This can happen if we truncated an offset region.
+        # Edge case: no tracks with data left after truncation. This can happen if we truncated an offset region.
         # In this case, return a PaddingCut of the requested duration
-        if len(new_tracks) == 0:
+        if len([t for t in new_tracks if not isinstance(t.cut, PaddingCut)]) == 0:
             return PaddingCut(
                 id=self.id if preserve_id else str(uuid4()),
                 duration=duration,
                 sampling_rate=self.sampling_rate,
                 feat_value=0.0,
+                num_samples=compute_num_samples(duration, self.sampling_rate),
             )
 
         if len(new_tracks) == 1:
