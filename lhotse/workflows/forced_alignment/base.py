@@ -1,6 +1,6 @@
 import abc
 import logging
-from typing import Generator, List, Optional, Union
+from typing import Generator, List, Optional, Tuple, Union
 
 import torch
 from tqdm.auto import tqdm
@@ -34,7 +34,7 @@ class ForcedAligner(abc.ABC):
 
     @abc.abstractmethod
     def align(
-        self, audio: torch.Tensor, transcript: Union[str, List[str]]
+        self, audio: torch.Tensor, transcript: Union[str, List[Tuple[str, str]]]
     ) -> List[AlignmentItem]:
         pass
 
