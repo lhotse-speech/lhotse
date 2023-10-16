@@ -40,6 +40,7 @@ from .grid import *
 from .heroico import *
 from .hifitts import *
 from .himia import *
+from .icmcasr import *
 from .icsi import *
 from .iwslt22_ta import *
 from .kespeech import *

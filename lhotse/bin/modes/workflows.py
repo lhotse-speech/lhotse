@@ -1,4 +1,7 @@
-from typing import List, Optional, Union
+# pylint: disable=C0415,R0913,R0914
+import sys
+from pathlib import Path
+from typing import Optional
 
 import click
 from tqdm import tqdm
@@ -416,3 +419,132 @@ def simulate_meetings(
 
     print("Saving the simulated meetings...")
     mixed_cuts.to_file(out_cuts)
+
+
+@workflows.command()
+@click.option(
+    "-r",
+    "--recordings-manifest",
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    help="Path to an existing recording manifest.",
+)
+@click.option(
+    "-o",
+    "--output-supervisions-manifest",
+    type=click.Path(exists=False, dir_okay=True, allow_dash=True),
+    help="Path to the output supervisions manifest or a directory where it will be saved.",
+)
+@click.option(
+    "-m",
+    "--model-name",
+    default="silero-vad-16k",
+    help="One of activity detector: silero_vad_16k, silero_vad_8k.",
+)
+@click.option(
+    "-d",
+    "--device",
+    default="cpu",
+    help="Device on which to run the inference.",
+)
+@click.option(
+    "-j",
+    "--jobs",
+    default=1,
+    help="Number of jobs for audio scanning.",
+)
+@click.option(
+    "--force_download",
+    is_flag=True,
+    help="Forced cache clearing and model downloading",
+)
+def activity_detection(
+    recordings_manifest: str,
+    output_supervisions_manifest: Optional[str],
+    model_name: str,
+    device: str,
+    jobs: int,
+    force_download: bool,
+):
+    """
+    Use activity detection methods (e.g., Silero VAD) to detect and annotate
+    the segmentation of Lhotse RecordingSets and save the results in the
+    SupervisionSet manifest. The output manifest will be saved in the path
+    specified by OUTPUT_SUPERVISIONS_MANIFEST. If OUTPUT_SUPERVISIONS_MANIFEST
+    is not provided, the output manifest will be saved in the same directory
+    as RECORDINGS_MANIFEST.
+
+    Note: this is an experimental feature and it does not guarantee
+    high-quality performance and data annotation.
+    """
+
+    import warnings
+
+    from lhotse.workflows.activity_detection import (
+        ActivityDetectionProcessor,
+        SileroVAD8k,
+        SileroVAD16k,
+    )
+
+    warnings.filterwarnings("ignore")
+
+    detectors = {
+        "silero_vad_8k": SileroVAD8k,
+        "silero_vad_16k": SileroVAD16k,
+    }
+    detector_kls = detectors.get(model_name)
+
+    if detector_kls is None:
+        print(
+            f"Unknown activity detector: {model_name}. "
+            f"Supported detectors: {list(detectors)}"
+        )
+        sys.exit()
+
+    # prepare paths and input data
+    recs_path = Path(recordings_manifest).expanduser().absolute()
+    if not recs_path.exists() or not recs_path.is_file():
+        print(f"Recordings manifest not found: {str(recs_path)}")
+        sys.exit()
+
+    sups_path = (
+        recs_path.parent
+        if output_supervisions_manifest is None
+        else Path(output_supervisions_manifest).expanduser().absolute()
+    )
+    if sups_path.is_dir():
+        name = Path(recs_path).name
+        for ext in [".gz", ".jsonl", ".json", ".yaml"]:
+            if name.endswith(ext):  # .remove_suffix(ext) in Python 3.9
+                name = name[: -len(ext)]
+        name += f"_supervisions_{model_name}.jsonl.gz"
+        sups_path = sups_path / name
+
+    if not sups_path.parent.exists():
+        print(f"Parent directory for output manifest does not exist: {str(sups_path)}")
+        sys.exit()
+
+    print(f"Loading recordings from {str(recordings_manifest)}...")
+    recordings = RecordingSet.from_file(str(recordings_manifest))
+
+    # run activity detection
+    if force_download:  # pragma: no cover
+        print("Removing model state from cache...")
+        detector_kls.force_download()
+    else:
+        print("Checking model state in cache...")
+        detector_kls("cpu")
+
+    print(f"Making activity detection processor for {model_name!r}...")
+    processor = ActivityDetectionProcessor(
+        detector_kls=detector_kls,
+        num_jobs=jobs,
+        device=device,
+        verbose=True,
+    )
+    print(f"Running activity detection using {model_name!r}...")
+    supervisions = processor(recordings)
+
+    print(f"Saving {model_name!r} results ...")
+    supervisions.to_file(str(sups_path))
+
+    print("Results saved to:", str(sups_path), sep="\n")
