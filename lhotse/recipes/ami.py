@@ -217,7 +217,8 @@ def download_audio(
                             logging.warning(
                                 f"{wav_url} does not exist. Skipping this file."
                             )
-                            os.remove(wav_path)
+                            if os.path.exists(wav_path) and os.path.isfile(wav_path):
+                                os.remove(wav_path)
                         else:
                             raise err
         elif mic == "mdm8-bf":
