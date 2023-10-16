@@ -27,6 +27,8 @@ def align_with_torchaudio(
     bundle_name: str = "WAV2VEC2_ASR_BASE_960H",
     device: str = "cpu",
     normalize_text: bool = True,
+    num_jobs: int = 1,
+    verbose: bool = False,
 ) -> Generator[MonoCut, None, None]:
     """
     Use a pretrained model from torchaudio (such as Wav2Vec2) to perform forced
@@ -57,6 +59,10 @@ def align_with_torchaudio(
     """
     AlignerClass = __get_aligner_class(bundle_name)
     processor = ForcedAlignmentProcessor(
-        AlignerClass(bundle_name, device=device), verbose=True
+        AlignerClass,
+        bundle_name,
+        device=device,
+        num_jobs=num_jobs,
+        verbose=verbose,
     )
     return processor(cuts, normalize=normalize_text)
