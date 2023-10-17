@@ -162,7 +162,7 @@ def prepare_vctk(
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    speaker_meta = _parse_speaker_description(corpus_dir)
+    speaker_meta = _parse_speaker_description(corpus_dir, use_edinburgh_vctk_url)
 
     audios_dir = ""
     recordings = ""
@@ -235,7 +235,7 @@ def prepare_vctk(
     return {"recordings": recordings, "supervisions": supervisions}
 
 
-def _parse_speaker_description(corpus_dir: Pathlike):
+def _parse_speaker_description(corpus_dir: Pathlike, use_edinburgh_vctk_url: bool):
     meta = {}
     lines = [
         line.split()
@@ -246,7 +246,7 @@ def _parse_speaker_description(corpus_dir: Pathlike):
     assert set(["ID", "AGE", "GENDER", "ACCENTS", "REGION"]).issubset(set(header))
 
     for spk, age, gender, accent, *region in lines[1:]:
-        meta[f"p{spk}"] = {
+        meta[f"p{spk}" if not use_edinburgh_vctk_url else f"{spk}"] = {
             "age": int(age),
             "gender": gender,
             "accent": accent,

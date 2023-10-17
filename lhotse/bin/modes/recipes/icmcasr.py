@@ -17,14 +17,19 @@ from lhotse.utils import Pathlike
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
+@click.option(
+    "--mic", type=click.Choice(["ihm", "sdm"]), default="ihm", help="Microphone type."
+)
 def icmcasr(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
+    mic: str = "ihm",
     num_jobs: int = 1,
 ):
     """ICMC-ASR data preparation."""
     prepare_icmcasr(
         corpus_dir=corpus_dir,
         output_dir=output_dir,
+        mic=mic,
         num_jobs=num_jobs,
     )

@@ -975,8 +975,8 @@ def read_opus_ffmpeg(
     cmd += f" -i '{path}'"
     # Optionally resample the output.
     if force_opus_sampling_rate is not None:
-        cmd += f" -ar {force_opus_sampling_rate}"
         sampling_rate = force_opus_sampling_rate
+    cmd += f" -ar {sampling_rate}"
     # Read audio samples directly as float32.
     cmd += " -f f32le -threads 1 pipe:1"
     # Actual audio reading.
