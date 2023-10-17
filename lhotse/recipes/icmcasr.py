@@ -17,7 +17,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist, normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, is_module_available
 
 ICMCASR = ("train", "dev")  # TODO: Support all subsets when released
 POSITION = ("DA01", "DA02", "DA03", "DA04")
@@ -29,6 +29,12 @@ def _parse_utterance(
     section_path: Pathlike,
     mic: str,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    if not is_module_available("textgrid"):
+        raise ValueError(
+            "To prepare ICMC ASR data, please 'pip install textgrid' first."
+        )
+    import textgrid
+
     recordings = []
     segments = []
     for position in POSITION:
@@ -67,38 +73,26 @@ def _parse_utterance(
                 Recording.from_file(path=audio_path, recording_id=recording_id)
             )
 
-            with open(text_path) as f:
-                datalines = f.read().splitlines()
-
-            seq = 0
-            for dataline in datalines:
-                if "name" in dataline:
-                    speaker = dataline.split('"')[1].strip()
-                elif "xmin =" in dataline:
-                    start = float(dataline.split("=")[1].strip())
-                elif "xmax =" in dataline:
-                    end = float(dataline.split("=")[1].strip())
-                elif "text" in dataline:
-                    text = dataline.split('"')[1].strip()
-                    if len(text) > 0:
-                        if float(recordings[-1].duration) < end:
-                            duration = float(recordings[-1].duration) - start
-                        else:
-                            duration = end - start
-                        segment_id = recording_id + "-" + str(seq)
-                        segments.append(
-                            SupervisionSegment(
-                                id=segment_id,
-                                recording_id=recording_id,
-                                start=start,
-                                duration=duration,
-                                channel=0,
-                                language="Chinese",
-                                speaker=speaker,
-                                text=normalize_text_alimeeting(text),
-                            )
-                        )
-                        seq += 1
+            tg = textgrid.TextGrid.fromFile(str(text_path))
+            assert len(tg.tiers) == 1, f"Expected 1 tier, found {len(tg.tiers)} tiers."
+            tier = tg.tiers[0]
+            speaker = tier.name
+            for i, interval in enumerate(tier.intervals):
+                if interval.mark != "":
+                    start = interval.minTime
+                    end = interval.maxTime
+                    text = interval.mark
+                    segment = SupervisionSegment(
+                        id=f"{recording_id}-{i}",
+                        recording_id=recording_id,
+                        start=start,
+                        duration=round(end - start, 4),
+                        channel=0,
+                        language="Chinese",
+                        speaker=speaker,
+                        text=normalize_text_alimeeting(text),
+                    )
+                    segments.append(segment)
 
     return recordings, segments
 
