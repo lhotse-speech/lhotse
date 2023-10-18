@@ -280,7 +280,8 @@ class LilcomFilesWriter(FeaturesWriter):
         # too many files in a single directory.
         subdir = self.storage_path_ / key[:3]
         subdir.mkdir(exist_ok=True)
-        output_features_path = (subdir / key).with_suffix(".llc")
+        p = subdir / key
+        output_features_path = p.with_suffix(p.suffix + ".llc" if p.suffix != ".llc" else ".llc")
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
         with open(output_features_path, "wb") as f:
             f.write(serialized_feats)
@@ -343,7 +344,8 @@ class NumpyFilesWriter(FeaturesWriter):
         # too many files in a single directory.
         subdir = self.storage_path_ / key[:3]
         subdir.mkdir(exist_ok=True)
-        output_features_path = (subdir / key).with_suffix(".npy")
+        p = subdir / key
+        output_features_path = p.with_suffix(p.suffix + ".npy" if p.suffix != ".npy" else ".npy")
         np.save(output_features_path, value, allow_pickle=False)
         # Include sub-directory in the key, e.g. "abc/abcdef.npy"
         return "/".join(output_features_path.parts[-2:])
@@ -449,8 +451,8 @@ class NumpyHdf5Writer(FeaturesWriter):
         super().__init__()
         check_h5py_installed()
         import h5py
-
-        self.storage_path_ = Path(storage_path).with_suffix(".h5")
+        p = Path(storage_path)
+        self.storage_path_ = p.with_suffix(p.suffix + ".h5" if p.suffix != ".h5" else ".h5")
         self.hdf = h5py.File(self.storage_path, mode=mode)
 
     @property
@@ -539,7 +541,8 @@ class LilcomHdf5Writer(FeaturesWriter):
         check_h5py_installed()
         import h5py
 
-        self.storage_path_ = Path(storage_path).with_suffix(".h5")
+        p = Path(storage_path)
+        self.storage_path_ = p.with_suffix(p.suffix + ".h5" if p.suffix != ".h5" else ".h5")
         self.hdf = h5py.File(self.storage_path, mode=mode)
         self.tick_power = tick_power
 
@@ -664,7 +667,8 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
         check_h5py_installed()
         import h5py
 
-        self.storage_path_ = Path(storage_path).with_suffix(".h5")
+        p = Path(storage_path)
+        self.storage_path_ = p.with_suffix(p.suffix + ".h5" if p.suffix != ".h5" else ".h5")
         self.tick_power = tick_power
         self.chunk_size = chunk_size
         self.hdf = h5py.File(self.storage_path, mode=mode)
@@ -826,7 +830,8 @@ class LilcomChunkyWriter(FeaturesWriter):
         assert mode in ("wb", "ab")
 
         # ".lca" -> "lilcom chunky archive"
-        self.storage_path_ = Path(storage_path).with_suffix(".lca")
+        p = Path(storage_path)
+        self.storage_path_ = p.with_suffix(p.suffix + ".lca" if p.suffix != ".lca" else ".lca")
         self.tick_power = tick_power
         self.file = open(self.storage_path, mode=mode)
         self.curr_offset = self.file.tell()
