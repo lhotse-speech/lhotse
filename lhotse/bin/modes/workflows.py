@@ -1,5 +1,6 @@
 # pylint: disable=C0415,R0913,R0914
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -421,6 +422,18 @@ def simulate_meetings(
     mixed_cuts.to_file(out_cuts)
 
 
+@contextmanager
+def _catch_exceptions():
+    try:
+        yield
+    except KeyboardInterrupt:
+        print("Interrupted by the user.")
+        sys.exit(1)
+    except Exception as exc:
+        print(f"An error occurred: {exc}")
+        sys.exit(1)
+
+
 @workflows.command()
 @click.option(
     "-r",
@@ -437,7 +450,8 @@ def simulate_meetings(
 @click.option(
     "-m",
     "--model-name",
-    default="silero-vad-16k",
+    default="silero_vad_16k",
+    # TODO: auto detect available models
     help="One of activity detector: silero_vad_16k, silero_vad_8k.",
 )
 @click.option(
@@ -457,7 +471,7 @@ def simulate_meetings(
     is_flag=True,
     help="Forced cache clearing and model downloading",
 )
-def activity_detection(
+def detect_activity(
     recordings_manifest: str,
     output_supervisions_manifest: Optional[str],
     model_name: str,
@@ -477,34 +491,14 @@ def activity_detection(
     high-quality performance and data annotation.
     """
 
-    import warnings
-
-    from lhotse.workflows.activity_detection import (
-        ActivityDetectionProcessor,
-        SileroVAD8k,
-        SileroVAD16k,
-    )
-
-    warnings.filterwarnings("ignore")
-
-    detectors = {
-        "silero_vad_8k": SileroVAD8k,
-        "silero_vad_16k": SileroVAD16k,
-    }
-    detector_kls = detectors.get(model_name)
-
-    if detector_kls is None:
-        print(
-            f"Unknown activity detector: {model_name}. "
-            f"Supported detectors: {list(detectors)}"
-        )
-        sys.exit()
+    from lhotse.workflows.activity_detection import check_detetor
+    from lhotse.workflows.activity_detection import detect_activity as _detect_activity
 
     # prepare paths and input data
     recs_path = Path(recordings_manifest).expanduser().absolute()
     if not recs_path.exists() or not recs_path.is_file():
         print(f"Recordings manifest not found: {str(recs_path)}")
-        sys.exit()
+        sys.exit(1)
 
     sups_path = (
         recs_path.parent
@@ -519,32 +513,174 @@ def activity_detection(
         name += f"_supervisions_{model_name}.jsonl.gz"
         sups_path = sups_path / name
 
-    if not sups_path.parent.exists():
-        print(f"Parent directory for output manifest does not exist: {str(sups_path)}")
-        sys.exit()
-
-    print(f"Loading recordings from {str(recordings_manifest)}...")
-    recordings = RecordingSet.from_file(str(recordings_manifest))
-
     # run activity detection
-    if force_download:  # pragma: no cover
-        print("Removing model state from cache...")
-        detector_kls.force_download()
-    else:
-        print("Checking model state in cache...")
-        detector_kls("cpu")
+    check_detetor(model_name, force=force_download)
 
     print(f"Making activity detection processor for {model_name!r}...")
-    processor = ActivityDetectionProcessor(
-        detector_kls=detector_kls,
-        num_jobs=jobs,
-        device=device,
-        verbose=True,
-    )
-    print(f"Running activity detection using {model_name!r}...")
-    supervisions = processor(recordings)
 
-    print(f"Saving {model_name!r} results ...")
-    supervisions.to_file(str(sups_path))
+    with _catch_exceptions():
+        _detect_activity(
+            recordings=recordings_manifest,
+            detector=model_name,
+            output_supervisions_manifest=sups_path,
+            num_jobs=jobs,
+            verbose=True,
+            device=device,
+        )
 
     print("Results saved to:", str(sups_path), sep="\n")
+
+
+@workflows.command()
+@click.option(
+    "-c",
+    "--cuts-manifest",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to an existing cuts manifest.",
+)
+@click.option(
+    "-r",
+    "--recordings-manifest",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to an existing recording manifest.",
+)
+@click.option(
+    "-s",
+    "--supervisions-manifest",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to an existing supervisions manifest.",
+)
+@click.option(
+    "--recordings-path-prefix",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, allow_dash=True),
+    help="Directory with recordings.",
+)
+@click.option(
+    "-o",
+    "--output-dir",
+    type=click.Path(exists=False, dir_okay=True, file_okay=False, allow_dash=True),
+    help="Path to the output directory where results will be saved.",
+)
+@click.option(
+    "--output-recordings-extension",
+    type=str,
+    default="flac",
+    help="Extension of the output recordings.",
+)
+@click.option(
+    "--protect-outside/--dont-protect-outside",
+    default=False,
+    is_flag=True,
+    help="Protect supervision's start and end times that are outside of the recording's duration.",
+)
+@click.option(
+    "--skip-exceptions/--dont-skip-exceptions",
+    default=False,
+    is_flag=True,
+    help="Skip exceptions during processing.",
+)
+@click.option(
+    "-m",
+    "--model-name",
+    default="silero_vad_16k",
+    # TODO: auto detect available models
+    help="One of activity detector: silero_vad_16k, silero_vad_8k.",
+)
+@click.option(
+    "-d",
+    "--device",
+    default="cpu",
+    help="Device on which to run the inference.",
+)
+@click.option(
+    "-j",
+    "--jobs",
+    default=1,
+    help="Number of jobs for audio scanning.",
+)
+@click.option(
+    "--force_download",
+    is_flag=True,
+    help="Forced cache clearing and model downloading",
+)
+# TODO: add model selector
+def trim_inactivity(
+    # input
+    cuts_manifest: str,
+    recordings_manifest: str,
+    supervisions_manifest: str,
+    recordings_path_prefix: str,
+    # output
+    output_dir: str,
+    output_recordings_extension: str,
+    # options
+    protect_outside: bool,
+    skip_exceptions: bool,
+    # mode
+    model_name: str,
+    device: str,
+    jobs: int,
+    force_download: bool,
+):
+    """
+    Trim the cutset to contain only speech segments. The speech segments are detected
+    using the Silero VAD model. All the recordings are scanned and the speech segments
+    are trimmed, merged, and saved to the output directory with the given extension.
+    All supervisions that are also trimmed to match the new recording boundaries.
+    The results are saved to the output directory or to the given paths.
+    The original data is not modified. Features are dropped.
+    """
+
+    from lhotse.workflows.activity_detection import check_detetor
+    from lhotse.workflows.activity_detection import trim_inactivity as _trim_inactivity
+
+    if not (cuts_manifest or recordings_manifest):
+        print("At least one of --cuts-manifest or --recordings-manifest is required")
+        sys.exit(1)
+    if cuts_manifest and recordings_manifest:
+        print("Only one of --cuts-manifest or --recordings-manifest can be provided")
+        sys.exit(1)
+    if cuts_manifest and supervisions_manifest:
+        print("Only one of --cuts-manifest or --supervisions-manifest can be provided")
+        sys.exit(1)
+    if not output_dir:
+        print("--output-dir is required")
+        sys.exit(1)
+
+    check_detetor(model_name, force=force_download)
+
+    cutset = None
+    recordings = None
+    supervisions = None
+
+    if cuts_manifest:
+        cutset = CutSet.from_file(cuts_manifest)
+    else:
+        recordings = RecordingSet.from_file(recordings_manifest)
+        supervisions = None
+        if supervisions_manifest:
+            supervisions = SupervisionSet.from_file(supervisions_manifest)
+        cutset = CutSet.from_manifests(
+            recordings=recordings,
+            supervisions=supervisions,
+        )
+    if recordings_path_prefix:
+        cutset = cutset.with_recording_path_prefix(recordings_path_prefix)
+
+    with _catch_exceptions():
+        _trim_inactivity(
+            # input
+            cutset=cutset,
+            detector=model_name,
+            # output
+            output_dir=output_dir,
+            output_recordings_extension=output_recordings_extension,
+            # options
+            protect_outside=protect_outside,
+            skip_exceptions=skip_exceptions,
+            # mode
+            device=device,
+            num_jobs=jobs,
+            verbose=True,
+            warnings_mode="ignore",
+        )

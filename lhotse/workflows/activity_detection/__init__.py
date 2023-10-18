@@ -1,2 +1,4 @@
-from .base import Activity, ActivityDetectionProcessor, ActivityDetector
-from .silero_vad import SileroVAD8k, SileroVAD16k
+from .base import *
+from .detect_activity import *
+from .silero_vad import *
+from .trim_inactivity import *
