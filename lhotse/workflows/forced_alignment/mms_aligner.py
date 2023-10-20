@@ -147,6 +147,28 @@ def _word_tokenize(text: str, language: Optional[str] = None) -> List[str]:
             word if word != "<s/>" else " " for piece in pieces for word, _ in piece
         ]
 
+    elif language == "my":
+        if not is_module_available("pyidaungsu"):
+            raise ImportError(
+                "MMSForcedAligner requires the 'pyidaungsu' module to be installed to align Burmese text."
+                "Please install it with 'pip install pyidaungsu'."
+            )
+
+        import pyidaungsu as pds
+
+        return pds.tokenize(text, form="word")
+
+    elif language == "km":
+        if not is_module_available("khmernltk"):
+            raise ImportError(
+                "MMSForcedAligner requires the 'khmernltk' module to be installed to align Khmer text."
+                "Please install it with 'pip install khmer-nltk'."
+            )
+
+        import khmernltk
+
+        return khmernltk.word_tokenize(text)
+
     else:
         logging.warning(
             f"Language `{language}` does not have spaces between words, "
