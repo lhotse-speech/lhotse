@@ -4,12 +4,13 @@ alignment with Wav2Vec2 created by Moto Hira.
 
 Link: https://pytorch.org/audio/stable/pipelines.html
 """
+from functools import partial
 from typing import Generator
 
 from lhotse import CutSet, MonoCut
+from lhotse.parallel import ParallelExecutor
 
 from .asr_aligner import ASRForcedAligner
-from .base import ForcedAlignmentProcessor
 from .mms_aligner import MMSForcedAligner
 
 
@@ -58,11 +59,11 @@ def align_with_torchaudio(
         their supervisions.
     """
     AlignerClass = __get_aligner_class(bundle_name)
-    processor = ForcedAlignmentProcessor(
-        AlignerClass,
-        bundle_name,
-        device=device,
+    aligner_init_fn = partial(AlignerClass, bundle_name=bundle_name, device=device)
+    processor = ParallelExecutor(
+        init_fn=aligner_init_fn,
         num_jobs=num_jobs,
         verbose=verbose,
+        description="Aligning",
     )
     return processor(cuts, normalize=normalize_text)

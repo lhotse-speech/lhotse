@@ -1,5 +1,7 @@
 # pylint: disable=C0415,R0913,R0914
 import sys
+from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +10,7 @@ from tqdm import tqdm
 
 from lhotse import CutSet, RecordingSet, SupervisionSet
 from lhotse.bin.modes.cli_base import cli
+from lhotse.parallel import ParallelExecutor
 from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import PythonLiteralOption, exactly_one_not_null
 
@@ -479,11 +482,7 @@ def activity_detection(
 
     import warnings
 
-    from lhotse.workflows.activity_detection import (
-        ActivityDetectionProcessor,
-        SileroVAD8k,
-        SileroVAD16k,
-    )
+    from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
 
     warnings.filterwarnings("ignore")
 
@@ -535,14 +534,17 @@ def activity_detection(
         detector_kls("cpu")
 
     print(f"Making activity detection processor for {model_name!r}...")
-    processor = ActivityDetectionProcessor(
-        detector_kls=detector_kls,
+    detector_init_fn = partial(detector_kls, device=device)
+    processor = ParallelExecutor(
+        init_fn=detector_init_fn,
         num_jobs=jobs,
-        device=device,
         verbose=True,
+        description="Running VAD",
     )
     print(f"Running activity detection using {model_name!r}...")
-    supervisions = processor(recordings)
+    supervisions = SupervisionSet.from_segments(
+        chain.from_iterable(processor(recordings))
+    )
 
     print(f"Saving {model_name!r} results ...")
     supervisions.to_file(str(sups_path))
