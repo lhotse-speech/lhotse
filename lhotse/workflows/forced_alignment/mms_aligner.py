@@ -42,6 +42,7 @@ class MMSForcedAligner(ForcedAligner):
 
     def normalize_text(self, text: str, language=None) -> List[Tuple[str, str]]:
         # Split text into words (possibly with adjacent punctuation)
+        language = _normalize_language(language)
         orig_words = _word_tokenize(text, language)
 
         sep = _safe_separator(text)
@@ -178,18 +179,29 @@ def _word_tokenize(text: str, language: Optional[str] = None) -> List[str]:
         return " ".join(text)
 
 
-def _normalize_language(language: str) -> str:
+def _normalize_language(language: Optional[str]) -> Optional[str]:
     """
     Returns top-level 2-letters language code for any language code
     or language name in English.
     """
+    if language is None:
+        return None
+
     from langcodes import Language, tag_parser
 
     try:
         # Try to parse the language tag first
         return Language.get(language).language
     except tag_parser.LanguageTagError:
-        # If it fails, try to parse the language name.
+        # If it fails, try to parse the language name. But we need the `language_data`
+        # package to do that.
+        if not is_module_available("language_data"):
+            raise ImportError(
+                f"Language `{language}` is not a valid language tag, and MMSForcedAligner requires"
+                "the 'language_data' module to be installed to parse language names."
+                "Please install it with 'pip install language_data'."
+            )
+
         return Language.find(language).language
 
 
