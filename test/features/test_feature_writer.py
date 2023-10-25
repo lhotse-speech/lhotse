@@ -1,8 +1,8 @@
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import numpy as np
 import pytest
-from pathlib import Path
 
 from lhotse import (
     ChunkedLilcomHdf5Writer,
