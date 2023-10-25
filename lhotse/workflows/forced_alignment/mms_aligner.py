@@ -16,7 +16,7 @@ LANGUAGES_WITHOUT_SPACES = ["zh", "ja", "ko", "th", "my", "km", "lo"]
 
 
 class MMSForcedAligner(ForcedAligner):
-    def __init__(self, device: str = "cpu", **kwargs):
+    def __init__(self, device: str = "cpu", check_language: bool = True, **kwargs):
         super().__init__(device=device)
 
         if not is_module_available("uroman"):
@@ -28,6 +28,7 @@ class MMSForcedAligner(ForcedAligner):
         from torchaudio.pipelines import MMS_FA as bundle
         from uroman import uroman
 
+        self.check_language = check_language
         self.bundle = bundle
         self.model = bundle.get_model().to(device)
         self.tokenizer = bundle.get_tokenizer()
@@ -42,6 +43,15 @@ class MMSForcedAligner(ForcedAligner):
     def normalize_text(self, text: str, language=None) -> List[Tuple[str, str]]:
         # Split text into words (possibly with adjacent punctuation)
         language = _normalize_language(language)
+
+        if language is None and self.check_language:
+            logging.warning(
+                "Language tag is not provided for the supervision text."
+                "MMSForceAligner might not behave properly, especially for languages without spaces,"
+                "such as Chinese or Japanese."
+                "Provide `--dont-check-language` (for CLI) or `check_language=False` (for Python API) to suppress this warning"
+            )
+
         orig_words = _word_tokenize(text, language)
 
         sep = _safe_separator(text)

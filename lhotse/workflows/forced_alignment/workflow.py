@@ -30,6 +30,7 @@ def align_with_torchaudio(
     normalize_text: bool = True,
     num_jobs: int = 1,
     verbose: bool = False,
+    check_language: bool = True,
 ) -> Generator[MonoCut, None, None]:
     """
     Use a pretrained model from torchaudio (such as Wav2Vec2) to perform forced
@@ -56,11 +57,19 @@ def align_with_torchaudio(
     :param normalize_text: by default, we'll try to normalize the text by making
         it uppercase and discarding symbols outside of model's character level vocabulary.
         If this causes issues, turn the option off and normalize the text yourself.
+    :param num_jobs: number of parallel jobs to use for alignment.
+    :param verbose: if True, display the progress bar.
+    :param check_language: if False, disable warning about the non-existent language tags in supervisions.
     :return: a generator of cuts that have the "alignment" field set in each of
         their supervisions.
     """
     AlignerClass = __get_aligner_class(bundle_name)
-    aligner_init_fn = partial(AlignerClass, bundle_name=bundle_name, device=device)
+    aligner_init_fn = partial(
+        AlignerClass,
+        bundle_name=bundle_name,
+        device=device,
+        check_language=check_language,
+    )
     processor = ParallelExecutor(
         init_fn=aligner_init_fn,
         num_jobs=num_jobs,

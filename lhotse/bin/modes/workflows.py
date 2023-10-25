@@ -147,6 +147,11 @@ def annotate_with_whisper(
     default=1,
     help="Number of parallel jobs to run.",
 )
+@click.option(
+    "--check-language/--dont-check-language",
+    default=True,
+    help="If `False`, warnings about non-existent language tags in supervisions will be suppressed.",
+)
 def align_with_torchaudio(
     in_cuts: str,
     out_cuts: str,
@@ -154,6 +159,7 @@ def align_with_torchaudio(
     device: str,
     normalize_text: bool,
     num_jobs: int = 1,
+    check_language: bool = True,
 ):
     """
     Use a pretrained ASR model from torchaudio to force align IN_CUTS (a Lhotse CutSet)
@@ -163,6 +169,9 @@ def align_with_torchaudio(
 
     This is based on a tutorial from torchaudio:
     https://pytorch.org/audio/stable/tutorials/forced_alignment_tutorial.html
+
+    In order to use a multilingual alignment model, use `--bundle_name MMS_FA`.
+    (based on the multilingual tutorial: https://pytorch.org/audio/main/tutorials/forced_alignment_for_multilingual_data_tutorial.html)
 
     Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
     high quality of data.
@@ -180,6 +189,7 @@ def align_with_torchaudio(
                 normalize_text=normalize_text,
                 num_jobs=num_jobs,
                 verbose=False,
+                check_language=check_language,
             ),
             total=len(cuts),
             desc="Aligning",

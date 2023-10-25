@@ -11,7 +11,7 @@ from .base import FailedToAlign, ForcedAligner
 
 class ASRForcedAligner(ForcedAligner):
     def __init__(
-        self, bundle_name: str = "WAV2VEC2_ASR_BASE_960H", device: str = "cpu"
+        self, bundle_name: str = "WAV2VEC2_ASR_BASE_960H", device: str = "cpu", **kwargs
     ):
         super().__init__(device=device)
         self.bundle_name = bundle_name
