@@ -16,9 +16,8 @@ LANGUAGES_WITHOUT_SPACES = ["zh", "ja", "ko", "th", "my", "km", "lo"]
 
 
 class MMSForcedAligner(ForcedAligner):
-    def __init__(self, bundle_name: str, device: str = "cpu"):
+    def __init__(self, device: str = "cpu", **kwargs):
         super().__init__(device=device)
-        assert bundle_name == "MMS_FA", "MMSForcedAligner only supports MMS_FA bundle"
 
         if not is_module_available("uroman"):
             raise ImportError(

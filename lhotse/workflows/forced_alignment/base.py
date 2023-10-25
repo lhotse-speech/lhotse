@@ -59,7 +59,7 @@ class ForcedAligner(abc.ABC):
             try:
                 pre_alignment = self.align(audio, transcript)
             except FailedToAlign:
-                logging.info(
+                logging.exception(
                     f"Failed to align supervision '{sup.id}' for cut '{cut.id}'. Writing it without alignment."
                 )
                 continue

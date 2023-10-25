@@ -50,7 +50,8 @@ def align_with_torchaudio(
 
     :param cuts: input CutSet.
     :param bundle_name: name of the selected pretrained model from torchaudio.
-        By default, we use WAV2VEC2_ASR_BASE_960H.
+        By default, we use WAV2VEC2_ASR_BASE_960H (English only).
+        In order to use a multilingual alignment model, use bundle_name='MMS_FA'.
     :param device: device on which to run the computation.
     :param normalize_text: by default, we'll try to normalize the text by making
         it uppercase and discarding symbols outside of model's character level vocabulary.

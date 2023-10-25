@@ -141,12 +141,19 @@ def annotate_with_whisper(
     "outside of model's character level vocabulary. If this causes issues, "
     "turn the option off and normalize the text yourself.",
 )
+@click.option(
+    "-j",
+    "--num-jobs",
+    default=1,
+    help="Number of parallel jobs to run.",
+)
 def align_with_torchaudio(
     in_cuts: str,
     out_cuts: str,
     bundle_name: str,
     device: str,
     normalize_text: bool,
+    num_jobs: int = 1,
 ):
     """
     Use a pretrained ASR model from torchaudio to force align IN_CUTS (a Lhotse CutSet)
@@ -171,6 +178,8 @@ def align_with_torchaudio(
                 bundle_name=bundle_name,
                 device=device,
                 normalize_text=normalize_text,
+                num_jobs=num_jobs,
+                verbose=False,
             ),
             total=len(cuts),
             desc="Aligning",

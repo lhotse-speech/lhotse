@@ -83,6 +83,35 @@ class ParallelExecutor:
     """
     A class which uses ProcessPoolExecutor to parallelize the execution of a callable class.
     The instances of the runner class are instantiated separately in each worker process.
+
+    Example::
+
+        >>> class MyRunner:
+        ...     def __init__(self):
+        ...         self.name = name
+        ...     def __call__(self, x):
+        ...         return f'processed: {x}'
+        ...
+        >>> runner = ParallelExecutor(MyRunner, num_jobs=4)
+        >>> for item in runner(range(10)):
+        ...     print(item)
+
+    If the __init__ method of the callable class accepts parameters except for `self`,
+    use `functools.partial` or similar method to obtain a proper initialization function:
+
+        >>> class MyRunner:
+        ...     def __init__(self, name):
+        ...         self.name = name
+        ...     def __call__(self, x):
+        ...         return f'{self.name}: {x}'
+        ...
+        >>> runner = ParallelExecutor(partial(MyRunner, name='my_name'), num_jobs=4)
+        >>> for item in runner(range(10)):
+        ...     print(item)
+
+
+    The initialization function will be called separately for each worker process. Steps like loading a
+    PyTorch model instance to the selected device should be done inside the initialization function.
     """
 
     _runners: Dict[Optional[int], Callable] = {}
@@ -94,6 +123,15 @@ class ParallelExecutor:
         verbose: bool = False,
         description: str = "Processing",
     ):
+        """
+        Instantiate a parallel executor.
+
+        :param init_fn: A function which returns a runner object (e.g. a class) that will be instantiated
+            in each worker process.
+        :param num_jobs: The number of parallel jobs to run. Defaults to 1 (no parallelism).
+        :param verbose: Whether to show a progress bar.
+        :param description: The description to show in the progress bar.
+        """
         self._make_runner = init_fn
         self.num_jobs = num_jobs
         self.verbose = verbose
