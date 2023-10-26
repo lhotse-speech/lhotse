@@ -21,10 +21,12 @@ def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manife
         )
         return fastcopy(
             manifest,
-            # creates a single AudioSource out of multiple ones
+            # Creates a single AudioSource out of multiple ones.
             sources=[
                 AudioSource(type="shar", channels=manifest.channel_ids, source="")
             ],
+            # Removes the transform metadata because they were already executed.
+            transforms=None,
             **kwargs,
         )
     # TODO: modify Features/TemporalArray's start/duration/num_frames if needed to match the Cut (in case we read subset of array)
