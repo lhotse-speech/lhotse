@@ -1,5 +1,7 @@
 # pylint: disable=C0415,R0913,R0914
 import sys
+from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +10,7 @@ from tqdm import tqdm
 
 from lhotse import CutSet, RecordingSet, SupervisionSet
 from lhotse.bin.modes.cli_base import cli
+from lhotse.parallel import ParallelExecutor
 from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import PythonLiteralOption, exactly_one_not_null
 
@@ -138,12 +141,25 @@ def annotate_with_whisper(
     "outside of model's character level vocabulary. If this causes issues, "
     "turn the option off and normalize the text yourself.",
 )
+@click.option(
+    "-j",
+    "--num-jobs",
+    default=1,
+    help="Number of parallel jobs to run.",
+)
+@click.option(
+    "--check-language/--dont-check-language",
+    default=True,
+    help="If `False`, warnings about non-existent language tags in supervisions will be suppressed.",
+)
 def align_with_torchaudio(
     in_cuts: str,
     out_cuts: str,
     bundle_name: str,
     device: str,
     normalize_text: bool,
+    num_jobs: int = 1,
+    check_language: bool = True,
 ):
     """
     Use a pretrained ASR model from torchaudio to force align IN_CUTS (a Lhotse CutSet)
@@ -153,6 +169,9 @@ def align_with_torchaudio(
 
     This is based on a tutorial from torchaudio:
     https://pytorch.org/audio/stable/tutorials/forced_alignment_tutorial.html
+
+    In order to use a multilingual alignment model, use `--bundle_name MMS_FA`.
+    (based on the multilingual tutorial: https://pytorch.org/audio/main/tutorials/forced_alignment_for_multilingual_data_tutorial.html)
 
     Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
     high quality of data.
@@ -168,6 +187,9 @@ def align_with_torchaudio(
                 bundle_name=bundle_name,
                 device=device,
                 normalize_text=normalize_text,
+                num_jobs=num_jobs,
+                verbose=False,
+                check_language=check_language,
             ),
             total=len(cuts),
             desc="Aligning",
@@ -479,11 +501,7 @@ def activity_detection(
 
     import warnings
 
-    from lhotse.workflows.activity_detection import (
-        ActivityDetectionProcessor,
-        SileroVAD8k,
-        SileroVAD16k,
-    )
+    from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
 
     warnings.filterwarnings("ignore")
 
@@ -535,14 +553,17 @@ def activity_detection(
         detector_kls("cpu")
 
     print(f"Making activity detection processor for {model_name!r}...")
-    processor = ActivityDetectionProcessor(
-        detector_kls=detector_kls,
+    detector_init_fn = partial(detector_kls, device=device)
+    processor = ParallelExecutor(
+        init_fn=detector_init_fn,
         num_jobs=jobs,
-        device=device,
         verbose=True,
+        description="Running VAD",
     )
     print(f"Running activity detection using {model_name!r}...")
-    supervisions = processor(recordings)
+    supervisions = SupervisionSet.from_segments(
+        chain.from_iterable(processor(recordings))
+    )
 
     print(f"Saving {model_name!r} results ...")
     supervisions.to_file(str(sups_path))

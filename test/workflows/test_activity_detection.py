@@ -1,19 +1,18 @@
 import json
 import tempfile
 from contextlib import suppress
+from functools import partial
+from itertools import chain
 from pathlib import Path
 
 import pytest
 import torch
 from click.testing import CliRunner
 
-from lhotse import CutSet, RecordingSet, SupervisionSegment
+from lhotse import CutSet, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.bin.modes.workflows import activity_detection
-from lhotse.workflows.activity_detection import (
-    ActivityDetectionProcessor,
-    SileroVAD8k,
-    SileroVAD16k,
-)
+from lhotse.parallel import ParallelExecutor
+from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
 
 
 def _check_torch_version(greater_than: str):
@@ -46,8 +45,10 @@ def test_silero_vad_in_parallel():
 
     cuts = CutSet.from_file("test/fixtures/ljspeech/cuts.json")
     recordings = RecordingSet.from_recordings([cut.recording for cut in cuts])
-    processor = ActivityDetectionProcessor(SileroVAD8k, num_jobs=2, device="cpu")
-    supervisions = processor(recordings)
+    processor = ParallelExecutor(partial(SileroVAD8k, device="cpu"), num_jobs=2)
+    supervisions = SupervisionSet.from_segments(
+        chain.from_iterable(processor(recordings))
+    )
     newcuts = CutSet.from_manifests(
         recordings=recordings,
         supervisions=supervisions,
