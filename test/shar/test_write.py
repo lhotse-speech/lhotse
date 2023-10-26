@@ -175,7 +175,11 @@ def test_shar_writer_custom_nondata_attribute(tmp_path: Path):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=20)
 
     # Prepare system under test
-    writer = SharWriter(tmp_path, fields={"custom_attribute": "jsonl"}, shard_size=10,)
+    writer = SharWriter(
+        tmp_path,
+        fields={"custom_attribute": "jsonl"},
+        shard_size=10,
+    )
 
     # Actual test
     with writer:
@@ -232,7 +236,11 @@ def test_shar_writer_custom_nondata_attribute_missing(tmp_path: Path):
             del c.custom["custom_attribute"]
 
     # Prepare system under test
-    writer = SharWriter(tmp_path, fields={"custom_attribute": "jsonl"}, shard_size=10,)
+    writer = SharWriter(
+        tmp_path,
+        fields={"custom_attribute": "jsonl"},
+        shard_size=10,
+    )
 
     # Actual test
     with writer:
@@ -353,7 +361,10 @@ def test_cut_set_to_shar_not_include_cuts(tmp_path: Path):
 
     # Prepare system under test
     output_paths = cuts.to_shar(
-        tmp_path, fields={"recording": "wav"}, shard_size=10, include_cuts=False,
+        tmp_path,
+        fields={"recording": "wav"},
+        shard_size=10,
+        include_cuts=False,
     )
 
     # Post-conditions
@@ -429,13 +440,27 @@ def test_shar_writer_not_sharded(tmp_path: Path):
     # Post-conditions
 
     assert writer.output_paths == {
-        "cuts": [str(tmp_path / "cuts.jsonl.gz"),],
-        "recording": [str(tmp_path / "recording.tar"),],
-        "features": [str(tmp_path / "features.tar"),],
-        "custom_embedding": [str(tmp_path / "custom_embedding.tar"),],
-        "custom_features": [str(tmp_path / "custom_features.tar"),],
-        "custom_indexes": [str(tmp_path / "custom_indexes.tar"),],
-        "custom_recording": [str(tmp_path / "custom_recording.tar"),],
+        "cuts": [
+            str(tmp_path / "cuts.jsonl.gz"),
+        ],
+        "recording": [
+            str(tmp_path / "recording.tar"),
+        ],
+        "features": [
+            str(tmp_path / "features.tar"),
+        ],
+        "custom_embedding": [
+            str(tmp_path / "custom_embedding.tar"),
+        ],
+        "custom_features": [
+            str(tmp_path / "custom_features.tar"),
+        ],
+        "custom_indexes": [
+            str(tmp_path / "custom_indexes.tar"),
+        ],
+        "custom_recording": [
+            str(tmp_path / "custom_recording.tar"),
+        ],
     }
 
     # - we created 2 shards with cutsets and a separate file for each data field
