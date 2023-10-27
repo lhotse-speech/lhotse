@@ -403,6 +403,17 @@ def test_cut_set_to_shar_not_include_cuts(tmp_path: Path):
     assert not (tmp_path / "recording.000002.tar").exists()
 
 
+def test_cut_set_to_shar_recordings_with_transforms(tmp_path: Path):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True).resample(8000)
+    cuts[0].features = None
+    cuts[0].custom = None
+    output_paths = cuts.to_shar(tmp_path, fields={"recording": "wav"})
+    restored = CutSet.from_shar(fields=output_paths)
+    assert len(restored) == 1
+    samples = restored[0].load_audio()
+    assert samples.shape == (1, 8000)
+
+
 def test_shar_writer_not_sharded(tmp_path: Path):
     # Prepare data
     cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
