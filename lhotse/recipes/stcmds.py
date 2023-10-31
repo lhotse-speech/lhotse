@@ -104,7 +104,7 @@ def prepare_stcmds(
         supervisions = []
         for audio_path in path.rglob("**/*.wav"):
             idx = audio_path.stem
-            speaker = "".join(list(idx)[8:14])
+            speaker = "".join(list(idx)[8:15])
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
                 logging.warning(f"{audio_path} has no transcript")
