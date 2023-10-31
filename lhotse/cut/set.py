@@ -525,6 +525,11 @@ class CutSet(Serializable, AlgorithmMixin):
             argument. It will cause the iterator to shuffle shards differently on each node
             and dataloading worker in PyTorch training. This is mutually exclusive with
             ``split_for_dataloading=True``.
+            Seed can be set to ``'trng'`` which, like ``'randomized'``, shuffles the shards
+            differently on each iteration, but is not possible to control (and is not reproducible).
+            ``trng`` mode is mostly useful when the user has limited control over the training loop
+            and may not be able to guarantee internal Shar epoch is being incremented, but needs
+            randomness on each iteration (e.g. useful with PyTorch Lightning).
         :param stateful_shuffle: bool, by default ``False``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
