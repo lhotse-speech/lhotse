@@ -234,7 +234,7 @@ class LazySharIterator(ImitatesDict):
                     seed = int(os.environ[LHOTSE_PROCESS_SEED])
 
             if seed == "trng":
-                seed = secrets.randbelow(2 ** 32)
+                seed = secrets.randbelow(2**32)
 
             if self.stateful_shuffle:
                 seed += self.epoch
