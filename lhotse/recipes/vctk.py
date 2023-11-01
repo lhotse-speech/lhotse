@@ -144,7 +144,7 @@ def prepare_vctk(
     mic_id: Optional[str] = "mic2",
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
-    Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
+    Prepares and returns the VCTK manifests which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
