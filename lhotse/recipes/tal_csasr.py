@@ -40,7 +40,7 @@ def text_normalize(line: str):
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
     line = re.sub(
-        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line
+        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|.', "", line
     )
     line = line.replace("Ｅ", "E")
     line = line.replace("Ｎ", "N")
@@ -91,7 +91,6 @@ def prepare_tal_csasr(
         )
 
         for audio_path in wav_path.rglob("**/*.wav"):
-
             idx = audio_path.stem
             speaker = idx
             if idx not in transcript_dict:
