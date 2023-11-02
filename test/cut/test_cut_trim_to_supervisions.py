@@ -16,7 +16,7 @@ def mono_cut():
         |-------------------Cut1--------------------|
     """
     rec = Recording(
-        id="rec1", duration=11.0, sampling_rate=8000, num_samples=80000, sources=[]
+        id="rec1", duration=10.0, sampling_rate=8000, num_samples=80000, sources=[]
     )
     sups = [
         SupervisionSegment(
@@ -27,9 +27,9 @@ def mono_cut():
             text="Hey, Matt!",
             alignment={
                 "word": [
-                    AlignmentItem(symbol="Hey", start=1.0, duration=0.5),
-                    AlignmentItem(symbol="", start=1.5, duration=0.4),
-                    AlignmentItem(symbol="Matt", start=1.9, duration=2.0),
+                    AlignmentItem(symbol="Hey", start=0.0, duration=0.5),
+                    AlignmentItem(symbol="", start=0.5, duration=0.4),
+                    AlignmentItem(symbol="Matt", start=0.9, duration=2.0),
                 ]
             },
         ),
@@ -41,7 +41,7 @@ def mono_cut():
             text="Yes?",
             alignment={
                 "word": [
-                    AlignmentItem(symbol="Yes", start=5.6, duration=0.5),
+                    AlignmentItem(symbol="Yes", start=4.6, duration=0.5),
                 ]
             },
         ),
@@ -53,15 +53,15 @@ def mono_cut():
             text="Oh, nothing",
             alignment={
                 "word": [
-                    AlignmentItem(symbol="Oh", start=5.9, duration=0.5),
-                    AlignmentItem(symbol="nothing", start=6.5, duration=3.0),
+                    AlignmentItem(symbol="Oh", start=4.9, duration=0.5),
+                    AlignmentItem(symbol="nothing", start=5.5, duration=3.0),
                 ]
             },
         ),
     ]
     return MonoCut(
         id="rec1-cut1",
-        start=1.0,
+        start=0.0,
         duration=10.0,
         channel=0,
         recording=rec,
@@ -129,6 +129,71 @@ def mono_cut2():
         id="rec1-cut1",
         start=0.0,
         duration=6.0,
+        channel=0,
+        recording=rec,
+        supervisions=sups,
+    )
+
+
+@pytest.fixture
+def mono_cut3():
+    """
+    Scenario::
+
+    |---------------------Recording-----------------|
+           "Hey, Matt!"  "Yes?"
+        |--------------| |-----|  "Oh, nothing"
+                             |------------------|
+        |-------------------Cut1--------------------|
+    """
+    rec = Recording(
+        id="rec1", duration=11.0, sampling_rate=8000, num_samples=80000, sources=[]
+    )
+    sups = [
+        SupervisionSegment(
+            id="sup1",
+            recording_id="rec1",
+            start=0.0,
+            duration=3.37,
+            text="Hey, Matt!",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Hey", start=1.0, duration=0.5),
+                    AlignmentItem(symbol="", start=1.5, duration=0.4),
+                    AlignmentItem(symbol="Matt", start=1.9, duration=2.0),
+                ]
+            },
+        ),
+        SupervisionSegment(
+            id="sup2",
+            recording_id="rec1",
+            start=4.5,
+            duration=0.9,
+            text="Yes?",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Yes", start=5.6, duration=0.5),
+                ]
+            },
+        ),
+        SupervisionSegment(
+            id="sup3",
+            recording_id="rec1",
+            start=4.9,
+            duration=4.3,
+            text="Oh, nothing",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Oh", start=5.9, duration=0.5),
+                    AlignmentItem(symbol="nothing", start=6.5, duration=3.0),
+                ]
+            },
+        ),
+    ]
+    return MonoCut(
+        id="rec1-cut1",
+        start=1.0,
+        duration=10.0,
         channel=0,
         recording=rec,
         supervisions=sups,
@@ -310,7 +375,7 @@ def test_cut_trim_to_supervisions_no_keep_overlapping_extend(mono_cut):
     # Extended on the right side only by (4.0 - 3.37) / 2 == 0.315;
     # the left side is capped by the start of the recording.
     assert len(c1.supervisions) == 1
-    assert c1.start == 1.0
+    assert c1.start == 0.0
     assert c1.duration == 3.37 + (4.0 - 3.37) / 2 == 3.37 + 0.315 == 3.685
     (s1,) = c1.supervisions
     assert s1.start == 0.0
@@ -318,7 +383,7 @@ def test_cut_trim_to_supervisions_no_keep_overlapping_extend(mono_cut):
 
     # Extended on both sides by (4.0 - 0.9) / 2 == 1.55, respectively.
     assert len(c2.supervisions) == 1
-    assert c2.start == 5.5 - 1.55 == 3.95
+    assert c2.start == 4.5 - 1.55 == 2.95
     assert c2.duration == 4.0
     (s2,) = c2.supervisions
     assert s2.start == 1.55
@@ -326,7 +391,7 @@ def test_cut_trim_to_supervisions_no_keep_overlapping_extend(mono_cut):
 
     # Unaffected by extension because min_duration == 4 < c3.duration == 4.3
     assert len(c3.supervisions) == 1
-    assert c3.start == 5.9
+    assert c3.start == 4.9
     assert c3.duration == 4.3
     (s3,) = c3.supervisions
     assert s3.start == 0
@@ -363,7 +428,7 @@ def test_cut_trim_to_supervisions_keep_overlapping_extend(mono_cut):
     # Extended on the right side only by (4.0 - 3.37) / 2 == 0.315;
     # the left side is capped by the start of the recording.
     assert len(c1.supervisions) == 1
-    assert c1.start == 1.0
+    assert c1.start == 0.0
     assert c1.duration == 3.685
     (c1_s1,) = c1.supervisions
     assert c1_s1.start == 0.0
@@ -371,7 +436,7 @@ def test_cut_trim_to_supervisions_keep_overlapping_extend(mono_cut):
 
     # Extended on both sides by (4.0 - 0.9) / 2 == 1.55, respectively.
     assert len(c2.supervisions) == 3
-    assert c2.start == 3.95
+    assert c2.start == 2.95
     assert c2.duration == 4.0
     c2_s1, c2_s2, c2_s3 = c2.supervisions
     assert c2_s1.start == -2.95
@@ -383,7 +448,7 @@ def test_cut_trim_to_supervisions_keep_overlapping_extend(mono_cut):
 
     # Unaffected by extension because min_duration == 4 < c3.duration == 4.3
     assert len(c3.supervisions) == 2
-    assert c3.start == 5.9
+    assert c3.start == 4.9
     assert c3.duration == 4.3
     c3_s1, c3_s2 = c3.supervisions
     assert c3_s1.start == -0.4
@@ -507,9 +572,9 @@ def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(multi_cu
     [(0.0, None, 5), (0.1, 5, 4), (0.1, 2, 5), (0.2, None, 4)],
 )
 def test_cut_trim_to_alignments(
-    mono_cut, max_pause, max_segment_duration, expected_cuts
+    mono_cut3, max_pause, max_segment_duration, expected_cuts
 ):
-    cuts = mono_cut.trim_to_alignments(
+    cuts = mono_cut3.trim_to_alignments(
         "word", max_pause=max_pause, max_segment_duration=max_segment_duration
     )
     assert len(cuts) == expected_cuts
