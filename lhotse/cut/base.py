@@ -614,7 +614,7 @@ class Cut:
                     SupervisionSegment(
                         id=f"{segment.id}-{i}",
                         recording_id=segment.recording_id,
-                        start=item.start,
+                        start=item.start - self.start,  # relative to the cut
                         duration=item.duration,
                         channel=segment.channel,
                         text=item.symbol,

@@ -246,12 +246,7 @@ class SupervisionSegment:
             speaker=self.speaker,
             gender=self.gender,
             custom=self.custom,
-            alignment={
-                type: [item.with_offset(offset=offset) for item in ali]
-                for type, ali in self.alignment.items()
-            }
-            if self.alignment
-            else None,
+            alignment=self.alignment,
         )
 
     def perturb_speed(
