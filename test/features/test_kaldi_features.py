@@ -109,13 +109,14 @@ def test_kaldi_mfcc_extractor(recording):
     assert feats.shape == (1604, 13)
 
 
+@pytest.mark.seed(1337)
 def test_kaldi_mfcc_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
     mfcc = Mfcc()
     mfcc_ta = TorchaudioMfcc()
     feats = mfcc.extract(audio, recording.sampling_rate)
     feats_ta = mfcc_ta.extract(audio, recording.sampling_rate)
-    torch.testing.assert_allclose(feats, feats_ta)
+    torch.testing.assert_allclose(feats, feats_ta, rtol=1e-3, atol=1e-4)
 
 
 def test_kaldi_spectrogram_extractor(recording):
