@@ -34,11 +34,18 @@ __all__ = ["librispeech"]
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
+@click.option(
+    "--to-lowercase",
+    type=bool,
+    default=False,
+    help="Conversion of transcripts to lower-vase (originally in uppercase).",
+)
 def librispeech(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     alignments_dir: Pathlike,
     dataset_parts: Sequence[str],
+    to_lowercase: bool,
     num_jobs: int,
 ):
     """(Mini) Librispeech ASR data preparation."""
@@ -50,6 +57,7 @@ def librispeech(
         alignments_dir=alignments_dir,
         num_jobs=num_jobs,
         dataset_parts=dataset_parts,
+        to_lowercase=to_lowercase,
     )
 
 
