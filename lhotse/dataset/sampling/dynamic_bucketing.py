@@ -63,7 +63,7 @@ class DynamicBucketingSampler(CutSampler):
     def __init__(
         self,
         *cuts: Iterable[Cut],
-        max_duration: float,
+        max_duration: Seconds,
         max_cuts: Optional[int] = None,
         num_buckets: int = 10,
         shuffle: bool = False,

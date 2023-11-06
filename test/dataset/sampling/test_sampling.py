@@ -51,6 +51,28 @@ def test_dynamic_cut_sampler_max_cuts():
     assert tot == 4
 
 
+def test_dynamic_cut_sampler_quadratic_duration():
+    # 2 cuts of 2s followed by 3 cuts of 1s
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=5)
+    for i, c in enumerate(cut_set):
+        if i < 2:
+            c.duration = 2.0
+
+    # at quadratic_duration=2.0, cuts of 1s have 1.5s and cuts of 2s have 4s
+    sampler = DynamicCutSampler(cut_set, max_duration=8.0, quadratic_duration=2.0)
+
+    batches = [b for b in sampler]
+    assert len(batches) == 2
+
+    b = batches[0]
+    assert len(b) == 2
+    assert sum(c.duration for c in b) == 4.0
+
+    b = batches[1]
+    assert len(b) == 3
+    assert sum(c.duration for c in b) == 3.0
+
+
 @pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
 def test_single_cut_sampler_shuffling(sampler_cls):
     # The dummy cuts have a duration of 1 second each
