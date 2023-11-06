@@ -1,5 +1,6 @@
 from typing import Callable, Dict, List, Sequence, Union
 
+import numpy as np
 import torch
 
 from lhotse import validate
@@ -32,6 +33,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         feature_input_strategy: BatchIO = PrecomputedFeatures(),
         feature_transforms: Union[Sequence[Callable], Callable] = None,
+        speaker_ids: List[str] = None,
         add_eos: bool = True,
         add_bos: bool = True,
     ) -> None:
@@ -41,6 +43,9 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
         self.cut_transforms = ifnone(cut_transforms, [])
         self.feature_input_strategy = feature_input_strategy
+        self.speaker_ids = speaker_ids
+        if speaker_ids is not None:
+            self.sid_to_onehot_map = get_sid_to_onehot_map(speaker_ids)
 
         if feature_transforms is None:
             feature_transforms = []
@@ -65,6 +70,10 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             features = transform(features)
 
         tokens, tokens_lens = self.token_collater(cuts)
+        if self.speaker_ids is not None:
+            speakers = torch.tensor(
+                [self.sid_to_onehot_map[cut.supervisions[0].speaker] for cut in cuts]
+            )
 
         return {
             "audio": audio,
@@ -73,6 +82,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             "audio_lens": audio_lens,
             "features_lens": features_lens,
             "tokens_lens": tokens_lens,
+            "speakers": speakers,
         }
 
 
@@ -82,3 +92,12 @@ def validate_for_tts(cuts: CutSet) -> None:
         assert (
             len(cut.supervisions) == 1
         ), "Only the Cuts with single supervision are supported."
+
+
+def get_sid_to_onehot_map(sid_list) -> Dict[str, np.ndarray]:
+    sid_to_onehot_map = {}
+    for index, sid in enumerate(sid_list):
+        sid_onehot_vector = np.zeros(len(sid_list))
+        sid_onehot_vector[index] = 1
+        sid_to_onehot_map[sid] = sid_onehot_vector
+    return sid_to_onehot_map
