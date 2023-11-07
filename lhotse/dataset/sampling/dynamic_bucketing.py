@@ -69,6 +69,7 @@ class DynamicBucketingSampler(CutSampler):
         shuffle: bool = False,
         drop_last: bool = False,
         consistent_ids: bool = True,
+        duration_bins: List[Seconds] = None,
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 10000,
         shuffle_buffer_size: int = 20000,
@@ -96,6 +97,8 @@ class DynamicBucketingSampler(CutSampler):
         :param consistent_ids: Only affects processing of multiple CutSets.
             When ``True``, at each sampling step we check cuts from all CutSets have the same ID
             (i.e., the first cut from every CutSet should have the same ID, same for the second, third, etc.).
+        :param duration_bins: A list of floats (seconds); when provided, we'll skip the initial
+            estimation of bucket duration bins (useful to speed-up the launching of experiments).
         :param num_cuts_for_bins_estimate: We will draw this many cuts to estimate the duration bins
             for creating similar-duration buckets.
             Larger number means a better estimate to the data distribution, possibly at a longer init cost.
@@ -151,10 +154,20 @@ class DynamicBucketingSampler(CutSampler):
             )
         else:
             cuts_for_bins_estimate = self.cuts[0]
-        self.duration_bins = estimate_duration_buckets(
-            islice(cuts_for_bins_estimate, num_cuts_for_bins_estimate),
-            num_buckets=num_buckets,
-        )
+        if duration_bins is not None:
+            assert len(duration_bins) == num_buckets - 1, (
+                f"num_buckets=={num_buckets} but len(duration_bins)=={len(duration_bins)} "
+                f"(bins are the boundaries, it should be one less than the number of buckets)."
+            )
+            assert list(duration_bins) == sorted(
+                duration_bins
+            ), "Duration bins must be sorted ascendingly."
+            self.duration_bins = duration_bins
+        else:
+            self.duration_bins = estimate_duration_buckets(
+                islice(cuts_for_bins_estimate, num_cuts_for_bins_estimate),
+                num_buckets=num_buckets,
+            )
 
     def state_dict(self) -> Dict[str, Any]:
         sd = super().state_dict()
