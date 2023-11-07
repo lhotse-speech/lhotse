@@ -114,7 +114,7 @@ def prepare_librispeech(
     alignments_dir: Optional[Pathlike] = None,
     dataset_parts: Union[str, Sequence[str]] = "auto",
     output_dir: Optional[Pathlike] = None,
-    to_lowercase: bool = False,
+    normalize_text: str = "none",
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -127,7 +127,8 @@ def prepare_librispeech(
     :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
         By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param to_lowercase: Bool, if True, the transcripts are converted to lower-case.
+    :param normalize_text: str, "none" or "lower",
+        for "lower" the transcripts are converted to lower-case.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
@@ -207,7 +208,8 @@ def prepare_librispeech(
             recording_set = RecordingSet.from_recordings(recordings)
             supervision_set = SupervisionSet.from_segments(supervisions)
 
-            if to_lowercase:
+            # Normalize text to lowercase
+            if normalize_text == "lower":
                 to_lower = lambda text: text.lower()
                 supervision_set = SupervisionSet.from_segments(
                     [s.transform_text(to_lower) for s in supervision_set]
