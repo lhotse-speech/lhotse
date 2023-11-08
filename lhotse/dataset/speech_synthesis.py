@@ -24,6 +24,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             'audio_lens': (B, ) int tensor
             'features_lens': (B, ) int tensor
             'tokens_lens': (B, ) int tensor
+            'speakers': (B) int tensor (optional)
         }
     """
 
