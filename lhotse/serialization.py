@@ -601,7 +601,12 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
 if is_module_available("orjson"):
     import orjson
 
-    decode_json_line = orjson.loads
+    def decode_json_line(line):
+        try:
+            return orjson.loads(line)
+        except:
+            return json.loads(line)
+
 else:
     decode_json_line = json.loads
 

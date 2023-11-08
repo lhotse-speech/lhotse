@@ -564,6 +564,7 @@ class CutSet(Serializable, AlgorithmMixin):
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
         num_jobs: int = 1,
+        fault_tolerant: bool = False,
         verbose: bool = False,
     ) -> Dict[str, List[str]]:
         """
@@ -615,6 +616,9 @@ class CutSet(Serializable, AlgorithmMixin):
             as the export will likely be bottlenecked by I/O speed in these cases.
             Try experimenting with 4-8 jobs first.
 
+        The option ``fault_tolerant`` will skip over audio files that failed to load with a warning.
+        By default it is disabled.
+
         See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
@@ -631,6 +635,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 warn_unused_fields=warn_unused_fields,
                 include_cuts=include_cuts,
                 shard_suffix=None,
+                fault_tolerant=fault_tolerant,
                 verbose=verbose,
             )
 
@@ -652,6 +657,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         warn_unused_fields=warn_unused_fields,
                         include_cuts=True,
                         shard_suffix=f".{idx:06d}",
+                        fault_tolerant=fault_tolerant,
                         verbose=False,
                         preload=True,
                     )
@@ -3321,6 +3327,7 @@ def _export_to_shar_single(
     include_cuts: bool,
     shard_suffix: Optional[str],
     verbose: bool,
+    fault_tolerant: bool,
     preload: bool = False,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
@@ -3341,7 +3348,15 @@ def _export_to_shar_single(
         shard_suffix=shard_suffix,
     ) as writer:
         for cut in cuts:
-            writer.write(cut)
+            try:
+                writer.write(cut)
+            except Exception as e:
+                if fault_tolerant:
+                    logging.warning(
+                        "Skipping: failed to load cut '{cut.id}'. Error message: {e}."
+                    )
+                else:
+                    raise
             pbar.update()
 
     # Finally, return the list of output files.
