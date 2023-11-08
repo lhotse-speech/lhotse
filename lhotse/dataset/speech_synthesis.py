@@ -45,7 +45,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         self.feature_input_strategy = feature_input_strategy
         self.speaker_ids = speaker_ids
         if speaker_ids is not None:
-            self.sid_to_onehot_map = get_sid_to_onehot_map(speaker_ids)
+            self.sid_to_onehot_map = get_sid_to_index_map(speaker_ids)
 
         if feature_transforms is None:
             feature_transforms = []
@@ -94,10 +94,8 @@ def validate_for_tts(cuts: CutSet) -> None:
         ), "Only the Cuts with single supervision are supported."
 
 
-def get_sid_to_onehot_map(sid_list) -> Dict[str, np.ndarray]:
+def get_sid_to_index_map(sid_list) -> Dict[str, np.ndarray]:
     sid_to_onehot_map = {}
     for index, sid in enumerate(sid_list):
-        sid_onehot_vector = np.zeros(len(sid_list))
-        sid_onehot_vector[index] = 1
-        sid_to_onehot_map[sid] = sid_onehot_vector
+        sid_to_onehot_map[sid] = index
     return sid_to_onehot_map
