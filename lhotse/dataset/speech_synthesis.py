@@ -24,7 +24,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             'audio_lens': (B, ) int tensor
             'features_lens': (B, ) int tensor
             'tokens_lens': (B, ) int tensor
-            'speakers': (B) int tensor (optional)
+            'speakers': (B) long tensor (optional)
         }
     """
 
@@ -34,7 +34,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         feature_input_strategy: BatchIO = PrecomputedFeatures(),
         feature_transforms: Union[Sequence[Callable], Callable] = None,
-        speaker_ids: List[str] = None,
+        speaker_id_mapping: Dict[str, int] = None,
         add_eos: bool = True,
         add_bos: bool = True,
     ) -> None:
@@ -44,9 +44,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
         self.cut_transforms = ifnone(cut_transforms, [])
         self.feature_input_strategy = feature_input_strategy
-        self.speaker_ids = speaker_ids
-        if speaker_ids is not None:
-            self.sid_to_onehot_map = get_sid_to_index_map(speaker_ids)
+        self.speaker_id_mapping = speaker_id_mapping
 
         if feature_transforms is None:
             feature_transforms = []
@@ -71,20 +69,21 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             features = transform(features)
 
         tokens, tokens_lens = self.token_collater(cuts)
-        if self.speaker_ids is not None:
-            speakers = torch.tensor(
-                [self.sid_to_onehot_map[cut.supervisions[0].speaker] for cut in cuts]
-            )
-
-        return {
+        batch = {
             "audio": audio,
             "features": features,
             "tokens": tokens,
             "audio_lens": audio_lens,
             "features_lens": features_lens,
             "tokens_lens": tokens_lens,
-            "speakers": speakers,
         }
+        if self.speaker_id_mapping is not None:
+            batch["speakers"] = torch.tensor(
+                [self.speaker_id_mapping[cut.supervisions[0].speaker] for cut in cuts],
+                dtype=torch.long,
+            )
+        else:
+            return batch
 
 
 def validate_for_tts(cuts: CutSet) -> None:
