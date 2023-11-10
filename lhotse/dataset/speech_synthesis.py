@@ -34,9 +34,9 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         feature_input_strategy: BatchIO = PrecomputedFeatures(),
         feature_transforms: Union[Sequence[Callable], Callable] = None,
-        speaker_id_mapping: Dict[str, int] = None,
         add_eos: bool = True,
         add_bos: bool = True,
+        return_spk_ids: bool = False,
     ) -> None:
         super().__init__()
 
@@ -44,7 +44,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
         self.cut_transforms = ifnone(cut_transforms, [])
         self.feature_input_strategy = feature_input_strategy
-        self.speaker_id_mapping = speaker_id_mapping
+        self.return_spk_ids = return_spk_ids
 
         if feature_transforms is None:
             feature_transforms = []
@@ -77,13 +77,10 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             "features_lens": features_lens,
             "tokens_lens": tokens_lens,
         }
-        if self.speaker_id_mapping is not None:
-            batch["speakers"] = torch.tensor(
-                [self.speaker_id_mapping[cut.supervisions[0].speaker] for cut in cuts],
-                dtype=torch.long,
-            )
-        else:
-            return batch
+        if self.return_spk_ids:
+            batch["speakers"] = [cut.supervisions[0].speaker for cut in cuts]
+
+        return batch
 
 
 def validate_for_tts(cuts: CutSet) -> None:
