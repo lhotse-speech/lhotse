@@ -18,6 +18,7 @@ import warnings
 from collections import defaultdict
 from concurrent.futures.process import ProcessPoolExecutor
 from contextlib import contextmanager
+from multiprocessing import get_context as mp_get_context
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -198,7 +199,11 @@ def _prepare_part(
     tsv_path = lang_path / f"{part}.tsv"
 
     with disable_ffmpeg_torchaudio_info():
-        with ProcessPoolExecutor(num_jobs) as ex:
+        with ProcessPoolExecutor(
+            max_workers=num_jobs,
+            mp_context=mp_get_context("spawn"),
+        ) as ex:
+
             futures = []
             recordings = []
             supervisions = []
