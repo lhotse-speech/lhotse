@@ -18,11 +18,15 @@ from lhotse.utils import Pathlike
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
 def medical(
-    corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, num_jobs: int = 1,
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
+    num_jobs: int = 1,
 ):
     """Medical data preparation."""
     prepare_medical(
-        corpus_dir=corpus_dir, output_dir=output_dir, num_jobs=num_jobs,
+        corpus_dir=corpus_dir,
+        output_dir=output_dir,
+        num_jobs=num_jobs,
     )
 
 
@@ -30,9 +34,11 @@ def medical(
 @click.argument("target_dir", type=click.Path())
 @click.option("--force-download", is_flag=True, default=False, help="Force download")
 def medical(
-    target_dir: Pathlike, force_download: Optional[bool] = False,
+    target_dir: Pathlike,
+    force_download: Optional[bool] = False,
 ):
     """Medical download."""
     download_medical(
-        target_dir=target_dir, force_download=force_download,
+        target_dir=target_dir,
+        force_download=force_download,
     )

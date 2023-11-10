@@ -38,7 +38,10 @@ MEDICAL_SPLITS = (
 )
 
 
-def download_medical(target_dir: Pathlike = ".", force_download: bool = False,) -> Path:
+def download_medical(
+    target_dir: Pathlike = ".",
+    force_download: bool = False,
+) -> Path:
     """
     Download and unzip Medical dataset
 
@@ -58,7 +61,9 @@ def download_medical(target_dir: Pathlike = ".", force_download: bool = False,) 
         part_path = target_dir / part
         part_dir = str(part_path).replace(".tar.gz", "")
         resumable_download(
-            MEDICAL_BASE_URL + part, filename=part_path, force_download=force_download,
+            MEDICAL_BASE_URL + part,
+            filename=part_path,
+            force_download=force_download,
         )
         # Remove partial unpacked files, if any, and unpack everything.
         if "tar.gz" in part:
@@ -70,7 +75,8 @@ def download_medical(target_dir: Pathlike = ".", force_download: bool = False,) 
 
 
 def _parse_utterance(
-    corpus_dir: Pathlike, audio_info: str,
+    corpus_dir: Pathlike,
+    audio_info: str,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     audio_path, start, end, text = (
         audio_info.replace(",", "\t").replace("[", "\t").replace("]", "").split("\t")
@@ -97,7 +103,9 @@ def _parse_utterance(
 
 
 def _prepare_subset(
-    subset: str, corpus_dir: Pathlike, num_jobs: int = 1,
+    subset: str,
+    corpus_dir: Pathlike,
+    num_jobs: int = 1,
 ) -> Tuple[RecordingSet, SupervisionSet]:
     """
     Returns the RecodingSet and SupervisionSet given a dataset part.
@@ -138,7 +146,9 @@ def _prepare_subset(
 
 
 def prepare_medical(
-    corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, num_jobs: int = 1,
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -163,7 +173,10 @@ def prepare_medical(
     for part in tqdm(subsets, desc="Dataset parts"):
         logging.info(f"Processing Medical subset: {part}")
         if manifests_exist(
-            part=part, output_dir=output_dir, prefix="medical", suffix="jsonl.gz",
+            part=part,
+            output_dir=output_dir,
+            prefix="medical",
+            suffix="jsonl.gz",
         ):
             logging.info(f"Medical subset: {part} already prepared - skipping.")
             continue
