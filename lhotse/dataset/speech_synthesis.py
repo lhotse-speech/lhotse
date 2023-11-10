@@ -88,10 +88,3 @@ def validate_for_tts(cuts: CutSet) -> None:
         assert (
             len(cut.supervisions) == 1
         ), "Only the Cuts with single supervision are supported."
-
-
-def get_sid_to_index_map(sid_list) -> Dict[str, int]:
-    sid_to_onehot_map = {}
-    for index, sid in enumerate(sid_list):
-        sid_to_onehot_map[sid] = index
-    return sid_to_onehot_map
