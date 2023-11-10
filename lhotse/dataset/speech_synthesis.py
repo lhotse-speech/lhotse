@@ -1,6 +1,5 @@
 from typing import Callable, Dict, List, Sequence, Union
 
-import numpy as np
 import torch
 
 from lhotse import validate
