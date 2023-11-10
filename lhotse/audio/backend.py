@@ -431,10 +431,10 @@ def torchaudio_2_0_ffmpeg_enabled() -> bool:
     from packaging import version
 
     ver = version.parse(torchaudio.__version__)
-    if ver >= version.parse("2.0"):
-        return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "0") == "1"
     if ver >= version.parse("2.1.0"):
         return True
+    if ver >= version.parse("2.0"):
+        return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "0") == "1"
     return False
 
 
