@@ -153,7 +153,12 @@ def test_dynamic_bucketing_sampler_precomputed_duration_bins():
 
     # all cuts actually go into bucket 1 and bucket 0 is always empty
     sampler = DynamicBucketingSampler(
-        cuts, max_duration=5, num_buckets=2, duration_bins=[0.5], seed=0, shuffle=True,
+        cuts,
+        max_duration=5,
+        num_buckets=2,
+        duration_bins=[0.5],
+        seed=0,
+        shuffle=True,
     )
     next(iter(sampler))
 
