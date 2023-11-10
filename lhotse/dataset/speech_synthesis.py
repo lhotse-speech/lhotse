@@ -23,7 +23,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             'audio_lens': (B, ) int tensor
             'features_lens': (B, ) int tensor
             'tokens_lens': (B, ) int tensor
-            'speakers': (B) long tensor (optional)
+            'speakers': List[str] of len B (optional) # if return_spk_ids is True
         }
     """
 
