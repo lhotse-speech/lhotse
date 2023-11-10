@@ -136,6 +136,71 @@ def mono_cut2():
 
 
 @pytest.fixture
+def mono_cut3():
+    """
+    Scenario::
+
+    |---------------------Recording-----------------|
+           "Hey, Matt!"  "Yes?"
+        |--------------| |-----|  "Oh, nothing"
+                             |------------------|
+        |-------------------Cut1--------------------|
+    """
+    rec = Recording(
+        id="rec1", duration=11.0, sampling_rate=8000, num_samples=80000, sources=[]
+    )
+    sups = [
+        SupervisionSegment(
+            id="sup1",
+            recording_id="rec1",
+            start=0.0,
+            duration=3.37,
+            text="Hey, Matt!",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Hey", start=1.0, duration=0.5),
+                    AlignmentItem(symbol="", start=1.5, duration=0.4),
+                    AlignmentItem(symbol="Matt", start=1.9, duration=2.0),
+                ]
+            },
+        ),
+        SupervisionSegment(
+            id="sup2",
+            recording_id="rec1",
+            start=4.5,
+            duration=0.9,
+            text="Yes?",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Yes", start=5.6, duration=0.5),
+                ]
+            },
+        ),
+        SupervisionSegment(
+            id="sup3",
+            recording_id="rec1",
+            start=4.9,
+            duration=4.3,
+            text="Oh, nothing",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Oh", start=5.9, duration=0.5),
+                    AlignmentItem(symbol="nothing", start=6.5, duration=3.0),
+                ]
+            },
+        ),
+    ]
+    return MonoCut(
+        id="rec1-cut1",
+        start=1.0,
+        duration=10.0,
+        channel=0,
+        recording=rec,
+        supervisions=sups,
+    )
+
+
+@pytest.fixture
 def multi_cut():
     """
     Scenario::
@@ -241,7 +306,7 @@ def test_cut_trim_to_supervisions_no_keep_overlapping(mono_cut):
     cuts = mono_cut.trim_to_supervisions(keep_overlapping=False)
     assert len(cuts) == 3
     for cut, original_sup in zip(cuts, mono_cut.supervisions):
-        assert cut.start == original_sup.start
+        assert cut.start == original_sup.start + mono_cut.start
         assert cut.duration == original_sup.duration
         assert len(cut.supervisions) == 1
         (sup,) = cut.supervisions
@@ -250,7 +315,7 @@ def test_cut_trim_to_supervisions_no_keep_overlapping(mono_cut):
         assert sup.text == original_sup.text
 
 
-def test_cut_trim_to_supervisions_keep_overlaping(mono_cut):
+def test_cut_trim_to_supervisions_keep_overlapping(mono_cut):
     """
     Scenario::
 
@@ -270,7 +335,7 @@ def test_cut_trim_to_supervisions_keep_overlaping(mono_cut):
     cuts = mono_cut.trim_to_supervisions(keep_overlapping=True)
     assert len(cuts) == 3
     for cut, original_sup in zip(cuts, mono_cut.supervisions):
-        assert cut.start == original_sup.start
+        assert cut.start == original_sup.start + mono_cut.start
         assert cut.duration == original_sup.duration
     cut1, cut2, cut3 = cuts
     assert len(cut1.supervisions) == 1
@@ -507,12 +572,16 @@ def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(multi_cu
     [(0.0, None, 5), (0.1, 5, 4), (0.1, 2, 5), (0.2, None, 4)],
 )
 def test_cut_trim_to_alignments(
-    mono_cut, max_pause, max_segment_duration, expected_cuts
+    mono_cut3, max_pause, max_segment_duration, expected_cuts
 ):
-    cuts = mono_cut.trim_to_alignments(
+    cuts = mono_cut3.trim_to_alignments(
         "word", max_pause=max_pause, max_segment_duration=max_segment_duration
     )
     assert len(cuts) == expected_cuts
+    if len(cuts) == 5:
+        y_true = [1.0, 1.9, 5.6, 5.9, 6.5]
+        y_pred = sorted(cut.start for cut in cuts)
+        assert y_true == y_pred
 
 
 @pytest.mark.parametrize("num_jobs", [1, 2])

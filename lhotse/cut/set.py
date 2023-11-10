@@ -525,6 +525,11 @@ class CutSet(Serializable, AlgorithmMixin):
             argument. It will cause the iterator to shuffle shards differently on each node
             and dataloading worker in PyTorch training. This is mutually exclusive with
             ``split_for_dataloading=True``.
+            Seed can be set to ``'trng'`` which, like ``'randomized'``, shuffles the shards
+            differently on each iteration, but is not possible to control (and is not reproducible).
+            ``trng`` mode is mostly useful when the user has limited control over the training loop
+            and may not be able to guarantee internal Shar epoch is being incremented, but needs
+            randomness on each iteration (e.g. useful with PyTorch Lightning).
         :param stateful_shuffle: bool, by default ``False``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
@@ -648,6 +653,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         include_cuts=True,
                         shard_suffix=f".{idx:06d}",
                         verbose=False,
+                        preload=True,
                     )
                 )
             for f in progbar(as_completed(futures)):
@@ -3315,10 +3321,16 @@ def _export_to_shar_single(
     include_cuts: bool,
     shard_suffix: Optional[str],
     verbose: bool,
+    preload: bool = False,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
 
     pbar = tqdm(desc="Exporting to SHAR", disable=not verbose)
+
+    if preload:
+        # In the multi-threaded case we only read a single shard so it's quick,
+        # and it allows us to overwrite a temporary cut manifest.
+        cuts = cuts.to_eager()
 
     with SharWriter(
         output_dir=output_dir,
