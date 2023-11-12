@@ -2,10 +2,13 @@
 About the medical corpus
 
 A dataset of simulated patient-physician medical interviews with a focus on respiratory cases.
+The simulated medical conversation dataset is available on figshare.com.
+The dataset is divided into two sets of files: audio files of the simulated conversations in mp3 format, and the transcripts of the audio files as text files.
+There are 272 mp3 audio files and 272 corresponding transcript text files.
+Each file is titled with three characters and four digits.
+RES stands for respiratory, GAS represents gastrointestinal, CAR is cardiovascular, MSK is musculoskeletal, DER is dermatological, and the four following digits represent the case number of the respective disease category.
 
-The simulated medical conversation dataset is available on figshare.com. The dataset is divided into two sets of files: audio files of the simulated conversations in mp3 format, and the transcripts of the audio files as text files. There are 272 mp3 audio files and 272 corresponding transcript text files. Each file is titled with three characters and four digits. RES stands for respiratory, GAS represents gastrointestinal, CAR is cardiovascular, MSK is musculoskeletal, DER is dermatological, and the four following digits represent the case number of the respective disease category.
-
-It is covered in more detail at https://www.nature.com/articles/s41597-022-01423-1
+It is covered in more detail at https://www.nature.com/articles/s41597-022-01423-1.pdf
 """
 
 import logging
@@ -26,9 +29,6 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
 
 MEDICAL = ("test", "dev", "train")
-
-MEDICAL_BASE_URL = "https://huggingface.co/datasets/yfyeung/medical/resolve/main/"
-
 MEDICAL_SPLITS = (
     "audio.tar.gz",
     "cleantext.tar.gz",
@@ -36,6 +36,7 @@ MEDICAL_SPLITS = (
     "medical_dev.info",
     "medical_train.info",
 )
+MEDICAL_BASE_URL = "https://huggingface.co/datasets/yfyeung/medical/resolve/main/"
 
 
 def download_medical(
@@ -43,7 +44,7 @@ def download_medical(
     force_download: bool = False,
 ) -> Path:
     """
-    Download and unzip Medical dataset
+    Download and unzip Medical dataset.
 
     :param target_dir: Pathlike, the path of the dir to store the dataset.
     :param force_download: bool, if True, download the archive even if it already exists.
@@ -151,7 +152,7 @@ def prepare_medical(
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings and Supervisions.
     :param corpus_dir: Path to the Medical dataset.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
