@@ -525,6 +525,11 @@ class CutSet(Serializable, AlgorithmMixin):
             argument. It will cause the iterator to shuffle shards differently on each node
             and dataloading worker in PyTorch training. This is mutually exclusive with
             ``split_for_dataloading=True``.
+            Seed can be set to ``'trng'`` which, like ``'randomized'``, shuffles the shards
+            differently on each iteration, but is not possible to control (and is not reproducible).
+            ``trng`` mode is mostly useful when the user has limited control over the training loop
+            and may not be able to guarantee internal Shar epoch is being incremented, but needs
+            randomness on each iteration (e.g. useful with PyTorch Lightning).
         :param stateful_shuffle: bool, by default ``False``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
@@ -559,6 +564,7 @@ class CutSet(Serializable, AlgorithmMixin):
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
         num_jobs: int = 1,
+        fault_tolerant: bool = False,
         verbose: bool = False,
     ) -> Dict[str, List[str]]:
         """
@@ -610,6 +616,9 @@ class CutSet(Serializable, AlgorithmMixin):
             as the export will likely be bottlenecked by I/O speed in these cases.
             Try experimenting with 4-8 jobs first.
 
+        The option ``fault_tolerant`` will skip over audio files that failed to load with a warning.
+        By default it is disabled.
+
         See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
@@ -626,6 +635,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 warn_unused_fields=warn_unused_fields,
                 include_cuts=include_cuts,
                 shard_suffix=None,
+                fault_tolerant=fault_tolerant,
                 verbose=verbose,
             )
 
@@ -647,7 +657,9 @@ class CutSet(Serializable, AlgorithmMixin):
                         warn_unused_fields=warn_unused_fields,
                         include_cuts=True,
                         shard_suffix=f".{idx:06d}",
+                        fault_tolerant=fault_tolerant,
                         verbose=False,
+                        preload=True,
                     )
                 )
             for f in progbar(as_completed(futures)):
@@ -3315,10 +3327,17 @@ def _export_to_shar_single(
     include_cuts: bool,
     shard_suffix: Optional[str],
     verbose: bool,
+    fault_tolerant: bool,
+    preload: bool = False,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
 
     pbar = tqdm(desc="Exporting to SHAR", disable=not verbose)
+
+    if preload:
+        # In the multi-threaded case we only read a single shard so it's quick,
+        # and it allows us to overwrite a temporary cut manifest.
+        cuts = cuts.to_eager()
 
     with SharWriter(
         output_dir=output_dir,
@@ -3329,7 +3348,15 @@ def _export_to_shar_single(
         shard_suffix=shard_suffix,
     ) as writer:
         for cut in cuts:
-            writer.write(cut)
+            try:
+                writer.write(cut)
+            except Exception as e:
+                if fault_tolerant:
+                    logging.warning(
+                        "Skipping: failed to load cut '{cut.id}'. Error message: {e}."
+                    )
+                else:
+                    raise
             pbar.update()
 
     # Finally, return the list of output files.

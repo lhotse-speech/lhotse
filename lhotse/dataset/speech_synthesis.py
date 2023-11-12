@@ -30,17 +30,17 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        return_cuts: bool = False,
         cuts: CutSet = None,
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         feature_input_strategy: BatchIO = PrecomputedFeatures(),
         feature_transforms: Union[Sequence[Callable], Callable] = None,
-        return_tokens: bool = True,
         add_eos: bool = True,
         add_bos: bool = True,
+        return_tokens: bool = True,
+        return_cuts: bool = False,
+        return_spk_ids: bool = False,
     ) -> None:
         super().__init__()
-        self.return_cuts = return_cuts
 
         self.return_tokens = return_tokens
         if return_tokens:
@@ -50,6 +50,9 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
 
         self.cut_transforms = ifnone(cut_transforms, [])
         self.feature_input_strategy = feature_input_strategy
+
+        self.return_cuts = return_cuts
+        self.return_spk_ids = return_spk_ids
 
         if feature_transforms is None:
             feature_transforms = []
@@ -79,6 +82,8 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             "audio_lens": audio_lens,
             "features_lens": features_lens,
         }
+        if self.return_spk_ids:
+            batch["speakers"] = [cut.supervisions[0].speaker for cut in cuts]
 
         if self.return_cuts:
             batch["cut"] = [cut for cut in cuts]
@@ -89,10 +94,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             batch["tokens_lens"] = tokens_lens
         else:
             # use normalized text
-            text = [
-                " ".join(sup.normalized_text for sup in cut.supervisions)
-                for cut in cuts
-            ]
+            text = [cut.supervisions[0].normalized_text for cut in cuts]
             batch["text"] = text
 
         return batch
