@@ -11,7 +11,7 @@ from lhotse.utils import Pathlike
 @click.argument("corpus-dir", type=click.Path(exists=True, file_okay=False))
 @click.argument("output-dir", type=click.Path())
 @click.option(
-    "transcript-dir",
+    "--transcript-dir",
     type=click.Path(exists=True, file_okay=False),
     default=None,
     required=False,

@@ -68,12 +68,13 @@ class DynamicCutSampler(CutSampler):
     def __init__(
         self,
         *cuts: Iterable[Cut],
-        max_duration: Optional[float] = None,
+        max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
         drop_last: bool = False,
         consistent_ids: bool = True,
         shuffle_buffer_size: int = 20000,
+        quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -99,6 +100,9 @@ class DynamicCutSampler(CutSampler):
         :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
             a buffer used for streaming shuffling. Larger number means better randomness at the cost
             of higher memory usage.
+        :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
+            a cuts duration. This helps get a more even GPU utilization across different input lengths
+            when models have quadratic input complexity. Set between 15 and 40 for transformers.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -118,6 +122,7 @@ class DynamicCutSampler(CutSampler):
         self.shuffle = shuffle
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.quadratic_duration = quadratic_duration
         self.rng = None
         assert any(
             v is not None for v in (self.max_duration, self.max_cuts)
@@ -138,6 +143,7 @@ class DynamicCutSampler(CutSampler):
                 "max_cuts": self.max_cuts,
                 "consistent_ids": self.consistent_ids,
                 "shuffle_buffer_size": self.shuffle_buffer_size,
+                "quadratic_duration": self.quadratic_duration,
             }
         )
         return sd
@@ -147,6 +153,7 @@ class DynamicCutSampler(CutSampler):
         self.max_cuts = sd.pop("max_cuts")
         self.consistent_ids = sd.pop("consistent_ids")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        self.quadratic_duration = sd.pop("quadratic_duration")
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -203,6 +210,7 @@ class DynamicCutSampler(CutSampler):
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
+            quadratic_duration=self.quadratic_duration,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(self.cuts_iter)
