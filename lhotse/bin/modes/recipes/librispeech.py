@@ -34,11 +34,19 @@ __all__ = ["librispeech"]
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
+@click.option(
+    "--normalize-text",
+    type=click.Choice(["none", "lower"], case_sensitive=False),
+    default="none",
+    help="Conversion of transcripts to lower-case (originally in upper-case).",
+    show_default=True,
+)
 def librispeech(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     alignments_dir: Pathlike,
     dataset_parts: Sequence[str],
+    normalize_text: str,
     num_jobs: int,
 ):
     """(Mini) Librispeech ASR data preparation."""
@@ -50,6 +58,7 @@ def librispeech(
         alignments_dir=alignments_dir,
         num_jobs=num_jobs,
         dataset_parts=dataset_parts,
+        normalize_text=normalize_text,
     )
 
 
