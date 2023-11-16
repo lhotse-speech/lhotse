@@ -513,9 +513,7 @@ def torchaudio_info(
             duration=tot_samples / info.sample_rate,
         )
 
-    info = torchaudio.backend.soundfile_backend.info(path_or_fileobj)
-    if isinstance(info, tuple):  # for torchaudio 0.8.2 and lower
-        info = info[0]
+    info = torchaudio.info(path_or_fileobj)
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
