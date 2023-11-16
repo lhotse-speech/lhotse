@@ -362,7 +362,7 @@ def set_current_audio_backend(backend: AudioBackend) -> None:
         >>> set_current_audio_backend(AudioreadBackend())
     """
     global CURRENT_AUDIO_BACKEND
-    assert issubclass(backend, AudioBackend)
+    assert isinstance(backend, AudioBackend)
     CURRENT_AUDIO_BACKEND = backend
 
 
@@ -432,8 +432,10 @@ def torchaudio_2_0_ffmpeg_enabled() -> bool:
 
     ver = version.parse(torchaudio.__version__)
     if ver >= version.parse("2.1.0"):
-        return True
+        # Enabled by default, disable with TORCHAUDIO_USE_BACKEND_DISPATCHER=0
+        return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "1") == "1"
     if ver >= version.parse("2.0"):
+        # Disabled by default, enable with TORCHAUDIO_USE_BACKEND_DISPATCHER=1
         return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "0") == "1"
     return False
 
@@ -511,7 +513,7 @@ def torchaudio_info(
             duration=tot_samples / info.sample_rate,
         )
 
-    info = torchaudio.info(path_or_fileobj)
+    info = torchaudio.backend.soundfile_backend.info(path_or_fileobj)
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
