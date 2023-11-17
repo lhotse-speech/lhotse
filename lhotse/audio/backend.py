@@ -8,7 +8,7 @@ from functools import lru_cache
 from io import BytesIO, IOBase
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, run
-from typing import Any, List, Literal, NamedTuple, Optional, Tuple, Union
+from typing import Any, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import torch
