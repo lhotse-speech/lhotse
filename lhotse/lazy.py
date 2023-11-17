@@ -1,8 +1,20 @@
+import logging
 import random
 import types
 import warnings
 from functools import partial
-from typing import Any, Callable, Iterable, List, Optional, TypeVar, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Type,
+    TypeVar,
+    Union,
+)
 
 from lhotse.serialization import (
     LazyMixin,
@@ -475,6 +487,42 @@ class LazyFlattener(ImitatesDict):
             "If you really need to know the length, convert to eager mode first using "
             "`.to_eager()`. Note that this will require loading the whole iterator into memory."
         )
+
+
+class ExceptionSuppressor(ImitatesDict):
+    """
+    A wrapper over an iterable that will suppress exceptions raised during iteration.
+    By default, all exceptions all suppressed, but the user can specify a list of exception types.
+    """
+
+    def __init__(
+        self,
+        iterator: Iterable,
+        exc_types: Union[Sequence[Type[BaseException]], Literal["all"]] = "all",
+        warn: bool = True,
+    ) -> None:
+        self.iterator = iterator
+        if exc_types == "all":
+            self.suppressed = "all"
+        else:
+            self.suppressed = tuple(exc_types)
+        self.warn = warn
+
+    def __iter__(self):
+        iterator = iter(self.iterator)
+        while True:
+            try:
+                yield next(iterator)
+            except StopIteration:
+                break
+            except BaseException as e:
+                if self.suppressed == "all" or isinstance(e, self.suppressed):
+                    if self.warn:
+                        logging.warning(
+                            f"Ignoring exception {type(e)} with message {str(e)}"
+                        )
+                    continue
+                raise
 
 
 class LazyRepeater(ImitatesDict):

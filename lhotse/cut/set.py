@@ -2534,6 +2534,23 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         return self.map_supervisions(lambda s: s.transform_text(transform_fn))
 
+    def suppress_exceptions(
+        self,
+        exc_types: Union[Sequence[Type[BaseException]], Literal["all"]] = "all",
+        warn: bool = True,
+    ) -> "CutSet":
+        """
+        Suppress exceptions raised during the iteration of this ``CutSet``.
+        By default, all exceptions all suppressed, but the user can specify a list of exception types.
+
+        :param exc_types: Either "all" (default), or a list of specific exception types.
+        :param warn: When ``True`` (default), will emit a warning on each suppressed exception via `logging.warning`.
+        :return: A CutSet wrapped by this method.
+        """
+        from lhotse.lazy import ExceptionSuppressor
+
+        return CutSet(ExceptionSuppressor(self, exc_types=exc_types, warn=warn))
+
     def __repr__(self) -> str:
         try:
             len_val = len(self)
