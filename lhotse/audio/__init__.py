@@ -1,4 +1,6 @@
 from .backend import (
+    audio_backend,
+    available_audio_backends,
     get_current_audio_backend,
     get_default_audio_backend,
     get_ffmpeg_torchaudio_info_enabled,

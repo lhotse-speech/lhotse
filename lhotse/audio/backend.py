@@ -22,6 +22,104 @@ from lhotse.augmentation import Resample
 from lhotse.utils import Pathlike, Seconds, compute_num_samples
 
 _FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = True
+CURRENT_AUDIO_BACKEND: Optional["AudioBackend"] = None
+
+
+def available_audio_backends() -> List[str]:
+    """
+    Return a list of names of available audio backends, including "default".
+    """
+    return ["default"] + sorted(AudioBackend.KNOWN_BACKENDS.keys())
+
+
+@contextmanager
+def audio_backend(backend: Union["AudioBackend", str]):
+    """
+    Context manager that sets Lhotse's audio backend to the specified value
+    and restores the previous audio backend at the end of its scope.
+
+    Example::
+
+        >>> with audio_backend("LibsndfileBackend"):
+        ...     some_audio_loading_fn()
+    """
+    previous = get_current_audio_backend()
+    set_current_audio_backend(backend)
+    yield
+    set_current_audio_backend(previous)
+
+
+def get_current_audio_backend() -> "AudioBackend":
+    """
+    Return the audio backend currently set by the user, or default.
+    """
+    global CURRENT_AUDIO_BACKEND
+
+    # First check if the user has programmatically overridden the audio backend.
+    if CURRENT_AUDIO_BACKEND is not None:
+        return CURRENT_AUDIO_BACKEND
+
+    # Then, check if the user has overridden the audio backend via an env var.
+    maybe_backend = os.environ.get("LHOTSE_AUDIO_BACKEND")
+    if maybe_backend is not None:
+        set_current_audio_backend(maybe_backend)
+        return CURRENT_AUDIO_BACKEND
+
+    # Lastly, fall back to the default backend.
+    set_current_audio_backend("default")
+    return CURRENT_AUDIO_BACKEND
+
+
+def set_current_audio_backend(backend: Union["AudioBackend", str]) -> None:
+    """
+    Force Lhotse to use a specific audio backend to read every audio file,
+    overriding the default behaviour of educated guessing + trial-and-error.
+
+    Example forcing Lhotse to use ``audioread`` library for every audio loading operation::
+
+        >>> set_current_audio_backend(AudioreadBackend())
+    """
+    global CURRENT_AUDIO_BACKEND
+    if backend == "default":
+        backend = get_default_audio_backend()
+    elif isinstance(backend, str):
+        backend = AudioBackend.new(backend)
+    else:
+        assert isinstance(
+            backend, AudioBackend
+        ), f"Expected str or AudioBackend, got: {backend}"
+    CURRENT_AUDIO_BACKEND = backend
+
+
+@lru_cache(maxsize=1)
+def get_default_audio_backend() -> "AudioBackend":
+    """
+    Return a backend that can be used to read all audio formats supported by Lhotse.
+
+    It first looks for special cases that need very specific handling
+    (such as: opus, sphere/shorten, in-memory buffers)
+    and tries to match them against relevant audio backends.
+
+    Then, it tries to use several audio loading libraries (torchaudio, soundfile, audioread).
+    In case the first fails, it tries the next one, and so on.
+    """
+    return CompositeAudioBackend(
+        [
+            # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+            #   which can only be decoded by binaries "shorten" and "sph2pipe").
+            FfmpegSubprocessOpusBackend(),
+            Sph2pipeSubprocessBackend(),
+            # New FFMPEG backend available only in torchaudio 2.0.x+
+            TorchaudioFFMPEGBackend(),
+            # Prefer libsndfile for in-memory buffers only
+            LibsndfileBackend(),
+            # Torchaudio should be able to deal with most audio types...
+            TorchaudioDefaultBackend(),
+            # ... if not, try audioread...
+            AudioreadBackend(),
+            # ... oops.
+        ]
+    )
 
 
 def set_ffmpeg_torchaudio_info_enabled(enabled: bool) -> None:
@@ -77,6 +175,19 @@ class AudioBackend:
     ``is_applicable`` means this backend most likely can be used for a given type of input path/file,
     but it may also fail. Its purpose is more to filter out formats that definitely are not supported.
     """
+
+    KNOWN_BACKENDS = {}
+
+    def __init_subclass__(cls, **kwargs):
+        if cls.__name__ not in AudioBackend.KNOWN_BACKENDS:
+            AudioBackend.KNOWN_BACKENDS[cls.__name__] = cls
+        super().__init_subclass__(**kwargs)
+
+    @classmethod
+    def new(cls, name: str) -> "AudioBackend":
+        if name not in cls.KNOWN_BACKENDS:
+            raise RuntimeError(f"Unknown audio backend name: {name}")
+        return cls.KNOWN_BACKENDS[name]()
 
     def read_audio(
         self,
@@ -338,63 +449,6 @@ class CompositeAudioBackend(AudioBackend):
             raise AudioLoadingError(
                 f"Reading audio from '{path_or_fd}' failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
             )
-
-
-CURRENT_AUDIO_BACKEND = None
-
-
-def get_current_audio_backend() -> AudioBackend:
-    """
-    Return the audio backend currently set by the user, or default.
-    """
-    if CURRENT_AUDIO_BACKEND is not None:
-        return CURRENT_AUDIO_BACKEND
-    return get_default_audio_backend()
-
-
-def set_current_audio_backend(backend: AudioBackend) -> None:
-    """
-    Force Lhotse to use a specific audio backend to read every audio file,
-    overriding the default behaviour of educated guessing + trial-and-error.
-
-    Example forcing Lhotse to use ``audioread`` library for every audio loading operation::
-
-        >>> set_current_audio_backend(AudioreadBackend())
-    """
-    global CURRENT_AUDIO_BACKEND
-    assert isinstance(backend, AudioBackend)
-    CURRENT_AUDIO_BACKEND = backend
-
-
-@lru_cache(maxsize=1)
-def get_default_audio_backend() -> AudioBackend:
-    """
-    Return a backend that can be used to read all audio formats supported by Lhotse.
-
-    It first looks for special cases that need very specific handling
-    (such as: opus, sphere/shorten, in-memory buffers)
-    and tries to match them against relevant audio backends.
-
-    Then, it tries to use several audio loading libraries (torchaudio, soundfile, audioread).
-    In case the first fails, it tries the next one, and so on.
-    """
-    return CompositeAudioBackend(
-        [
-            # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
-            #   which can only be decoded by binaries "shorten" and "sph2pipe").
-            FfmpegSubprocessOpusBackend(),
-            Sph2pipeSubprocessBackend(),
-            # New FFMPEG backend available only in torchaudio 2.0.x+
-            TorchaudioFFMPEGBackend(),
-            # Prefer libsndfile for in-memory buffers only
-            LibsndfileBackend(),
-            # Torchaudio should be able to deal with most audio types...
-            TorchaudioDefaultBackend(),
-            # ... if not, try audioread...
-            AudioreadBackend(),
-            # ... oops.
-        ]
-    )
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
