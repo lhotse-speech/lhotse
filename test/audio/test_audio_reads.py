@@ -14,6 +14,7 @@ from lhotse.audio.backend import (
     info,
     read_opus_ffmpeg,
     read_opus_torchaudio,
+    torchaudio_info,
     torchaudio_load,
 )
 
@@ -253,3 +254,24 @@ def test_audio_info_from_bytes_io():
     with pytest.raises(AssertionError):
         # force_read_audio won't work with a filelike object
         assert info(audio_filelike, force_read_audio=True)
+
+
+def test_torchaudio_info_from_bytes_io():
+    audio_filelike = BytesIO(open("test/fixtures/mono_c0.wav", "rb").read())
+
+    meta = torchaudio_info(audio_filelike)
+    assert meta.duration == 0.5
+    assert meta.frames == 4000
+    assert meta.samplerate == 8000
+    assert meta.channels == 1
+
+
+def test_set_audio_backend():
+    recording = Recording.from_file("test/fixtures/mono_c0.wav")
+    lhotse.audio.set_current_audio_backend(lhotse.audio.backend.LibsndfileBackend())
+    audio1 = recording.load_audio()
+    lhotse.audio.set_current_audio_backend(
+        lhotse.audio.backend.get_default_audio_backend()
+    )
+    audio2 = recording.load_audio()
+    np.testing.assert_array_almost_equal(audio1, audio2)
