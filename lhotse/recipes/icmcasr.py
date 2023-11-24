@@ -6,6 +6,7 @@ Participants can obtain the datasets at https://icmcasr.org - please download th
 
 import logging
 import os
+import subprocess
 from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
@@ -21,7 +22,8 @@ from lhotse.utils import Pathlike, is_module_available
 
 ICMCASR = ("train", "dev")  # TODO: Support all subsets when released
 POSITION = ("DA01", "DA02", "DA03", "DA04")
-SDM_POSITION = ("DX01C01", "DX02C01", "DX03C01", "DX04C01", "DX05C01", "DX06C01")
+# ignore "DX05C01", "DX06C01"
+SDM_POSITION = ("DX01C01", "DX02C01", "DX03C01", "DX04C01")
 
 
 def _parse_utterance(
@@ -60,6 +62,22 @@ def _parse_utterance(
                 + f"-{position}"
                 for sdm_position in SDM_POSITION
             ]
+        elif mic == "mdm":
+            wav_path_stereo = section_path / "DXmixC01.wav"
+            if not wav_path_stereo.is_file():
+                audio_paths = [
+                    (section_path / (sdm_position + ".wav")).resolve()
+                    for sdm_position in SDM_POSITION
+                ]
+                cmd = f"sox -M -c 1 {audio_paths[0]} -c 1 {audio_paths[1]} -c 1 {audio_paths[2]} -c 1 {audio_paths[3]} {wav_path_stereo.resolve()}"
+                subprocess.run(cmd, shell=True, check=True)
+            audio_paths = [wav_path_stereo.resolve()]
+            recording_ids = [
+                str(section_path / "DXmixC01")
+                .replace(str(corpus_dir) + "/", "")
+                .replace("/", "-")
+                + f"-{position}"
+            ]
         else:
             raise ValueError(f"Unsupported mic type: {mic}")
 
@@ -87,7 +105,7 @@ def _parse_utterance(
                         recording_id=recording_id,
                         start=start,
                         duration=round(end - start, 4),
-                        channel=0,
+                        channel=0 if mic in ["sdm", "ihm"] else list(range(4)),
                         language="Chinese",
                         speaker=speaker,
                         text=normalize_text_alimeeting(text),
