@@ -12,6 +12,7 @@
         "duration": 1.5396371882086168,
         "channel": 0,
         "text": "IN EIGHTEEN THIRTEEN",
+        "custom":{"normalized_text": "IN EIGHTEEN THIRTEEN"},
         "language": "English",
         "gender": "female"
       }
@@ -59,6 +60,7 @@
         "duration": 1.5976870748299319,
         "channel": 0,
         "text": "EIGHT THE PRESS YARD",
+        "custom":{"normalized_text": "EIGHT THE PRESS YARD"},
         "language": "English",
         "gender": "female"
       }
