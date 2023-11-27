@@ -14,7 +14,8 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse.audio import Recording, RecordingSet
+from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio.backend import info
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist, normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -63,15 +64,7 @@ def _parse_utterance(
                 for sdm_position in SDM_POSITION
             ]
         elif mic == "mdm":
-            wav_path_stereo = section_path / "DXmixC01.wav"
-            if not wav_path_stereo.is_file():
-                audio_paths = [
-                    (section_path / (sdm_position + ".wav")).resolve()
-                    for sdm_position in SDM_POSITION
-                ]
-                cmd = f"sox -M -c 1 {audio_paths[0]} -c 1 {audio_paths[1]} -c 1 {audio_paths[2]} -c 1 {audio_paths[3]} {wav_path_stereo.resolve()}"
-                subprocess.run(cmd, shell=True, check=True)
-            audio_paths = [wav_path_stereo.resolve()]
+            audio_paths = ["fake_audio_path_for_mdm"]
             recording_ids = [
                 str(section_path / "DXmixC01")
                 .replace(str(corpus_dir) + "/", "")
@@ -82,14 +75,43 @@ def _parse_utterance(
             raise ValueError(f"Unsupported mic type: {mic}")
 
         for audio_path, recording_id in zip(audio_paths, recording_ids):
+            if mic == "mdm":
+                channel_paths = [
+                    (section_path / (position + ".wav")).resolve()
+                    for position in SDM_POSITION
+                ]
+                audio_info = info(
+                    channel_paths[0],
+                    force_opus_sampling_rate=None,
+                    force_read_audio=False,
+                )
+                recordings.append(
+                    Recording(
+                        id=recording_id,
+                        sources=[
+                            AudioSource(
+                                type="file",
+                                channels=[idx],
+                                source=str(audio_path),
+                            )
+                            for idx, audio_path in enumerate(channel_paths)
+                        ],
+                        sampling_rate=16000,
+                        num_samples=audio_info.frames,
+                        duration=audio_info.duration,
+                    )
+                )
             # check if audio_path exists, if not, then skip
-            if not audio_path.is_file():
-                # give some warning
-                logging.warning(f"Audio file {audio_path} does not exist - skipping.")
-                continue
-            recordings.append(
-                Recording.from_file(path=audio_path, recording_id=recording_id)
-            )
+            else:
+                if not audio_path.is_file():
+                    # give some warning
+                    logging.warning(
+                        f"Audio file {audio_path} does not exist - skipping."
+                    )
+                    continue
+                recordings.append(
+                    Recording.from_file(path=audio_path, recording_id=recording_id)
+                )
 
             tg = textgrid.TextGrid.fromFile(str(text_path))
             assert len(tg.tiers) == 1, f"Expected 1 tier, found {len(tg.tiers)} tiers."
