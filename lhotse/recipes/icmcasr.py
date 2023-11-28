@@ -6,7 +6,6 @@ Participants can obtain the datasets at https://icmcasr.org - please download th
 
 import logging
 import os
-import subprocess
 from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
@@ -23,7 +22,9 @@ from lhotse.utils import Pathlike, is_module_available
 
 ICMCASR = ("train", "dev")  # TODO: Support all subsets when released
 POSITION = ("DA01", "DA02", "DA03", "DA04")
-# ignore "DX05C01", "DX06C01"
+# ignore "DX05C01", "DX06C01",
+# which are 2-channel reference signals for AEC.
+# see https://github.com/MrSupW/ICMC-ASR_Baseline/tree/main
 SDM_POSITION = ("DX01C01", "DX02C01", "DX03C01", "DX04C01")
 
 
