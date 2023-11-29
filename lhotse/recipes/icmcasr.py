@@ -13,7 +13,8 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse.audio import Recording, RecordingSet
+from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio.backend import info
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist, normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -21,7 +22,10 @@ from lhotse.utils import Pathlike, is_module_available
 
 ICMCASR = ("train", "dev")  # TODO: Support all subsets when released
 POSITION = ("DA01", "DA02", "DA03", "DA04")
-SDM_POSITION = ("DX01C01", "DX02C01", "DX03C01", "DX04C01", "DX05C01", "DX06C01")
+# ignore "DX05C01", "DX06C01",
+# which are 2-channel reference signals for AEC.
+# see https://github.com/MrSupW/ICMC-ASR_Baseline/tree/main
+SDM_POSITION = ("DX01C01", "DX02C01", "DX03C01", "DX04C01")
 
 
 def _parse_utterance(
@@ -60,18 +64,55 @@ def _parse_utterance(
                 + f"-{position}"
                 for sdm_position in SDM_POSITION
             ]
+        elif mic == "mdm":
+            audio_paths = ["fake_audio_path_for_mdm"]
+            recording_ids = [
+                str(section_path / "DXmixC01")
+                .replace(str(corpus_dir) + "/", "")
+                .replace("/", "-")
+                + f"-{position}"
+            ]
         else:
             raise ValueError(f"Unsupported mic type: {mic}")
 
         for audio_path, recording_id in zip(audio_paths, recording_ids):
+            if mic == "mdm":
+                channel_paths = [
+                    (section_path / (position + ".wav")).resolve()
+                    for position in SDM_POSITION
+                ]
+                audio_info = info(
+                    channel_paths[0],
+                    force_opus_sampling_rate=None,
+                    force_read_audio=False,
+                )
+                recordings.append(
+                    Recording(
+                        id=recording_id,
+                        sources=[
+                            AudioSource(
+                                type="file",
+                                channels=[idx],
+                                source=str(audio_path),
+                            )
+                            for idx, audio_path in enumerate(channel_paths)
+                        ],
+                        sampling_rate=16000,
+                        num_samples=audio_info.frames,
+                        duration=audio_info.duration,
+                    )
+                )
             # check if audio_path exists, if not, then skip
-            if not audio_path.is_file():
-                # give some warning
-                logging.warning(f"Audio file {audio_path} does not exist - skipping.")
-                continue
-            recordings.append(
-                Recording.from_file(path=audio_path, recording_id=recording_id)
-            )
+            else:
+                if not audio_path.is_file():
+                    # give some warning
+                    logging.warning(
+                        f"Audio file {audio_path} does not exist - skipping."
+                    )
+                    continue
+                recordings.append(
+                    Recording.from_file(path=audio_path, recording_id=recording_id)
+                )
 
             tg = textgrid.TextGrid.fromFile(str(text_path))
             assert len(tg.tiers) == 1, f"Expected 1 tier, found {len(tg.tiers)} tiers."
@@ -87,7 +128,7 @@ def _parse_utterance(
                         recording_id=recording_id,
                         start=start,
                         duration=round(end - start, 4),
-                        channel=0,
+                        channel=0 if mic in ["sdm", "ihm"] else list(range(4)),
                         language="Chinese",
                         speaker=speaker,
                         text=normalize_text_alimeeting(text),
