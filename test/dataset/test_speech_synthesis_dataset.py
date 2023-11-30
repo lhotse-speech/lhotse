@@ -20,20 +20,18 @@ def test_speech_synthesis_dataset(cut_set, transform):
     else:
         transform = None
 
-    dataset = SpeechSynthesisDataset(cut_set, feature_transforms=transform)
+    dataset = SpeechSynthesisDataset(feature_transforms=transform)
     example = dataset[cut_set]
     assert example["audio"].shape[1] > 0
     assert example["features"].shape[1] > 0
-    assert example["tokens"].shape[1] > 0
+    assert len(example["text"]) > 0
+    assert len(example["text"][0]) > 0
 
     assert example["audio"].ndim == 2
     assert example["features"].ndim == 3
-    assert example["tokens"].ndim == 2
 
     assert isinstance(example["audio_lens"], torch.IntTensor)
     assert isinstance(example["features_lens"], torch.IntTensor)
-    assert isinstance(example["tokens_lens"], torch.IntTensor)
 
     assert example["audio_lens"].ndim == 1
     assert example["features_lens"].ndim == 1
-    assert example["tokens_lens"].ndim == 1
