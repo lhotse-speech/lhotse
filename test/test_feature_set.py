@@ -165,7 +165,9 @@ def test_feature_set_builder(storage_fn):
     recordings: RecordingSet = RecordingSet.from_json(
         "test/fixtures/audio.json"
     ).filter(lambda r: r.id != "recording-4")
-    extractor = Fbank(FbankConfig(sampling_rate=8000))
+    extractor = Fbank(
+        FbankConfig(sampling_rate=8000, torchaudio_compatible_mel_scale=False)
+    )
     with storage_fn() as storage:
         builder = FeatureSetBuilder(
             feature_extractor=extractor,
@@ -243,8 +245,22 @@ def test_add_feature_sets():
 @pytest.mark.parametrize(
     ["feature_extractor", "decimal", "exception_expectation"],
     [
-        (Fbank(FbankConfig(num_filters=40, sampling_rate=8000)), 0, does_not_raise()),
-        (Mfcc(MfccConfig(sampling_rate=8000)), None, raises(ValueError)),
+        (
+            Fbank(
+                FbankConfig(
+                    num_filters=40,
+                    sampling_rate=8000,
+                    torchaudio_compatible_mel_scale=False,
+                )
+            ),
+            0,
+            does_not_raise(),
+        ),
+        (
+            Mfcc(MfccConfig(sampling_rate=8000, torchaudio_compatible_mel_scale=False)),
+            None,
+            raises(ValueError),
+        ),
     ],
 )
 def test_mixer(feature_extractor, decimal, exception_expectation):
@@ -282,7 +298,7 @@ def test_feature_mixer_handles_empty_array():
     t = np.linspace(0, 1, sr, dtype=np.float32)
     x1 = np.sin(440.0 * t).reshape(1, -1)
 
-    fe = Fbank()
+    fe = Fbank(FbankConfig(torchaudio_compatible_mel_scale=False))
     f1 = fe.extract(x1, sr)
     mixer = FeatureMixer(
         feature_extractor=fe,
@@ -301,7 +317,7 @@ def test_feature_mixer_handles_empty_array_with_offset():
     t = np.linspace(0, 1, sr, dtype=np.float32)
     x1 = np.sin(440.0 * t).reshape(1, -1)
 
-    fe = Fbank()
+    fe = Fbank(FbankConfig(torchaudio_compatible_mel_scale=False))
     f1 = fe.extract(x1, sr)
     mixer = FeatureMixer(
         feature_extractor=fe,

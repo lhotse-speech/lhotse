@@ -8,6 +8,10 @@ from unittest.mock import Mock
 import pytest
 import torch
 
+torchaudio = pytest.importorskip(
+    "torchaudio", reason="Torchaudio is required for most feature extractors."
+)
+
 from lhotse import (
     S3PRLSSL,
     AudioSource,

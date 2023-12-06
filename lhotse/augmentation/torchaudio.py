@@ -155,6 +155,7 @@ _precompiled_resamplers: Dict[Tuple[int, int], torch.nn.Module] = {}
 def get_or_create_resampler(
     source_sampling_rate: int, target_sampling_rate: int
 ) -> torch.nn.Module:
+    check_for_torchaudio()
     global _precompiled_resamplers
 
     tpl = (source_sampling_rate, target_sampling_rate)

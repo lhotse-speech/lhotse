@@ -2,12 +2,17 @@ from math import isclose
 from tempfile import TemporaryDirectory
 
 import numpy as np
+import pytest
 
 from lhotse import CutSet, MonoCut, NumpyFilesWriter, Recording
 from lhotse.array import Array
 from lhotse.cut import MixedCut, PaddingCut
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames
+
+torchaudio = pytest.importorskip(
+    "torchaudio", reason="Torchaudio is required for handling in-memory data in cuts."
+)
 
 
 def test_features_move_to_memory():

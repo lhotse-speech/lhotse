@@ -15,7 +15,12 @@ from lhotse import (
 from lhotse.audio import DurationMismatchError
 from lhotse.audio.mixer import AudioMixer
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import INT16MAX, fastcopy, is_module_available
+from lhotse.utils import (
+    INT16MAX,
+    fastcopy,
+    is_module_available,
+    is_torchaudio_available,
+)
 from lhotse.utils import nullcontext as does_not_raise
 
 
@@ -211,6 +216,7 @@ def recording(file_source):
     )
 
 
+@pytest.mark.skipif(not is_torchaudio_available())
 @pytest.mark.parametrize(
     ["factor", "affix_id"],
     [
@@ -249,6 +255,7 @@ def test_recording_dereverb_wpe(recording, affix_id):
     assert (samples != samples_wpe).any()
 
 
+@pytest.mark.skipif(not is_torchaudio_available())
 @pytest.mark.parametrize(
     ["factor", "affix_id"],
     [
@@ -269,6 +276,7 @@ def test_recording_perturb_tempo(recording, factor, affix_id):
     assert samples.shape[1] == rec_sp.num_samples
 
 
+@pytest.mark.skipif(not is_torchaudio_available())
 @pytest.mark.parametrize(
     ["factor", "affix_id"],
     [
@@ -312,6 +320,7 @@ def test_recording_set_perturb_volume(recording_set):
         assert r.sampling_rate == r_vp.sampling_rate
 
 
+@pytest.mark.skipif(not is_torchaudio_available())
 @pytest.mark.parametrize("sampling_rate", [8000, 16000, 22050, 32000, 44100, 48000])
 def test_recording_resample(recording, sampling_rate):
     rec_sp = recording.resample(sampling_rate)
@@ -322,6 +331,7 @@ def test_recording_resample(recording, sampling_rate):
     assert samples.shape[1] == rec_sp.num_samples
 
 
+@pytest.mark.skipif(not is_torchaudio_available())
 def test_recording_set_resample(recording_set):
     recs_sp = recording_set.resample(sampling_rate=44100)
     for r, r_sp in zip(recording_set, recs_sp):

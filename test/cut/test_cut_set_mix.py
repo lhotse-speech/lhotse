@@ -3,6 +3,7 @@ import pytest
 
 from lhotse.cut import CutSet, MixedCut
 from lhotse.testing.fixtures import random_cut_set
+from lhotse.utils import is_torchaudio_available
 
 
 @pytest.fixture
@@ -52,6 +53,7 @@ def test_cut_set_mixing_with_prob(speech_cuts, noise_cuts):
     assert any(was_mixed) and not all(was_mixed)
 
 
+@pytest.mark.skipif(not is_torchaudio_available())
 def test_cut_set_mixing_with_random_mix_offset():
     speech_cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json").resample(16000)
     noise_cuts = CutSet.from_json("test/fixtures/libri/cuts.json")

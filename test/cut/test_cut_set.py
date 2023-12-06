@@ -519,7 +519,7 @@ def test_compute_cmvn_stats():
 @pytest.mark.parametrize("max_cuts", [None, 1])
 def test_compute_cmvn_stats_on_the_fly(max_cuts):
     cut_set = CutSet.from_json("test/fixtures/libri/cuts.json")
-    fbank = Fbank()
+    fbank = Fbank(FbankConfig(torchaudio_compatible_mel_scale=False))
     with TemporaryDirectory() as d:
         cut_set = cut_set.compute_and_store_features(fbank, d)
         # precomputed
@@ -538,7 +538,7 @@ def test_compute_cmvn_stats_on_the_fly(max_cuts):
 def test_compute_and_store_features_lazy(nj):
     eager_cuts = CutSet.from_json("test/fixtures/libri/cuts.json").repeat(10)
     with as_lazy(eager_cuts) as cut_set:
-        fbank = Fbank()
+        fbank = Fbank(FbankConfig(torchaudio_compatible_mel_scale=False))
         with TemporaryDirectory() as d:
             with_feats = cut_set.compute_and_store_features(fbank, d, num_jobs=nj)
             assert len(with_feats) == len(cut_set)

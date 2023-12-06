@@ -492,6 +492,9 @@ def torchaudio_2_0_ffmpeg_enabled() -> bool:
     Returns ``True`` when torchaudio.load supports "ffmpeg" backend.
     This requires either version 2.1.x+ or 2.0.x with env var TORCHAUDIO_USE_BACKEND_DISPATCHER=1.
     """
+    if not is_torchaudio_available():
+        return False
+
     import torchaudio
     from packaging import version
 

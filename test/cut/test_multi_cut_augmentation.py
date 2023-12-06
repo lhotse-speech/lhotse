@@ -3,6 +3,10 @@ import pytest
 
 from lhotse import MultiCut, Recording, SupervisionSegment
 
+torchaudio = pytest.importorskip(
+    "torchaudio", reason="Torchaudio is required for most data augmentation transforms."
+)
+
 
 @pytest.fixture
 def recording():

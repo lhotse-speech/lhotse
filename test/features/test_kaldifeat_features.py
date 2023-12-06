@@ -3,7 +3,6 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 import pytest
 import torch
-import torchaudio
 
 from lhotse import Fbank, KaldifeatFbank, KaldifeatFbankConfig, Mfcc
 from lhotse.features import create_default_feature_extractor
@@ -23,10 +22,12 @@ kaldifeat = pytest.importorskip(
     ],
 )
 def test_feature_extractor(feature_type, exception_expectation):
+    import soundfile as sf
+
     # For now, just test that it runs
     with exception_expectation:
         fe = create_default_feature_extractor(feature_type)
-        samples, sr = torchaudio.load("test/fixtures/libri/libri-1088-134315-0000.wav")
+        samples, sr = sf.read("test/fixtures/libri/libri-1088-134315-0000.wav")
         fe.extract(samples=samples, sampling_rate=sr)
 
 

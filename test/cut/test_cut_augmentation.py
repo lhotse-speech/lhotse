@@ -1,12 +1,15 @@
 import numpy as np
 import pytest
-import torch
 
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
 from lhotse.cut import PaddingCut
 from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
 from lhotse.utils import fastcopy, is_module_available
+
+torchaudio = pytest.importorskip(
+    "torchaudio", reason="Torchaudio is required for most data augmentation transforms."
+)
 
 
 @pytest.fixture

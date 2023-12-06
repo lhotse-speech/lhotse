@@ -6,7 +6,10 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import pytest
 import torch
-import torchaudio
+
+torchaudio = pytest.importorskip(
+    "torchaudio", reason="We require torchaudio for test data preparation."
+)
 
 import lhotse
 from lhotse import AudioSource, Recording

@@ -1,8 +1,8 @@
 from tempfile import NamedTemporaryFile
 
 import pytest
-import torch
-import torchaudio
+
+torchaudio = pytest.importorskip("torchaudio")
 
 from lhotse import Fbank, FeatureExtractor, create_default_feature_extractor
 from lhotse.utils import nullcontext as does_not_raise
