@@ -58,7 +58,7 @@ IS_DEV_VERSION = not bool(
 )  # False = public release, True = otherwise
 
 
-LHOTSE_USE_TORCHAUDIO = os.environ.get("LHOTSE_USE_TORCHAUDIO", "1") in (
+LHOTSE_REQUIRE_TORCHAUDIO = os.environ.get("LHOTSE_REQUIRE_TORCHAUDIO", "1") in (
     "1",
     "True",
     "true",
@@ -173,7 +173,7 @@ try:
     # Otherwise, we'll just install the latest versions from PyPI for the user.
     import torch
 
-    if LHOTSE_USE_TORCHAUDIO:
+    if LHOTSE_REQUIRE_TORCHAUDIO:
         try:
             import torchaudio
         except ImportError:
@@ -188,7 +188,7 @@ try:
             )
 except ImportError:
     extras = ["torch"]
-    if LHOTSE_USE_TORCHAUDIO:
+    if LHOTSE_REQUIRE_TORCHAUDIO:
         extras.append("torchaudio")
     install_requires.extend(extras)
 
