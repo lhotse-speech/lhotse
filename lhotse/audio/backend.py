@@ -19,12 +19,7 @@ from lhotse.audio.utils import (
     verbose_audio_loading_exceptions,
 )
 from lhotse.augmentation import Resample
-from lhotse.utils import Pathlike, Seconds, compute_num_samples, is_module_available
-
-
-def is_torchaudio_available() -> bool:
-    return is_module_available("torchaudio")
-
+from lhotse.utils import Pathlike, Seconds, compute_num_samples, is_torchaudio_available
 
 _FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = is_torchaudio_available()
 CURRENT_AUDIO_BACKEND: Optional["AudioBackend"] = None

@@ -6,12 +6,12 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 
-from lhotse.audio.backend import is_torchaudio_available
 from lhotse.augmentation.transform import AudioTransform
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
     during_docs_build,
+    is_torchaudio_available,
     perturb_num_samples,
 )
 
