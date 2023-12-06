@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from _decimal import ROUND_HALF_UP
 
-from lhotse.audio.backend import info, torchaudio_info, torchaudio_save_flac_safe
+from lhotse.audio.backend import info, save_flac_file, torchaudio_info
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
     DurationMismatchError,
@@ -298,7 +298,7 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        torchaudio_save_flac_safe(
+        save_flac_file(
             stream, torch.from_numpy(audio), self.sampling_rate, format=format
         )
         channels = (ifnone(channels, self.channel_ids),)

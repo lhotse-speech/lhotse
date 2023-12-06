@@ -3,7 +3,6 @@ import re
 from typing import List, Optional, Tuple
 
 import torch
-import torchaudio
 
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import is_module_available

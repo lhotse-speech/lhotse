@@ -28,13 +28,10 @@ import logging
 import shutil
 import tarfile
 import tempfile
-from ast import literal_eval
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
-import torch
-import torchaudio
 from torch.hub import download_url_to_file
 from tqdm import tqdm
 
