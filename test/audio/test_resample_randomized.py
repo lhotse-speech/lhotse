@@ -1,15 +1,12 @@
 from math import isclose
 
 import hypothesis.strategies as st
-import pytest
 from hypothesis import given, settings
 
 from lhotse.testing.fixtures import RandomCutTestCase
-from lhotse.utils import is_torchaudio_available
 
 
 class TestResample(RandomCutTestCase):
-    @pytest.mark.skipif(not is_torchaudio_available())
     @settings(deadline=None, print_blob=True)
     @given(
         st.one_of(

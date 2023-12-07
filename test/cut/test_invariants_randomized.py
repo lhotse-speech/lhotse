@@ -1,4 +1,3 @@
-import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -6,10 +5,6 @@ from lhotse.testing.fixtures import RandomCutTestCase
 
 EXAMPLE_TIMEOUT_MS = 5000
 MAX_EXAMPLES = 200
-
-torchaudio = pytest.importorskip(
-    "torchaudio", reason="Torchaudio is required for randomized tests."
-)
 
 
 class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):

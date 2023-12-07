@@ -6,9 +6,8 @@ import numpy as np
 import pytest
 import torch.testing
 
-from lhotse import CutSet, Fbank, FbankConfig, MonoCut
+from lhotse import CutSet, Fbank, MonoCut
 from lhotse.dataset import AudioSamples, OnTheFlyFeatures, PrecomputedFeatures
-from lhotse.utils import is_torchaudio_available
 
 
 @pytest.fixture
@@ -25,14 +24,7 @@ def libri_cut_set():
 
 
 @pytest.mark.parametrize(
-    "batchio",
-    [
-        AudioSamples,
-        PrecomputedFeatures,
-        partial(
-            OnTheFlyFeatures, Fbank(FbankConfig(torchaudio_compatible_mel_scale=False))
-        ),
-    ],
+    "batchio", [AudioSamples, PrecomputedFeatures, partial(OnTheFlyFeatures, Fbank())]
 )
 @pytest.mark.parametrize("num_workers", [0, 1, 2])
 @pytest.mark.parametrize(
@@ -48,7 +40,6 @@ def test_batch_io(libri_cut_set, batchio, num_workers, executor_type):
     read_fn(libri_cut_set)
 
 
-@pytest.mark.skipif(not is_torchaudio_available())
 def test_audio_samples_with_custom_field(libri_cut_set):
     batchio = AudioSamples()
 

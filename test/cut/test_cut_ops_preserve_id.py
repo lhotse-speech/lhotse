@@ -1,9 +1,5 @@
 import pytest
 
-torchaudio = pytest.importorskip(
-    "torchaudio", reason="Torchaudio is required for most data augmentation transforms."
-)
-
 # Note:
 # Definitions for `cut1`, `cut2` and `cut_set` parameters are standard Pytest fixtures located in test/cut/conftest.py
 
