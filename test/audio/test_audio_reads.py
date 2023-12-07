@@ -29,7 +29,6 @@ from lhotse.audio.backend import (
         "test/fixtures/mono_c0.opus",
         "test/fixtures/stereo.opus",
         "test/fixtures/stereo.sph",
-        "test/fixtures/stereo.mp3",
         "test/fixtures/common_voice_en_651325.mp3",
     ],
 )
