@@ -368,9 +368,7 @@ class LibsndfileBackend(AudioBackend):
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        # Technically it's applicable with regular files as well, but for now
-        # we're not enabling that feature.
-        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
+        return True
 
 
 class AudioreadBackend(AudioBackend):
@@ -1180,7 +1178,8 @@ def save_flac_file(
         kwargs.pop("bits_per_sample", None)  # ignore this arg when not using torchaudio
         if torch.is_tensor(src):
             src = src.numpy()
-        sf.write(file=dest, data=src, samplerate=sample_rate, *args, **kwargs)
+        src = src.squeeze(0)
+        sf.write(file=dest, data=src, samplerate=sample_rate, format="FLAC")
 
 
 def torchaudio_save_flac_safe(

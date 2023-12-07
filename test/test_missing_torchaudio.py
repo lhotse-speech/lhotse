@@ -37,3 +37,14 @@ def test_lhotse_load_audio():
     cut = cuts[0]
     audio = cut.load_audio()
     assert isinstance(audio, np.ndarray)
+
+
+@notorchaudio
+def test_lhotse_audio_in_memory():
+    import lhotse
+
+    cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
+    cut = cuts[0]
+    cut = cut.move_to_memory()
+    audio = cut.load_audio()
+    assert isinstance(audio, np.ndarray)
