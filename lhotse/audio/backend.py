@@ -19,9 +19,9 @@ from lhotse.audio.utils import (
     verbose_audio_loading_exceptions,
 )
 from lhotse.augmentation import Resample
-from lhotse.utils import Pathlike, Seconds, compute_num_samples
+from lhotse.utils import Pathlike, Seconds, compute_num_samples, is_torchaudio_available
 
-_FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = True
+_FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = is_torchaudio_available()
 CURRENT_AUDIO_BACKEND: Optional["AudioBackend"] = None
 
 
@@ -276,12 +276,20 @@ class FfmpegTorchaudioStreamerBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        return torchaudio_supports_ffmpeg() and isinstance(path_or_fd, BytesIO)
+        return (
+            is_torchaudio_available()
+            and torchaudio_supports_ffmpeg()
+            and isinstance(path_or_fd, BytesIO)
+        )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         # Technically it's applicable with regular files as well, but for now
         # we're not enabling that feature.
-        return torchaudio_supports_ffmpeg() and isinstance(path_or_fd, BytesIO)
+        return (
+            is_torchaudio_available()
+            and torchaudio_supports_ffmpeg()
+            and isinstance(path_or_fd, BytesIO)
+        )
 
 
 class TorchaudioDefaultBackend(AudioBackend):
@@ -297,6 +305,9 @@ class TorchaudioDefaultBackend(AudioBackend):
             offset=offset,
             duration=duration,
         )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return is_torchaudio_available()
 
 
 class TorchaudioFFMPEGBackend(AudioBackend):
@@ -324,7 +335,7 @@ class TorchaudioFFMPEGBackend(AudioBackend):
         For version == 2.0.x, we also need env var TORCHAUDIO_USE_BACKEND_DISPATCHER=1
         For version >= 2.1.x, this will already be the default.
         """
-        return torchaudio_2_0_ffmpeg_enabled()
+        return is_torchaudio_available() and torchaudio_2_0_ffmpeg_enabled()
 
 
 class LibsndfileBackend(AudioBackend):
@@ -357,9 +368,7 @@ class LibsndfileBackend(AudioBackend):
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        # Technically it's applicable with regular files as well, but for now
-        # we're not enabling that feature.
-        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
+        return True
 
 
 class AudioreadBackend(AudioBackend):
@@ -481,6 +490,9 @@ def torchaudio_2_0_ffmpeg_enabled() -> bool:
     Returns ``True`` when torchaudio.load supports "ffmpeg" backend.
     This requires either version 2.1.x+ or 2.0.x with env var TORCHAUDIO_USE_BACKEND_DISPATCHER=1.
     """
+    if not is_torchaudio_available():
+        return False
+
     import torchaudio
     from packaging import version
 
@@ -1147,6 +1159,27 @@ def read_sph(
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
 
     return audio, sampling_rate
+
+
+def save_flac_file(
+    dest: Union[str, Path, BytesIO],
+    src: Union[torch.Tensor, np.ndarray],
+    sample_rate: int,
+    *args,
+    **kwargs,
+):
+    if is_torchaudio_available():
+        torchaudio_save_flac_safe(
+            dest=dest, src=src, sample_rate=sample_rate, *args, **kwargs
+        )
+    else:
+        import soundfile as sf
+
+        kwargs.pop("bits_per_sample", None)  # ignore this arg when not using torchaudio
+        if torch.is_tensor(src):
+            src = src.numpy()
+        src = src.squeeze(0)
+        sf.write(file=dest, data=src, samplerate=sample_rate, format="FLAC")
 
 
 def torchaudio_save_flac_safe(

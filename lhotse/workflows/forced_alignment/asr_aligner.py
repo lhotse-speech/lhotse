@@ -2,7 +2,6 @@ import re
 from typing import List, NamedTuple, Sequence
 
 import torch
-import torchaudio
 
 from lhotse.supervision import AlignmentItem
 
@@ -13,6 +12,8 @@ class ASRForcedAligner(ForcedAligner):
     def __init__(
         self, bundle_name: str = "WAV2VEC2_ASR_BASE_960H", device: str = "cpu", **kwargs
     ):
+        import torchaudio
+
         super().__init__(device=device)
         self.bundle_name = bundle_name
         self.bundle = getattr(torchaudio.pipelines, bundle_name)

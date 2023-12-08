@@ -1088,3 +1088,7 @@ class PythonLiteralOption(click.Option):
                 return val
         except:
             return None
+
+
+def is_torchaudio_available() -> bool:
+    return is_module_available("torchaudio")

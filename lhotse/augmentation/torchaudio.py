@@ -11,6 +11,7 @@ from lhotse.utils import (
     Seconds,
     compute_num_samples,
     during_docs_build,
+    is_torchaudio_available,
     perturb_num_samples,
 )
 
@@ -58,6 +59,7 @@ class SoxEffectTransform:
         self.effects = effects
 
     def __call__(self, tensor: Union[torch.Tensor, np.ndarray], sampling_rate: int):
+        check_for_torchaudio()
         check_torchaudio_version()
         import torchaudio
 
@@ -113,6 +115,7 @@ class Speed(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_for_torchaudio()
         resampler = get_or_create_resampler(
             round(sampling_rate * self.factor), sampling_rate
         )
@@ -152,6 +155,7 @@ _precompiled_resamplers: Dict[Tuple[int, int], torch.nn.Module] = {}
 def get_or_create_resampler(
     source_sampling_rate: int, target_sampling_rate: int
 ) -> torch.nn.Module:
+    check_for_torchaudio()
     global _precompiled_resamplers
 
     tpl = (source_sampling_rate, target_sampling_rate)
@@ -182,6 +186,7 @@ class Resample(AudioTransform):
         )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
+        check_for_torchaudio()
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
 
@@ -234,6 +239,7 @@ class Tempo(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_for_torchaudio()
         check_torchaudio_version()
         import torchaudio
 
@@ -288,6 +294,7 @@ class Volume(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_for_torchaudio()
         check_torchaudio_version()
         import torchaudio
 
@@ -355,4 +362,12 @@ def check_torchaudio_version():
             "Torchaudio SoX effects chains are only introduced in version 0.7 - "
             "please upgrade your PyTorch to 1.7.1 and torchaudio to 0.7.2 (or higher) "
             "to use them."
+        )
+
+
+def check_for_torchaudio():
+    if not is_torchaudio_available():
+        raise RuntimeError(
+            "This transform is not supported in torchaudio-free Lhotse installation. "
+            "Please install torchaudio and try again."
         )

@@ -58,6 +58,13 @@ IS_DEV_VERSION = not bool(
 )  # False = public release, True = otherwise
 
 
+LHOTSE_REQUIRE_TORCHAUDIO = os.environ.get("LHOTSE_REQUIRE_TORCHAUDIO", "1") in (
+    "1",
+    "True",
+    "true",
+    "yes",
+)
+
 if sys.version_info < (3,):
     # fmt: off
     print(
@@ -166,18 +173,24 @@ try:
     # Otherwise, we'll just install the latest versions from PyPI for the user.
     import torch
 
-    try:
-        import torchaudio
-    except ImportError:
-        raise ValueError(
-            "We detected that you have already installed PyTorch, but haven't installed torchaudio. "
-            "Unfortunately we can't detect the compatible torchaudio version for you; "
-            "you will have to install it manually. "
-            "For instructions, please refer either to https://pytorch.org/get-started/locally/ "
-            "or https://github.com/pytorch/audio#dependencies"
-        )
+    if LHOTSE_REQUIRE_TORCHAUDIO:
+        try:
+            import torchaudio
+        except ImportError:
+            raise ValueError(
+                "We detected that you have already installed PyTorch, but haven't installed torchaudio. "
+                "Unfortunately we can't detect the compatible torchaudio version for you; "
+                "you will have to install it manually. "
+                "For instructions, please refer either to https://pytorch.org/get-started/locally/ "
+                "or https://github.com/pytorch/audio#dependencies "
+                "You can also disable torchaudio dependency by setting the following environment variable: "
+                "LHOTSE_USE_TORCHAUDIO=0"
+            )
 except ImportError:
-    install_requires.extend(["torch", "torchaudio"])
+    extras = ["torch"]
+    if LHOTSE_REQUIRE_TORCHAUDIO:
+        extras.append("torchaudio")
+    install_requires.extend(extras)
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [

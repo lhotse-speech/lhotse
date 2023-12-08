@@ -11,7 +11,7 @@ import torch
 from intervaltree import IntervalTree
 
 from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
-from lhotse.audio.backend import torchaudio_save_flac_safe
+from lhotse.audio.backend import save_flac_file
 from lhotse.audio.mixer import AudioMixer, VideoMixer, audio_energy
 from lhotse.augmentation import (
     AudioTransform,
@@ -386,7 +386,7 @@ class MixedCut(Cut):
         """
         samples = self.load_audio(mono_downmix=True)
         stream = BytesIO()
-        torchaudio_save_flac_safe(
+        save_flac_file(
             stream,
             samples,
             self.sampling_rate,

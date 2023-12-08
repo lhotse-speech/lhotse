@@ -23,6 +23,7 @@ from lhotse.utils import (
     deprecated,
     fastcopy,
     ifnone,
+    is_torchaudio_available,
     overlaps,
     to_hashable,
 )
@@ -841,7 +842,6 @@ class Cut:
             to mono before saving.
         :return: a new Cut instance.
         """
-        import torchaudio
 
         storage_path = Path(storage_path)
         samples = self.load_audio(**kwargs)
@@ -851,13 +851,20 @@ class Cut:
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
 
-        torchaudio.save(
-            str(storage_path),
-            torch.as_tensor(samples),
-            sample_rate=self.sampling_rate,
-            encoding=encoding,
-            bits_per_sample=bits_per_sample,
-        )
+        if is_torchaudio_available():
+            import torchaudio
+
+            torchaudio.save(
+                str(storage_path),
+                torch.as_tensor(samples),
+                sample_rate=self.sampling_rate,
+                encoding=encoding,
+                bits_per_sample=bits_per_sample,
+            )
+        else:
+            import soundfile as sf
+
+            sf.write(str(storage_path), samples, samplerate=self.sampling_rate)
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,

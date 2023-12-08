@@ -6,7 +6,6 @@ from typing import List, Optional
 
 import numpy as np
 import torch
-import torchaudio
 from typing_extensions import Literal
 
 from lhotse import Recording
@@ -45,6 +44,8 @@ class AudioTarWriter:
         shard_size: Optional[int] = 1000,
         format: Literal["wav", "flac", "mp3"] = "flac",
     ):
+        import torchaudio
+
         self.format = format
         self.tar_writer = TarWriter(pattern, shard_size)
         self.save_fn = torchaudio.save

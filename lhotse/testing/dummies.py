@@ -5,7 +5,6 @@ from typing import Dict, List, Optional, Type, Union
 
 import numpy as np
 import torch
-import torchaudio.backend.no_backend
 
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import AudioSource, Recording, RecordingSet
@@ -89,6 +88,8 @@ def dummy_audio_source(
             type="command", channels=channels, source='echo "dummy waveform"'
         )
     else:
+        import torchaudio
+
         # 1kHz sine wave
         data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples)).unsqueeze(0)
         if len(channels) > 1:
