@@ -20,7 +20,11 @@ from lhotse.recipes.utils import manifests_exist, normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
 
-ICMCASR = ("train", "dev")  # TODO: Support all subsets when released
+ICMCASR = (
+    "train",
+    "dev",
+    "eval_track1",
+)  # TODO: Support eval2 by people who have access to it.
 POSITION = ("DA01", "DA02", "DA03", "DA04")
 # ignore "DX05C01", "DX06C01",
 # which are 2-channel reference signals for AEC.
@@ -124,7 +128,7 @@ def _parse_utterance(
                     end = interval.maxTime
                     text = interval.mark
                     segment = SupervisionSegment(
-                        id=f"{recording_id}-{i}",
+                        id=f"{recording_id}-{round(start * 1000):06}-{round(end * 1000):06}",
                         recording_id=recording_id,
                         start=start,
                         duration=round(end - start, 4),
@@ -199,6 +203,8 @@ def prepare_icmcasr(
     logging.info("Preparing ICMC-ASR...")
 
     subsets = ICMCASR
+    if mic == "ihm":
+        subsets = ("train", "dev")
 
     if output_dir is not None:
         output_dir = Path(output_dir)
