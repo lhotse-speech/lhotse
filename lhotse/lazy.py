@@ -182,10 +182,14 @@ class LazyJsonlIterator:
         self._len = None
 
     def __iter__(self):
+        tot = 0
         with open_best(self.path, "r") as f:
             for line in f:
                 data = decode_json_line(line)
                 yield data
+                tot += 1
+        if self._len is None:
+            self._len = tot
 
     def __len__(self) -> int:
         if self._len is None:
