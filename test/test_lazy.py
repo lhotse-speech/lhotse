@@ -9,6 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 import pytest
 
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
+from lhotse.lazy import LazyJsonlIterator
 from lhotse.testing.dummies import DummyManifest, as_lazy
 from lhotse.utils import fastcopy, is_module_available
 
@@ -248,3 +249,18 @@ def test_dillable():
             "dummy-mono-cut-0000-random-suffix",
             "dummy-mono-cut-0001-random-suffix",
         ]
+
+
+def test_lazy_jsonl_iterator_caches_len():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=200)
+    expected_len = 200
+    with as_lazy(cuts) as cuts_lazy:
+        path = cuts_lazy.data.path
+        print(path)
+        it = LazyJsonlIterator(path)
+        assert it._len is None
+        for _ in it:
+            pass
+        assert it._len is not None
+        assert it._len == expected_len
+        assert len(it) == expected_len
