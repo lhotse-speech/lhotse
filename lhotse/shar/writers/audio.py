@@ -90,6 +90,8 @@ class AudioTarWriter:
         self.tar_writer.write(f"{key}.{self.format}", stream)
 
         # Write text manifest afterwards
+        if self.format == "opus" and sampling_rate != OPUS_DEFAULT_SAMPLING_RATE:
+            manifest = manifest.resample(OPUS_DEFAULT_SAMPLING_RATE)
         manifest = to_shar_placeholder(manifest)
         json_stream = BytesIO()
         print(
@@ -98,3 +100,6 @@ class AudioTarWriter:
         )
         json_stream.seek(0)
         self.tar_writer.write(f"{key}.json", json_stream, count=False)
+
+
+OPUS_DEFAULT_SAMPLING_RATE = 48000

@@ -9,7 +9,6 @@ from lhotse import CutSet
 from lhotse.lazy import LazyJsonlIterator
 from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
 from lhotse.testing.dummies import DummyManifest
-from lhotse.testing.random import deterministic_rng
 
 
 def test_tar_writer(tmp_path: Path):
@@ -67,11 +66,11 @@ def test_tar_writer_pipe(tmp_path: Path):
 
 
 @pytest.mark.parametrize("format", ["wav", "flac", "mp3", "opus"])
-def test_audio_tar_writer(deterministic_rng, tmp_path: Path, format: str):
+def test_audio_tar_writer(tmp_path: Path, format: str):
     from lhotse.testing.dummies import dummy_recording
 
     recording = dummy_recording(0, with_data=True)
-    audio = np.clip(recording.load_audio(), -1.0, 1.0)
+    audio = recording.load_audio()
 
     with AudioTarWriter(
         str(tmp_path / "test.tar"), shard_size=None, format=format
@@ -87,7 +86,9 @@ def test_audio_tar_writer(deterministic_rng, tmp_path: Path, format: str):
 
     ((deserialized_recording, inner_path),) = list(TarIterator(path))
 
-    deserialized_audio = deserialized_recording.load_audio()
+    deserialized_audio = deserialized_recording.resample(
+        recording.sampling_rate
+    ).load_audio()
 
     rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
     assert rmse < 0.5
