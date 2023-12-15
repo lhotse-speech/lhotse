@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet
+from lhotse.audio.backend import check_torchaudio_version_gt
 from lhotse.lazy import LazyJsonlIterator
 from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
 from lhotse.testing.dummies import DummyManifest
@@ -65,7 +66,27 @@ def test_tar_writer_pipe(tmp_path: Path):
         assert f2.read() == b"test"
 
 
-@pytest.mark.parametrize("format", ["wav", "flac", "mp3", "opus"])
+@pytest.mark.parametrize(
+    "format",
+    [
+        "wav",
+        pytest.param(
+            "flac",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("0.12.1"),
+                reason="Torchaudio v0.12.1 or greater is required.",
+            ),
+        ),
+        # "mp3",  # apparently doesn't work in CI, mp3 encoder is missing
+        pytest.param(
+            "opus",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("2.1.0"),
+                reason="Torchaudio v2.1.0 or greater is required.",
+            ),
+        ),
+    ],
+)
 def test_audio_tar_writer(tmp_path: Path, format: str):
     from lhotse.testing.dummies import dummy_recording
 
