@@ -327,6 +327,7 @@ class TorchaudioFFMPEGBackend(AudioBackend):
             path_or_fd=path_or_fd,
             offset=offset,
             duration=duration,
+            resample_rate=force_opus_sampling_rate,
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -711,7 +712,10 @@ def torchaudio_load(
 
 
 def torchaudio_2_ffmpeg_load(
-    path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+    path_or_fd: Pathlike,
+    offset: Seconds = 0,
+    duration: Optional[Seconds] = None,
+    resample_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
     import torchaudio
 
@@ -735,6 +739,14 @@ def torchaudio_2_ffmpeg_load(
         num_frames=num_frames,
         backend="ffmpeg",
     )
+    if sampling_rate != resample_rate:
+        # Handle special cases such as OPUS which returns 48kHz audio
+        # regardless of the sampling rate during saving.
+        from lhotse.augmentation.torchaudio import get_or_create_resampler
+
+        resample = get_or_create_resampler(sampling_rate, resample_rate)
+        audio = resample(audio)
+        sampling_rate = resample_rate
     return audio.numpy(), int(sampling_rate)
 
 

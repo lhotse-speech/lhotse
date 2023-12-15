@@ -2,12 +2,14 @@ import tarfile
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from lhotse import CutSet
 from lhotse.lazy import LazyJsonlIterator
-from lhotse.shar import SharWriter, TarWriter
+from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
 from lhotse.testing.dummies import DummyManifest
+from lhotse.testing.random import deterministic_rng
 
 
 def test_tar_writer(tmp_path: Path):
@@ -62,6 +64,33 @@ def test_tar_writer_pipe(tmp_path: Path):
     with tarfile.open(tmp_path / "test.000000.tar") as f:
         f2 = f.extractfile(f.getmember("test.txt"))
         assert f2.read() == b"test"
+
+
+@pytest.mark.parametrize("format", ["wav", "flac", "mp3", "opus"])
+def test_audio_tar_writer(deterministic_rng, tmp_path: Path, format: str):
+    from lhotse.testing.dummies import dummy_recording
+
+    recording = dummy_recording(0, with_data=True)
+    audio = np.clip(recording.load_audio(), -1.0, 1.0)
+
+    with AudioTarWriter(
+        str(tmp_path / "test.tar"), shard_size=None, format=format
+    ) as writer:
+        writer.write(
+            key="my-recording",
+            value=audio,
+            sampling_rate=recording.sampling_rate,
+            manifest=recording,
+        )
+
+    (path,) = writer.output_paths
+
+    ((deserialized_recording, inner_path),) = list(TarIterator(path))
+
+    deserialized_audio = deserialized_recording.load_audio()
+
+    rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
+    assert rmse < 0.5
 
 
 def test_shar_writer(tmp_path: Path):

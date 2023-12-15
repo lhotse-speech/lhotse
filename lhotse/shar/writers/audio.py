@@ -42,7 +42,7 @@ class AudioTarWriter:
         self,
         pattern: str,
         shard_size: Optional[int] = 1000,
-        format: Literal["wav", "flac", "mp3"] = "flac",
+        format: Literal["wav", "flac", "mp3", "opus"] = "flac",
     ):
         import torchaudio
 
