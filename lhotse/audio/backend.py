@@ -327,6 +327,7 @@ class TorchaudioFFMPEGBackend(AudioBackend):
             path_or_fd=path_or_fd,
             offset=offset,
             duration=duration,
+            resample_rate=force_opus_sampling_rate,
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -477,11 +478,7 @@ def torchaudio_supports_ffmpeg() -> bool:
     # If user has disabled ffmpeg-torchaudio, we don't need to check the version.
     if not _FFMPEG_TORCHAUDIO_INFO_ENABLED:
         return False
-
-    import torchaudio
-    from packaging import version
-
-    return version.parse(torchaudio.__version__) >= version.parse("0.12.0")
+    return check_torchaudio_version_gt("0.12.0")
 
 
 @lru_cache(maxsize=1)
@@ -493,14 +490,10 @@ def torchaudio_2_0_ffmpeg_enabled() -> bool:
     if not is_torchaudio_available():
         return False
 
-    import torchaudio
-    from packaging import version
-
-    ver = version.parse(torchaudio.__version__)
-    if ver >= version.parse("2.1.0"):
+    if check_torchaudio_version_gt("2.1.0"):
         # Enabled by default, disable with TORCHAUDIO_USE_BACKEND_DISPATCHER=0
         return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "1") == "1"
-    if ver >= version.parse("2.0"):
+    if check_torchaudio_version_gt("2.0"):
         # Disabled by default, enable with TORCHAUDIO_USE_BACKEND_DISPATCHER=1
         return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "0") == "1"
     return False
@@ -512,10 +505,14 @@ def torchaudio_soundfile_supports_format() -> bool:
     Returns ``True`` when torchaudio version is at least 0.9.0, which
     has support for ``format`` keyword arg in ``torchaudio.save()``.
     """
-    import torchaudio
-    from packaging import version
+    return check_torchaudio_version_gt("0.9.0")
 
-    return version.parse(torchaudio.__version__) >= version.parse("0.9.0")
+
+def check_torchaudio_version_gt(version: str) -> bool:
+    import torchaudio
+    from packaging import version as _version
+
+    return _version.parse(torchaudio.__version__) >= _version.parse(version)
 
 
 def torchaudio_info(
@@ -711,7 +708,10 @@ def torchaudio_load(
 
 
 def torchaudio_2_ffmpeg_load(
-    path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+    path_or_fd: Union[Pathlike, BytesIO],
+    offset: Seconds = 0,
+    duration: Optional[Seconds] = None,
+    resample_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
     import torchaudio
 

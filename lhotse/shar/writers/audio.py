@@ -9,6 +9,8 @@ import torch
 from typing_extensions import Literal
 
 from lhotse import Recording
+from lhotse.audio.backend import check_torchaudio_version_gt
+from lhotse.augmentation import get_or_create_resampler
 from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.tar import TarWriter
 
@@ -42,7 +44,7 @@ class AudioTarWriter:
         self,
         pattern: str,
         shard_size: Optional[int] = 1000,
-        format: Literal["wav", "flac", "mp3"] = "flac",
+        format: Literal["wav", "flac", "mp3", "opus"] = "flac",
     ):
         import torchaudio
 
@@ -53,6 +55,10 @@ class AudioTarWriter:
             self.save_fn = partial(
                 torchaudio.backend.soundfile_backend.save, bits_per_sample=16
             )
+        if self.format == "opus":
+            assert check_torchaudio_version_gt(
+                "2.1.0"
+            ), "Writing OPUS files into Lhotse Shar requires torchaudio >= 2.1.0"
 
     def __enter__(self):
         self.tar_writer.__enter__()
@@ -79,11 +85,22 @@ class AudioTarWriter:
         sampling_rate: int,
         manifest: Recording,
     ) -> None:
+        # Resampling is required for some versions of OPUS encoders.
+        # First resample the manifest which only adjusts the metadata;
+        # then resample the audio array to 48kHz.
+        value = torch.from_numpy(value)
+        if self.format == "opus" and sampling_rate != OPUS_DEFAULT_SAMPLING_RATE:
+            manifest = manifest.resample(OPUS_DEFAULT_SAMPLING_RATE)
+            value = get_or_create_resampler(sampling_rate, OPUS_DEFAULT_SAMPLING_RATE)(
+                value
+            )
+            sampling_rate = OPUS_DEFAULT_SAMPLING_RATE
+
         # Write binary data
         stream = BytesIO()
         self.save_fn(
             stream,
-            torch.from_numpy(value),
+            value,
             sampling_rate,
             format=self.format,
         )
@@ -98,3 +115,6 @@ class AudioTarWriter:
         )
         json_stream.seek(0)
         self.tar_writer.write(f"{key}.json", json_stream, count=False)
+
+
+OPUS_DEFAULT_SAMPLING_RATE = 48000

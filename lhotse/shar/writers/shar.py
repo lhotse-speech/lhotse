@@ -204,6 +204,7 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
         "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
         "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
         "mp3": (partial(AudioTarWriter, format="mp3"), ".tar"),
+        "opus": (partial(AudioTarWriter, format="opus"), ".tar"),
         "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
         "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
         "jsonl": (JsonlShardWriter, ".jsonl.gz"),
