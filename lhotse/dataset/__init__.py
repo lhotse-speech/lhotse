@@ -11,6 +11,7 @@ from .source_separation import (
     PreMixedSourceSeparationDataset,
     SourceSeparationDataset,
 )
+from .audio_tagging import AudioTaggingDataset
 from .speech_recognition import K2SpeechRecognitionDataset
 from .speech_synthesis import SpeechSynthesisDataset
 from .surt import K2SurtDataset
