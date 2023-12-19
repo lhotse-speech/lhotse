@@ -9,6 +9,7 @@ from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import compute_num_frames, ifnone
 from lhotse.workarounds import Hdf5MemoryIssueFix
 
+
 class AudioTaggingDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the audio tagging task.
@@ -40,6 +41,7 @@ class AudioTaggingDataset(torch.utils.data.Dataset):
             ]
         }
     """
+
     def __init__(
         self,
         return_cuts: bool = False,

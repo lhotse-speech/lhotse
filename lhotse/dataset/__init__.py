@@ -1,4 +1,5 @@
 from . import cut_transforms, input_strategies, sampling, signal_transforms
+from .audio_tagging import AudioTaggingDataset
 from .cut_transforms import *
 from .dataloading import make_worker_init_fn
 from .diarization import DiarizationDataset
@@ -11,7 +12,6 @@ from .source_separation import (
     PreMixedSourceSeparationDataset,
     SourceSeparationDataset,
 )
-from .audio_tagging import AudioTaggingDataset
 from .speech_recognition import K2SpeechRecognitionDataset
 from .speech_synthesis import SpeechSynthesisDataset
 from .surt import K2SurtDataset
