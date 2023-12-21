@@ -86,7 +86,7 @@ def prepare_mgb2(
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    dataset_parts = ["dev", "train", "test"]
+    dataset_parts = "dev"
     manifests = {}
 
     if output_dir is not None:
@@ -144,7 +144,7 @@ def prepare_mgb2(
                 assert (
                     len(supervisions) == 5002
                 ), f"Expected 5002 supervisions for dev, found {len(supervisions)}"
-        elif part == "train":
+      """  elif part == "train":
             recordings = RecordingSet.from_dir(
                 (corpus_dir / part / "wav"), pattern="*.wav", num_jobs=num_jobs
             )
@@ -159,7 +159,7 @@ def prepare_mgb2(
                         [make_supervisions(p, mer_thresh) for p in xml_paths]
                     )
                 )
-
+"""
             supervisions = SupervisionSet.from_segments(supervisions_list)
 
             assert (
