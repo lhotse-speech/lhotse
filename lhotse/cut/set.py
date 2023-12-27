@@ -16,6 +16,7 @@ from typing import (
     FrozenSet,
     Iterable,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -30,7 +31,6 @@ import numpy as np
 import torch
 from intervaltree import IntervalTree
 from tqdm.auto import tqdm
-from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn

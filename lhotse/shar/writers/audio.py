@@ -2,11 +2,10 @@ import codecs
 import json
 from functools import partial
 from io import BytesIO
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 import numpy as np
 import torch
-from typing_extensions import Literal
 
 from lhotse import Recording
 from lhotse.audio.backend import check_torchaudio_version_gt
