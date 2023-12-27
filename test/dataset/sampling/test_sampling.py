@@ -1,7 +1,6 @@
 import random
 from copy import deepcopy
 from functools import partial
-from itertools import groupby
 from math import isclose
 from statistics import mean
 from tempfile import NamedTemporaryFile
@@ -10,6 +9,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset import (
+    CutConcatenate,
     DynamicBucketingSampler,
     RoundRobinSampler,
     report_padding_ratio_estimate,
@@ -24,9 +24,7 @@ from lhotse.dataset.sampling import (
 from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
-from lhotse.utils import fastcopy
-from lhotse.utils import nullcontext as does_not_raise
-from lhotse.utils import streaming_shuffle
+from lhotse.utils import fastcopy, streaming_shuffle
 
 
 @pytest.fixture
@@ -1032,3 +1030,22 @@ def test_sampler_does_not_drop_cuts_with_multiple_ranks(world_size, sampler_fn):
             tot_cuts += len(batch)
 
     assert tot_cuts == len(cuts)
+
+
+def test_sampler_map():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    transform = CutConcatenate(gap=0.0, duration_factor=5.0)  # will glue 5 cuts into 1
+
+    sampler = DynamicCutSampler(cuts, max_duration=5.0)
+    sampler.map(transform)
+
+    batches = [b for b in sampler]
+    assert len(batches) == 2
+
+    b = batches[0]
+    assert len(b) == 1
+    assert b[0].duration == 5.0
+
+    b = batches[1]
+    assert len(b) == 1
+    assert b[0].duration == 5.0
