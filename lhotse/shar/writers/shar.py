@@ -1,10 +1,8 @@
 import warnings
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
-from typing_extensions import Literal
-
-from lhotse import AudioSource, Features, fastcopy
+from lhotse import fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.cut import Cut

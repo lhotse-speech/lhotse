@@ -1,10 +1,9 @@
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Literal, Optional, Set, Tuple
 
 import numpy as np
 import torch
 from intervaltree import Interval, IntervalTree
-from typing_extensions import Literal
 
 from lhotse.audio import AudioSource, Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
@@ -20,7 +19,6 @@ from lhotse.utils import (
     compute_num_samples,
     compute_num_windows,
     compute_start_duration_for_extended_cut,
-    deprecated,
     fastcopy,
     ifnone,
     is_torchaudio_available,
