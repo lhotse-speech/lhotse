@@ -2,12 +2,12 @@ import itertools
 import logging
 import pickle
 import random
+import secrets
 import warnings
-from collections import Counter, defaultdict
+from collections import defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
 from functools import partial, reduce
 from itertools import chain, islice
-from math import ceil
 from pathlib import Path
 from typing import (
     Any,
@@ -33,7 +33,6 @@ from intervaltree import IntervalTree
 from tqdm.auto import tqdm
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
-from lhotse.audio.utils import VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
@@ -44,7 +43,15 @@ from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
-from lhotse.lazy import AlgorithmMixin
+from lhotse.lazy import (
+    AlgorithmMixin,
+    ImitatesDict,
+    LazyFlattener,
+    LazyIteratorChain,
+    LazyManifestIterator,
+    LazyMapper,
+    LazySlicer,
+)
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -53,14 +60,12 @@ from lhotse.utils import (
     Decibels,
     Pathlike,
     Seconds,
-    TimeSpan,
     compute_num_frames,
     compute_num_samples,
     exactly_one_not_null,
     fastcopy,
     ifnone,
     index_by_id_and_check,
-    is_module_available,
     split_manifest_lazy,
     split_sequence,
     uuid4,
@@ -237,7 +242,9 @@ class CutSet(Serializable, AlgorithmMixin):
         - :class:`~lhotse.cut.Cut`
     """
 
-    def __init__(self, cuts: Optional[Mapping[str, Cut]] = None) -> None:
+    def __init__(
+        self, cuts: Optional[Union[Mapping[str, Cut], ImitatesDict]] = None
+    ) -> None:
         self.cuts = ifnone(cuts, {})
 
     def __eq__(self, other: "CutSet") -> bool:
@@ -290,8 +297,6 @@ class CutSet(Serializable, AlgorithmMixin):
             will be different on each script execution.
         :return: a lazy CutSet instance.
         """
-        from lhotse.lazy import LazyIteratorChain, LazyManifestIterator
-
         return CutSet(
             LazyIteratorChain(
                 *(LazyManifestIterator(p) for p in paths),
@@ -1039,8 +1044,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
 
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1098,8 +1101,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
 
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1193,8 +1194,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
 
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1455,8 +1454,6 @@ class CutSet(Serializable, AlgorithmMixin):
         if not hop:
             hop = duration
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1659,7 +1656,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: int = 42,
+        seed: Union[int, Literal["trng"]] = 42,
         random_mix_offset: bool = False,
     ) -> "CutSet":
         """
@@ -1686,76 +1683,27 @@ class CutSet(Serializable, AlgorithmMixin):
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
+            If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
+            on each iteration.
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
              select a random sub-region from the to be mixed in cut.
-        :param seed: an optional int. Random seed for choosing the cuts to mix and the SNR.
         :return: a new ``CutSet`` with mixed cuts.
         """
-        assert 0.0 <= mix_prob <= 1.0
-        assert duration is None or duration > 0
-        if isinstance(snr, (tuple, list)):
-            assert (
-                len(snr) == 2
-            ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
-        else:
-            assert isinstance(snr, (type(None), int, float))
-        assert not cuts.is_lazy, (
-            "Mixing of two CutSets does not support a lazy mixed-in CutSet ('cuts' argument), "
-            "as it would be extremely inefficient. "
-            "You can use 'cuts.to_eager()' on the function argument to fix this."
-        )
-        rng = random.Random(seed)
-        mixed_cuts = []
-        for cut in self:
-            # Check whether we're going to mix something into the current cut
-            # or pass it through unchanged.
-            if rng.uniform(0.0, 1.0) > mix_prob:
-                mixed_cuts.append(cut)
-                continue
-            to_mix = cuts.sample()
-            # Determine the SNR - either it's specified or we need to sample one.
-            cut_snr = rng.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
-            if random_mix_offset and to_mix.duration > cut.duration:
-                to_mix = to_mix.truncate(
-                    offset=rng.uniform(0, to_mix.duration - cut.duration),
-                    duration=cut.duration,
-                )
-            # Actual mixing
-            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
-            # Did the user specify a duration?
-            # If yes, we will ensure that shorter cuts have more noise mixed in
-            # to "pad" them with at the end.
-            # If no, we will mix in as many noise cuts as needed to cover complete
-            # duration.
-            mixed_in_duration = to_mix.duration
-            # Keep sampling until we mixed in a "duration" amount of noise.
-            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
-            #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (
-                duration if duration is not None else cut.duration - 0.05
-            ):
-                to_mix = cuts.sample()
-                # Keep the SNR constant for each cut from "self".
-                mixed = mixed.mix(
-                    other=to_mix,
-                    snr=cut_snr,
-                    offset_other_by=mixed_in_duration,
-                    allow_padding=allow_padding,
-                    preserve_id=preserve_id,
-                )
-                # Since we're adding floats, we can be off by an epsilon and trigger
-                # some assertions for exceeding duration; do precautionary rounding here.
-                mixed_in_duration = round(
-                    mixed_in_duration + to_mix.duration, ndigits=8
-                )
-            # We truncate the mixed to either the original duration or the requested duration.
-            mixed = mixed.truncate(
-                duration=duration if duration is not None else cut.duration,
-                preserve_id=preserve_id is not None,
+        return CutSet(
+            LazyCutMixer(
+                cuts=self,
+                mix_in_cuts=cuts,
+                duration=duration,
+                allow_padding=allow_padding,
+                snr=snr,
+                preserve_id=preserve_id,
+                mix_prob=mix_prob,
+                seed=seed,
+                random_mix_offset=random_mix_offset,
             )
-            mixed_cuts.append(mixed)
-        return CutSet.from_cuts(mixed_cuts)
+        )
 
     def drop_features(self) -> "CutSet":
         """
@@ -1874,7 +1822,6 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        from lhotse.lazy import LazySlicer
         from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
@@ -3361,3 +3308,134 @@ def _export_to_shar_single(
 
     # Finally, return the list of output files.
     return writer.output_paths
+
+
+class LazyCutMixer(ImitatesDict):
+    """
+    Iterate over cuts from ``cuts`` CutSet while mixing randomly sampled ``mix_in_cuts`` into them.
+    A typical application would be data augmentation with noise, music, babble, etc.
+
+    :param cuts: a ``CutSet`` we are iterating over.
+    :param mix_in_cuts: a ``CutSet`` containing other cuts to be mixed into ``cuts``.
+    :param duration: an optional float in seconds.
+        When ``None``, we will preserve the duration of the cuts in ``self``
+        (i.e. we'll truncate the mix if it exceeded the original duration).
+        Otherwise, we will keep sampling cuts to mix in until we reach the specified
+        ``duration`` (and truncate to that value, should it be exceeded).
+    :param allow_padding: an optional bool.
+        When it is ``True``, we will allow the offset to be larger than the reference
+        cut by padding the reference cut.
+    :param snr: an optional float, or pair (range) of floats, in decibels.
+        When it's a single float, we will mix all cuts with this SNR level
+        (where cuts in ``self`` are treated as signals, and cuts in ``cuts`` are treated as noise).
+        When it's a pair of floats, we will uniformly sample SNR values from that range.
+        When ``None``, we will mix the cuts without any level adjustment
+        (could be too noisy for data augmentation).
+    :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
+        of the left- or right-hand side argument. otherwise, a new random id is generated.
+    :param mix_prob: an optional float in range [0, 1].
+        Specifies the probability of performing a mix.
+        Values lower than 1.0 mean that some cuts in the output will be unchanged.
+    :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
+        If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
+        on each iteration.
+    :param random_mix_offset: an optional bool.
+        When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
+         select a random sub-region from the to be mixed in cut.
+    """
+
+    def __init__(
+        self,
+        cuts: "CutSet",
+        mix_in_cuts: "CutSet",
+        duration: Optional[Seconds] = None,
+        allow_padding: bool = False,
+        snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
+        preserve_id: Optional[str] = None,
+        mix_prob: float = 1.0,
+        seed: Union[int, Literal["trng"]] = 42,
+        random_mix_offset: bool = False,
+    ) -> None:
+        self.source = cuts
+        self.mix_in_cuts = mix_in_cuts
+        self.duration = duration
+        self.allow_padding = allow_padding
+        self.snr = snr
+        self.preserve_id = preserve_id
+        self.mix_prob = mix_prob
+        self.seed = seed
+        self.random_mix_offset = random_mix_offset
+
+        assert 0.0 <= self.mix_prob <= 1.0
+        assert self.duration is None or self.duration > 0
+        if isinstance(self.snr, (tuple, list)):
+            assert (
+                len(self.snr) == 2
+            ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
+        else:
+            assert isinstance(self.snr, (type(None), int, float))
+
+    def __iter__(self):
+        if self.seed == "trng":
+            rng = secrets.SystemRandom()
+        else:
+            rng = random.Random(self.seed)
+        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+
+        for cut in self.source:
+            # Check whether we're going to mix something into the current cut
+            # or pass it through unchanged.
+            if rng.uniform(0.0, 1.0) > self.mix_prob:
+                yield cut
+            to_mix = next(mix_in_cuts)
+            # Determine the SNR - either it's specified or we need to sample one.
+            cut_snr = (
+                rng.uniform(*self.snr)
+                if isinstance(self.snr, (list, tuple))
+                else self.snr
+            )
+            if self.random_mix_offset and to_mix.duration > cut.duration:
+                to_mix = to_mix.truncate(
+                    offset=rng.uniform(0, to_mix.duration - cut.duration),
+                    duration=cut.duration,
+                )
+            # Actual mixing
+            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
+            # Did the user specify a duration?
+            # If yes, we will ensure that shorter cuts have more noise mixed in
+            # to "pad" them with at the end.
+            # If no, we will mix in as many noise cuts as needed to cover complete
+            # duration.
+            mixed_in_duration = to_mix.duration
+            # Keep sampling until we mixed in a "duration" amount of noise.
+            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+            #       where we mix in some noise cut that effectively has 0 frames of features.
+            while mixed_in_duration < (
+                self.duration if self.duration is not None else cut.duration - 0.05
+            ):
+                to_mix = next(mix_in_cuts)
+                # Keep the SNR constant for each cut from "self".
+                mixed = mixed.mix(
+                    other=to_mix,
+                    snr=cut_snr,
+                    offset_other_by=mixed_in_duration,
+                    allow_padding=self.allow_padding,
+                    preserve_id=self.preserve_id,
+                )
+                # Since we're adding floats, we can be off by an epsilon and trigger
+                # some assertions for exceeding duration; do precautionary rounding here.
+                mixed_in_duration = round(
+                    mixed_in_duration + to_mix.duration, ndigits=8
+                )
+            # We truncate the mixed to either the original duration or the requested duration.
+            mixed = mixed.truncate(
+                duration=self.duration if self.duration is not None else cut.duration,
+                preserve_id=self.preserve_id is not None,
+            )
+            yield mixed
+
+    def __len__(self) -> int:
+        return len(self.source)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
