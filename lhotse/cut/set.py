@@ -1656,7 +1656,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: int | Literal["trng"] = 42,
+        seed: Union[int, Literal["trng"]] = 42,
         random_mix_offset: bool = False,
     ) -> "CutSet":
         """
@@ -3353,7 +3353,7 @@ class LazyCutMixer(ImitatesDict):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: int | Literal["trng"] = 42,
+        seed: Union[int, Literal["trng"]] = 42,
         random_mix_offset: bool = False,
     ) -> None:
         self.source = cuts
