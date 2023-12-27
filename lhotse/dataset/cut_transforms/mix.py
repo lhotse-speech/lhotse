@@ -67,4 +67,4 @@ class CutMix:
             preserve_id="left" if self.preserve_id else None,
             seed=self.seed,
             random_mix_offset=self.random_mix_offset,
-        )
+        ).to_eager()
