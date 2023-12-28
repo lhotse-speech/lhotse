@@ -16,8 +16,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - python-version: "3.7"
-            torch-install-cmd: "pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html"
           - python-version: "3.8"
             torch-install-cmd: "pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html"
           - python-version: "3.9"

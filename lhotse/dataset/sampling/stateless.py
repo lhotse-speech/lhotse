@@ -2,10 +2,11 @@ import logging
 import os
 import random
 from pathlib import Path
-from typing import Dict, Generator, Iterable, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, Generator, Iterable, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.distributed as dist
+from cytoolz import compose_left
 
 from lhotse import CutSet, Seconds
 from lhotse.cut.set import deserialize_cut
@@ -158,9 +159,15 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
             lc * scale
             for lc, scale in zip(self.index.line_counts.values(), self.scales)
         ]
+        self._transforms = []
         # DDP related info
         self.rank = get_rank()
         self.world_size = get_world_size()
+
+    def map(self, fn: Callable[[CutSet], CutSet]) -> "StatelessSampler":
+        """Apply ``fn`` to each mini-batch of ``CutSet`` before yielding it."""
+        self._transforms.append(fn)
+        return self
 
     def state_dict(self) -> Dict:
         """Stub state_dict method that returns nothing - this sampler is stateless."""
@@ -232,6 +239,7 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
                 world_size=1,
                 rank=0,
             )
+        inner_sampler.map(compose_left(*self._transforms))
         self.diagnostics = inner_sampler.diagnostics
         yield from inner_sampler
 

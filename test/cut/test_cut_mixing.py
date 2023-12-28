@@ -466,3 +466,11 @@ def test_cut_set_mix_snr_is_randomized():
     assert 0 <= c1.tracks[1].snr <= 10
 
     assert c0.tracks[1].snr != c1.tracks[1].snr
+
+
+def test_cut_set_mix_is_lazy():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+
+    mixed = cuts.mix(cuts, snr=10, mix_prob=1.0, seed=0)
+
+    assert mixed.is_lazy

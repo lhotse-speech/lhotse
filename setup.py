@@ -73,9 +73,9 @@ if sys.version_info < (3,):
     # fmt: on
     sys.exit(-1)
 
-if sys.version_info < (3, 7):
+if sys.version_info < (3, 8):
     print(
-        "Python 3.6 has reached end-of-life on December 31st, 2021 "
+        "Python 3.7 has reached end-of-life on June 27th, 2023 "
         "and is no longer supported by lhotse."
     )
     sys.exit(-1)
@@ -152,7 +152,6 @@ install_requires = [
     "SoundFile>=0.10",
     "click>=7.1.1",
     "cytoolz>=0.10.1",
-    "dataclasses",
     "intervaltree>= 3.1.0",
     "numpy>=1.18.1",
     "packaging",
@@ -235,7 +234,7 @@ if os.environ.get("READTHEDOCS", False):
 setup(
     name="lhotse",
     version=LHOTSE_VERSION,
-    python_requires=">=3.7.0",
+    python_requires=">=3.8.0",
     description="Data preparation for speech processing models training.",
     author="The Lhotse Development Team",
     author_email="pzelasko@jhu.edu",
@@ -263,7 +262,6 @@ setup(
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
