@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import random
+import secrets
 import sys
 import urllib
 import uuid
@@ -1092,3 +1093,10 @@ class PythonLiteralOption(click.Option):
 
 def is_torchaudio_available() -> bool:
     return is_module_available("torchaudio")
+
+
+def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
+    if seed == "trng":
+        return secrets.SystemRandom()
+    else:
+        return random.Random(seed)
