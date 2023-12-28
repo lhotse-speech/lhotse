@@ -12,7 +12,13 @@ from lhotse.serialization import (
     extension_contains,
     open_best,
 )
-from lhotse.utils import Pathlike, fastcopy, is_module_available, streaming_shuffle
+from lhotse.utils import (
+    Pathlike,
+    build_rng,
+    fastcopy,
+    is_module_available,
+    streaming_shuffle,
+)
 
 T = TypeVar("T")
 
@@ -360,7 +366,7 @@ class LazyIteratorMultiplexer(ImitatesDict):
         assert len(self.iterators) == len(self.weights)
 
     def __iter__(self):
-        rng = random.Random(self.seed)
+        rng = build_rng(self.seed)
         iters = [iter(it) for it in self.iterators]
         exhausted = [False for _ in range(len(iters))]
 
@@ -450,10 +456,7 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
         - each stream may be interpreted as a shard belonging to some larger group of streams
           (e.g. multiple shards of a given dataset).
         """
-        if self.seed == "trng":
-            rng = secrets.SystemRandom()
-        else:
-            rng = random.Random(self.seed)
+        rng = build_rng(self.seed)
 
         def shuffled_streams():
             # Create an infinite iterable of our streams.
