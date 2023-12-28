@@ -510,9 +510,6 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
                 item = next(active_streams[stream_pos])
                 yield item
 
-    def __len__(self) -> int:
-        return sum(len(it) for it in self.iterators)
-
 
 class LazyShuffler(ImitatesDict):
     """
