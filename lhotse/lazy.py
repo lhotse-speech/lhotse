@@ -95,7 +95,13 @@ class AlgorithmMixin(LazyMixin, Iterable):
         """
         Merges multiple manifest iterables into a new iterable by lazily multiplexing them during iteration time.
         Unlike ``mux()``, this method allows to limit the number of max open sub-iterators at any given time.
-        To enable this, it creates an infinite iterable that internally samples each iterable with replacement.
+
+        To enable this, it performs 2-stage sampling.
+        First, it samples with replacement the set of iterators ``I`` to construct a subset ``I_sub``
+        of size ``max_open_streams``.
+        Then, for each iteration step, it samples an iterator ``i`` from ``I_sub``,
+        fetches the next item from it, and yields it.
+        Once ``i`` becomes exhausted, it is replaced with a new iterator ``j`` sampled from ``I_sub``.
 
         .. caution:: Do not use this method with inputs that are infinitely iterable as they will
             silently break the multiplexing property by only using a subset of the input iterables.
