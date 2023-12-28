@@ -946,7 +946,9 @@ class DataCut(Cut, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
-    def normalize_loudness(self, target: float, affix_id: bool = False) -> "DataCut":
+    def normalize_loudness(
+        self, target: float, affix_id: bool = False, **kwargs
+    ) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily apply loudness normalization.
 
