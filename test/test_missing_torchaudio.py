@@ -57,3 +57,14 @@ def test_create_dummy_recording():
     recording = dummy_recording(0, with_data=True)
     audio = recording.load_audio()
     assert audio.shape == (1, 16000)
+
+
+@notorchaudio
+def test_create_dummy_multichannel_recording():
+    from lhotse.testing.dummies import dummy_multi_channel_recording
+
+    recording = dummy_multi_channel_recording(
+        0, channel_ids=[0, 1], with_data=True, source_per_channel=True
+    )
+    audio = recording.load_audio()
+    assert audio.shape == (2, 16000)

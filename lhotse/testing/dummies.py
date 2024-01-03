@@ -98,7 +98,7 @@ def dummy_audio_source(
         # 1kHz sine wave
         data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples))
         if len(channels) > 1:
-            data = data.unsqueeze(0).expand(len(channels), -1)
+            data = data.unsqueeze(0).expand(len(channels), -1).transpose(0, 1)
         binary_data = BytesIO()
         soundfile.write(
             binary_data,
