@@ -93,27 +93,20 @@ def dummy_audio_source(
             type="command", channels=channels, source='echo "dummy waveform"'
         )
     else:
+        import soundfile
+
         # 1kHz sine wave
-        data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples)).unsqueeze(0)
+        data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples))
         if len(channels) > 1:
-            data = data.expand(len(channels), -1)
+            data = data.unsqueeze(0).expand(len(channels), -1)
         binary_data = BytesIO()
-        if is_torchaudio_available():
-            # "just works" on MacOS
-            import torchaudio
-
-            torchaudio.save(binary_data, data, sample_rate=sampling_rate, format="wav")
-        else:
-            # Works when torchaudio is not available
-            import soundfile
-
-            soundfile.write(
-                binary_data,
-                data.numpy(),
-                sampling_rate,
-                format="wav",
-                closefd=False,
-            )
+        soundfile.write(
+            binary_data,
+            data.numpy(),
+            sampling_rate,
+            format="wav",
+            closefd=False,
+        )
         binary_data.seek(0)
         return AudioSource(
             type="memory", channels=channels, source=binary_data.getvalue()
