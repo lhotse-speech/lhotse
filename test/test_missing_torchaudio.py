@@ -3,8 +3,6 @@ import importlib
 import numpy as np
 import pytest
 
-from lhotse.testing.dummies import dummy_recording
-
 
 def is_torchaudio_available():
     return importlib.util.find_spec("torchaudio") is not None
@@ -54,6 +52,8 @@ def test_lhotse_audio_in_memory():
 
 @notorchaudio
 def test_create_dummy_recording():
+    from lhotse.testing.dummies import dummy_recording
+
     recording = dummy_recording(0, with_data=True)
     audio = recording.load_audio()
     assert audio.shape == (1, 16000)
