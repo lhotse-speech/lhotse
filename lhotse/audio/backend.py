@@ -1178,8 +1178,7 @@ def save_flac_file(
         kwargs.pop("bits_per_sample", None)  # ignore this arg when not using torchaudio
         if torch.is_tensor(src):
             src = src.numpy()
-        src = src.squeeze(0)
-        sf.write(file=dest, data=src, samplerate=sample_rate, format="FLAC")
+        sf.write(file=dest, data=src.T, samplerate=sample_rate, format="FLAC")
 
 
 def torchaudio_save_flac_safe(

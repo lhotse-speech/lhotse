@@ -862,7 +862,7 @@ class Cut:
         else:
             import soundfile as sf
 
-            sf.write(str(storage_path), samples, samplerate=self.sampling_rate)
+            sf.write(str(storage_path), samples.T, samplerate=self.sampling_rate)
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,

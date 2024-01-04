@@ -40,6 +40,19 @@ def test_lhotse_load_audio():
 
 
 @notorchaudio
+@pytest.mark.parametrize("sr", [8000, 16000, 22500, 24000, 44100])
+def test_lhotse_resample(sr):
+    import lhotse
+
+    cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
+    cut = cuts[0]
+    cut = cut.resample(sr)
+    audio = cut.load_audio()
+    assert isinstance(audio, np.ndarray)
+    assert audio.shape == (1, cut.num_samples)
+
+
+@notorchaudio
 def test_lhotse_audio_in_memory():
     import lhotse
 
@@ -48,6 +61,15 @@ def test_lhotse_audio_in_memory():
     cut = cut.move_to_memory()
     audio = cut.load_audio()
     assert isinstance(audio, np.ndarray)
+
+
+@notorchaudio
+@pytest.mark.parametrize("fmt", ["wav", "flac"])
+def test_lhotse_save_audios(tmp_path, fmt):
+    import lhotse
+
+    cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
+    cuts.save_audios(tmp_path, format=fmt)
 
 
 @notorchaudio

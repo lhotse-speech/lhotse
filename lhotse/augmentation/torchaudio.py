@@ -1,7 +1,7 @@
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -11,6 +11,7 @@ from lhotse.utils import (
     Seconds,
     compute_num_samples,
     during_docs_build,
+    is_module_available,
     is_torchaudio_available,
     perturb_num_samples,
 )
@@ -181,19 +182,35 @@ class Resample(AudioTransform):
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        self.resampler = get_or_create_resampler(
-            self.source_sampling_rate, self.target_sampling_rate
-        )
+        if not is_torchaudio_available():
+            assert is_module_available(
+                "scipy"
+            ), "In order to use resampling, either torchaudio or scipy needs to be installed."
+        else:
+            self.resampler = get_or_create_resampler(
+                self.source_sampling_rate, self.target_sampling_rate
+            )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
-        check_for_torchaudio()
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
 
-        if isinstance(samples, np.ndarray):
-            samples = torch.from_numpy(samples)
-        augmented = self.resampler(samples)
-        return augmented.numpy()
+        if is_torchaudio_available():
+            if isinstance(samples, np.ndarray):
+                samples = torch.from_numpy(samples)
+            augmented = self.resampler(samples)
+            return augmented.numpy()
+        else:
+            import scipy
+
+            gcd = np.gcd(self.source_sampling_rate, self.target_sampling_rate)
+            augmented = scipy.signal.resample_poly(
+                samples,
+                up=self.target_sampling_rate // gcd,
+                down=self.source_sampling_rate // gcd,
+                axis=-1,
+            )
+            return augmented
 
     def reverse_timestamps(
         self, offset: Seconds, duration: Optional[Seconds], sampling_rate: int
