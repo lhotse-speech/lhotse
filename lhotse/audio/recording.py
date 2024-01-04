@@ -301,7 +301,7 @@ class Recording:
         save_flac_file(
             stream, torch.from_numpy(audio), self.sampling_rate, format=format
         )
-        channels = (ifnone(channels, self.channel_ids),)
+        channels = ifnone(channels, self.channel_ids)
         if isinstance(channels, int):
             channels = [channels]
         return Recording(

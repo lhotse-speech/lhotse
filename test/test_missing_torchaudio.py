@@ -51,6 +51,15 @@ def test_lhotse_audio_in_memory():
 
 
 @notorchaudio
+@pytest.mark.parametrize("fmt", ["wav", "flac"])
+def test_lhotse_save_audios(tmp_path, fmt):
+    import lhotse
+
+    cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
+    cuts.save_audios(tmp_path, format=fmt)
+
+
+@notorchaudio
 def test_create_dummy_recording():
     from lhotse.testing.dummies import dummy_recording
 
