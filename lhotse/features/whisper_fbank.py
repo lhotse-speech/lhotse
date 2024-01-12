@@ -16,6 +16,7 @@ from lhotse.utils import (
 
 def log_mel_spectrogram(
     audio: Union[np.ndarray, torch.Tensor],
+    # large-v3 using 128 filters, others use 80
     n_mels: int = 80,
     n_fft: int = 400,
     hop_length: int = 160,
@@ -84,6 +85,7 @@ def log_mel_spectrogram(
 
 @dataclass
 class WhisperFbankConfig:
+    num_filters: int = 80
     device: str = "cpu"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -102,8 +104,8 @@ class WhisperFbank(FeatureExtractor):
     def __init__(self, config: Optional[WhisperFbankConfig] = None):
         super().__init__(config=config)
         self.sampling_rate = 16000
-        self.num_filters = 80
         self.hop_length = 160
+        self.num_filters = self.config.num_filters
 
     @property
     def device(self) -> Union[str, torch.device]:
@@ -136,6 +138,7 @@ class WhisperFbank(FeatureExtractor):
 
         feats = log_mel_spectrogram(
             samples,
+            n_mels=self.num_filters,
             device=self.device,
         )
 

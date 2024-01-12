@@ -1,3 +1,4 @@
+import os
 import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -100,6 +101,11 @@ class CutSampler(Sampler, Dillable):
             assert world_size >= 1
         if rank is not None:
             assert rank >= 0
+        if "WORLD_SIZE" in os.environ and "RANK" in os.environ:
+            # If deepspeed launcher is being used, it will set the env variables automatically.
+            self.world_size = int(os.environ["WORLD_SIZE"])
+            self.rank = int(os.environ["RANK"])
+            return
         if not dist.is_available() or not dist.is_initialized():
             self.world_size = 1 if world_size is None else world_size
             self.rank = 0 if rank is None else rank
