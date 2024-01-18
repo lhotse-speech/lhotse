@@ -262,6 +262,8 @@ def _filename_to_supervisions(filename: Path, spk2gen_dict: dict, spk2glob_dict:
         lines = lines.replace("(YAWN0", "(YAWN)")
     elif reco_id == "SBC008":
         lines = lines.replace("[<X Go]=dX>", "[<X Go]=d X>")
+    elif reco_id == "SBC010":
+        lines = lines.replace("366.87 366.87", "366.16 366.87")
     elif reco_id == "SBC012":
         lines = lines.replace(
             "\n".join(["807.02 807.92\tFRANK:  \t.. Mhm."] * 2),
@@ -301,6 +303,10 @@ def _filename_to_supervisions(filename: Path, spk2gen_dict: dict, spk2glob_dict:
         lines = lines.replace("0ttle", "little")
     elif reco_id == "SBC018":
         lines = lines.replace("0f", "if")
+        lines = lines.replace(
+            "129.916\t130.324\tLINDSEY:\tYeah.\n129.915\t130.325\t\t[Mhm.]\n",
+            "129.915\t130.325\tLINDSEY:\t[Mhm.] Yeah.\n",
+        )
     elif reco_id == "SBC019":
         lines = lines.replace("cello_(/cheller/)", "cheller")
         lines = lines.replace("(sigh)", "(SIGH)")
