@@ -1,5 +1,5 @@
+import os
 import random
-import secrets
 import types
 import warnings
 from functools import partial
@@ -186,8 +186,13 @@ class Dillable:
     If ``dill`` is not installed, it defers to what ``pickle`` does by default.
     """
 
+    _ENABLED_VALUES = {"1", "True", "true", "yes"}
+
     def __getstate__(self):
-        if is_module_available("dill"):
+        if (
+            is_module_available("dill")
+            and os.environ.get("LHOTSE_DILL_ENABLED", "0") in self._ENABLED_VALUES
+        ):
             import dill
 
             return dill.dumps(self.__dict__)
@@ -195,7 +200,10 @@ class Dillable:
             return self.__dict__
 
     def __setstate__(self, state):
-        if is_module_available("dill"):
+        if (
+            is_module_available("dill")
+            and os.environ.get("LHOTSE_DILL_ENABLED", "0") not in self._ENABLED_VALUES
+        ):
             import dill
 
             self.__dict__ = dill.loads(state)

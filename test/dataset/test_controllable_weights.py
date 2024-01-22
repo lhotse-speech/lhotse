@@ -1,3 +1,5 @@
+import numpy as np
+import pytest
 import torch
 
 from lhotse import CutSet
@@ -10,34 +12,34 @@ class DummyDataset(torch.utils.data.Dataset):
         return item
 
 
-def test_mux_with_controllable_weights():
-    def mark(val: int):
-        def _inner(cut):
-            cut.source = val
-            return cut
+def mark(val: int):
+    def _inner(cut):
+        cut.source = val
+        return cut
 
-        return _inner
+    return _inner
+
+
+def assert_sources_are(cuts: CutSet, expected: list[int]):
+    actual = [c.source for c in cuts]
+    assert actual == expected
+
+
+@pytest.mark.parametrize("weight_type", [list, np.array, torch.tensor])
+def test_mux_with_controllable_weights(weight_type):
+    """The sampler and the worker are both in the main process."""
 
     # 3 infinite iterables
     cuts1 = DummyManifest(CutSet, begin_id=0, end_id=3).map(mark(0)).repeat()
     cuts2 = DummyManifest(CutSet, begin_id=10, end_id=13).map(mark(1)).repeat()
     cuts3 = DummyManifest(CutSet, begin_id=100, end_id=103).map(mark(2)).repeat()
 
-    def assert_sources_are(cuts: CutSet, expected: list[int]):
-        actual = [c.source for c in cuts]
-        assert actual == expected
-
-    # TODO: initialize weights
-    weights = [1, 0, 0]
-
+    weights = weight_type([1, 0, 0])
     muxd = CutSet.mux(cuts1, cuts2, cuts3, weights=weights)
 
-    sampler = DynamicCutSampler(muxd, max_cuts=2)
-
-    # locate the sampler in a sub-process
     dloader = torch.utils.data.DataLoader(
         dataset=DummyDataset(),
-        sampler=sampler,
+        sampler=DynamicCutSampler(muxd, max_cuts=2),
         batch_size=None,
         num_workers=0,
     )
@@ -46,35 +48,102 @@ def test_mux_with_controllable_weights():
     b = next(dloader)
     assert_sources_are(b, [0, 0])
 
-    # TODO: set the weight
     weights[0] = 0
     weights[1] = 1
     b = next(dloader)
     assert_sources_are(b, [1, 1])
 
-    # TODO: set the weight
     weights[1] = 0
     weights[2] = 1
     b = next(dloader)
     assert_sources_are(b, [2, 2])
 
 
-def test_mux_with_controllable_weights_multiprocess():
-    return
-    # # 3 infinite iterables
-    # cuts1 = DummyManifest(CutSet, begin_id=0, end_id=3).repeat()
-    # cuts2 = DummyManifest(CutSet, begin_id=10, end_id=13).repeat()
-    # cuts3 = DummyManifest(CutSet, begin_id=100, end_id=103).repeat()
-    #
-    # weights = [1, 1, 1]
-    #
-    # muxd = CutSet.mux(cuts1, cuts2, cuts3, weights=weights)
-    #
-    # sampler = DynamicCutSampler(muxd, max_cuts=2)
-    #
-    # # locate the sampler in a sub-process
-    # dloader = torch.utils.data.DataLoader(
-    #     dataset=IterableDatasetWrapper(dataset=DummyDataset(), sampler=sampler),
-    #     batch_size=None,
-    #     num_workers=1,
-    # )
+def test_mux_with_controllable_weights_subprocess_worker():
+    """
+    The sampler is in the main process but the worker is in a sub-process.
+
+    In general expect a latency of ``prefetch_factor * num_workers`` in the propagation
+    of weights between the main process and the dataloading subprocesses.
+    """
+
+    # 3 infinite iterables
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=3).map(mark(0)).repeat()
+    cuts2 = DummyManifest(CutSet, begin_id=10, end_id=13).map(mark(1)).repeat()
+    cuts3 = DummyManifest(CutSet, begin_id=100, end_id=103).map(mark(2)).repeat()
+
+    weights = [1, 0, 0]
+    muxd = CutSet.mux(cuts1, cuts2, cuts3, weights=weights)
+
+    dloader = torch.utils.data.DataLoader(
+        dataset=DummyDataset(),
+        sampler=DynamicCutSampler(muxd, max_cuts=2),
+        batch_size=None,
+        num_workers=1,
+        prefetch_factor=1,
+    )
+
+    dloader = iter(dloader)
+    b = next(dloader)
+    assert_sources_are(b, [0, 0])
+
+    weights[0] = 0
+    weights[1] = 1
+    b = next(dloader)
+    assert_sources_are(
+        b, [0, 0]
+    )  # prefetch_factor causes one batch with previous weights to be retained
+    b = next(dloader)
+    assert_sources_are(b, [1, 1])
+
+    weights[1] = 0
+    weights[2] = 1
+    b = next(dloader)
+    assert_sources_are(
+        b, [1, 1]
+    )  # prefetch_factor causes one batch with previous weights to be retained
+    b = next(dloader)
+    assert_sources_are(b, [2, 2])
+
+
+def test_mux_with_controllable_weights_subprocess_sampler_shared_memory():
+    """
+    The sampler is placed in the dataloading subprocess.
+
+    Note: we are using PyTorch shared memory to share the weight tensor across processes.
+
+    In general expect a latency of ``prefetch_factor * num_workers`` in the propagation
+    of weights between the main process and the dataloading subprocesses.
+    """
+
+    # 3 infinite iterables
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=3).map(mark(0)).repeat()
+    cuts2 = DummyManifest(CutSet, begin_id=10, end_id=13).map(mark(1)).repeat()
+    cuts3 = DummyManifest(CutSet, begin_id=100, end_id=103).map(mark(2)).repeat()
+
+    weights = torch.tensor([1, 0, 0]).share_memory_()
+    assert weights.is_shared()
+    muxd = CutSet.mux(cuts1, cuts2, cuts3, weights=weights)
+
+    dloader = torch.utils.data.DataLoader(
+        dataset=IterableDatasetWrapper(
+            dataset=DummyDataset(), sampler=DynamicCutSampler(muxd, max_cuts=2)
+        ),
+        batch_size=None,
+        num_workers=1,
+        prefetch_factor=1,
+    )
+
+    dloader = iter(dloader)
+    b = next(dloader)
+    assert_sources_are(b, [0, 0])
+
+    weights[0] = 0.0
+    weights[1] = 1.0
+    b = next(dloader)
+    assert_sources_are(b, [1, 1])
+
+    weights[1] = 0.0
+    weights[2] = 1.0
+    b = next(dloader)
+    assert_sources_are(b, [2, 2])
