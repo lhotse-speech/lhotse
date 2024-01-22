@@ -202,7 +202,7 @@ class Dillable:
     def __setstate__(self, state):
         if (
             is_module_available("dill")
-            and os.environ.get("LHOTSE_DILL_ENABLED", "0") not in self._ENABLED_VALUES
+            and os.environ.get("LHOTSE_DILL_ENABLED", "0") in self._ENABLED_VALUES
         ):
             import dill
 
@@ -481,9 +481,10 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
             # towards the beginning of an "epoch" and then keep yielding
             # from it1 shards until the epoch is finished and we can sample
             # from it0 again...
-            zipped_iter_weights = list(zip(self.iterators, self.weights))
+            indexes = list(range(len(self.iterators)))
             while True:
-                yield rng.choices(zipped_iter_weights, self.weights, k=1)[0]
+                selected = rng.choices(indexes, self.weights, k=1)[0]
+                yield self.iterators[selected], self.weights[selected]
 
         # Initialize an infinite sequence of finite streams.
         # It is sampled with weights and replacement from ``self.iterators``,

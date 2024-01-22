@@ -2439,7 +2439,7 @@ class CutSet(Serializable, AlgorithmMixin):
         a new string (new cut ID).
         :return: a new ``CutSet`` with cuts with modified IDs.
         """
-        return self.map(lambda cut: cut.with_id(transform_fn(cut.id)))
+        return self.map(partial(_with_id, transform_fn=transform_fn))
 
     def fill_supervisions(
         self, add_empty: bool = True, shrink_ok: bool = False
@@ -3263,6 +3263,10 @@ def _add_recording_path_prefix_single(cut, path):
 
 def _add_features_path_prefix_single(cut, path):
     return cut.with_features_path_prefix(path)
+
+
+def _with_id(cut, transform_fn):
+    return cut.with_id(transform_fn(cut.id))
 
 
 def _call(obj, member_fn: str, *args, **kwargs) -> Callable:
