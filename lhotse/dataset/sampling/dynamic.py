@@ -291,11 +291,8 @@ class DurationBatcher:
         while True:
             # Check that we have not reached the end of the dataset.
             try:
-                if self.reuse_cuts_buffer:
-                    next_cut_or_tpl = self.reuse_cuts_buffer.popleft()
-                else:
-                    # If this doesn't raise (typical case), it's not the end: keep processing.
-                    next_cut_or_tpl = next(self.cuts_iter)
+                # If this doesn't raise (typical case), it's not the end: keep processing.
+                next_cut_or_tpl = next(self.cuts_iter)
             except StopIteration:
                 # No more cuts to sample from: if we have a partial batch,
                 # we may output it, unless the user requested to drop it.
@@ -315,6 +312,7 @@ class DurationBatcher:
                     raise StopIteration()
 
             # Track the duration/frames/etc. constraints.
+            cuts.append(next_cut_or_tpl)
             self.time_constraint.add(
                 next_cut_or_tpl[0]
                 if isinstance(next_cut_or_tpl, tuple)
@@ -322,25 +320,15 @@ class DurationBatcher:
             )
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded():
-                # No - add the next cut to the batch, and keep trying.
-                cuts.append(next_cut_or_tpl)
-            else:
-                # Yes. Do we have at least one cut in the batch?
-                if cuts:
-                    # Yes. Return the batch, but keep the currently drawn cut for later.
-                    self.reuse_cuts_buffer.append(next_cut_or_tpl)
-                    break
-                else:
-                    # No. We'll warn the user that the constrains might be too tight,
-                    # and return the cut anyway.
+            if self.time_constraint.close_to_exceeding():
+                # Yes. Finish sampling this batch.
+                if self.time_constraint.exceeded():
                     warnings.warn(
-                        "The first cut drawn in batch collection violates "
-                        "the max_frames, max_cuts, or max_duration constraints - "
-                        "we'll return it anyway. "
-                        "Consider increasing max_frames/max_cuts/max_duration."
+                        "We have exceeded the max_duration constraint during sampling. "
+                        "This is likely because max_duration was set to a very low value ~10s, "
+                        "or you're using a CutSet with very long cuts (e.g. 100s of seconds long)."
                     )
-                    cuts.append(next_cut_or_tpl)
+                break
 
         return detuplify(cuts)
 

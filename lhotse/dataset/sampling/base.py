@@ -383,10 +383,9 @@ class TimeConstraint:
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
 
-        thresh = self.longest_seen
-
         if self.max_duration is not None:
-            return self.current + thresh >= self.max_duration - 1e-3  # float precision
+            effective_duration = (self.num_cuts + 1) * self.longest_seen
+            return effective_duration > self.max_duration
         return False
 
     def reset(self) -> None:
