@@ -156,9 +156,6 @@ def test_mux_with_controllable_weights_subprocess_sampler_shared_memory(
     assert_sources_are(b, [2, 2])
 
 
-@pytest.mark.skip(
-    reason="Infinite mux is not yet fully supported for shared memory weights."
-)
 def test_infinite_mux_with_controllable_weights_subprocess_sampler_shared_memory(
     deterministic_rng,
 ):
@@ -196,10 +193,25 @@ def test_infinite_mux_with_controllable_weights_subprocess_sampler_shared_memory
     b = next(dloader)
     assert_sources_are(b, [0, 0])
 
+    # Note the latency for several batches. The reason is the following:
+    #   infinite_mux() samples streams with replacement, and at the beginning of the test is samples
+    #   3x stream #0, which has 3 items each with equal probability.
+    #   It will only start returning items from stream #1 once one of the previous streams is exhausted.
     weights[:] = torch.tensor([0, 1, 0])  # atomic update
+    b = next(dloader)
+    assert_sources_are(b, [0, 0])
+    b = next(dloader)
+    assert_sources_are(b, [0, 0])
     b = next(dloader)
     assert_sources_are(b, [1, 1])
 
+    # The latency strikes again as now we have both streams #0 and #1 open,
+    # but they have zero weight. It means they will be uniformly sampled until
+    # one of them is exhausted and a new stream #2 is opened.
     weights[:] = torch.tensor([0, 0, 1])  # atomic update
+    b = next(dloader)
+    assert_sources_are(b, [0, 0])
+    b = next(dloader)
+    assert_sources_are(b, [1, 2])
     b = next(dloader)
     assert_sources_are(b, [2, 2])

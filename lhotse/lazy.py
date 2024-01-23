@@ -494,20 +494,28 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
         # Sample the first M active streams to be multiplexed.
         # As streams get depleted, we will replace them with
         # new streams sampled from the stream source.
-        active_streams = []
-        active_weights = []
+        active_streams = [None] * self.max_open_streams
+        active_weights = [None] * self.max_open_streams
         stream_indexes = list(range(self.max_open_streams))
-        for _ in range(self.max_open_streams):
+
+        def sample_new_stream_at(pos: int) -> None:
             sampled_stream, sampled_weight = next(stream_source)
-            active_streams.append(iter(sampled_stream))
-            active_weights.append(sampled_weight)
+            active_streams[pos] = iter(sampled_stream)
+            active_weights[pos] = sampled_weight
+
+        for stream_pos in range(self.max_open_streams):
+            sample_new_stream_at(stream_pos)
 
         # The actual multiplexing loop.
         while True:
             # Select a stream from the currently active streams.
             # We actually sample an index so that we know which position
             # to replace if a stream is exhausted.
-            stream_pos = rng.choices(stream_indexes, weights=active_weights, k=1)[0]
+            stream_pos = rng.choices(
+                stream_indexes,
+                weights=active_weights if sum(active_weights) > 0 else None,
+                k=1,
+            )[0]
             selected = active_streams[stream_pos]
             try:
                 # Sample from the selected stream.
@@ -516,9 +524,7 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
             except StopIteration:
                 # The selected stream is exhausted. Replace it with another one,
                 # and return a sample from the newly opened stream.
-                sampled_stream, sampled_weight = next(stream_source)
-                active_streams[stream_pos] = iter(sampled_stream)
-                active_weights[stream_pos] = sampled_weight
+                sample_new_stream_at(stream_pos)
                 item = next(active_streams[stream_pos])
                 yield item
 

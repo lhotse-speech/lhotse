@@ -956,7 +956,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a CutSet with filtered supervisions
         """
-        return self.map(lambda cut: cut.filter_supervisions(predicate))
+        return self.map(partial(_filter_supervisions, predicate=predicate))
 
     def merge_supervisions(
         self,
@@ -982,8 +982,10 @@ class CutSet(Serializable, AlgorithmMixin):
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
         return self.map(
-            lambda cut: cut.merge_supervisions(
-                merge_policy=merge_policy, custom_merge_fn=custom_merge_fn
+            partial(
+                _merge_supervisions,
+                merge_policy=merge_policy,
+                custom_merge_fn=custom_merge_fn,
             )
         )
 
@@ -1341,7 +1343,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 duration = max(cut.duration for cut in self)
 
         return self.map(
-            lambda cut: cut.pad(
+            partial(
+                _pad,
                 duration=duration,
                 num_frames=num_frames,
                 num_samples=num_samples,
@@ -1422,7 +1425,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :return: a new CutSet instance.
         """
         return self.map(
-            lambda cut: cut.extend_by(
+            partial(
+                _extend_by,
                 duration=duration,
                 direction=direction,
                 preserve_id=preserve_id,
@@ -1535,7 +1539,9 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.resample(sampling_rate, affix_id=affix_id))
+        return self.map(
+            partial(_resample, sampling_rate=sampling_rate, affix_id=affix_id)
+        )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "CutSet":
         """
@@ -1550,7 +1556,7 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
+        return self.map(partial(_perturb_speed, factor=factor, affix_id=affix_id))
 
     def perturb_tempo(self, factor: float, affix_id: bool = True) -> "CutSet":
         """
@@ -1568,7 +1574,7 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.perturb_tempo(factor=factor, affix_id=affix_id))
+        return self.map(partial(_perturb_tempo, factor=factor, affix_id=affix_id))
 
     def perturb_volume(self, factor: float, affix_id: bool = True) -> "CutSet":
         """
@@ -1582,9 +1588,7 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(
-            lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
-        )
+        return self.map(partial(_perturb_volume, factor=factor, affix_id=affix_id))
 
     def normalize_loudness(
         self, target: float, mix_first: bool = True, affix_id: bool = True
@@ -1599,8 +1603,11 @@ class CutSet(Serializable, AlgorithmMixin):
         :return: a modified copy of the current ``CutSet``.
         """
         return self.map(
-            lambda cut: cut.normalize_loudness(
-                target=target, mix_first=mix_first, affix_id=affix_id
+            partial(
+                _normalize_loudness,
+                target=target,
+                mix_first=mix_first,
+                affix_id=affix_id,
             )
         )
 
@@ -1612,7 +1619,7 @@ class CutSet(Serializable, AlgorithmMixin):
             by affixing it with "_wpe".
         :return: a modified copy of the current ``CutSet``.
         """
-        return self.map(lambda cut: cut.dereverb_wpe(affix_id=affix_id))
+        return self.map(partial(_dereverb_wpe, affix_id=affix_id))
 
     def reverb_rir(
         self,
@@ -1643,7 +1650,8 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         rir_recordings = list(rir_recordings) if rir_recordings else None
         return self.map(
-            lambda cut: cut.reverb_rir(
+            partial(
+                _reverb_rir,
                 rir_recording=random.choice(rir_recordings) if rir_recordings else None,
                 normalize_output=normalize_output,
                 early_only=early_only,
@@ -1713,25 +1721,25 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its extracted features.
         """
-        return self.map(lambda cut: cut.drop_features())
+        return self.map(_drop_features)
 
     def drop_recordings(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its recordings.
         """
-        return self.map(lambda cut: cut.drop_recording())
+        return self.map(_drop_recordings)
 
     def drop_supervisions(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its supervisions.
         """
-        return self.map(lambda cut: cut.drop_supervisions())
+        return self.map(_drop_supervisions)
 
     def drop_alignments(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from the alignments present in its supervisions.
         """
-        return self.map(lambda cut: cut.drop_alignments())
+        return self.map(_drop_alignments)
 
     def compute_and_store_features(
         self,
@@ -2461,7 +2469,7 @@ class CutSet(Serializable, AlgorithmMixin):
             of calling this method.
         """
         return self.map(
-            lambda cut: cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
+            partial(_fill_supervision, add_empty=add_empty, shrink_ok=shrink_ok)
         )
 
     def map_supervisions(
@@ -2473,7 +2481,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a new, modified CutSet.
         """
-        return self.map(lambda cut: cut.map_supervisions(transform_fn))
+        return self.map(partial(_map_supervisions, transform_fn=transform_fn))
 
     def transform_text(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """
@@ -2483,7 +2491,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param transform_fn: a function that accepts a string and returns a string.
         :return: a new, modified CutSet.
         """
-        return self.map_supervisions(lambda s: s.transform_text(transform_fn))
+        return self.map_supervisions(
+            partial(_transform_text, transform_fn=transform_fn)
+        )
 
     def __repr__(self) -> str:
         try:
@@ -3269,8 +3279,78 @@ def _with_id(cut, transform_fn):
     return cut.with_id(transform_fn(cut.id))
 
 
-def _call(obj, member_fn: str, *args, **kwargs) -> Callable:
-    return getattr(obj, member_fn)(*args, **kwargs)
+def _fill_supervision(cut, add_empty, shrink_ok):
+    return cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
+
+
+def _map_supervisions(cut, transform_fn):
+    return cut.map_supervisions(transform_fn)
+
+
+def _transform_text(sup, transform_fn):
+    return sup.transform_text(transform_fn)
+
+
+def _filter_supervisions(cut, predicate):
+    return cut.filter_supervisions(predicate)
+
+
+def _merge_supervisions(cut, merge_policy, custom_merge_fn):
+    return cut.merge_supervisions(
+        merge_policy=merge_policy, custom_merge_fn=custom_merge_fn
+    )
+
+
+def _pad(cut, *args, **kwargs):
+    return cut.pad(*args, **kwargs)
+
+
+def _extend_by(cut, *args, **kwargs):
+    return cut.extend_by(*args, **kwargs)
+
+
+def _resample(cut, *args, **kwargs):
+    return cut.resample(*args, **kwargs)
+
+
+def _perturb_speed(cut, *args, **kwargs):
+    return cut.perturb_speed(*args, **kwargs)
+
+
+def _perturb_tempo(cut, *args, **kwargs):
+    return cut.perturb_speed(*args, **kwargs)
+
+
+def _perturb_volume(cut, *args, **kwargs):
+    return cut.perturb_speed(*args, **kwargs)
+
+
+def _reverb_rir(cut, *args, **kwargs):
+    return cut.perturb_speed(*args, **kwargs)
+
+
+def _normalize_loudness(cut, *args, **kwargs):
+    return cut.normalize_loudness(*args, **kwargs)
+
+
+def _dereverb_wpe(cut, *args, **kwargs):
+    return cut.dereverb_wpe(*args, **kwargs)
+
+
+def _drop_features(cut, *args, **kwargs):
+    return cut.drop_features(*args, **kwargs)
+
+
+def _drop_recordings(cut, *args, **kwargs):
+    return cut.drop_recording(*args, **kwargs)
+
+
+def _drop_alignments(cut, *args, **kwargs):
+    return cut.drop_alignments(*args, **kwargs)
+
+
+def _drop_supervisions(cut, *args, **kwargs):
+    return cut.drop_supervisions(*args, **kwargs)
 
 
 def _export_to_shar_single(
