@@ -2,6 +2,7 @@ import os
 import random
 import types
 import warnings
+from contextlib import contextmanager
 from functools import partial
 from typing import Any, Callable, Iterable, List, Literal, Optional, TypeVar, Union
 
@@ -189,10 +190,7 @@ class Dillable:
     _ENABLED_VALUES = {"1", "True", "true", "yes"}
 
     def __getstate__(self):
-        if (
-            is_module_available("dill")
-            and os.environ.get("LHOTSE_DILL_ENABLED", "0") in self._ENABLED_VALUES
-        ):
+        if is_dill_enabled():
             import dill
 
             return dill.dumps(self.__dict__)
@@ -200,15 +198,48 @@ class Dillable:
             return self.__dict__
 
     def __setstate__(self, state):
-        if (
-            is_module_available("dill")
-            and os.environ.get("LHOTSE_DILL_ENABLED", "0") in self._ENABLED_VALUES
-        ):
+        if is_dill_enabled():
             import dill
 
             self.__dict__ = dill.loads(state)
         else:
             self.__dict__ = state
+
+
+def is_dill_enabled(_ENABLED_VALUES=frozenset(("1", "True", "true", "yes"))) -> bool:
+    """Returns bool indicating if dill-based pickling in Lhotse is enabled or not."""
+    return (
+        is_module_available("dill")
+        and os.environ.get("LHOTSE_DILL_ENABLED", "0") in _ENABLED_VALUES
+    )
+
+
+def set_dill_enabled(value: bool) -> None:
+    """Enable or disable dill-based pickling in Lhotse."""
+    assert is_module_available("dill"), (
+        "Cannot enable dill because dill is not installed. "
+        "Please run 'pip install dill' and try again."
+    )
+    # We use os.environ here so that sub-processes / forks will inherit this value
+    os.environ["LHOTSE_DILL_ENABLED"] = "1" if value else "0"
+
+
+@contextmanager
+def dill_enabled(value: bool):
+    """
+    Context manager that overrides the setting of Lhotse's dill-backed pickling
+    and restores the previous value after exit.
+
+    Example::
+
+        >>> import pickle
+        ... with dill_enabled(True):
+        ...    pickle.dump(CutSet(...).filter(lambda c: c.duration < 5), open("cutset.pickle", "wb"))
+    """
+    previous = is_dill_enabled()
+    set_dill_enabled(value)
+    yield
+    set_dill_enabled(previous)
 
 
 class ImitatesDict(Dillable):
