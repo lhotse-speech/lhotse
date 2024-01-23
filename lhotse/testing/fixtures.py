@@ -25,7 +25,7 @@ from lhotse.utils import Seconds, uuid4
 
 @pytest.fixture()
 def with_dill_enabled():
-    os.environ["LHOTSE_ENABLE_DILL"] = "1"
+    os.environ["LHOTSE_DILL_ENABLED"] = "1"
 
 
 def random_cut_set(n_cuts=100) -> CutSet:

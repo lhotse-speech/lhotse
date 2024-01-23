@@ -3318,15 +3318,15 @@ def _perturb_speed(cut, *args, **kwargs):
 
 
 def _perturb_tempo(cut, *args, **kwargs):
-    return cut.perturb_speed(*args, **kwargs)
+    return cut.perturb_tempo(*args, **kwargs)
 
 
 def _perturb_volume(cut, *args, **kwargs):
-    return cut.perturb_speed(*args, **kwargs)
+    return cut.perturb_volume(*args, **kwargs)
 
 
 def _reverb_rir(cut, *args, **kwargs):
-    return cut.perturb_speed(*args, **kwargs)
+    return cut.reverb_rir(*args, **kwargs)
 
 
 def _normalize_loudness(cut, *args, **kwargs):
