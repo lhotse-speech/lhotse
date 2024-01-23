@@ -1,3 +1,4 @@
+from typing import List
 from uuid import uuid4
 
 import numpy as np
@@ -27,12 +28,12 @@ def random_id(*args):
     return str(uuid4())
 
 
-def assert_sources_are(cuts: CutSet, expected: list[int]):
+def assert_sources_are(cuts: CutSet, expected: List[int]):
     actual = [c.source for c in cuts]
     assert actual == expected
 
 
-@pytest.mark.parametrize("weight_type", [list, np.array, torch.tensor])
+@pytest.mark.parametrize("weight_type", [List, np.array, torch.tensor])
 def test_mux_with_controllable_weights(deterministic_rng, weight_type):
     """The sampler and the worker are both in the main process."""
 
