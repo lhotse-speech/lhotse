@@ -33,7 +33,7 @@ def assert_sources_are(cuts: CutSet, expected: List[int]):
     assert actual == expected
 
 
-@pytest.mark.parametrize("weight_type", [List, np.array, torch.tensor])
+@pytest.mark.parametrize("weight_type", [list, np.array, torch.tensor])
 def test_mux_with_controllable_weights(deterministic_rng, weight_type):
     """The sampler and the worker are both in the main process."""
 
