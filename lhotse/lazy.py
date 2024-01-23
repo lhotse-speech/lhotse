@@ -1,7 +1,8 @@
+import os
 import random
-import secrets
 import types
 import warnings
+from contextlib import contextmanager
 from functools import partial
 from typing import Any, Callable, Iterable, List, Literal, Optional, TypeVar, Union
 
@@ -186,8 +187,10 @@ class Dillable:
     If ``dill`` is not installed, it defers to what ``pickle`` does by default.
     """
 
+    _ENABLED_VALUES = {"1", "True", "true", "yes"}
+
     def __getstate__(self):
-        if is_module_available("dill"):
+        if is_dill_enabled():
             import dill
 
             return dill.dumps(self.__dict__)
@@ -195,12 +198,48 @@ class Dillable:
             return self.__dict__
 
     def __setstate__(self, state):
-        if is_module_available("dill"):
+        if is_dill_enabled():
             import dill
 
             self.__dict__ = dill.loads(state)
         else:
             self.__dict__ = state
+
+
+def is_dill_enabled(_ENABLED_VALUES=frozenset(("1", "True", "true", "yes"))) -> bool:
+    """Returns bool indicating if dill-based pickling in Lhotse is enabled or not."""
+    return (
+        is_module_available("dill")
+        and os.environ.get("LHOTSE_DILL_ENABLED", "0") in _ENABLED_VALUES
+    )
+
+
+def set_dill_enabled(value: bool) -> None:
+    """Enable or disable dill-based pickling in Lhotse."""
+    assert is_module_available("dill"), (
+        "Cannot enable dill because dill is not installed. "
+        "Please run 'pip install dill' and try again."
+    )
+    # We use os.environ here so that sub-processes / forks will inherit this value
+    os.environ["LHOTSE_DILL_ENABLED"] = "1" if value else "0"
+
+
+@contextmanager
+def dill_enabled(value: bool):
+    """
+    Context manager that overrides the setting of Lhotse's dill-backed pickling
+    and restores the previous value after exit.
+
+    Example::
+
+        >>> import pickle
+        ... with dill_enabled(True):
+        ...    pickle.dump(CutSet(...).filter(lambda c: c.duration < 5), open("cutset.pickle", "wb"))
+    """
+    previous = is_dill_enabled()
+    set_dill_enabled(value)
+    yield
+    set_dill_enabled(previous)
 
 
 class ImitatesDict(Dillable):
@@ -473,9 +512,10 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
             # towards the beginning of an "epoch" and then keep yielding
             # from it1 shards until the epoch is finished and we can sample
             # from it0 again...
-            zipped_iter_weights = list(zip(self.iterators, self.weights))
+            indexes = list(range(len(self.iterators)))
             while True:
-                yield rng.choices(zipped_iter_weights, self.weights, k=1)[0]
+                selected = rng.choices(indexes, self.weights, k=1)[0]
+                yield self.iterators[selected], self.weights[selected]
 
         # Initialize an infinite sequence of finite streams.
         # It is sampled with weights and replacement from ``self.iterators``,
@@ -485,20 +525,28 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
         # Sample the first M active streams to be multiplexed.
         # As streams get depleted, we will replace them with
         # new streams sampled from the stream source.
-        active_streams = []
-        active_weights = []
+        active_streams = [None] * self.max_open_streams
+        active_weights = [None] * self.max_open_streams
         stream_indexes = list(range(self.max_open_streams))
-        for _ in range(self.max_open_streams):
+
+        def sample_new_stream_at(pos: int) -> None:
             sampled_stream, sampled_weight = next(stream_source)
-            active_streams.append(iter(sampled_stream))
-            active_weights.append(sampled_weight)
+            active_streams[pos] = iter(sampled_stream)
+            active_weights[pos] = sampled_weight
+
+        for stream_pos in range(self.max_open_streams):
+            sample_new_stream_at(stream_pos)
 
         # The actual multiplexing loop.
         while True:
             # Select a stream from the currently active streams.
             # We actually sample an index so that we know which position
             # to replace if a stream is exhausted.
-            stream_pos = rng.choices(stream_indexes, weights=active_weights, k=1)[0]
+            stream_pos = rng.choices(
+                stream_indexes,
+                weights=active_weights if sum(active_weights) > 0 else None,
+                k=1,
+            )[0]
             selected = active_streams[stream_pos]
             try:
                 # Sample from the selected stream.
@@ -507,9 +555,7 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
             except StopIteration:
                 # The selected stream is exhausted. Replace it with another one,
                 # and return a sample from the newly opened stream.
-                sampled_stream, sampled_weight = next(stream_source)
-                active_streams[stream_pos] = iter(sampled_stream)
-                active_weights[stream_pos] = sampled_weight
+                sample_new_stream_at(stream_pos)
                 item = next(active_streams[stream_pos])
                 yield item
 

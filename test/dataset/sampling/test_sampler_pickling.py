@@ -14,6 +14,8 @@ from lhotse.dataset import (
 )
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest
+from lhotse.testing.fixtures import with_dill_enabled
+from lhotse.utils import is_module_available
 
 CUTS = DummyManifest(CutSet, begin_id=0, end_id=100)
 CUTS_MOD = CUTS.modify_ids(lambda cid: cid + "_alt")
@@ -120,8 +122,13 @@ def test_sampler_pickling_with_filter(sampler):
     assert batches_restored[0][0].id == "dummy-mono-cut-0000"
 
 
+@pytest.mark.xfail(
+    not is_module_available("dill"),
+    reason="This test will fail when 'dill' module is not installed as it won't be able to pickle a closure.",
+    raises=AttributeError,
+)
 @pytest.mark.parametrize("sampler", create_samplers_to_test_filter())
-def test_sampler_pickling_with_filter_local_closure(sampler):
+def test_sampler_pickling_with_filter_local_closure(with_dill_enabled, sampler):
 
     selected_id = "dummy-mono-cut-0000"
 

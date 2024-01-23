@@ -1100,3 +1100,10 @@ def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
         return secrets.SystemRandom()
     else:
         return random.Random(seed)
+
+
+_LHOTSE_DILL_ENABLED = False
+
+
+def is_dill_enabled() -> bool:
+    return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]

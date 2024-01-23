@@ -174,8 +174,8 @@ def test_dynamic_bucketing_sampler_precomputed_duration_bins():
     # We sampled 5 batches with this RNG, like the following:
     assert len(batches) == 5
 
-    assert len(batches[0]) == 2
-    assert sum(c.duration for c in batches[0]) == 2
+    assert len(batches[0]) == 3
+    assert sum(c.duration for c in batches[0]) == 4
 
     assert len(batches[1]) == 2
     assert sum(c.duration for c in batches[1]) == 3
@@ -186,8 +186,8 @@ def test_dynamic_bucketing_sampler_precomputed_duration_bins():
     assert len(batches[3]) == 2
     assert sum(c.duration for c in batches[3]) == 3
 
-    assert len(batches[4]) == 2
-    assert sum(c.duration for c in batches[4]) == 4
+    assert len(batches[4]) == 1
+    assert sum(c.duration for c in batches[4]) == 2
 
 
 def test_dynamic_bucketing_sampler_max_duration_and_max_cuts():

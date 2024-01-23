@@ -11,6 +11,7 @@ import pytest
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
 from lhotse.lazy import LazyJsonlIterator
 from lhotse.testing.dummies import DummyManifest, as_lazy
+from lhotse.testing.fixtures import with_dill_enabled
 from lhotse.utils import fastcopy, is_module_available
 
 
@@ -235,7 +236,7 @@ def _get_ids(cuts):
     reason="This test will fail when 'dill' module is not installed as it won't be able to pickle a lambda.",
     raises=AttributeError,
 )
-def test_dillable():
+def test_dillable(with_dill_enabled):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
     with as_lazy(cuts) as lazy_cuts:
         lazy_cuts = lazy_cuts.map(lambda c: fastcopy(c, id=c.id + "-random-suffix"))
