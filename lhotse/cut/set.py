@@ -3391,6 +3391,7 @@ class LazyCutMixer(ImitatesDict):
             # or pass it through unchanged.
             if rng.uniform(0.0, 1.0) > self.mix_prob:
                 yield cut
+                continue
             to_mix = next(mix_in_cuts)
             # Determine the SNR - either it's specified or we need to sample one.
             cut_snr = (
