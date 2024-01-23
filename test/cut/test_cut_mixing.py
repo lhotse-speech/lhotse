@@ -474,3 +474,20 @@ def test_cut_set_mix_is_lazy():
     mixed = cuts.mix(cuts, snr=10, mix_prob=1.0, seed=0)
 
     assert mixed.is_lazy
+
+
+def test_cut_set_mix_size_is_not_growing():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=100)
+    noise_cuts = DummyManifest(CutSet, begin_id=10, end_id=20)
+
+    mixed_cuts = cuts.mix(
+        cuts=noise_cuts,
+        duration=None,
+        snr=10,
+        mix_prob=0.1,
+        preserve_id=None,
+        seed=42,
+        random_mix_offset=True,
+    ).to_eager()
+
+    assert len(mixed_cuts) == len(cuts)
