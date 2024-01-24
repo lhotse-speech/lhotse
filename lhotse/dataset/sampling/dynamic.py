@@ -322,9 +322,9 @@ class DurationBatcher:
             # Did we exceed the max_frames and max_cuts constraints?
             if self.time_constraint.close_to_exceeding():
                 # Yes. Finish sampling this batch.
-                if self.time_constraint.exceeded():
+                if self.time_constraint.exceeded() and len(cuts) == 1:
                     warnings.warn(
-                        "We have exceeded the max_duration constraint during sampling. "
+                        "We have exceeded the max_duration constraint during sampling but have only 1 cut. "
                         "This is likely because max_duration was set to a very low value ~10s, "
                         "or you're using a CutSet with very long cuts (e.g. 100s of seconds long)."
                     )

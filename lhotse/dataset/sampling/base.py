@@ -10,7 +10,7 @@ from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
 from lhotse.lazy import Dillable
-from lhotse.utils import Seconds, is_none_or_gt
+from lhotse.utils import Seconds, ifnone, is_none_or_gt
 
 
 class CutSampler(Sampler, Dillable):
@@ -101,17 +101,22 @@ class CutSampler(Sampler, Dillable):
             assert world_size >= 1
         if rank is not None:
             assert rank >= 0
+
+        # Order of precedence:
+        # 1. When world size or rank are explicitly provided, we will use them.
+        # 2. Next, check WORLD_SIZE and RANK env variables; yes? use them.
+        # 3. Next, check if torch.distributed is initialized and has them set; yes? use them.
+        # 4. If none of those are available, rank=0 and world_size=1.
         if "WORLD_SIZE" in os.environ and "RANK" in os.environ:
             # If deepspeed launcher is being used, it will set the env variables automatically.
-            self.world_size = int(os.environ["WORLD_SIZE"])
-            self.rank = int(os.environ["RANK"])
-            return
-        if not dist.is_available() or not dist.is_initialized():
-            self.world_size = 1 if world_size is None else world_size
-            self.rank = 0 if rank is None else rank
-            return
-        self.world_size = dist.get_world_size() if world_size is None else world_size
-        self.rank = dist.get_rank() if rank is None else rank
+            self.world_size = ifnone(world_size, int(os.environ["WORLD_SIZE"]))
+            self.rank = ifnone(rank, int(os.environ["RANK"]))
+        elif dist.is_available() and dist.is_initialized():
+            self.world_size = ifnone(world_size, dist.get_world_size())
+            self.rank = ifnone(rank, dist.get_rank())
+        else:
+            self.world_size = ifnone(world_size, 1)
+            self.rank = ifnone(rank, 0)
         assert self.rank < self.world_size
 
     def set_epoch(self, epoch: int) -> None:
