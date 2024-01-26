@@ -49,18 +49,6 @@ def prepare_slu(
         str(corpus_dir) + "/" + path_to_wav
         for path_to_wav in data["test"]["path"].tolist()
     ]
-    # train_wavs = [
-    #     path_to_wav
-    #     for path_to_wav in data["train"]["path"].tolist()
-    # ]
-    # valid_wavs = [
-    #     path_to_wav
-    #     for path_to_wav in data["valid"]["path"].tolist()
-    # ]
-    # test_wavs = [
-    #     path_to_wav
-    #     for path_to_wav in data["test"]["path"].tolist()
-    # ]
 
     transcripts = {
         "train": data["train"]["transcription"].tolist(),
@@ -94,10 +82,6 @@ def prepare_slu(
             )
         ),
     }
-
-    # train_wavs.sort()
-    # valid_wavs.sort()
-    # test_wavs.sort()
 
     manifests = defaultdict(dict)
     for name, dataset in zip(
