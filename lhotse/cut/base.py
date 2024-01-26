@@ -1,12 +1,11 @@
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Literal, Optional, Set, Tuple
 
 import numpy as np
 import torch
 from intervaltree import Interval, IntervalTree
-from typing_extensions import Literal
 
-from lhotse.audio import AudioSource, Recording
+from lhotse.audio import AudioSource, Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor
 from lhotse.supervision import SupervisionSegment
@@ -20,9 +19,9 @@ from lhotse.utils import (
     compute_num_samples,
     compute_num_windows,
     compute_start_duration_for_extended_cut,
-    deprecated,
     fastcopy,
     ifnone,
+    is_torchaudio_available,
     overlaps,
     to_hashable,
 )
@@ -164,12 +163,15 @@ class Cut:
     features_type: Optional[str]
     has_recording: bool
     has_features: bool
+    has_video: bool
+    video: Optional[VideoInfo]
 
     # The following is the list of methods implemented by the child classes.
     # They are not abstract methods because dataclasses do not work well with the "abc" module.
     # Check a specific child class for their documentation.
     from_dict: Callable[[Dict], "Cut"]
     load_audio: Callable[[], np.ndarray]
+    load_video: Callable[[], Tuple[torch.Tensor, Optional[torch.Tensor]]]
     load_features: Callable[[], np.ndarray]
     compute_and_store_features: Callable
     drop_features: Callable
@@ -611,7 +613,7 @@ class Cut:
                     SupervisionSegment(
                         id=f"{segment.id}-{i}",
                         recording_id=segment.recording_id,
-                        start=item.start,
+                        start=item.start - self.start,  # relative to the cut
                         duration=item.duration,
                         channel=segment.channel,
                         text=item.symbol,
@@ -745,6 +747,17 @@ class Cut:
 
         if not hop:
             hop = duration
+
+        if self.has_video:
+            assert (duration * self.video.fps).is_integer(), (
+                f"[cut.id={self.id}] Window duration must be defined to result in an integer number of video frames "
+                f"(duration={duration} * fps={self.video.fps} = {duration * self.video.fps})."
+            )
+            assert (hop * self.video.fps).is_integer(), (
+                "[cut.id={self.id}] Window hop must be defined to result in an integer number of video frames "
+                f"(hop={hop} * fps={self.video.fps} = {hop* self.video.fps})."
+            )
+
         new_cuts = []
         n_windows = compute_num_windows(self.duration, duration, hop)
 
@@ -827,7 +840,6 @@ class Cut:
             to mono before saving.
         :return: a new Cut instance.
         """
-        import torchaudio
 
         storage_path = Path(storage_path)
         samples = self.load_audio(**kwargs)
@@ -837,13 +849,20 @@ class Cut:
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
 
-        torchaudio.save(
-            str(storage_path),
-            torch.as_tensor(samples),
-            sample_rate=self.sampling_rate,
-            encoding=encoding,
-            bits_per_sample=bits_per_sample,
-        )
+        if is_torchaudio_available():
+            import torchaudio
+
+            torchaudio.save(
+                str(storage_path),
+                torch.as_tensor(samples),
+                sample_rate=self.sampling_rate,
+                encoding=encoding,
+                bits_per_sample=bits_per_sample,
+            )
+        else:
+            import soundfile as sf
+
+            sf.write(str(storage_path), samples.T, samplerate=self.sampling_rate)
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,

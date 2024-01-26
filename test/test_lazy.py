@@ -9,7 +9,9 @@ from concurrent.futures import ProcessPoolExecutor
 import pytest
 
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
+from lhotse.lazy import LazyJsonlIterator
 from lhotse.testing.dummies import DummyManifest, as_lazy
+from lhotse.testing.fixtures import with_dill_enabled
 from lhotse.utils import fastcopy, is_module_available
 
 
@@ -234,7 +236,7 @@ def _get_ids(cuts):
     reason="This test will fail when 'dill' module is not installed as it won't be able to pickle a lambda.",
     raises=AttributeError,
 )
-def test_dillable():
+def test_dillable(with_dill_enabled):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
     with as_lazy(cuts) as lazy_cuts:
         lazy_cuts = lazy_cuts.map(lambda c: fastcopy(c, id=c.id + "-random-suffix"))
@@ -248,3 +250,18 @@ def test_dillable():
             "dummy-mono-cut-0000-random-suffix",
             "dummy-mono-cut-0001-random-suffix",
         ]
+
+
+def test_lazy_jsonl_iterator_caches_len():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=200)
+    expected_len = 200
+    with as_lazy(cuts) as cuts_lazy:
+        path = cuts_lazy.data.path
+        print(path)
+        it = LazyJsonlIterator(path)
+        assert it._len is None
+        for _ in it:
+            pass
+        assert it._len is not None
+        assert it._len == expected_len
+        assert len(it) == expected_len

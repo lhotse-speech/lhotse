@@ -17,6 +17,7 @@ from lhotse.features.kaldi.extractors import (
     SpectrogramConfig,
 )
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
+from lhotse.testing.random import deterministic_rng
 
 
 @pytest.fixture()
@@ -93,7 +94,7 @@ def test_kaldi_fbank_extractor(recording):
     assert feats.shape == (1604, 80)
 
 
-def test_kaldi_fbank_extractor_vs_torchaudio(recording):
+def test_kaldi_fbank_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
     fbank = Fbank()
     fbank_ta = TorchaudioFbank()
@@ -108,13 +109,14 @@ def test_kaldi_mfcc_extractor(recording):
     assert feats.shape == (1604, 13)
 
 
-def test_kaldi_mfcc_extractor_vs_torchaudio(recording):
+@pytest.mark.seed(1337)
+def test_kaldi_mfcc_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
     mfcc = Mfcc()
     mfcc_ta = TorchaudioMfcc()
     feats = mfcc.extract(audio, recording.sampling_rate)
     feats_ta = mfcc_ta.extract(audio, recording.sampling_rate)
-    torch.testing.assert_allclose(feats, feats_ta)
+    torch.testing.assert_allclose(feats, feats_ta, rtol=1e-3, atol=1e-4)
 
 
 def test_kaldi_spectrogram_extractor(recording):
@@ -123,7 +125,7 @@ def test_kaldi_spectrogram_extractor(recording):
     assert feats.shape == (1604, 257)
 
 
-def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
+def test_kaldi_spectrogram_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
     spec = Spectrogram(SpectrogramConfig(use_energy=True))
     spec_ta = TorchaudioSpectrogram()

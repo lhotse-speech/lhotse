@@ -27,7 +27,7 @@ def shar():
     "-a",
     "--audio",
     default="none",
-    type=click.Choice(["none", "wav", "flac", "mp3"]),
+    type=click.Choice(["none", "wav", "flac", "mp3", "opus"]),
     help="Format in which to export audio (disabled by default, enabling will make a copy of the data)",
 )
 @click.option(
@@ -49,6 +49,11 @@ def shar():
     default=True,
     help="Should we shuffle the cuts before splitting into shards.",
 )
+@click.option(
+    "--fault-tolerant/--fast-fail",
+    default=False,
+    help="Should we skip over cuts that failed to load data or raise an error.",
+)
 @click.option("--seed", default=0, type=int, help="Random seed.")
 @click.option(
     "-j",
@@ -66,6 +71,7 @@ def export(
     features: str,
     shard_size: int,
     shuffle: bool,
+    fault_tolerant: bool,
     seed: int,
     num_jobs: int,
     verbose: bool,
@@ -99,6 +105,7 @@ def export(
         fields=fields,
         shard_size=shard_size,
         num_jobs=num_jobs,
+        fault_tolerant=fault_tolerant,
         verbose=verbose,
     )
 

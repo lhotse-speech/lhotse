@@ -1,7 +1,11 @@
+import multiprocessing
 import queue
 import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Callable, Generator, Iterable
+from functools import partial
+from typing import Callable, Dict, Generator, Iterable, Optional, Type
+
+from tqdm.auto import tqdm
 
 
 def parallel_map(
@@ -73,3 +77,107 @@ class SubmitterThread(threading.Thread):
             for args in zip(*self.iterables):
                 future = ex.submit(self.fn, *args)
                 self.queue.put(future, block=True)
+
+
+class ParallelExecutor:
+    """
+    A class which uses ProcessPoolExecutor to parallelize the execution of a callable class.
+    The instances of the runner class are instantiated separately in each worker process.
+
+    Example::
+
+        >>> class MyRunner:
+        ...     def __init__(self):
+        ...         self.name = name
+        ...     def __call__(self, x):
+        ...         return f'processed: {x}'
+        ...
+        >>> runner = ParallelExecutor(MyRunner, num_jobs=4)
+        >>> for item in runner(range(10)):
+        ...     print(item)
+
+    If the __init__ method of the callable class accepts parameters except for `self`,
+    use `functools.partial` or similar method to obtain a proper initialization function:
+
+        >>> class MyRunner:
+        ...     def __init__(self, name):
+        ...         self.name = name
+        ...     def __call__(self, x):
+        ...         return f'{self.name}: {x}'
+        ...
+        >>> runner = ParallelExecutor(partial(MyRunner, name='my_name'), num_jobs=4)
+        >>> for item in runner(range(10)):
+        ...     print(item)
+
+
+    The initialization function will be called separately for each worker process. Steps like loading a
+    PyTorch model instance to the selected device should be done inside the initialization function.
+    """
+
+    _runners: Dict[Optional[int], Callable] = {}
+
+    def __init__(
+        self,
+        init_fn: Callable[[], Callable],
+        num_jobs: int = 1,
+        verbose: bool = False,
+        description: str = "Processing",
+    ):
+        """
+        Instantiate a parallel executor.
+
+        :param init_fn: A function which returns a runner object (e.g. a class) that will be instantiated
+            in each worker process.
+        :param num_jobs: The number of parallel jobs to run. Defaults to 1 (no parallelism).
+        :param verbose: Whether to show a progress bar.
+        :param description: The description to show in the progress bar.
+        """
+        self._make_runner = init_fn
+        self.num_jobs = num_jobs
+        self.verbose = verbose
+        self.description = description
+
+    def _init_runner(self):
+        pid = multiprocessing.current_process().pid
+        self._runners[pid] = self._make_runner()
+
+    def _process(self, *args, **kwargs):
+        pid = multiprocessing.current_process().pid
+        runner = self._runners[pid]
+        return runner(*args, **kwargs)
+
+    def __call__(self, items: Iterable, **kwargs) -> Generator:
+        if self.num_jobs == 1:
+            runner = self._make_runner()
+            for item in tqdm(items, desc=self.description, disable=not self.verbose):
+                yield runner(item, **kwargs)
+
+        else:
+            pool = ProcessPoolExecutor(
+                max_workers=self.num_jobs,
+                initializer=self._init_runner,
+                mp_context=multiprocessing.get_context("spawn"),
+            )
+
+            with pool as executor:
+                try:
+                    res = executor.map(partial(self._process, **kwargs), items)
+                    for item in tqdm(
+                        res,
+                        desc=self.description,
+                        total=len(items),
+                        disable=not self.verbose,
+                    ):
+                        yield item
+                except KeyboardInterrupt as exc:  # pragma: no cover
+                    pool.shutdown(wait=False)
+                    if self.verbose:
+                        print("Interrupted by the user.")
+                    raise exc
+                except Exception as exc:  # pragma: no cover
+                    pool.shutdown(wait=False)
+                    raise RuntimeError(
+                        "Parallel processing failed. Please report this issue."
+                    ) from exc
+                finally:
+                    self._runners.clear()

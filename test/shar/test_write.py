@@ -2,11 +2,13 @@ import tarfile
 from io import BytesIO
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from lhotse import CutSet
+from lhotse.audio.backend import check_torchaudio_version_gt
 from lhotse.lazy import LazyJsonlIterator
-from lhotse.shar import SharWriter, TarWriter
+from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -62,6 +64,55 @@ def test_tar_writer_pipe(tmp_path: Path):
     with tarfile.open(tmp_path / "test.000000.tar") as f:
         f2 = f.extractfile(f.getmember("test.txt"))
         assert f2.read() == b"test"
+
+
+@pytest.mark.parametrize(
+    "format",
+    [
+        "wav",
+        pytest.param(
+            "flac",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("0.12.1"),
+                reason="Torchaudio v0.12.1 or greater is required.",
+            ),
+        ),
+        # "mp3",  # apparently doesn't work in CI, mp3 encoder is missing
+        pytest.param(
+            "opus",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("2.1.0"),
+                reason="Torchaudio v2.1.0 or greater is required.",
+            ),
+        ),
+    ],
+)
+def test_audio_tar_writer(tmp_path: Path, format: str):
+    from lhotse.testing.dummies import dummy_recording
+
+    recording = dummy_recording(0, with_data=True)
+    audio = recording.load_audio()
+
+    with AudioTarWriter(
+        str(tmp_path / "test.tar"), shard_size=None, format=format
+    ) as writer:
+        writer.write(
+            key="my-recording",
+            value=audio,
+            sampling_rate=recording.sampling_rate,
+            manifest=recording,
+        )
+
+    (path,) = writer.output_paths
+
+    ((deserialized_recording, inner_path),) = list(TarIterator(path))
+
+    deserialized_audio = deserialized_recording.resample(
+        recording.sampling_rate
+    ).load_audio()
+
+    rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
+    assert rmse < 0.5
 
 
 def test_shar_writer(tmp_path: Path):
@@ -401,6 +452,17 @@ def test_cut_set_to_shar_not_include_cuts(tmp_path: Path):
 
     # - we didn't create a third shard
     assert not (tmp_path / "recording.000002.tar").exists()
+
+
+def test_cut_set_to_shar_recordings_with_transforms(tmp_path: Path):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True).resample(8000)
+    cuts[0].features = None
+    cuts[0].custom = None
+    output_paths = cuts.to_shar(tmp_path, fields={"recording": "wav"})
+    restored = CutSet.from_shar(fields=output_paths)
+    assert len(restored) == 1
+    samples = restored[0].load_audio()
+    assert samples.shape == (1, 8000)
 
 
 def test_shar_writer_not_sharded(tmp_path: Path):

@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Union
 import numpy as np
 from tqdm import tqdm
 
-from lhotse import RecordingSet, SupervisionSet
+from lhotse import RecordingSet, SupervisionSet, dill_enabled
 from lhotse.cut import CutSet, MixedCut, MixTrack
 from lhotse.cut.set import mix
 from lhotse.parallel import parallel_map
@@ -88,6 +88,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         hist, bin_edges = np.histogram(values, bins=100, density=True)
         return rv_histogram((hist, bin_edges))
 
+    @dill_enabled(True)
     def fit(self, meetings: Optional[SupervisionSet] = None) -> None:
         """
         Learn the distribution of the meeting parameters from a given dataset.
@@ -261,6 +262,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         tracks = sorted(tracks, key=lambda x: x.offset)
         return MixedCut(id=str(uuid4()), tracks=tracks)
 
+    @dill_enabled(True)
     def simulate(
         self,
         cuts: CutSet,

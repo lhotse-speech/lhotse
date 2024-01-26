@@ -497,3 +497,31 @@ def export_to_webdataset(
         load_custom=custom,
         fault_tolerant=fault_tolerant,
     )
+
+
+@cut.command()
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.option(
+    "-b", "--num-buckets", default=30, type=int, help="Desired number of buckets."
+)
+@click.option(
+    "-s",
+    "--sample",
+    default=None,
+    type=int,
+    help="How many samples to use for estimation (first N, by default use full cutset).",
+)
+def estimate_bucket_bins(
+    cutset: Pathlike, num_buckets: int, sample: Optional[int]
+) -> None:
+    """
+    Estimate duration bins for dynamic bucketing.
+    Prints a Python list of num_buckets-1 floats (seconds) which constitute the boundaries between buckets.
+    The bins are estimated in such a way so that each bucket has a roughly equal total duration of data.
+    """
+    from lhotse.dataset.sampling.dynamic_bucketing import estimate_duration_buckets
+
+    cuts = load_manifest_lazy_or_eager(cutset, manifest_cls=CutSet)
+    if sample is not None:
+        cuts = cuts.subset(first=sample)
+    click.echo(estimate_duration_buckets(cuts, num_buckets=num_buckets))

@@ -1,0 +1,48 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: missing_torchaudio
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  missing_torchaudio:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - python-version: "3.11"
+            torch-install-cmd: "pip install torch==2.0 --extra-index-url https://download.pytorch.org/whl/cpu"
+
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: |
+          docs/requirements.txt
+          setup.py
+    - name: Install apt dependencies
+      run: |
+        sudo apt update
+        sudo apt install libsndfile1-dev libsndfile1 ffmpeg sox
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install wheel numpy scipy
+        # Force the installation of a CPU-only PyTorch
+        ${{ matrix.torch-install-cmd }}
+        # the torchaudio env var does nothing when torchaudio is installed, but doesn't require it's presence when it's not
+        LHOTSE_REQUIRE_TORCHAUDIO=0 pip install '.[tests]'
+    - name: Run basic tests only for missing torchaudio case
+      run: |
+        pytest test/test_missing_torchaudio.py

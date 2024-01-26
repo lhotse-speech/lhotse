@@ -4,7 +4,7 @@ import torch
 
 from lhotse import validate
 from lhotse.cut import CutSet
-from lhotse.dataset.collation import TokenCollater, collate_audio
+from lhotse.dataset.collation import collate_audio
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import ifnone
 
@@ -19,28 +19,34 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         {
             'audio': (B x NumSamples) float tensor
             'features': (B x NumFrames x NumFeatures) float tensor
-            'tokens': (B x NumTokens) long tensor
             'audio_lens': (B, ) int tensor
             'features_lens': (B, ) int tensor
-            'tokens_lens': (B, ) int tensor
+            'text': List[str] of len B  # when return_text=True
+            'tokens': List[List[str]]  # when return_tokens=True
+            'speakers': List[str] of len B  # when return_spk_ids=True
+            'cut': List of Cuts  # when return_cuts=True
         }
     """
 
     def __init__(
         self,
-        cuts: CutSet,
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         feature_input_strategy: BatchIO = PrecomputedFeatures(),
         feature_transforms: Union[Sequence[Callable], Callable] = None,
-        add_eos: bool = True,
-        add_bos: bool = True,
+        return_text: bool = True,
+        return_tokens: bool = False,
+        return_spk_ids: bool = False,
+        return_cuts: bool = False,
     ) -> None:
         super().__init__()
 
-        self.cuts = cuts
-        self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
         self.cut_transforms = ifnone(cut_transforms, [])
         self.feature_input_strategy = feature_input_strategy
+
+        self.return_text = return_text
+        self.return_tokens = return_tokens
+        self.return_spk_ids = return_spk_ids
+        self.return_cuts = return_cuts
 
         if feature_transforms is None:
             feature_transforms = []
@@ -64,16 +70,29 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         for transform in self.feature_transforms:
             features = transform(features)
 
-        tokens, tokens_lens = self.token_collater(cuts)
-
-        return {
+        batch = {
             "audio": audio,
             "features": features,
-            "tokens": tokens,
             "audio_lens": audio_lens,
             "features_lens": features_lens,
-            "tokens_lens": tokens_lens,
         }
+
+        if self.return_text:
+            # use normalized text
+            text = [cut.supervisions[0].normalized_text for cut in cuts]
+            batch["text"] = text
+
+        if self.return_tokens:
+            tokens = [cut.tokens for cut in cuts]
+            batch["tokens"] = tokens
+
+        if self.return_spk_ids:
+            batch["speakers"] = [cut.supervisions[0].speaker for cut in cuts]
+
+        if self.return_cuts:
+            batch["cut"] = [cut for cut in cuts]
+
+        return batch
 
 
 def validate_for_tts(cuts: CutSet) -> None:

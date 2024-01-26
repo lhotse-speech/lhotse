@@ -7,5 +7,6 @@ from .manipulation import *
 from .recipes import *
 from .shar import *
 from .supervision import *
+from .utils import *
 from .validate import *
 from .workflows import *

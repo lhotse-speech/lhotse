@@ -1,10 +1,12 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 
 from lhotse.audio import Recording
+from lhotse.audio.utils import VideoInfo
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor
 from lhotse.supervision import SupervisionSegment
@@ -50,6 +52,7 @@ class PaddingCut(Cut):
 
     # For time domain
     num_samples: Optional[int] = None
+    video: Optional[VideoInfo] = None
 
     # Dict for storing padding values for custom array attributes
     custom: Optional[dict] = None
@@ -75,6 +78,10 @@ class PaddingCut(Cut):
         return self.num_samples is not None
 
     @property
+    def has_video(self) -> bool:
+        return self.has_recording and self.video is not None
+
+    @property
     def num_channels(self) -> int:
         return 1
 
@@ -83,6 +90,8 @@ class PaddingCut(Cut):
             return self.has_recording
         elif field == "features":
             return self.has_features
+        elif field == "video":
+            return self.has_video
         else:
             return self.custom is not None and field in self.custom
 
@@ -104,6 +113,30 @@ class PaddingCut(Cut):
         if self.has_recording:
             return np.zeros(
                 (1, compute_num_samples(self.duration, self.sampling_rate)), np.float32
+            )
+        return None
+
+    def load_video(
+        self,
+        with_audio: bool = True,
+    ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
+        if self.has_video:
+            audio = None
+            if with_audio:
+                audio = torch.zeros(
+                    1,
+                    compute_num_samples(self.duration, self.sampling_rate),
+                    dtype=torch.float32,
+                )
+            return (
+                torch.zeros(
+                    self.video.num_frames,
+                    3,
+                    self.video.height,
+                    self.video.width,
+                    dtype=torch.uint8,
+                ),
+                audio,
             )
         return None
 
@@ -356,6 +389,22 @@ class PaddingCut(Cut):
         """
 
         return fastcopy(self, id=f"{self.id}_rvb" if affix_id else self.id)
+
+    def normalize_loudness(
+        self, target: float, affix_id: bool = False, **kwargs
+    ) -> "PaddingCut":
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of loudness normalization
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
+        )
 
     def drop_features(self) -> "PaddingCut":
         """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""

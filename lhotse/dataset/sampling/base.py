@@ -1,3 +1,4 @@
+import os
 import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
@@ -9,7 +10,7 @@ from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
 from lhotse.lazy import Dillable
-from lhotse.utils import Seconds, is_none_or_gt
+from lhotse.utils import Seconds, ifnone, is_none_or_gt
 
 
 class CutSampler(Sampler, Dillable):
@@ -84,6 +85,7 @@ class CutSampler(Sampler, Dillable):
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
         self._filter_fn: Callable[[Cut], bool] = _filter_nothing()
+        self._transforms = []
 
     @property
     def diagnostics(self):
@@ -99,12 +101,22 @@ class CutSampler(Sampler, Dillable):
             assert world_size >= 1
         if rank is not None:
             assert rank >= 0
-        if not dist.is_available() or not dist.is_initialized():
-            self.world_size = 1 if world_size is None else world_size
-            self.rank = 0 if rank is None else rank
-            return
-        self.world_size = dist.get_world_size() if world_size is None else world_size
-        self.rank = dist.get_rank() if rank is None else rank
+
+        # Order of precedence:
+        # 1. When world size or rank are explicitly provided, we will use them.
+        # 2. Next, check WORLD_SIZE and RANK env variables; yes? use them.
+        # 3. Next, check if torch.distributed is initialized and has them set; yes? use them.
+        # 4. If none of those are available, rank=0 and world_size=1.
+        if "WORLD_SIZE" in os.environ and "RANK" in os.environ:
+            # If deepspeed launcher is being used, it will set the env variables automatically.
+            self.world_size = ifnone(world_size, int(os.environ["WORLD_SIZE"]))
+            self.rank = ifnone(rank, int(os.environ["RANK"]))
+        elif dist.is_available() and dist.is_initialized():
+            self.world_size = ifnone(world_size, dist.get_world_size())
+            self.rank = ifnone(rank, dist.get_rank())
+        else:
+            self.world_size = ifnone(world_size, 1)
+            self.rank = ifnone(rank, 0)
         assert self.rank < self.world_size
 
     def set_epoch(self, epoch: int) -> None:
@@ -122,7 +134,7 @@ class CutSampler(Sampler, Dillable):
         self.epoch = epoch
         self.diagnostics.set_epoch(epoch)
 
-    def filter(self, predicate: Callable[[Cut], bool]) -> None:
+    def filter(self, predicate: Callable[[Cut], bool]) -> "CutSampler":
         """
         Add a constraint on individual cuts that has to be satisfied to consider them.
 
@@ -139,6 +151,15 @@ class CutSampler(Sampler, Dillable):
             self._filter_fn = predicate
         else:
             self._filter_fn = _and(self._filter_fn, predicate)
+        return self
+
+    def map(self, fn: Callable[[CutSet], CutSet]) -> "CutSampler":
+        """Apply ``fn`` to each mini-batch of ``CutSet`` before yielding it."""
+        assert callable(
+            fn
+        ), f"Expected a callable accepting and returning a CutSet, received: '{fn}'"
+        self._transforms.append(fn)
+        return self
 
     def state_dict(self) -> Dict[str, Any]:
         """
@@ -276,6 +297,8 @@ class CutSampler(Sampler, Dillable):
         if selected is None:
             raise StopIteration
         self._log_diagnostics(selected)
+        for tfn in self._transforms:
+            selected = tfn(selected)
         return selected
 
     def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
@@ -365,10 +388,9 @@ class TimeConstraint:
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
 
-        thresh = self.longest_seen
-
         if self.max_duration is not None:
-            return self.current + thresh >= self.max_duration - 1e-3  # float precision
+            effective_duration = (self.num_cuts + 1) * self.longest_seen
+            return effective_duration > self.max_duration
         return False
 
     def reset(self) -> None:

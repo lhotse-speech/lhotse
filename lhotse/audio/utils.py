@@ -3,9 +3,10 @@ import logging
 import os
 import warnings
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Callable, Optional
 
-from lhotse.utils import NonPositiveEnergyError, Seconds, suppress_and_warn
+from lhotse.utils import NonPositiveEnergyError, Seconds, fastcopy, suppress_and_warn
 
 _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
 _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
@@ -13,8 +14,47 @@ _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
 )
 
 
+@dataclass
+class VideoInfo:
+    """
+    Metadata about video content in a :class:`~lhotse.audio.Recording`.
+    """
+
+    fps: float
+    """Video frame rate (frames per second). It's a float because some standard FPS are fractional (e.g. 59.94)"""
+
+    num_frames: int
+    """Number of video frames."""
+
+    height: int
+    """Height in pixels."""
+
+    width: int
+    """Width in pixels."""
+
+    @property
+    def duration(self) -> Seconds:
+        return self.num_frames / self.fps
+
+    @property
+    def frame_length(self) -> Seconds:
+        return 1.0 / self.fps
+
+    def copy_with(self, **kwargs) -> "VideoInfo":
+        return fastcopy(self, **kwargs)
+
+
 def get_audio_duration_mismatch_tolerance() -> Seconds:
     """Retrieve the current audio duration mismatch tolerance in seconds."""
+    if (
+        _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+        != _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+    ):
+        return _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+
+    if "LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE" in os.environ:
+        return float(os.environ["LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE"])
+
     return _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 
 
@@ -59,6 +99,10 @@ def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
     _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE = delta
 
 
+class VideoLoadingError(Exception):
+    pass
+
+
 class AudioLoadingError(Exception):
     pass
 
@@ -74,6 +118,22 @@ def suppress_audio_loading_errors(enabled: bool = True):
     Emits warning to the console.
     """
     with suppress_and_warn(
+        AudioLoadingError,
+        DurationMismatchError,
+        NonPositiveEnergyError,
+        enabled=enabled,
+    ):
+        yield
+
+
+@contextmanager
+def suppress_video_loading_errors(enabled: bool = True):
+    """
+    Context manager that suppresses errors related to audio loading.
+    Emits warning to the console.
+    """
+    with suppress_and_warn(
+        VideoLoadingError,
         AudioLoadingError,
         DurationMismatchError,
         NonPositiveEnergyError,

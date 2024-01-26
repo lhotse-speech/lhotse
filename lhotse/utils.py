@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import random
+import secrets
 import sys
 import urllib
 import uuid
@@ -24,6 +25,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -35,7 +37,6 @@ import click
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-from typing_extensions import Literal
 
 Pathlike = Union[Path, str]
 T = TypeVar("T")
@@ -623,7 +624,7 @@ def perturb_num_samples(num_samples: int, factor: float) -> int:
 
 
 def compute_num_samples(
-    duration: Seconds, sampling_rate: int, rounding=ROUND_HALF_UP
+    duration: Seconds, sampling_rate: Union[int, float], rounding=ROUND_HALF_UP
 ) -> int:
     """
     Convert a time quantity to the number of samples given a specific sampling rate.
@@ -1088,3 +1089,21 @@ class PythonLiteralOption(click.Option):
                 return val
         except:
             return None
+
+
+def is_torchaudio_available() -> bool:
+    return is_module_available("torchaudio")
+
+
+def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
+    if seed == "trng":
+        return secrets.SystemRandom()
+    else:
+        return random.Random(seed)
+
+
+_LHOTSE_DILL_ENABLED = False
+
+
+def is_dill_enabled() -> bool:
+    return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]
