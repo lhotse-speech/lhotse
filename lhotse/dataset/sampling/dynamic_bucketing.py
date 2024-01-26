@@ -1,7 +1,9 @@
+import concurrent.futures
 import random
 import warnings
 from bisect import bisect_right
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from itertools import islice
 from typing import Any, Deque, Dict, Generator, Iterable, List, Optional, Tuple, Union
 
@@ -362,6 +364,9 @@ class DynamicBucketer:
             deque() for _ in range(len(duration_bins) + 1)
         ]
 
+        self._cut_reading_thread = ThreadPoolExecutor(1)
+        self._cut_reading_future: Optional[concurrent.futures.Future] = None
+
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
@@ -384,6 +389,7 @@ class DynamicBucketer:
         # On each step we're sampling a new batch.
         try:
             while True:
+                self._wait_for_cut_collection()
                 ready_buckets = [b for b in self.buckets if is_ready(b)]
                 if not ready_buckets:
                     # No bucket has enough data to yield for the last full batch.
@@ -423,7 +429,7 @@ class DynamicBucketer:
         self.cuts_iter = None
 
     def _collect_cuts_in_buckets(self, n_cuts: int):
-        try:
+        def collect():
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
                 duration = (
@@ -431,5 +437,13 @@ class DynamicBucketer:
                 )
                 bucket_idx = bisect_right(self.duration_bins, duration)
                 self.buckets[bucket_idx].append(cuts)
-        except StopIteration:
-            pass
+
+        assert self._cut_reading_future is None
+        self._cut_reading_future = self._cut_reading_thread.submit(collect)
+
+    def _wait_for_cut_collection(self):
+        assert self._cut_reading_future is not None
+        err = self._cut_reading_future.exception()
+        if err is not None and not isinstance(err, StopIteration):
+            raise err
+        self._cut_reading_future = None
