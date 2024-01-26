@@ -1,7 +1,7 @@
 """
 About the Fisher Spanish corpus
 
-    This is conversational telephone speech collected as 2-channel μ-law, 8kHz-sampled data. 
+    This is conversational telephone speech collected as 2-channel μ-law, 8kHz-sampled data.
     The catalog number LDC2010S01 for audio corpus and LDC2010T04 for transcripts.
 
     This data is not available for free - your institution needs to have an LDC subscription.
@@ -78,8 +78,9 @@ def prepare_fisher_spanish(
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
 
-    audio_dir_path, transcript_dir_path = Path(audio_dir_path), Path(
-        transcript_dir_path
+    audio_dir_path, transcript_dir_path = (
+        Path(audio_dir_path),
+        Path(transcript_dir_path),
     )
 
     audio_paths = check_and_rglob(audio_dir_path, "*.sph")

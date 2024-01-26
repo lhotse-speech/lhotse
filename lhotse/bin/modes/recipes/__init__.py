@@ -36,9 +36,11 @@ from .gale_arabic import *
 from .gale_mandarin import *
 from .gigaspeech import *
 from .gigast import *
+from .grid import *
 from .heroico import *
 from .hifitts import *
 from .himia import *
+from .icmcasr import *
 from .icsi import *
 from .iwslt22_ta import *
 from .kespeech import *
@@ -50,6 +52,7 @@ from .librispeech import *
 from .libritts import *
 from .ljspeech import *
 from .magicdata import *
+from .medical import *
 from .mgb2 import *
 from .mls import *
 from .mtedx import *

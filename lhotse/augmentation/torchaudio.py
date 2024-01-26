@@ -1,7 +1,7 @@
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -11,6 +11,8 @@ from lhotse.utils import (
     Seconds,
     compute_num_samples,
     during_docs_build,
+    is_module_available,
+    is_torchaudio_available,
     perturb_num_samples,
 )
 
@@ -58,6 +60,7 @@ class SoxEffectTransform:
         self.effects = effects
 
     def __call__(self, tensor: Union[torch.Tensor, np.ndarray], sampling_rate: int):
+        check_for_torchaudio()
         check_torchaudio_version()
         import torchaudio
 
@@ -113,6 +116,7 @@ class Speed(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_for_torchaudio()
         resampler = get_or_create_resampler(
             round(sampling_rate * self.factor), sampling_rate
         )
@@ -152,6 +156,7 @@ _precompiled_resamplers: Dict[Tuple[int, int], torch.nn.Module] = {}
 def get_or_create_resampler(
     source_sampling_rate: int, target_sampling_rate: int
 ) -> torch.nn.Module:
+    check_for_torchaudio()
     global _precompiled_resamplers
 
     tpl = (source_sampling_rate, target_sampling_rate)
@@ -177,18 +182,35 @@ class Resample(AudioTransform):
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        self.resampler = get_or_create_resampler(
-            self.source_sampling_rate, self.target_sampling_rate
-        )
+        if not is_torchaudio_available():
+            assert is_module_available(
+                "scipy"
+            ), "In order to use resampling, either torchaudio or scipy needs to be installed."
+        else:
+            self.resampler = get_or_create_resampler(
+                self.source_sampling_rate, self.target_sampling_rate
+            )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
 
-        if isinstance(samples, np.ndarray):
-            samples = torch.from_numpy(samples)
-        augmented = self.resampler(samples)
-        return augmented.numpy()
+        if is_torchaudio_available():
+            if isinstance(samples, np.ndarray):
+                samples = torch.from_numpy(samples)
+            augmented = self.resampler(samples)
+            return augmented.numpy()
+        else:
+            import scipy
+
+            gcd = np.gcd(self.source_sampling_rate, self.target_sampling_rate)
+            augmented = scipy.signal.resample_poly(
+                samples,
+                up=self.target_sampling_rate // gcd,
+                down=self.source_sampling_rate // gcd,
+                axis=-1,
+            )
+            return augmented
 
     def reverse_timestamps(
         self, offset: Seconds, duration: Optional[Seconds], sampling_rate: int
@@ -234,6 +256,7 @@ class Tempo(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_for_torchaudio()
         check_torchaudio_version()
         import torchaudio
 
@@ -288,6 +311,7 @@ class Volume(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_for_torchaudio()
         check_torchaudio_version()
         import torchaudio
 
@@ -355,4 +379,12 @@ def check_torchaudio_version():
             "Torchaudio SoX effects chains are only introduced in version 0.7 - "
             "please upgrade your PyTorch to 1.7.1 and torchaudio to 0.7.2 (or higher) "
             "to use them."
+        )
+
+
+def check_for_torchaudio():
+    if not is_torchaudio_available():
+        raise RuntimeError(
+            "This transform is not supported in torchaudio-free Lhotse installation. "
+            "Please install torchaudio and try again."
         )

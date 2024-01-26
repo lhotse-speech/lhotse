@@ -1,10 +1,8 @@
 import warnings
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
-from typing_extensions import Literal
-
-from lhotse import AudioSource, Features, fastcopy
+from lhotse import fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.cut import Cut
@@ -204,6 +202,7 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
         "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
         "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
         "mp3": (partial(AudioTarWriter, format="mp3"), ".tar"),
+        "opus": (partial(AudioTarWriter, format="opus"), ".tar"),
         "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
         "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
         "jsonl": (JsonlShardWriter, ".jsonl.gz"),

@@ -20,6 +20,7 @@ def vctk(corpus_dir: Pathlike, output_dir: Pathlike, use_edinburgh_vctk_url: boo
 
 @download.command()
 @click.argument("target_dir", type=click.Path())
-def vctk(target_dir: Pathlike):
+@click.option("--use-edinburgh-vctk-url", default=False)
+def vctk(target_dir: Pathlike, use_edinburgh_vctk_url: bool):
     """VCTK download."""
-    download_vctk(target_dir)
+    download_vctk(target_dir, use_edinburgh_vctk_url=use_edinburgh_vctk_url)

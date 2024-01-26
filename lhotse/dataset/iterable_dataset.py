@@ -54,12 +54,15 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         dataset: torch.utils.data.Dataset,
         sampler: CutSampler,
         auto_increment_epoch: bool = False,
+        reset_on_iter: bool = False,
     ) -> None:
         super().__init__()
         self.dataset = dataset
         self.sampler = sampler
         self.auto_increment_epoch = auto_increment_epoch
+        self.reset_on_iter = reset_on_iter
         self.epoch = 0
+        self._sampler_iter = None
 
         rank = self.sampler.rank
         ws = self.sampler.world_size
@@ -84,7 +87,8 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
                     cs.data.set_epoch(epoch)
 
     def __iter__(self):
-        self._sampler_iter = iter(self.sampler)
+        if self._sampler_iter is None or self.reset_on_iter:
+            self._sampler_iter = iter(self.sampler)
         return self
 
     def __next__(self) -> dict:
@@ -93,4 +97,5 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         except StopIteration:
             if self.auto_increment_epoch:
                 self.set_epoch(self.epoch + 1)
+            self._sampler_iter = None
             raise

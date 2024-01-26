@@ -1,116 +1,63 @@
-"""
-Note: this module is very heavily based on a torchaudio tutorial about forced
-alignment with Wav2Vec2 created by Moto Hira.
-
-Link: https://pytorch.org/audio/stable/pipelines.html
-"""
-import logging
 import re
-from typing import Generator, List, NamedTuple, Sequence
+from typing import List, NamedTuple, Sequence
 
 import torch
-import torchaudio
 
-from lhotse import CutSet, MonoCut
 from lhotse.supervision import AlignmentItem
 
+from .base import FailedToAlign, ForcedAligner
 
-def align_with_torchaudio(
-    cuts: CutSet,
-    bundle_name: str = "WAV2VEC2_ASR_BASE_960H",
-    device: str = "cpu",
-    normalize_text: bool = True,
-) -> Generator[MonoCut, None, None]:
-    """
-    Use a pretrained model from torchaudio (such as Wav2Vec2) to perform forced
-    word-level alignment of a CutSet.
 
-    This means that for every SupervisionSegment with a transcript, we will find the
-    start and end timestamps for each of the words.
+class ASRForcedAligner(ForcedAligner):
+    def __init__(
+        self, bundle_name: str = "WAV2VEC2_ASR_BASE_960H", device: str = "cpu", **kwargs
+    ):
+        import torchaudio
 
-    We support cuts with multiple supervisions -- the forced alignment will be done
-    for every supervision region separately, and attached to the relevant supervision.
+        super().__init__(device=device)
+        self.bundle_name = bundle_name
+        self.bundle = getattr(torchaudio.pipelines, bundle_name)
+        self.model = self.bundle.get_model().to(device)
+        self.labels = self.bundle.get_labels()
+        self.dictionary = {c: i for i, c in enumerate(self.labels)}
+        self.discard_symbols = _make_discard_symbols_regex(self.labels)
 
-    Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
-    high quality of data.
+    @property
+    def sample_rate(self) -> int:
+        return self.bundle.sample_rate
 
-    See torchaudio's documentation and tutorials for more details:
-    - https://pytorch.org/audio/stable/tutorials/forced_alignment_tutorial.html
-    - https://pytorch.org/audio/stable/pipelines.html
+    def normalize_text(self, text: str, **kwargs) -> str:
+        return _normalize_text(text, self.discard_symbols)
 
-    :param cuts: input CutSet.
-    :param bundle_name: name of the selected pretrained model from torchaudio.
-        By default, we use WAV2VEC2_ASR_BASE_960H.
-    :param device: device on which to run the computation.
-    :param normalize_text: by default, we'll try to normalize the text by making
-        it uppercase and discarding symbols outside of model's character level vocabulary.
-        If this causes issues, turn the option off and normalize the text yourself.
-    :return: a generator of cuts that have the "alignment" field set in each of
-        their supervisions.
-    """
-    bundle = getattr(torchaudio.pipelines, bundle_name)
-    sampling_rate = bundle.sample_rate
-    model = bundle.get_model().to(device)
-    labels = bundle.get_labels()
-    device = torch.device(device)
-    dictionary = {c: i for i, c in enumerate(labels)}
-    discard_symbols = _make_discard_symbols_regex(labels)
+    def align(self, audio: torch.Tensor, transcript: str) -> List[AlignmentItem]:
+        tokens = [self.dictionary[c] for c in transcript]
 
-    for cut in cuts:
+        with torch.inference_mode():
+            emissions, _ = self.model(audio)
+            emissions = torch.log_softmax(emissions, dim=-1)
+        emission = emissions[0].cpu()
 
-        for idx, subcut in enumerate(cut.trim_to_supervisions(keep_overlapping=False)):
-            sup = subcut.supervisions[0]
-            waveform = torch.as_tensor(
-                subcut.resample(sampling_rate).load_audio(), device=device
+        trellis = _get_trellis(emission, tokens)
+        path = _backtrack(trellis, emission, tokens)
+
+        segments = _merge_repeats(path, transcript)
+
+        word_segments = _merge_words(segments)
+
+        # Ratio of number of samples to number of frames
+        ratio = audio.size(1) / emission.size(0)
+        return [
+            AlignmentItem(
+                symbol=ws.label,
+                start=round(int(ratio * ws.start) / self.sample_rate, ndigits=8),
+                duration=round(
+                    int(ratio * (ws.end - ws.start)) / self.sample_rate,
+                    ndigits=8,
+                ),
+                score=ws.score,
             )
-            if normalize_text:
-                transcript = _normalize_text(sup.text, discard_symbols=discard_symbols)
-            else:
-                transcript = sup.text.replace(" ", "|")
-            tokens = [dictionary[c] for c in transcript]
-
-            with torch.inference_mode():
-                emissions, _ = model(waveform)
-                emissions = torch.log_softmax(emissions, dim=-1)
-            emission = emissions[0].cpu()
-
-            trellis = _get_trellis(emission, tokens)
-
-            try:
-                path = _backtrack(trellis, emission, tokens)
-            except FailedToAlign:
-                logging.info(
-                    f"Failed to align supervision '{sup.id}' for cut '{cut.id}'. Writing it without alignment."
-                )
-                continue
-
-            segments = _merge_repeats(path, transcript)
-
-            word_segments = _merge_words(segments)
-
-            # Ratio of number of samples to number of frames
-            ratio = waveform.size(1) / emission.size(0)
-            alignment = [
-                AlignmentItem(
-                    symbol=ws.label,
-                    start=round(
-                        subcut.start + int(ratio * ws.start) / sampling_rate, ndigits=8
-                    ),
-                    duration=round(
-                        int(subcut.start + ratio * (ws.end - ws.start)) / sampling_rate,
-                        ndigits=8,
-                    ),
-                    score=ws.score,
-                )
-                for ws in word_segments
-            ]
-
-            # Important: reference the original supervision before "trim_to_supervisions"
-            #            because the new one has start=0 to match the start of the subcut
-            sup = cut.supervisions[idx].with_alignment(kind="word", alignment=alignment)
-            cut.supervisions[idx] = sup
-
-        yield cut
+            for ws in word_segments
+        ]
 
 
 def _make_discard_symbols_regex(labels: Sequence[str]) -> re.Pattern:
@@ -158,10 +105,6 @@ class Point(NamedTuple):
     token_index: int
     time_index: int
     score: float
-
-
-class FailedToAlign(RuntimeError):
-    pass
 
 
 def _backtrack(

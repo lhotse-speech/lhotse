@@ -68,12 +68,13 @@ class DynamicCutSampler(CutSampler):
     def __init__(
         self,
         *cuts: Iterable[Cut],
-        max_duration: Optional[float] = None,
+        max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
         drop_last: bool = False,
         consistent_ids: bool = True,
         shuffle_buffer_size: int = 20000,
+        quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -99,6 +100,9 @@ class DynamicCutSampler(CutSampler):
         :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
             a buffer used for streaming shuffling. Larger number means better randomness at the cost
             of higher memory usage.
+        :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
+            a cuts duration. This helps get a more even GPU utilization across different input lengths
+            when models have quadratic input complexity. Set between 15 and 40 for transformers.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -118,6 +122,7 @@ class DynamicCutSampler(CutSampler):
         self.shuffle = shuffle
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.quadratic_duration = quadratic_duration
         self.rng = None
         assert any(
             v is not None for v in (self.max_duration, self.max_cuts)
@@ -138,6 +143,7 @@ class DynamicCutSampler(CutSampler):
                 "max_cuts": self.max_cuts,
                 "consistent_ids": self.consistent_ids,
                 "shuffle_buffer_size": self.shuffle_buffer_size,
+                "quadratic_duration": self.quadratic_duration,
             }
         )
         return sd
@@ -147,6 +153,7 @@ class DynamicCutSampler(CutSampler):
         self.max_cuts = sd.pop("max_cuts")
         self.consistent_ids = sd.pop("consistent_ids")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        self.quadratic_duration = sd.pop("quadratic_duration")
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -203,6 +210,7 @@ class DynamicCutSampler(CutSampler):
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
+            quadratic_duration=self.quadratic_duration,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(self.cuts_iter)
@@ -283,11 +291,8 @@ class DurationBatcher:
         while True:
             # Check that we have not reached the end of the dataset.
             try:
-                if self.reuse_cuts_buffer:
-                    next_cut_or_tpl = self.reuse_cuts_buffer.popleft()
-                else:
-                    # If this doesn't raise (typical case), it's not the end: keep processing.
-                    next_cut_or_tpl = next(self.cuts_iter)
+                # If this doesn't raise (typical case), it's not the end: keep processing.
+                next_cut_or_tpl = next(self.cuts_iter)
             except StopIteration:
                 # No more cuts to sample from: if we have a partial batch,
                 # we may output it, unless the user requested to drop it.
@@ -307,6 +312,7 @@ class DurationBatcher:
                     raise StopIteration()
 
             # Track the duration/frames/etc. constraints.
+            cuts.append(next_cut_or_tpl)
             self.time_constraint.add(
                 next_cut_or_tpl[0]
                 if isinstance(next_cut_or_tpl, tuple)
@@ -314,25 +320,15 @@ class DurationBatcher:
             )
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded():
-                # No - add the next cut to the batch, and keep trying.
-                cuts.append(next_cut_or_tpl)
-            else:
-                # Yes. Do we have at least one cut in the batch?
-                if cuts:
-                    # Yes. Return the batch, but keep the currently drawn cut for later.
-                    self.reuse_cuts_buffer.append(next_cut_or_tpl)
-                    break
-                else:
-                    # No. We'll warn the user that the constrains might be too tight,
-                    # and return the cut anyway.
+            if self.time_constraint.close_to_exceeding():
+                # Yes. Finish sampling this batch.
+                if self.time_constraint.exceeded() and len(cuts) == 1:
                     warnings.warn(
-                        "The first cut drawn in batch collection violates "
-                        "the max_frames, max_cuts, or max_duration constraints - "
-                        "we'll return it anyway. "
-                        "Consider increasing max_frames/max_cuts/max_duration."
+                        "We have exceeded the max_duration constraint during sampling but have only 1 cut. "
+                        "This is likely because max_duration was set to a very low value ~10s, "
+                        "or you're using a CutSet with very long cuts (e.g. 100s of seconds long)."
                     )
-                    cuts.append(next_cut_or_tpl)
+                break
 
         return detuplify(cuts)
 

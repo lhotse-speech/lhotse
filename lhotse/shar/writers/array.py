@@ -1,11 +1,10 @@
 import codecs
 import json
 from io import BytesIO
-from typing import List, Optional, Union
+from typing import List, Literal, Optional, Union
 
 import lilcom
 import numpy as np
-from typing_extensions import Literal
 
 from lhotse import Features
 from lhotse.array import Array, TemporalArray

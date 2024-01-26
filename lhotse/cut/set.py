@@ -2,12 +2,12 @@ import itertools
 import logging
 import pickle
 import random
+import secrets
 import warnings
-from collections import Counter, defaultdict
+from collections import defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
 from functools import partial, reduce
 from itertools import chain, islice
-from math import ceil
 from pathlib import Path
 from typing import (
     Any,
@@ -16,6 +16,7 @@ from typing import (
     FrozenSet,
     Iterable,
     List,
+    Literal,
     Mapping,
     Optional,
     Sequence,
@@ -30,7 +31,6 @@ import numpy as np
 import torch
 from intervaltree import IntervalTree
 from tqdm.auto import tqdm
-from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
@@ -43,7 +43,15 @@ from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
-from lhotse.lazy import AlgorithmMixin
+from lhotse.lazy import (
+    AlgorithmMixin,
+    ImitatesDict,
+    LazyFlattener,
+    LazyIteratorChain,
+    LazyManifestIterator,
+    LazyMapper,
+    LazySlicer,
+)
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -52,14 +60,12 @@ from lhotse.utils import (
     Decibels,
     Pathlike,
     Seconds,
-    TimeSpan,
     compute_num_frames,
     compute_num_samples,
     exactly_one_not_null,
     fastcopy,
     ifnone,
     index_by_id_and_check,
-    is_module_available,
     split_manifest_lazy,
     split_sequence,
     uuid4,
@@ -236,7 +242,9 @@ class CutSet(Serializable, AlgorithmMixin):
         - :class:`~lhotse.cut.Cut`
     """
 
-    def __init__(self, cuts: Optional[Mapping[str, Cut]] = None) -> None:
+    def __init__(
+        self, cuts: Optional[Union[Mapping[str, Cut], ImitatesDict]] = None
+    ) -> None:
         self.cuts = ifnone(cuts, {})
 
     def __eq__(self, other: "CutSet") -> bool:
@@ -289,8 +297,6 @@ class CutSet(Serializable, AlgorithmMixin):
             will be different on each script execution.
         :return: a lazy CutSet instance.
         """
-        from lhotse.lazy import LazyIteratorChain, LazyManifestIterator
-
         return CutSet(
             LazyIteratorChain(
                 *(LazyManifestIterator(p) for p in paths),
@@ -524,6 +530,11 @@ class CutSet(Serializable, AlgorithmMixin):
             argument. It will cause the iterator to shuffle shards differently on each node
             and dataloading worker in PyTorch training. This is mutually exclusive with
             ``split_for_dataloading=True``.
+            Seed can be set to ``'trng'`` which, like ``'randomized'``, shuffles the shards
+            differently on each iteration, but is not possible to control (and is not reproducible).
+            ``trng`` mode is mostly useful when the user has limited control over the training loop
+            and may not be able to guarantee internal Shar epoch is being incremented, but needs
+            randomness on each iteration (e.g. useful with PyTorch Lightning).
         :param stateful_shuffle: bool, by default ``False``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
@@ -558,6 +569,7 @@ class CutSet(Serializable, AlgorithmMixin):
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
         num_jobs: int = 1,
+        fault_tolerant: bool = False,
         verbose: bool = False,
     ) -> Dict[str, List[str]]:
         """
@@ -609,6 +621,9 @@ class CutSet(Serializable, AlgorithmMixin):
             as the export will likely be bottlenecked by I/O speed in these cases.
             Try experimenting with 4-8 jobs first.
 
+        The option ``fault_tolerant`` will skip over audio files that failed to load with a warning.
+        By default it is disabled.
+
         See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
@@ -625,6 +640,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 warn_unused_fields=warn_unused_fields,
                 include_cuts=include_cuts,
                 shard_suffix=None,
+                fault_tolerant=fault_tolerant,
                 verbose=verbose,
             )
 
@@ -646,7 +662,9 @@ class CutSet(Serializable, AlgorithmMixin):
                         warn_unused_fields=warn_unused_fields,
                         include_cuts=True,
                         shard_suffix=f".{idx:06d}",
+                        fault_tolerant=fault_tolerant,
                         verbose=False,
+                        preload=True,
                     )
                 )
             for f in progbar(as_completed(futures)):
@@ -786,202 +804,10 @@ class CutSet(Serializable, AlgorithmMixin):
             │ Total                │ 64:59:51              │ 74:33:09                   │ 100.00%       │ 100.00%              │
             ╘══════════════════════╧═══════════════════════╧════════════════════════════╧═══════════════╧══════════════════════╛
         """
-        if not is_module_available("tabulate"):
-            raise ValueError(
-                "Since Lhotse v1.11, this function requires the `tabulate` package to be "
-                "installed. Please run 'pip install tabulate' to continue."
-            )
-        from tabulate import tabulate
+        from lhotse.cut.describe import CutSetStatistics
 
-        def convert_(seconds: float) -> Tuple[int, int, int]:
-            hours, seconds = divmod(seconds, 3600)
-            minutes, seconds = divmod(seconds, 60)
-            return int(hours), int(minutes), ceil(seconds)
-
-        def time_as_str_(seconds: float) -> str:
-            h, m, s = convert_(seconds)
-            return f"{h:02d}:{m:02d}:{s:02d}"
-
-        def total_duration_(segments: List[TimeSpan]) -> float:
-            return sum(segment.duration for segment in segments)
-
-        cntrs = defaultdict(int)
-        cut_custom, sup_custom = Counter(), Counter()
-        cut_durations = []
-
-        # The following is to store statistics about speaker times in the cuts
-        speaking_time_durations, speech_durations = [], []
-
-        if full:
-            durations_by_num_speakers = defaultdict(list)
-            single_durations, overlapped_durations = [], []
-
-        for c in self:
-            cut_durations.append(c.duration)
-            if hasattr(c, "custom"):
-                for key in ifnone(c.custom, ()):
-                    cut_custom[key] += 1
-            cntrs["recordings"] += int(c.has_recording)
-            cntrs["features"] += int(c.has_features)
-
-            # Total speaking time duration is computed by summing the duration of all
-            # supervisions in the cut.
-            for s in c.trimmed_supervisions:
-                speaking_time_durations.append(s.duration)
-                cntrs["supervisions"] += 1
-                for key in ifnone(s.custom, ()):
-                    sup_custom[key] += 1
-
-            # Total speech duration is the sum of intervals where 1 or more speakers are
-            # active.
-            speech_durations.append(
-                total_duration_(find_segments_with_speaker_count(c, min_speakers=1))
-            )
-
-            if full:
-                # Duration of single-speaker segments
-                single_durations.append(
-                    total_duration_(
-                        find_segments_with_speaker_count(
-                            c, min_speakers=1, max_speakers=1
-                        )
-                    )
-                )
-                # Duration of overlapped segments
-                overlapped_durations.append(
-                    total_duration_(
-                        find_segments_with_speaker_count(
-                            c, min_speakers=2, max_speakers=None
-                        )
-                    )
-                )
-                # Durations by number of speakers (we assume that overlaps can happen between
-                # at most 4 speakers. This is a reasonable assumption for most datasets.)
-                durations_by_num_speakers[1].append(single_durations[-1])
-                for num_spk in range(2, 5):
-                    durations_by_num_speakers[num_spk].append(
-                        total_duration_(
-                            find_segments_with_speaker_count(
-                                c, min_speakers=num_spk, max_speakers=num_spk
-                            )
-                        )
-                    )
-
-        total_sum = np.array(cut_durations).sum()
-
-        cut_stats = []
-        cut_stats.append(["Cuts count:", len(cut_durations)])
-        cut_stats.append(["Total duration (hh:mm:ss)", time_as_str_(total_sum)])
-        cut_stats.append(["mean", f"{np.mean(cut_durations):.1f}"])
-        cut_stats.append(["std", f"{np.std(cut_durations):.1f}"])
-        cut_stats.append(["min", f"{np.min(cut_durations):.1f}"])
-        cut_stats.append(["25%", f"{np.percentile(cut_durations, 25):.1f}"])
-        cut_stats.append(["50%", f"{np.median(cut_durations):.1f}"])
-        cut_stats.append(["75%", f"{np.percentile(cut_durations, 75):.1f}"])
-        cut_stats.append(["99%", f"{np.percentile(cut_durations, 99):.1f}"])
-        cut_stats.append(["99.5%", f"{np.percentile(cut_durations, 99.5):.1f}"])
-        cut_stats.append(["99.9%", f"{np.percentile(cut_durations, 99.9):.1f}"])
-        cut_stats.append(["max", f"{np.max(cut_durations):.1f}"])
-
-        for key, val in cntrs.items():
-            cut_stats.append([f"{key.title()} available:", val])
-
-        print("Cut statistics:")
-        print(tabulate(cut_stats, tablefmt="fancy_grid"))
-
-        if cut_custom:
-            print("CUT custom fields:")
-            for key, val in cut_custom.most_common():
-                print(f"- {key} (in {val} cuts)")
-
-        if sup_custom:
-            print("SUPERVISION custom fields:")
-            for key, val in sup_custom.most_common():
-                cut_stats.append(f"- {key} (in {val} cuts)")
-
-        total_speech = np.array(speech_durations).sum()
-        total_speaking_time = np.array(speaking_time_durations).sum()
-        total_silence = total_sum - total_speech
-        speech_stats = []
-        speech_stats.append(
-            [
-                "Total speech duration",
-                time_as_str_(total_speech),
-                f"{total_speech / total_sum:.2%} of recording",
-            ]
-        )
-        speech_stats.append(
-            [
-                "Total speaking time duration",
-                time_as_str_(total_speaking_time),
-                f"{total_speaking_time / total_sum:.2%} of recording",
-            ]
-        )
-        speech_stats.append(
-            [
-                "Total silence duration",
-                time_as_str_(total_silence),
-                f"{total_silence / total_sum:.2%} of recording",
-            ]
-        )
-        if full:
-            total_single = np.array(single_durations).sum()
-            total_overlap = np.array(overlapped_durations).sum()
-            speech_stats.append(
-                [
-                    "Single-speaker duration",
-                    time_as_str_(total_single),
-                    f"{total_single / total_sum:.2%} ({total_single / total_speech:.2%} of speech)",
-                ]
-            )
-            speech_stats.append(
-                [
-                    "Overlapped speech duration",
-                    time_as_str_(total_overlap),
-                    f"{total_overlap / total_sum:.2%} ({total_overlap / total_speech:.2%} of speech)",
-                ]
-            )
-        print("Speech duration statistics:")
-        print(tabulate(speech_stats, tablefmt="fancy_grid"))
-
-        if not full:
-            return
-
-        # Additional statistics for full report
-        speaker_stats = [
-            [
-                "Number of speakers",
-                "Duration (hh:mm:ss)",
-                "Speaking time (hh:mm:ss)",
-                "% of speech",
-                "% of speaking time",
-            ]
-        ]
-        for num_spk, durations in durations_by_num_speakers.items():
-            speaker_sum = np.array(durations).sum()
-            speaking_time = num_spk * speaker_sum
-            speaker_stats.append(
-                [
-                    num_spk,
-                    time_as_str_(speaker_sum),
-                    time_as_str_(speaking_time),
-                    f"{speaker_sum / total_speech:.2%}",
-                    f"{speaking_time / total_speaking_time:.2%}",
-                ]
-            )
-
-        speaker_stats.append(
-            [
-                "Total",
-                time_as_str_(total_speech),
-                time_as_str_(total_speaking_time),
-                "100.00%",
-                "100.00%",
-            ]
-        )
-
-        print("Speech duration statistics by number of speakers:")
-        print(tabulate(speaker_stats, headers="firstrow", tablefmt="fancy_grid"))
+        stats = CutSetStatistics(full=full)
+        stats.accumulate(self).describe()
 
     def split(
         self,
@@ -1130,7 +956,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a CutSet with filtered supervisions
         """
-        return self.map(lambda cut: cut.filter_supervisions(predicate))
+        return self.map(partial(_filter_supervisions, predicate=predicate))
 
     def merge_supervisions(
         self,
@@ -1156,8 +982,10 @@ class CutSet(Serializable, AlgorithmMixin):
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
         return self.map(
-            lambda cut: cut.merge_supervisions(
-                merge_policy=merge_policy, custom_merge_fn=custom_merge_fn
+            partial(
+                _merge_supervisions,
+                merge_policy=merge_policy,
+                custom_merge_fn=custom_merge_fn,
             )
         )
 
@@ -1218,8 +1046,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
 
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1277,8 +1103,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
 
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1316,6 +1140,8 @@ class CutSet(Serializable, AlgorithmMixin):
 
         :return: a ``CutSet``.
         """
+        from lhotse.cut.describe import find_segments_with_speaker_count
+
         cuts = []
         for cut in self:
             segments = find_segments_with_speaker_count(
@@ -1370,8 +1196,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
 
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1519,7 +1343,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 duration = max(cut.duration for cut in self)
 
         return self.map(
-            lambda cut: cut.pad(
+            partial(
+                _pad,
                 duration=duration,
                 num_frames=num_frames,
                 num_samples=num_samples,
@@ -1600,7 +1425,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :return: a new CutSet instance.
         """
         return self.map(
-            lambda cut: cut.extend_by(
+            partial(
+                _extend_by,
                 duration=duration,
                 direction=direction,
                 preserve_id=preserve_id,
@@ -1632,8 +1458,6 @@ class CutSet(Serializable, AlgorithmMixin):
         if not hop:
             hop = duration
         if num_jobs == 1:
-            from lhotse.lazy import LazyFlattener, LazyMapper
-
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
@@ -1715,7 +1539,9 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.resample(sampling_rate, affix_id=affix_id))
+        return self.map(
+            partial(_resample, sampling_rate=sampling_rate, affix_id=affix_id)
+        )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "CutSet":
         """
@@ -1730,7 +1556,7 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
+        return self.map(partial(_perturb_speed, factor=factor, affix_id=affix_id))
 
     def perturb_tempo(self, factor: float, affix_id: bool = True) -> "CutSet":
         """
@@ -1748,7 +1574,7 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.perturb_tempo(factor=factor, affix_id=affix_id))
+        return self.map(partial(_perturb_tempo, factor=factor, affix_id=affix_id))
 
     def perturb_volume(self, factor: float, affix_id: bool = True) -> "CutSet":
         """
@@ -1762,11 +1588,11 @@ class CutSet(Serializable, AlgorithmMixin):
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(
-            lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
-        )
+        return self.map(partial(_perturb_volume, factor=factor, affix_id=affix_id))
 
-    def normalize_loudness(self, target: float, affix_id: bool = True) -> "CutSet":
+    def normalize_loudness(
+        self, target: float, mix_first: bool = True, affix_id: bool = True
+    ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that will lazily apply loudness normalization
         to the desired ``target`` loudness (in dBFS).
@@ -1777,7 +1603,12 @@ class CutSet(Serializable, AlgorithmMixin):
         :return: a modified copy of the current ``CutSet``.
         """
         return self.map(
-            lambda cut: cut.normalize_loudness(target=target, affix_id=affix_id)
+            partial(
+                _normalize_loudness,
+                target=target,
+                mix_first=mix_first,
+                affix_id=affix_id,
+            )
         )
 
     def dereverb_wpe(self, affix_id: bool = True) -> "CutSet":
@@ -1788,7 +1619,7 @@ class CutSet(Serializable, AlgorithmMixin):
             by affixing it with "_wpe".
         :return: a modified copy of the current ``CutSet``.
         """
-        return self.map(lambda cut: cut.dereverb_wpe(affix_id=affix_id))
+        return self.map(partial(_dereverb_wpe, affix_id=affix_id))
 
     def reverb_rir(
         self,
@@ -1819,7 +1650,8 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         rir_recordings = list(rir_recordings) if rir_recordings else None
         return self.map(
-            lambda cut: cut.reverb_rir(
+            partial(
+                _reverb_rir,
                 rir_recording=random.choice(rir_recordings) if rir_recordings else None,
                 normalize_output=normalize_output,
                 early_only=early_only,
@@ -1836,7 +1668,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: int = 42,
+        seed: Union[int, Literal["trng"]] = 42,
         random_mix_offset: bool = False,
     ) -> "CutSet":
         """
@@ -1863,100 +1695,51 @@ class CutSet(Serializable, AlgorithmMixin):
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
+            If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
+            on each iteration.
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
              select a random sub-region from the to be mixed in cut.
-        :param seed: an optional int. Random seed for choosing the cuts to mix and the SNR.
         :return: a new ``CutSet`` with mixed cuts.
         """
-        assert 0.0 <= mix_prob <= 1.0
-        assert duration is None or duration > 0
-        if isinstance(snr, (tuple, list)):
-            assert (
-                len(snr) == 2
-            ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
-        else:
-            assert isinstance(snr, (type(None), int, float))
-        assert not cuts.is_lazy, (
-            "Mixing of two CutSets does not support a lazy mixed-in CutSet ('cuts' argument), "
-            "as it would be extremely inefficient. "
-            "You can use 'cuts.to_eager()' on the function argument to fix this."
-        )
-        rng = random.Random(seed)
-        mixed_cuts = []
-        for cut in self:
-            # Check whether we're going to mix something into the current cut
-            # or pass it through unchanged.
-            if rng.uniform(0.0, 1.0) > mix_prob:
-                mixed_cuts.append(cut)
-                continue
-            to_mix = cuts.sample()
-            # Determine the SNR - either it's specified or we need to sample one.
-            cut_snr = rng.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
-            if random_mix_offset and to_mix.duration > cut.duration:
-                to_mix = to_mix.truncate(
-                    offset=rng.uniform(0, to_mix.duration - cut.duration),
-                    duration=cut.duration,
-                )
-            # Actual mixing
-            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
-            # Did the user specify a duration?
-            # If yes, we will ensure that shorter cuts have more noise mixed in
-            # to "pad" them with at the end.
-            # If no, we will mix in as many noise cuts as needed to cover complete
-            # duration.
-            mixed_in_duration = to_mix.duration
-            # Keep sampling until we mixed in a "duration" amount of noise.
-            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
-            #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (
-                duration if duration is not None else cut.duration - 0.05
-            ):
-                to_mix = cuts.sample()
-                # Keep the SNR constant for each cut from "self".
-                mixed = mixed.mix(
-                    other=to_mix,
-                    snr=cut_snr,
-                    offset_other_by=mixed_in_duration,
-                    allow_padding=allow_padding,
-                    preserve_id=preserve_id,
-                )
-                # Since we're adding floats, we can be off by an epsilon and trigger
-                # some assertions for exceeding duration; do precautionary rounding here.
-                mixed_in_duration = round(
-                    mixed_in_duration + to_mix.duration, ndigits=8
-                )
-            # We truncate the mixed to either the original duration or the requested duration.
-            mixed = mixed.truncate(
-                duration=duration if duration is not None else cut.duration,
-                preserve_id=preserve_id is not None,
+        return CutSet(
+            LazyCutMixer(
+                cuts=self,
+                mix_in_cuts=cuts,
+                duration=duration,
+                allow_padding=allow_padding,
+                snr=snr,
+                preserve_id=preserve_id,
+                mix_prob=mix_prob,
+                seed=seed,
+                random_mix_offset=random_mix_offset,
             )
-            mixed_cuts.append(mixed)
-        return CutSet.from_cuts(mixed_cuts)
+        )
 
     def drop_features(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its extracted features.
         """
-        return self.map(lambda cut: cut.drop_features())
+        return self.map(_drop_features)
 
     def drop_recordings(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its recordings.
         """
-        return self.map(lambda cut: cut.drop_recording())
+        return self.map(_drop_recordings)
 
     def drop_supervisions(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its supervisions.
         """
-        return self.map(lambda cut: cut.drop_supervisions())
+        return self.map(_drop_supervisions)
 
     def drop_alignments(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from the alignments present in its supervisions.
         """
-        return self.map(lambda cut: cut.drop_alignments())
+        return self.map(_drop_alignments)
 
     def compute_and_store_features(
         self,
@@ -2051,7 +1834,6 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        from lhotse.lazy import LazySlicer
         from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
@@ -2665,7 +2447,7 @@ class CutSet(Serializable, AlgorithmMixin):
         a new string (new cut ID).
         :return: a new ``CutSet`` with cuts with modified IDs.
         """
-        return self.map(lambda cut: cut.with_id(transform_fn(cut.id)))
+        return self.map(partial(_with_id, transform_fn=transform_fn))
 
     def fill_supervisions(
         self, add_empty: bool = True, shrink_ok: bool = False
@@ -2687,7 +2469,7 @@ class CutSet(Serializable, AlgorithmMixin):
             of calling this method.
         """
         return self.map(
-            lambda cut: cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
+            partial(_fill_supervision, add_empty=add_empty, shrink_ok=shrink_ok)
         )
 
     def map_supervisions(
@@ -2699,7 +2481,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a new, modified CutSet.
         """
-        return self.map(lambda cut: cut.map_supervisions(transform_fn))
+        return self.map(partial(_map_supervisions, transform_fn=transform_fn))
 
     def transform_text(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """
@@ -2709,7 +2491,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param transform_fn: a function that accepts a string and returns a string.
         :return: a new, modified CutSet.
         """
-        return self.map_supervisions(lambda s: s.transform_text(transform_fn))
+        return self.map_supervisions(
+            partial(_transform_text, transform_fn=transform_fn)
+        )
 
     def __repr__(self) -> str:
         try:
@@ -2987,9 +2771,18 @@ def pad(
             else None
         )
 
+    padding_duration = round(duration - cut.duration, ndigits=8)
+
+    video = None
+    if cut.has_video:
+        video = cut.video
+        video = video.copy_with(
+            num_frames=compute_num_samples(padding_duration, video.fps)
+        )
+
     padding_cut = PaddingCut(
         id=str(uuid4()),
-        duration=round(duration - cut.duration, ndigits=8),
+        duration=padding_duration,
         feat_value=pad_feat_value,
         num_features=cut.num_features,
         # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
@@ -3001,6 +2794,7 @@ def pad(
         ),
         frame_shift=cut.frame_shift,
         sampling_rate=cut.sampling_rate,
+        video=video,
         custom=pad_value_dict,
     )
 
@@ -3419,77 +3213,6 @@ def deserialize_cut(raw_cut: dict) -> Cut:
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
-def find_segments_with_speaker_count(
-    cut: Cut, min_speakers: int = 0, max_speakers: Optional[int] = None
-) -> List[TimeSpan]:
-    """
-    Given a Cut, find a list of intervals that contain the specified number of speakers.
-
-    :param cuts: the Cut to search.
-    :param min_speakers: the minimum number of speakers.
-    :param max_speakers: the maximum number of speakers.
-    :return: a list of TimeSpans.
-    """
-    if max_speakers is None:
-        max_speakers = float("inf")
-
-    assert (
-        min_speakers >= 0 and min_speakers <= max_speakers
-    ), f"min_speakers={min_speakers} and max_speakers={max_speakers} are not valid."
-
-    # First take care of trivial cases.
-    if min_speakers == 0 and max_speakers == float("inf"):
-        return [TimeSpan(0, cut.duration)]
-    if len(cut.supervisions) == 0:
-        return [] if min_speakers > 0 else [TimeSpan(0, cut.duration)]
-
-    # We collect all the timestamps of the supervisions in the cut. Each timestamp is
-    # a tuple of (time, is_speaker_start).
-    timestamps = []
-    # Add timestamp for cut start
-    timestamps.append((0.0, None))
-    for segment in cut.supervisions:
-        timestamps.append((segment.start, True))
-        timestamps.append((segment.end, False))
-    # Add timestamp for cut end
-    timestamps.append((cut.duration, None))
-
-    # Sort the timestamps. We need the following priority order:
-    # 1. Time mark of the timestamp: lower time mark comes first.
-    # 2. For timestamps with the same time mark, None < False < True.
-    timestamps.sort(key=lambda x: (x[0], x[1] is not None, x[1] is True))
-
-    # We remove the timestamps that are not relevant for the search. The desired range
-    # is given by the range of the cut start and end timestamps.
-    cut_start_idx, cut_end_idx = [i for i, t in enumerate(timestamps) if t[1] is None]
-    timestamps = timestamps[cut_start_idx : cut_end_idx + 1]
-
-    # Now we iterate over the timestamps and count the number of speakers in any
-    # given time interval. If the number of speakers is in the desired range,
-    # we keep the interval.
-    num_speakers = 0
-    seg_start = 0.0
-    intervals = []
-    for timestamp, is_start in timestamps[1:]:
-        if num_speakers >= min_speakers and num_speakers <= max_speakers:
-            intervals.append((seg_start, timestamp))
-        if is_start is not None:
-            num_speakers += 1 if is_start else -1
-        seg_start = timestamp
-
-    # Merge consecutive intervals and remove empty intervals.
-    merged_intervals = []
-    for start, end in intervals:
-        if start == end:
-            continue
-        if merged_intervals and merged_intervals[-1][1] == start:
-            merged_intervals[-1] = (merged_intervals[-1][0], end)
-        else:
-            merged_intervals.append((start, end))
-
-    return [TimeSpan(start, end) for start, end in merged_intervals]
-
-
 def _cut_into_windows_single(
     cuts: CutSet,
     duration,
@@ -3552,8 +3275,82 @@ def _add_features_path_prefix_single(cut, path):
     return cut.with_features_path_prefix(path)
 
 
-def _call(obj, member_fn: str, *args, **kwargs) -> Callable:
-    return getattr(obj, member_fn)(*args, **kwargs)
+def _with_id(cut, transform_fn):
+    return cut.with_id(transform_fn(cut.id))
+
+
+def _fill_supervision(cut, add_empty, shrink_ok):
+    return cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
+
+
+def _map_supervisions(cut, transform_fn):
+    return cut.map_supervisions(transform_fn)
+
+
+def _transform_text(sup, transform_fn):
+    return sup.transform_text(transform_fn)
+
+
+def _filter_supervisions(cut, predicate):
+    return cut.filter_supervisions(predicate)
+
+
+def _merge_supervisions(cut, merge_policy, custom_merge_fn):
+    return cut.merge_supervisions(
+        merge_policy=merge_policy, custom_merge_fn=custom_merge_fn
+    )
+
+
+def _pad(cut, *args, **kwargs):
+    return cut.pad(*args, **kwargs)
+
+
+def _extend_by(cut, *args, **kwargs):
+    return cut.extend_by(*args, **kwargs)
+
+
+def _resample(cut, *args, **kwargs):
+    return cut.resample(*args, **kwargs)
+
+
+def _perturb_speed(cut, *args, **kwargs):
+    return cut.perturb_speed(*args, **kwargs)
+
+
+def _perturb_tempo(cut, *args, **kwargs):
+    return cut.perturb_tempo(*args, **kwargs)
+
+
+def _perturb_volume(cut, *args, **kwargs):
+    return cut.perturb_volume(*args, **kwargs)
+
+
+def _reverb_rir(cut, *args, **kwargs):
+    return cut.reverb_rir(*args, **kwargs)
+
+
+def _normalize_loudness(cut, *args, **kwargs):
+    return cut.normalize_loudness(*args, **kwargs)
+
+
+def _dereverb_wpe(cut, *args, **kwargs):
+    return cut.dereverb_wpe(*args, **kwargs)
+
+
+def _drop_features(cut, *args, **kwargs):
+    return cut.drop_features(*args, **kwargs)
+
+
+def _drop_recordings(cut, *args, **kwargs):
+    return cut.drop_recording(*args, **kwargs)
+
+
+def _drop_alignments(cut, *args, **kwargs):
+    return cut.drop_alignments(*args, **kwargs)
+
+
+def _drop_supervisions(cut, *args, **kwargs):
+    return cut.drop_supervisions(*args, **kwargs)
 
 
 def _export_to_shar_single(
@@ -3565,10 +3362,17 @@ def _export_to_shar_single(
     include_cuts: bool,
     shard_suffix: Optional[str],
     verbose: bool,
+    fault_tolerant: bool,
+    preload: bool = False,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
 
     pbar = tqdm(desc="Exporting to SHAR", disable=not verbose)
+
+    if preload:
+        # In the multi-threaded case we only read a single shard so it's quick,
+        # and it allows us to overwrite a temporary cut manifest.
+        cuts = cuts.to_eager()
 
     with SharWriter(
         output_dir=output_dir,
@@ -3579,8 +3383,148 @@ def _export_to_shar_single(
         shard_suffix=shard_suffix,
     ) as writer:
         for cut in cuts:
-            writer.write(cut)
+            try:
+                writer.write(cut)
+            except Exception as e:
+                if fault_tolerant:
+                    logging.warning(
+                        "Skipping: failed to load cut '{cut.id}'. Error message: {e}."
+                    )
+                else:
+                    raise
             pbar.update()
 
     # Finally, return the list of output files.
     return writer.output_paths
+
+
+class LazyCutMixer(ImitatesDict):
+    """
+    Iterate over cuts from ``cuts`` CutSet while mixing randomly sampled ``mix_in_cuts`` into them.
+    A typical application would be data augmentation with noise, music, babble, etc.
+
+    :param cuts: a ``CutSet`` we are iterating over.
+    :param mix_in_cuts: a ``CutSet`` containing other cuts to be mixed into ``cuts``.
+    :param duration: an optional float in seconds.
+        When ``None``, we will preserve the duration of the cuts in ``self``
+        (i.e. we'll truncate the mix if it exceeded the original duration).
+        Otherwise, we will keep sampling cuts to mix in until we reach the specified
+        ``duration`` (and truncate to that value, should it be exceeded).
+    :param allow_padding: an optional bool.
+        When it is ``True``, we will allow the offset to be larger than the reference
+        cut by padding the reference cut.
+    :param snr: an optional float, or pair (range) of floats, in decibels.
+        When it's a single float, we will mix all cuts with this SNR level
+        (where cuts in ``self`` are treated as signals, and cuts in ``cuts`` are treated as noise).
+        When it's a pair of floats, we will uniformly sample SNR values from that range.
+        When ``None``, we will mix the cuts without any level adjustment
+        (could be too noisy for data augmentation).
+    :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
+        of the left- or right-hand side argument. otherwise, a new random id is generated.
+    :param mix_prob: an optional float in range [0, 1].
+        Specifies the probability of performing a mix.
+        Values lower than 1.0 mean that some cuts in the output will be unchanged.
+    :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
+        If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
+        on each iteration.
+    :param random_mix_offset: an optional bool.
+        When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
+         select a random sub-region from the to be mixed in cut.
+    """
+
+    def __init__(
+        self,
+        cuts: "CutSet",
+        mix_in_cuts: "CutSet",
+        duration: Optional[Seconds] = None,
+        allow_padding: bool = False,
+        snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
+        preserve_id: Optional[str] = None,
+        mix_prob: float = 1.0,
+        seed: Union[int, Literal["trng"]] = 42,
+        random_mix_offset: bool = False,
+    ) -> None:
+        self.source = cuts
+        self.mix_in_cuts = mix_in_cuts
+        self.duration = duration
+        self.allow_padding = allow_padding
+        self.snr = snr
+        self.preserve_id = preserve_id
+        self.mix_prob = mix_prob
+        self.seed = seed
+        self.random_mix_offset = random_mix_offset
+
+        assert 0.0 <= self.mix_prob <= 1.0
+        assert self.duration is None or self.duration > 0
+        if isinstance(self.snr, (tuple, list)):
+            assert (
+                len(self.snr) == 2
+            ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
+        else:
+            assert isinstance(self.snr, (type(None), int, float))
+
+    def __iter__(self):
+        if self.seed == "trng":
+            rng = secrets.SystemRandom()
+        else:
+            rng = random.Random(self.seed)
+        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+
+        for cut in self.source:
+            # Check whether we're going to mix something into the current cut
+            # or pass it through unchanged.
+            if rng.uniform(0.0, 1.0) > self.mix_prob:
+                yield cut
+                continue
+            to_mix = next(mix_in_cuts)
+            # Determine the SNR - either it's specified or we need to sample one.
+            cut_snr = (
+                rng.uniform(*self.snr)
+                if isinstance(self.snr, (list, tuple))
+                else self.snr
+            )
+            if self.random_mix_offset and to_mix.duration > cut.duration:
+                to_mix = to_mix.truncate(
+                    offset=rng.uniform(0, to_mix.duration - cut.duration),
+                    duration=cut.duration,
+                )
+            # Actual mixing
+            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
+            # Did the user specify a duration?
+            # If yes, we will ensure that shorter cuts have more noise mixed in
+            # to "pad" them with at the end.
+            # If no, we will mix in as many noise cuts as needed to cover complete
+            # duration.
+            mixed_in_duration = to_mix.duration
+            # Keep sampling until we mixed in a "duration" amount of noise.
+            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+            #       where we mix in some noise cut that effectively has 0 frames of features.
+            while mixed_in_duration < (
+                self.duration if self.duration is not None else cut.duration - 0.05
+            ):
+                to_mix = next(mix_in_cuts)
+                # Keep the SNR constant for each cut from "self".
+                mixed = mixed.mix(
+                    other=to_mix,
+                    snr=cut_snr,
+                    offset_other_by=mixed_in_duration,
+                    allow_padding=self.allow_padding,
+                    preserve_id=self.preserve_id,
+                )
+                # Since we're adding floats, we can be off by an epsilon and trigger
+                # some assertions for exceeding duration; do precautionary rounding here.
+                mixed_in_duration = round(
+                    mixed_in_duration + to_mix.duration, ndigits=8
+                )
+            # We truncate the mixed to either the original duration or the requested duration.
+            mixed = mixed.truncate(
+                duration=self.duration if self.duration is not None else cut.duration,
+                preserve_id=self.preserve_id is not None,
+            )
+            yield mixed
+
+    def __len__(self) -> int:
+        return len(self.source)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
