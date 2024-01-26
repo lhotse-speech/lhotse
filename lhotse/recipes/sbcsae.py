@@ -23,6 +23,7 @@ TODO: detail on splits and such
 """
 import logging
 import re
+import zipfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
@@ -31,6 +32,44 @@ from lhotse.utils import Pathlike, resumable_download
 
 TALKBANK_MP3_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/"
 TALKBANK_WAV_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/0wav/"
+UCSB_TRANSCRIPT_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/SBCorpus.zip"
+UCSB_CHAT_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/SBCSAE_chat.zip"
+UCSB_METADATA_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/metadata.zip"
+LDC_DOC_ROOT_URL = "https://catalog.ldc.upenn.edu/docs/"
+LDC_DOCS = {
+    "LDC2000S85": [
+        "segment.tbl",
+        "segment.txt",
+        "speaker.tbl",
+        "speaker.txt",
+    ],
+    "LDC2003S06": [
+        "annotations.txt",
+        "file.tbl",
+        "segment.tbl",
+        "segment.txt",
+        "segment_summaries.txt",
+        "speaker.tbl",
+        "speaker.txt",
+        "table.txt",
+    ],
+    "LDC2004S10": [
+        "annotations.txt",
+        "file.tbl",
+        "segment.tbl",
+        "segment.txt",
+        "segment_summaries.txt",
+        "speaker.tbl",
+        "speaker.txt",
+        "table.txt",
+    ],
+    "LDC2005S25": [
+        "segment.tbl",
+        "segment.txt",
+        "speaker.doc",
+        "speaker.tbl",
+    ],
+}
 
 lang_iterators = {
     "SBC004": iter(["Spanish"] * 17),
@@ -69,6 +108,7 @@ dummy_spk_iterator = Dummy_Spk_Iterator()
 def download_sbcsae(
     target_dir: Pathlike = ".",
     download_mp3: Optional[bool] = False,
+    force_download: Optional[bool] = False,
 ) -> Path:
     """
     Download the dataset. Due to availability/broken link issues, this downloads
@@ -84,10 +124,78 @@ def download_sbcsae(
     corpus_dir.mkdir(parents=True, exist_ok=True)
 
     completed_detector = target_dir / ".sbcsae_completed"
-    if completed_detector.is_fil():
+    if completed_detector.is_file():
         logging.info(f"Skipping download because {completed_detector} exists.")
         return corpus_dir
-    return "FALSE"
+
+    # Download audio
+    wav_dir = corpus_dir / "WAV"
+    mp3_dir = corpus_dir / "MP3"
+    wav_dir.mkdir(parents=True, exist_ok=True)
+    mp3_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(1, 61):
+        session = f"{i:02d}"
+        wav_path = wav_dir / ("SBC0" + session + ".wav")
+        resumable_download(
+            TALKBANK_WAV_ROOT_URL + session + ".wav",
+            filename=wav_path,
+            force_download=force_download,
+        )
+        if download_mp3:
+            mp3_path = mp3_dir / ("SBC0" + session + ".mp3")
+            resumable_download(
+                TALKBANK_MP3_ROOT_URL + session + ".mp3",
+                filename=mp3_path,
+                force_download=force_download,
+            )
+
+    # Download annotations
+    transcript_zip = corpus_dir / "TRN.zip"
+    resumable_download(
+        UCSB_TRANSCRIPT_URL, filename=transcript_zip, force_download=force_download
+    )
+    with zipfile.ZipFile(transcript_zip) as f:
+        f.extractall(path=corpus_dir)
+
+    chat_zip = corpus_dir / "CHAT.zip"
+    resumable_download(UCSB_CHAT_URL, filename=chat_zip, force_download=force_download)
+    target_chat_dir = corpus_dir / "CHAT"
+    if target_chat_dir.is_dir():
+        if not any(target_chat_dir.iterdir()):
+            target_chat_dir.rmdir()
+        elif force_download:
+            for item in target_chat_dir.iterdir():
+                item.unlink()
+            target_chat_dir.rmdir()
+    else:
+        with zipfile.ZipFile(chat_zip) as f:
+            f.extractall(path=corpus_dir)
+        chat_dir = corpus_dir / "SBCSAE"
+        chat_dir.rename(corpus_dir / "CHAT")
+
+    metadata_zip = corpus_dir / "metadata.zip"
+    resumable_download(
+        UCSB_METADATA_URL, filename=metadata_zip, force_download=force_download
+    )
+    metadata_dir = corpus_dir / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(metadata_zip) as f:
+        f.extractall(path=metadata_dir)
+
+    doc_dir = corpus_dir / "documentation"
+    doc_dir.mkdir(parents=True, exist_ok=True)
+    for LDC_split in LDC_DOCS:
+        LDC_dir = doc_dir / LDC_split
+        LDC_dir.mkdir(parents=True, exist_ok=True)
+        for doc_file in LDC_DOCS[LDC_split]:
+            doc_file_url = LDC_DOC_ROOT_URL + LDC_split + "/" + doc_file
+            resumable_download(
+                doc_file_url, filename=LDC_dir / doc_file, force_download=force_download
+            )
+
+    completed_detector.touch()
+
+    return corpus_dir
 
 
 def prepare_sbcsae(
