@@ -60,6 +60,11 @@ to a directory with Lhotse manifests called ``train_manifests``:
 Example
 *******
 
+.. hint::
+
+   Before you continue, make sure you have run ``pip install kaldi-native-io``;
+   otherwise, you won't be able to get ``features.jsonl.gz`` below.
+
 In the following, we demonstrate how to import a Kaldi data directory using
 the ``yesno`` dataset.
 
