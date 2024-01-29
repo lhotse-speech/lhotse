@@ -6,8 +6,6 @@ from itertools import groupby
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
-import pandas
-import soundfile as sf
 from tqdm import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
@@ -19,6 +17,9 @@ from lhotse.utils import Pathlike, Seconds, is_module_available
 def prepare_slu(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+
+    import pandas
+
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
