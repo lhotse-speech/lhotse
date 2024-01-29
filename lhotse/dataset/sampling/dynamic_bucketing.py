@@ -3,7 +3,18 @@ import warnings
 from bisect import bisect_right
 from collections import deque
 from itertools import islice
-from typing import Any, Deque, Dict, Generator, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Deque,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 
@@ -65,19 +76,19 @@ class DynamicBucketingSampler(CutSampler):
         *cuts: Iterable[Cut],
         max_duration: Seconds,
         max_cuts: Optional[int] = None,
-        num_buckets: int = 10,
+        num_buckets: Optional[int] = 10,
         shuffle: bool = False,
         drop_last: bool = False,
         consistent_ids: bool = True,
         duration_bins: List[Seconds] = None,
         num_cuts_for_bins_estimate: int = 10000,
-        buffer_size: int = 10000,
-        shuffle_buffer_size: int = 20000,
+        buffer_size: int = 20000,
         quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
         strict=None,
+        shuffle_buffer_size=None,
     ) -> None:
         """
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
@@ -105,10 +116,8 @@ class DynamicBucketingSampler(CutSampler):
         :param buffer_size: How many cuts (or cut pairs, triplets) we hold at any time across all
             of the buckets.
             Increasing ``max_duration`` (batch_size) or ``num_buckets`` might require increasing this number.
+            Larger number here will also improve shuffling capabilities.
             It will result in larger memory usage.
-        :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
-            a buffer used for streaming shuffling. Larger number means better randomness at the cost
-            of higher memory usage.
         :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
             a cuts duration. This helps get a more even GPU utilization across different input lengths
             when models have quadratic input complexity. Set between 15 and 40 for transformers.
@@ -132,7 +141,6 @@ class DynamicBucketingSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
-        self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
         self.rng = None
         assert any(
@@ -146,26 +154,23 @@ class DynamicBucketingSampler(CutSampler):
                 category=DeprecationWarning,
             )
 
-        if self.shuffle:
-            cuts_for_bins_estimate = streaming_shuffle(
-                iter(self.cuts[0]),
-                rng=random.Random(self.seed),
-                bufsize=self.shuffle_buffer_size,
-            )
-        else:
-            cuts_for_bins_estimate = self.cuts[0]
+        if shuffle_buffer_size is not None:
+            _emit_shuffle_buffer_size_warning()
+            self.buffer_size += shuffle_buffer_size
+
         if duration_bins is not None:
-            assert len(duration_bins) == num_buckets - 1, (
-                f"num_buckets=={num_buckets} but len(duration_bins)=={len(duration_bins)} "
-                f"(bins are the boundaries, it should be one less than the number of buckets)."
-            )
+            if num_buckets is not None:
+                assert len(duration_bins) == num_buckets - 1, (
+                    f"num_buckets=={num_buckets} but len(duration_bins)=={len(duration_bins)} "
+                    f"(bins are the boundaries, it should be one less than the number of buckets)."
+                )
             assert list(duration_bins) == sorted(
                 duration_bins
             ), "Duration bins must be sorted ascendingly."
             self.duration_bins = duration_bins
         else:
             self.duration_bins = estimate_duration_buckets(
-                islice(cuts_for_bins_estimate, num_cuts_for_bins_estimate),
+                islice(self.cuts[0], num_cuts_for_bins_estimate),
                 num_buckets=num_buckets,
             )
 
@@ -178,7 +183,6 @@ class DynamicBucketingSampler(CutSampler):
                 "consistent_ids": self.consistent_ids,
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
-                "shuffle_buffer_size": self.shuffle_buffer_size,
                 "quadratic_duration": self.quadratic_duration,
             }
         )
@@ -190,7 +194,10 @@ class DynamicBucketingSampler(CutSampler):
         self.consistent_ids = sd.pop("consistent_ids")
         self.num_cuts_for_bins_estimate = sd.pop("num_cuts_for_bins_estimate")
         self.buffer_size = sd.pop("buffer_size")
-        self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        if "shuffle_buffer_size" in sd:
+            _emit_shuffle_buffer_size_warning()
+            shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+            self.buffer_size += shuffle_buffer_size
         self.quadratic_duration = sd.pop("quadratic_duration", None)
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
@@ -223,38 +230,27 @@ class DynamicBucketingSampler(CutSampler):
         # than are actually available per epoch would have broken the checkpoint restoration.
         self.diagnostics.reset_current_epoch()
         # Initiate iteration
-        self.cuts_iter = [iter(cs) for cs in self.cuts]
-        # Optionally shuffle
-        if self.shuffle:
-            self.cuts_iter = [
-                # Important -- every shuffler has a copy of RNG seeded in the same way,
-                # so that they are reproducible.
-                streaming_shuffle(
-                    cs,
-                    rng=random.Random(self.seed + self.epoch),
-                    bufsize=self.shuffle_buffer_size,
-                )
-                for cs in self.cuts_iter
-            ]
+        cuts_iter = [iter(cs) for cs in self.cuts]
         # Apply filter predicate
-        self.cuts_iter = Filter(
-            iterator=zip(*self.cuts_iter),
+        cuts_iter = Filter(
+            iterator=zip(*cuts_iter),
             predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
             diagnostics=self.diagnostics,
         )
         # Convert Iterable[Cut] -> Iterable[CutSet]
-        self.cuts_iter = DynamicBucketer(
-            self.cuts_iter,
+        cuts_iter = DynamicBucketer(
+            cuts_iter,
             duration_bins=self.duration_bins,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
             quadratic_duration=self.quadratic_duration,
+            shuffle=self.shuffle,
             rng=self.rng,
             diagnostics=self.diagnostics,
         )
-        self.cuts_iter = iter(self.cuts_iter)
+        self.cuts_iter = iter(cuts_iter)
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
@@ -327,6 +323,7 @@ class DynamicBucketer:
         drop_last: bool = False,
         buffer_size: int = 10000,
         quadratic_duration: Optional[Seconds] = None,
+        shuffle: bool = False,
         rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
@@ -341,6 +338,7 @@ class DynamicBucketer:
         if rng is None:
             rng = random.Random()
         self.rng = rng
+        self.shuffle = shuffle
 
         assert duration_bins == sorted(duration_bins), (
             f"Argument list for 'duration_bins' is expected to be in "
@@ -358,7 +356,7 @@ class DynamicBucketer:
             )
 
         # Init: create empty buckets (note: `num_buckets = len(duration_bins) + 1`).
-        self.buckets: List[Deque[Union[Cut, Tuple[Cut]]]] = [
+        self.buckets: List[Deque[Union[Cut, Tuple[Cut, ...]]]] = [
             deque() for _ in range(len(duration_bins) + 1)
         ]
 
@@ -397,9 +395,16 @@ class DynamicBucketer:
                 # Choose a bucket to sample from.
                 # We'll only select from the buckets that have a full batch available.
                 sampling_bucket = self.rng.choice(ready_buckets)
+                # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
+                maybe_shuffled = sampling_bucket
+                indexes_used = []
+                if self.shuffle:
+                    maybe_shuffled = pick_at_random(
+                        maybe_shuffled, rng=self.rng, out_indexes_used=indexes_used
+                    )
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
-                    sampling_bucket,
+                    maybe_shuffled,
                     max_duration=self.max_duration,
                     max_cuts=self.max_cuts,
                     quadratic_duration=self.quadratic_duration,
@@ -412,8 +417,15 @@ class DynamicBucketer:
                     batch_size = len(batch)
                 yield batch
                 # Remove sampled cuts from the bucket.
-                for _ in range(batch_size):
-                    sampling_bucket.popleft()
+                if indexes_used:
+                    # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
+                    indexes_used.sort(reverse=True)
+                    for idx in indexes_used:
+                        del sampling_bucket[idx]
+                else:
+                    # No shuffling, remove first N
+                    for _ in range(batch_size):
+                        sampling_bucket.popleft()
                 # Fetch new cuts and add them to appropriate buckets.
                 self._collect_cuts_in_buckets(batch_size)
         except StopIteration:
@@ -433,3 +445,31 @@ class DynamicBucketer:
                 self.buckets[bucket_idx].append(cuts)
         except StopIteration:
             pass
+
+
+def pick_at_random(
+    bucket: Sequence[Union[Cut, Tuple[Cut, ...]]],
+    rng: random.Random,
+    out_indexes_used: list,
+) -> Generator[Union[Cut, Tuple[Cut, ...]], None, None]:
+    """
+    Generator which will yield items in a sequence in a random order.
+    It will append the indexes of items yielded during iteration via ``out_used_indexes``.
+    """
+    indexes = list(range(len(bucket)))
+    rng.shuffle(indexes)
+    for idx in indexes:
+        out_indexes_used.append(idx)
+        yield bucket[idx]
+
+
+def _emit_shuffle_buffer_size_warning():
+    warnings.warn(
+        "Since Lhotse v1.20 'shuffle_buffer_size' is deprecated, because DynamicBucketingSampler "
+        "does not require a separate shuffling buffer anymore. "
+        "To improve both shuffling and sampling randomness, increase 'buffer_size' instead. "
+        "To maintain backward compatibility, we will increase 'buffer_size' "
+        "by 'shuffling_buffer_size' for you. "
+        "This argument will be deprecated in a future Lhotse version.",
+        category=DeprecationWarning,
+    )
