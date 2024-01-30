@@ -1,5 +1,6 @@
 import math
 import random
+import re
 from copy import deepcopy
 from functools import partial
 from math import isclose
@@ -1026,7 +1027,9 @@ def test_time_constraint_strictness():
         partial(DynamicBucketingSampler, num_buckets=2),
     ],
 )
-@pytest.mark.parametrize("world_size", [1, 2, 16])
+@pytest.mark.parametrize(
+    "world_size", [1, 2, 16, 32]
+)  # 32 is more than 2x of available utterances
 @pytest.mark.parametrize("batch_duration", [1, 2, 4, 8, 16])
 def test_sampler_does_not_drop_cuts_with_multiple_ranks(
     sampler_fn, world_size, batch_duration
@@ -1044,6 +1047,11 @@ def test_sampler_does_not_drop_cuts_with_multiple_ranks(
             batches.append(batch)
             tot_cuts.extend(batch)
 
+    def is_duplicate(cut):
+        return re.search(r"^.+_dup\d+$", cut.id) is not None
+
+    uniq_ids = [c.id for c in tot_cuts if not is_duplicate(c)]
+
     if world_size < num_input_cuts:
         # ws=1
         #   bs=1 => 10 (10batches)
@@ -1058,7 +1066,7 @@ def test_sampler_does_not_drop_cuts_with_multiple_ranks(
         #   bs=8 => 10 (5+5)
         #   bs=16 => 10 (5+5)
         assert len(tot_cuts) == num_input_cuts
-        assert len(set(c.id for c in tot_cuts)) == len(tot_cuts)  # no duplicates
+        assert len(uniq_ids) == len(tot_cuts)  # no duplicates
     else:
         # ws=16
         #   bs=1 => 16 (1x16, 6 duplicated)
@@ -1068,7 +1076,6 @@ def test_sampler_does_not_drop_cuts_with_multiple_ranks(
         #   bs=16 => 16 (1x16, 6 duplicated)
         assert num_input_cuts < len(tot_cuts)
         assert len(tot_cuts) == world_size
-        uniq_ids = set(c.id for c in tot_cuts)
         assert len(uniq_ids) == num_input_cuts
         assert len(tot_cuts) - len(uniq_ids) == world_size - num_input_cuts
         assert len(batches) == world_size

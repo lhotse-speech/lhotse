@@ -313,8 +313,12 @@ class CutSampler(Sampler, Dillable):
             # than world size. In these cases, we will duplicate the first ``n_diff``
             # examples so that each rank has exactly 1 example in its mini-batch.
             combined = combine([b for b in batches if b is not None])
-            if (diff := self.world_size - len(combined)) > 0:
-                combined = combined + combined.subset(first=diff)
+            chunk = 0
+            while (diff := self.world_size - len(combined)) > 0:
+                combined = combined + combined.subset(first=diff).modify_ids(
+                    mark_as_duplicate(chunk)
+                )
+                chunk += 1
             batches = combined.split(self.world_size)
 
         selected = batches[self.rank]
@@ -334,6 +338,13 @@ class CutSampler(Sampler, Dillable):
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
         return self.diagnostics.get_report()
+
+
+def mark_as_duplicate(iteration: int) -> Callable[[str], str]:
+    def inner(cut_id: str) -> str:
+        return f"{cut_id}_dup{iteration}"
+
+    return inner
 
 
 @dataclass
