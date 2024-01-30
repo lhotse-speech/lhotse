@@ -10,6 +10,7 @@ from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
 from lhotse.lazy import Dillable
+from lhotse.manipulation import combine
 from lhotse.utils import Seconds, ifnone, is_none_or_gt
 
 
@@ -278,24 +279,45 @@ class CutSampler(Sampler, Dillable):
         # worker:
         # Every time a next batch is required, we will sample self.world_size batches first,
         # and then return the one at position self.rank.
-        # This way, if any of the batches raises StopIteration, we'll know to stop early
-        # when a given batch was available for one of the nodes, but not for the others.
+        # When world_size=1 (i.e., single device) this doesn't change anything.
+        # When world_size>1 (i.e., multi-GPU) the behavior depends on the setting of ``drop_last``.
+        # To prevent some rank from terminating the iteration earlier than others (and typically going into deadlock),
+        # we will either:
+        # a) [drop_last=False, default] redistribute the examples to yield a (partial) mini-batch in each rank
+        #       (if there's not enough examples, we'll duplicate some);
+        # b) [drop_last=True] we'll stop early and discard the mini-batches for all ranks that had them.
+        #       Note that drop_last=True implies the last partial mini-batch would also be discarded in a
+        #       single-GPU setting, to be consistent with PyTorch's drop_last logic.
         batches = []
         for _ in range(self.world_size):
             try:
                 batch = self._next_batch()
+                batches.append(batch)
             except StopIteration:
-                if self.drop_last:
+                if self.world_size == 1 or self.drop_last:
                     # The users indicated they want an equal number of batches on all
                     # ranks and are ready to lose some data: drop remainder batches.
                     raise
-                # We have to delay raising StopIteration to let some the sampler
-                # yield the last N batches (when N < world_size - 1).
-                batch = None
-            batches.append(batch)
+                # If we got here, it means there's one or more empty mini-batch that
+                # hasn't triggered StopIteration. This scenario is handled below.
+
+        if len(batches) == 0:
+            raise StopIteration()  # normal end of iteration when drop_last=False
+        elif len(batches) != self.world_size:
+            # "From each according to his ability, to each according to his needs."
+            # We hit the end of data and at least one rank is left without a mini-batch.
+            # Since we have access to the mini-batches in all ranks here, we can
+            # deterministically re-distribute the examples to yield a partial mini-batch
+            # in every rank (i.e., the result of the redistribution doesn't depend on rank).
+            # The only problematic scenario is when the number of examples is smaller
+            # than world size. In these cases, we will duplicate the first ``n_diff``
+            # examples so that each rank has exactly 1 example in its mini-batch.
+            combined = combine([b for b in batches if b is not None])
+            if (diff := self.world_size - len(combined)) > 0:
+                combined = combined + combined.subset(first=diff)
+            batches = combined.split(self.world_size)
+
         selected = batches[self.rank]
-        if selected is None:
-            raise StopIteration
         self._log_diagnostics(selected)
         for tfn in self._transforms:
             selected = tfn(selected)
