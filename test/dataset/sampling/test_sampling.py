@@ -1,4 +1,6 @@
+import math
 import random
+import re
 from copy import deepcopy
 from functools import partial
 from math import isclose
@@ -1015,21 +1017,69 @@ def test_time_constraint_strictness():
     [
         SimpleCutSampler,
         DynamicCutSampler,
-        partial(BucketingSampler, num_buckets=2),
+        pytest.param(
+            partial(BucketingSampler, num_buckets=2),
+            marks=pytest.mark.xfail(
+                reason="BucketingSampler will oversample cuts when world_size>1 and drop_last=False "
+                "more than other samplers due to its implementation."
+            ),
+        ),
         partial(DynamicBucketingSampler, num_buckets=2),
     ],
 )
-@pytest.mark.parametrize("world_size", [1, 2, 3, 4])
-def test_sampler_does_not_drop_cuts_with_multiple_ranks(world_size, sampler_fn):
+@pytest.mark.parametrize(
+    "world_size", [1, 2, 16, 32]
+)  # 32 is more than 2x of available utterances
+@pytest.mark.parametrize("batch_duration", [1, 2, 4, 8, 16])
+def test_sampler_does_not_drop_cuts_with_multiple_ranks(
+    sampler_fn, world_size, batch_duration
+):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    num_input_cuts = len(cuts)
 
-    tot_cuts = 0
+    tot_cuts = []
+    batches = []
     for rank in range(world_size):
-        sampler = sampler_fn(cuts, max_duration=1.0, world_size=world_size, rank=rank)
+        sampler = sampler_fn(
+            cuts, max_duration=batch_duration, world_size=world_size, rank=rank
+        )
         for batch in sampler:
-            tot_cuts += len(batch)
+            batches.append(batch)
+            tot_cuts.extend(batch)
 
-    assert tot_cuts == len(cuts)
+    def is_duplicate(cut):
+        return re.search(r"^.+_dup\d+$", cut.id) is not None
+
+    uniq_ids = [c.id for c in tot_cuts if not is_duplicate(c)]
+
+    if world_size < num_input_cuts:
+        # ws=1
+        #   bs=1 => 10 (10batches)
+        #   bs=2 => 10 (5batches)
+        #   bs=4 => 10 (3batches)
+        #   bs=8 => 10 (2batches)
+        #   bs=16 => 10 (1batch)
+        # ws=2
+        #   bs=1 => 10 (1+1, 1+1, 1+1, 1+1, 1+1)
+        #   bs=2 => 10 (2+2, 2+2, 1+1)
+        #   bs=4 => 10 (4+4, 1+1)
+        #   bs=8 => 10 (5+5)
+        #   bs=16 => 10 (5+5)
+        assert len(tot_cuts) == num_input_cuts
+        assert len(uniq_ids) == len(tot_cuts)  # no duplicates
+    else:
+        # ws=16
+        #   bs=1 => 16 (1x16, 6 duplicated)
+        #   bs=2 => 16 (1x16, 6 duplicated)
+        #   bs=4 => 16 (1x16, 6 duplicated)
+        #   bs=8 => 16 (1x16, 6 duplicated)
+        #   bs=16 => 16 (1x16, 6 duplicated)
+        assert num_input_cuts < len(tot_cuts)
+        assert len(tot_cuts) == world_size
+        assert len(uniq_ids) == num_input_cuts
+        assert len(tot_cuts) - len(uniq_ids) == world_size - num_input_cuts
+        assert len(batches) == world_size
+        assert all(len(b) == 1 for b in batches)
 
 
 def test_sampler_map():

@@ -903,18 +903,11 @@ class CutSet(Serializable, AlgorithmMixin):
         if first is not None:
             assert first > 0
             out = CutSet.from_cuts(islice(self, first))
-            if len(out) < first:
-                logging.warning(
-                    f"CutSet has only {len(out)} items but first {first} were requested."
-                )
             return out
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(
-                    f"CutSet has only {len(self)} items but last {last} required; not doing anything."
-                )
                 return self
             N = len(self)
             return CutSet.from_cuts(islice(self, N - last, N))

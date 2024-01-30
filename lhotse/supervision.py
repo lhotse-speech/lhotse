@@ -805,19 +805,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         if first is not None:
             assert first > 0
             out = SupervisionSet.from_items(islice(self, first))
-            if len(out) < first:
-                logging.warning(
-                    f"SupervisionSet has only {len(out)} items but first {first} were requested."
-                )
             return out
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(
-                    f"SupervisionSet has only {len(self)} items but last {last} required; "
-                    f"not doing anything."
-                )
                 return self
             return SupervisionSet.from_segments(
                 islice(self, len(self) - last, len(self))
