@@ -179,7 +179,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         ]
         diff_spk_bernoulli = self.bernoulli.rvs(p=self.prob_diff_spk_overlap, size=N)
 
-        utterances = list(utterances.data.values())
+        utterances = list(utterances)
         # First sample offsets for each utterance. These are w.r.t. start of the meeting.
         # For each subsequent utterance, we sample a pause or overlap time from the
         # corresponding distribution. Then, we add the pause/overlap time to the offset

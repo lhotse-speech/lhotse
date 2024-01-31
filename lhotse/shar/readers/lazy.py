@@ -19,7 +19,7 @@ import torch
 from lhotse.cut import Cut
 from lhotse.dataset.dataloading import LHOTSE_PROCESS_SEED, resolve_seed
 from lhotse.lazy import (
-    ImitatesDict,
+    BaseIterable,
     LazyIteratorChain,
     LazyJsonlIterator,
     LazyManifestIterator,
@@ -30,7 +30,7 @@ from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
 
 
-class LazySharIterator(ImitatesDict):
+class LazySharIterator(BaseIterable):
     """
     LazySharIterator reads cuts and their corresponding data from multiple shards,
     also recognized as the Lhotse Shar format.

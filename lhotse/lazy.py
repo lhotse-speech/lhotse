@@ -155,9 +155,9 @@ class AlgorithmMixin(LazyMixin, Iterable):
         if self.is_lazy:
             return cls(LazyShuffler(self.data, buffer_size=buffer_size, rng=rng))
         else:
-            ids = list(self.ids)
-            rng.shuffle(ids)
-            return cls({id_: self[id_] for id_ in ids})
+            new: List = self.data.copy()
+            rng.shuffle(new)
+            return cls(new)
 
     def repeat(self, times: Optional[int] = None, preserve_id: bool = False):
         """
@@ -242,7 +242,7 @@ def dill_enabled(value: bool):
     set_dill_enabled(previous)
 
 
-class ImitatesDict(Dillable):
+class BaseIterable(Dillable):
     """
     Helper base class for lazy iterators defined below.
     It exists to make them drop-in replacements for data-holding dicts
@@ -251,15 +251,6 @@ class ImitatesDict(Dillable):
 
     def __iter__(self):
         raise NotImplemented
-
-    def values(self):
-        yield from self
-
-    def keys(self):
-        return (item.id for item in self)
-
-    def items(self):
-        return ((item.id, item) for item in self)
 
 
 class LazyJsonlIterator:
@@ -288,7 +279,7 @@ class LazyJsonlIterator:
         return self._len
 
 
-class LazyManifestIterator(ImitatesDict):
+class LazyManifestIterator(BaseIterable):
     """
     LazyManifestIterator provides the ability to read Lhotse objects from a
     JSONL file on-the-fly, without reading its full contents into memory.
@@ -317,7 +308,7 @@ class LazyManifestIterator(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
-class LazyIteratorChain(ImitatesDict):
+class LazyIteratorChain(BaseIterable):
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
@@ -370,7 +361,7 @@ class LazyIteratorChain(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
-class LazyIteratorMultiplexer(ImitatesDict):
+class LazyIteratorMultiplexer(BaseIterable):
     """
     A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
     During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
@@ -439,7 +430,7 @@ class LazyIteratorMultiplexer(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
-class LazyInfiniteApproximateMultiplexer(ImitatesDict):
+class LazyInfiniteApproximateMultiplexer(BaseIterable):
     """
     A variant of :class:`.LazyIteratorMultiplexer` that allows to control the number of
     iterables that are simultaneously open.
@@ -560,7 +551,7 @@ class LazyInfiniteApproximateMultiplexer(ImitatesDict):
                 yield item
 
 
-class LazyShuffler(ImitatesDict):
+class LazyShuffler(BaseIterable):
     """
     A wrapper over an iterable that enables lazy shuffling.
     The shuffling algorithm is reservoir-sampling based.
@@ -593,7 +584,7 @@ class LazyShuffler(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
-class LazyFilter(ImitatesDict):
+class LazyFilter(BaseIterable):
     """
     A wrapper over an iterable that enables lazy filtering.
     It works like Python's `filter` built-in by applying the filter predicate
@@ -624,7 +615,7 @@ class LazyFilter(ImitatesDict):
         return LazyIteratorChain(self, other)
 
     def __len__(self) -> int:
-        raise NotImplementedError(
+        raise TypeError(
             "LazyFilter does not support __len__ because it would require "
             "iterating over the whole iterator, which is not possible in a lazy fashion. "
             "If you really need to know the length, convert to eager mode first using "
@@ -632,7 +623,7 @@ class LazyFilter(ImitatesDict):
         )
 
 
-class LazyMapper(ImitatesDict):
+class LazyMapper(BaseIterable):
     """
     A wrapper over an iterable that enables lazy function evaluation on each item.
     It works like Python's `map` built-in by applying a callable ``fn``
@@ -664,7 +655,7 @@ class LazyMapper(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
-class LazyFlattener(ImitatesDict):
+class LazyFlattener(BaseIterable):
     """
     A wrapper over an iterable of collections that flattens it to an iterable of items.
 
@@ -685,7 +676,7 @@ class LazyFlattener(ImitatesDict):
         return LazyIteratorChain(self, other)
 
     def __len__(self) -> int:
-        raise NotImplementedError(
+        raise TypeError(
             "LazyFlattener does not support __len__ because it would require "
             "iterating over the whole iterator, which is not possible in a lazy fashion. "
             "If you really need to know the length, convert to eager mode first using "
@@ -693,7 +684,7 @@ class LazyFlattener(ImitatesDict):
         )
 
 
-class LazyRepeater(ImitatesDict):
+class LazyRepeater(BaseIterable):
     """
     A wrapper over an iterable that enables to repeat it N times or infinitely (default).
     """
@@ -728,7 +719,7 @@ class LazyRepeater(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
-class LazySlicer(ImitatesDict):
+class LazySlicer(BaseIterable):
     """
     A wrapper over an iterable that enables selecting k-th element every n elements.
     """
@@ -750,7 +741,7 @@ class LazySlicer(ImitatesDict):
         return LazyIteratorChain(self, other)
 
     def __len__(self) -> int:
-        raise NotImplementedError(
+        raise TypeError(
             "LazySlicer does not support __len__ because it would require "
             "iterating over the whole iterator, which is not possible in a lazy fashion. "
             "If you really need to know the length, convert to eager mode first using "

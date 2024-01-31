@@ -505,12 +505,12 @@ class SupervisionSegment:
 class SupervisionSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
-    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
-    that are indexed by segment IDs.
+    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`).
 
-    It acts as a Python ``dict``, extended with an efficient ``find`` operation that indexes and caches
+    It acts as a Python ``list``, extended with an efficient ``find`` operation that indexes and caches
     the supervision segments in an interval tree.
     It allows to quickly find supervision segments that correspond to a specific time interval.
+    However, it can also work with lazy iterables.
 
     When coming from Kaldi, think of :class:`~lhotse.supervision.SupervisionSet` as a ``segments`` file on steroids,
     that may also contain *text*, *utt2spk*, *utt2gender*, *utt2dur*, etc.
@@ -548,9 +548,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             >>> shuffled = sups.shuffle()
     """
 
-    def __init__(
-        self, segments: Optional[Mapping[str, SupervisionSegment]] = None
-    ) -> None:
+    def __init__(self, segments: Optional[Iterable[SupervisionSegment]] = None) -> None:
         self.segments = ifnone(segments, {})
 
     def __eq__(self, other: "SupervisionSet") -> bool:
@@ -565,11 +563,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
 
     @property
     def ids(self) -> Iterable[str]:
-        return self.segments.keys()
+        return (s.id for s in self)
 
     @staticmethod
     def from_segments(segments: Iterable[SupervisionSegment]) -> "SupervisionSet":
-        return SupervisionSet(segments=index_by_id_and_check(segments))
+        return SupervisionSet(list(segments))
 
     from_items = from_segments
 
@@ -893,24 +891,25 @@ class SupervisionSet(Serializable, AlgorithmMixin):
     def __repr__(self) -> str:
         return f"SupervisionSet(len={len(self)})"
 
-    def __getitem__(self, sup_id_or_index: Union[int, str]) -> SupervisionSegment:
-        if isinstance(sup_id_or_index, str):
-            return self.segments[sup_id_or_index]
-        # ~100x faster than list(dict.values())[index] for 100k elements
-        return next(
-            val
-            for idx, val in enumerate(self.segments.values())
-            if idx == sup_id_or_index
-        )
+    def __getitem__(self, index_or_id: Union[int, str]) -> SupervisionSegment:
+        try:
+            return self.segments[index_or_id]  # int passed, eager manifest, fast
+        except TypeError:
+            # either lazy manifest or str passed, both are slow
+            if self.is_lazy:
+                return next(item for idx, item in enumerate(self) if idx == index_or_id)
+            else:
+                # string id passed, support just for backward compatibility, not recommended
+                return next(item for item in self if item.id == index_or_id)
 
-    def __contains__(self, item: Union[str, SupervisionSegment]) -> bool:
-        if isinstance(item, str):
-            return item in self.segments
+    def __contains__(self, other: Union[str, SupervisionSegment]) -> bool:
+        if isinstance(other, str):
+            return any(other == item.id for item in self)
         else:
-            return item.id in self.segments
+            return any(other.id == item.id for item in self)
 
     def __iter__(self) -> Iterable[SupervisionSegment]:
-        return iter(self.segments.values())
+        yield from self.segments
 
     def __len__(self) -> int:
         return len(self.segments)

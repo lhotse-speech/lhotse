@@ -104,7 +104,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             zip(utterances, silence_durations)
         ):
             # Get list of cuts from CutSet
-            spk_utterances = list(spk_utterances.data.values())
+            spk_utterances = list(spk_utterances)
             track = spk_utterances[0]
             for sil, utt in zip(spk_silences[1:], spk_utterances[1:]):
                 track = mix(track, utt, offset=track.duration + sil, allow_padding=True)
