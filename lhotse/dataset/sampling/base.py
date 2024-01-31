@@ -3,8 +3,9 @@ import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Literal, Optional, Tuple, Union
 
+import torch
 from torch import distributed as dist
 from torch.utils.data import Sampler
 
@@ -57,7 +58,7 @@ class CutSampler(Sampler, Dillable):
         drop_last: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
-        seed: int = 0,
+        seed: Union[int, Literal["randomized", "trng"]] = 0,
     ) -> None:
         """
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
@@ -325,6 +326,7 @@ class CutSampler(Sampler, Dillable):
         self._log_diagnostics(selected)
         for tfn in self._transforms:
             selected = tfn(selected)
+        attach_dataloading_info(selected, rank=self.rank, world_size=self.world_size)
         return selected
 
     def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
@@ -345,6 +347,23 @@ def mark_as_duplicate(iteration: int) -> Callable[[str], str]:
         return f"{cut_id}_dup{iteration}"
 
     return inner
+
+
+def attach_dataloading_info(cuts: CutSet, rank: int, world_size: int) -> None:
+    """
+    Attaches diagnostic info about dataloading to each cut under ``dataloading_info`` custom field.
+    This information contains the rank, world_size, and worker_id.
+    If the training is not distributed, rank and world_size are 0 and 1.
+    If the num_workers argument in DataLoader was 0, worker_id is None.
+    """
+    worker_info = torch.utils.data.get_worker_info()
+    if worker_info is None:
+        worker_id = None
+    else:
+        worker_id = worker_info.id
+    info = {"rank": rank, "world_size": world_size, "worker_id": worker_id}
+    for cut in cuts:
+        cut.dataloading_info = info
 
 
 @dataclass
