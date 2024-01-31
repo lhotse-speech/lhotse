@@ -112,27 +112,74 @@ class IdentityDataset:
 def test_shuffle_seed_strategies(sampler_cls, seed):
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
 
-    sampler = sampler_cls(
-        cut_set,
-        shuffle=True,
-        max_duration=10.0,
-        seed=seed,
-    )
-    dloader = DataLoader(
-        IterableDatasetWrapper(IdentityDataset(), sampler),
-        num_workers=2,
-        batch_size=None,
-        worker_init_fn=make_worker_init_fn(),
-    )
+    world_size = 2
     sampled_cuts = []
-    for batch in dloader:
-        sampled_cuts.extend(batch)
+    for rank in range(world_size):
+        sampler = sampler_cls(
+            cut_set,
+            shuffle=True,
+            max_duration=10.0,
+            seed=seed,
+            rank=0,
+            world_size=1,
+        )
+        dloader = DataLoader(
+            IterableDatasetWrapper(IdentityDataset(), sampler),
+            num_workers=2,
+            batch_size=None,
+            worker_init_fn=make_worker_init_fn(rank=rank, world_size=world_size),
+        )
+        for batch in dloader:
+            sampled_cuts.extend(batch)
 
-    assert len(sampled_cuts) == 2 * len(cut_set)
+    # Since we're using 2 nodes * 2 workers, an iterable dataset, and do not do anything to de-duplicate,
+    # we have 4 copies of the input data.
+    assert len(sampled_cuts) == 4 * len(cut_set)
     uniq_ids = Counter()
     for c in sampled_cuts:
         uniq_ids[c.id] += 1
-    assert all(v == 2 for v in uniq_ids.values())
+    assert all(v == 4 for v in uniq_ids.values())
+
+    input_ids = list(cut_set.ids)
+    node0_worker0 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 0 and c.dataloading_info["rank"] == 0
+    ]
+    node0_worker1 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 1 and c.dataloading_info["rank"] == 0
+    ]
+    node1_worker0 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 0 and c.dataloading_info["rank"] == 1
+    ]
+    node1_worker1 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 1 and c.dataloading_info["rank"] == 1
+    ]
+
+    if seed == 0:
+        # When seed=0, ensure each copy is shuffled in the same order (but different than the input).
+        assert node0_worker0 == node0_worker1
+        assert node0_worker0 == node1_worker0
+        assert node0_worker0 == node1_worker1
+        assert node0_worker0 != input_ids
+    else:
+        # Otherwise, we expect each worker to shuffle in a different order.
+        assert node0_worker0 != node0_worker1
+        assert node0_worker0 != node1_worker0
+        assert node0_worker0 != node1_worker1
+        assert node0_worker1 != node1_worker0
+        assert node0_worker1 != node1_worker1
+        assert node1_worker0 != node1_worker1
+        assert node0_worker0 != input_ids
+        assert node0_worker1 != input_ids
+        assert node1_worker0 != input_ids
+        assert node1_worker1 != input_ids
 
 
 def test_single_cut_sampler_time_constraints():

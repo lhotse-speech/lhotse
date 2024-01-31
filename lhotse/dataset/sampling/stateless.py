@@ -1,15 +1,14 @@
 import logging
-import os
 import random
 from pathlib import Path
 from typing import Callable, Dict, Generator, Iterable, Optional, Sequence, Tuple, Union
 
 import torch
-import torch.distributed as dist
 from cytoolz import compose_left
 
 from lhotse import CutSet, Seconds
 from lhotse.cut.set import deserialize_cut
+from lhotse.dataset.dataloading import get_rank, get_world_size
 from lhotse.dataset.sampling.base import SamplingDiagnostics
 from lhotse.lazy import Dillable
 from lhotse.serialization import decode_json_line
@@ -314,23 +313,3 @@ class ManifestIndex:
                 print(offsets[-1], file=index_f)
                 line = cuts_f.readline()
         return tuple(offsets)
-
-
-def get_world_size() -> int:
-    """Source: https://github.com/danpovey/icefall/blob/74bf02bba6016c1eb37858a4e0e8a40f7d302bdb/icefall/dist.py#L56"""
-    if "WORLD_SIZE" in os.environ:
-        return int(os.environ["WORLD_SIZE"])
-    if dist.is_available() and dist.is_initialized():
-        return dist.get_world_size()
-    else:
-        return 1
-
-
-def get_rank() -> int:
-    """Source: https://github.com/danpovey/icefall/blob/74bf02bba6016c1eb37858a4e0e8a40f7d302bdb/icefall/dist.py#L56"""
-    if "RANK" in os.environ:
-        return int(os.environ["RANK"])
-    elif dist.is_available() and dist.is_initialized():
-        return dist.get_rank()
-    else:
-        return 0

@@ -5,6 +5,7 @@ from functools import partial
 from typing import Callable, Literal, Optional, Union
 
 import torch
+from torch import distributed as dist
 
 from lhotse.utils import fix_random_seed
 
@@ -102,3 +103,23 @@ def resolve_seed(seed: Union[int, Literal["trng", "randomized"]]) -> int:
         f"Unexpected type or value of seed: {type(seed)=} {seed=}. "
         f"Supported values are: int, 'trng', and 'randomized'."
     )
+
+
+def get_world_size() -> int:
+    """Source: https://github.com/danpovey/icefall/blob/74bf02bba6016c1eb37858a4e0e8a40f7d302bdb/icefall/dist.py#L56"""
+    if "WORLD_SIZE" in os.environ:
+        return int(os.environ["WORLD_SIZE"])
+    if dist.is_available() and dist.is_initialized():
+        return dist.get_world_size()
+    else:
+        return 1
+
+
+def get_rank() -> int:
+    """Source: https://github.com/danpovey/icefall/blob/74bf02bba6016c1eb37858a4e0e8a40f7d302bdb/icefall/dist.py#L56"""
+    if "RANK" in os.environ:
+        return int(os.environ["RANK"])
+    elif dist.is_available() and dist.is_initialized():
+        return dist.get_rank()
+    else:
+        return 0
