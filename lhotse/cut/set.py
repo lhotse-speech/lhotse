@@ -44,7 +44,7 @@ from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
 from lhotse.lazy import (
     AlgorithmMixin,
-    BaseIterable,
+    Dillable,
     LazyFlattener,
     LazyIteratorChain,
     LazyManifestIterator,
@@ -3401,7 +3401,7 @@ def _export_to_shar_single(
     return writer.output_paths
 
 
-class LazyCutMixer(BaseIterable):
+class LazyCutMixer(Dillable):
     """
     Iterate over cuts from ``cuts`` CutSet while mixing randomly sampled ``mix_in_cuts`` into them.
     A typical application would be data augmentation with noise, music, babble, etc.

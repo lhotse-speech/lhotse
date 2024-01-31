@@ -242,17 +242,6 @@ def dill_enabled(value: bool):
     set_dill_enabled(previous)
 
 
-class BaseIterable(Dillable):
-    """
-    Helper base class for lazy iterators defined below.
-    It exists to make them drop-in replacements for data-holding dicts
-    in Lhotse's CutSet, RecordingSet, etc. classes.
-    """
-
-    def __iter__(self):
-        raise NotImplemented
-
-
 class LazyJsonlIterator:
     """
     LazyJsonlIterator provides the ability to read JSON lines as Python dicts.
@@ -279,7 +268,7 @@ class LazyJsonlIterator:
         return self._len
 
 
-class LazyManifestIterator(BaseIterable):
+class LazyManifestIterator(Dillable):
     """
     LazyManifestIterator provides the ability to read Lhotse objects from a
     JSONL file on-the-fly, without reading its full contents into memory.
@@ -308,7 +297,7 @@ class LazyManifestIterator(BaseIterable):
         return LazyIteratorChain(self, other)
 
 
-class LazyIteratorChain(BaseIterable):
+class LazyIteratorChain(Dillable):
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
@@ -361,7 +350,7 @@ class LazyIteratorChain(BaseIterable):
         return LazyIteratorChain(self, other)
 
 
-class LazyIteratorMultiplexer(BaseIterable):
+class LazyIteratorMultiplexer(Dillable):
     """
     A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
     During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
@@ -430,7 +419,7 @@ class LazyIteratorMultiplexer(BaseIterable):
         return LazyIteratorChain(self, other)
 
 
-class LazyInfiniteApproximateMultiplexer(BaseIterable):
+class LazyInfiniteApproximateMultiplexer(Dillable):
     """
     A variant of :class:`.LazyIteratorMultiplexer` that allows to control the number of
     iterables that are simultaneously open.
@@ -551,7 +540,7 @@ class LazyInfiniteApproximateMultiplexer(BaseIterable):
                 yield item
 
 
-class LazyShuffler(BaseIterable):
+class LazyShuffler(Dillable):
     """
     A wrapper over an iterable that enables lazy shuffling.
     The shuffling algorithm is reservoir-sampling based.
@@ -584,7 +573,7 @@ class LazyShuffler(BaseIterable):
         return LazyIteratorChain(self, other)
 
 
-class LazyFilter(BaseIterable):
+class LazyFilter(Dillable):
     """
     A wrapper over an iterable that enables lazy filtering.
     It works like Python's `filter` built-in by applying the filter predicate
@@ -623,7 +612,7 @@ class LazyFilter(BaseIterable):
         )
 
 
-class LazyMapper(BaseIterable):
+class LazyMapper(Dillable):
     """
     A wrapper over an iterable that enables lazy function evaluation on each item.
     It works like Python's `map` built-in by applying a callable ``fn``
@@ -655,7 +644,7 @@ class LazyMapper(BaseIterable):
         return LazyIteratorChain(self, other)
 
 
-class LazyFlattener(BaseIterable):
+class LazyFlattener(Dillable):
     """
     A wrapper over an iterable of collections that flattens it to an iterable of items.
 
@@ -684,7 +673,7 @@ class LazyFlattener(BaseIterable):
         )
 
 
-class LazyRepeater(BaseIterable):
+class LazyRepeater(Dillable):
     """
     A wrapper over an iterable that enables to repeat it N times or infinitely (default).
     """
@@ -719,7 +708,7 @@ class LazyRepeater(BaseIterable):
         return LazyIteratorChain(self, other)
 
 
-class LazySlicer(BaseIterable):
+class LazySlicer(Dillable):
     """
     A wrapper over an iterable that enables selecting k-th element every n elements.
     """
