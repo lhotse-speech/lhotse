@@ -103,9 +103,9 @@ def test_filter(manifest_type):
 
     with as_lazy(data) as lazy_data:
         lazy_result = lazy_data.filter(predicate)
-        with pytest.raises(NotImplementedError):
-            assert list(lazy_result) == list(expected)
-        assert list(lazy_result.to_eager()) == list(expected)
+        with pytest.raises(TypeError):
+            len(lazy_result)
+        assert list(lazy_result) == list(expected)
 
 
 @pytest.mark.parametrize(

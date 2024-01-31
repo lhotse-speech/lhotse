@@ -17,7 +17,6 @@ from typing import (
     Iterable,
     List,
     Literal,
-    Mapping,
     Optional,
     Sequence,
     Set,
@@ -45,7 +44,7 @@ from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
 from lhotse.lazy import (
     AlgorithmMixin,
-    ImitatesDict,
+    Dillable,
     LazyFlattener,
     LazyIteratorChain,
     LazyManifestIterator,
@@ -62,10 +61,10 @@ from lhotse.utils import (
     Seconds,
     compute_num_frames,
     compute_num_samples,
+    deprecated,
     exactly_one_not_null,
     fastcopy,
     ifnone,
-    index_by_id_and_check,
     split_manifest_lazy,
     split_sequence,
     uuid4,
@@ -76,9 +75,14 @@ FW = TypeVar("FW", bound=FeaturesWriter)
 
 class CutSet(Serializable, AlgorithmMixin):
     """
-    :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
+    :class:`~lhotse.cut.CutSet` represents a collection of cuts.
     CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent
     training/dev/test sets.
+
+    CutSet can be either "lazy" (acts as an iterable) which is best for representing full datasets,
+    or "eager" (acts as a list), which is best for representing individual mini-batches (and sometimes test/dev datasets).
+    Almost all operations are available for both modes, but some of them are more efficient depending on the mode
+    (e.g. indexing an "eager" manifest is O(1)).
 
     .. note::
         :class:`~lhotse.cut.CutSet` is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
@@ -242,34 +246,32 @@ class CutSet(Serializable, AlgorithmMixin):
         - :class:`~lhotse.cut.Cut`
     """
 
-    def __init__(
-        self, cuts: Optional[Union[Mapping[str, Cut], ImitatesDict]] = None
-    ) -> None:
-        self.cuts = ifnone(cuts, {})
+    def __init__(self, cuts: Optional[Iterable[Cut]] = None) -> None:
+        self.cuts = ifnone(cuts, [])
 
     def __eq__(self, other: "CutSet") -> bool:
         return self.cuts == other.cuts
 
     @property
-    def data(self) -> Union[Dict[str, Cut], Iterable[Cut]]:
+    def data(self) -> Iterable[Cut]:
         """Alias property for ``self.cuts``"""
         return self.cuts
 
     @property
-    def mixed_cuts(self) -> Dict[str, MixedCut]:
-        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MixedCut)}
+    def mixed_cuts(self) -> "CutSet":
+        return CutSet.from_cuts(cut for cut in self.cuts if isinstance(cut, MixedCut))
 
     @property
-    def simple_cuts(self) -> Dict[str, MonoCut]:
-        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MonoCut)}
+    def simple_cuts(self) -> "CutSet":
+        return CutSet.from_cuts(cut for cut in self.cuts if isinstance(cut, MonoCut))
 
     @property
-    def multi_cuts(self) -> Dict[str, MultiCut]:
-        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MultiCut)}
+    def multi_cuts(self) -> "CutSet":
+        return CutSet.from_cuts(cut for cut in self.cuts if isinstance(cut, MultiCut))
 
     @property
     def ids(self) -> Iterable[str]:
-        return self.cuts.keys()
+        return (c.id for c in self.cuts)
 
     @property
     def speakers(self) -> FrozenSet[str]:
@@ -307,7 +309,8 @@ class CutSet(Serializable, AlgorithmMixin):
 
     @staticmethod
     def from_cuts(cuts: Iterable[Cut]) -> "CutSet":
-        return CutSet(cuts=index_by_id_and_check(cuts))
+        """Left for backward compatibility, where it implicitly created an "eager" CutSet."""
+        return CutSet(list(cuts))
 
     from_items = from_cuts
 
@@ -827,7 +830,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :return: A list of :class:`~lhotse.CutSet` pieces.
         """
         return [
-            CutSet.from_cuts(subset)
+            CutSet(subset)
             for subset in split_sequence(
                 self,
                 num_splits=num_splits,
@@ -925,14 +928,14 @@ class CutSet(Serializable, AlgorithmMixin):
             cut_ids = list(cut_ids)  # Remember the original order
             id_set = frozenset(cut_ids)  # Make a set for quick lookup
             # Iteration makes it possible to subset lazy manifests
-            cuts = CutSet.from_cuts(cut for cut in self if cut.id in id_set)
+            cuts = CutSet([cut for cut in self if cut.id in id_set])
             if len(cuts) < len(cut_ids):
                 logging.warning(
                     f"In CutSet.subset(cut_ids=...): expected {len(cut_ids)} cuts but got {len(cuts)} "
                     f"instead ({len(cut_ids) - len(cuts)} cut IDs were not in the CutSet)."
                 )
             # Restore the requested cut_ids order.
-            return CutSet.from_cuts(cuts[cid] for cid in cut_ids)
+            return cuts.sort_like(cut_ids)
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
@@ -1142,7 +1145,7 @@ class CutSet(Serializable, AlgorithmMixin):
             )
             for span in segments:
                 cuts.append(cut.truncate(offset=span.start, duration=span.duration))
-        return CutSet.from_cuts(cuts)
+        return CutSet(cuts)
 
     def trim_to_supervision_groups(
         self,
@@ -1245,7 +1248,7 @@ class CutSet(Serializable, AlgorithmMixin):
         This is advantageous before caling `save_audios()` on a `trim_to_supervision()`
         processed `CutSet`, also make sure that `set_caching_enabled(True)` was called.
         """
-        return CutSet.from_cuts(
+        return CutSet(
             sorted(self, key=(lambda cut: cut.recording.id), reverse=not ascending)
         )
 
@@ -1253,18 +1256,23 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         Sort the CutSet according to cuts duration and return the result. Descending by default.
         """
-        return CutSet.from_cuts(
+        return CutSet(
             sorted(self, key=(lambda cut: cut.duration), reverse=not ascending)
         )
 
-    def sort_like(self, other: "CutSet") -> "CutSet":
+    def sort_like(self, other: Union["CutSet", Sequence[str]]) -> "CutSet":
         """
         Sort the CutSet according to the order of cut IDs in ``other`` and return the result.
         """
+        other_ids = list(other.ids if isinstance(other, CutSet) else other)
         assert set(self.ids) == set(
-            other.ids
+            other_ids
         ), "sort_like() expects both CutSet's to have identical cut IDs."
-        return CutSet.from_cuts(self[cid] for cid in other.ids)
+        index_map: Dict[str, int] = {v: index for index, v in enumerate(other_ids)}
+        ans: List[Cut] = [None] * len(other_ids)
+        for cut in self:
+            ans[index_map[cut.id]] = cut
+        return CutSet(ans)
 
     def index_supervisions(
         self, index_mixed_tracks: bool = False, keep_ids: Optional[Set[str]] = None
@@ -1397,7 +1405,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     preserve_id=preserve_id,
                 )
             )
-        return CutSet.from_cuts(truncated_cuts)
+        return CutSet(truncated_cuts)
 
     def extend_by(
         self,
@@ -1513,13 +1521,11 @@ class CutSet(Serializable, AlgorithmMixin):
         When ``n_cuts`` is 1, will return a single cut instance; otherwise will return a ``CutSet``.
         """
         assert n_cuts > 0
-        # TODO: We might want to make this more efficient in the future
-        #  by holding a cached list of cut ids as a member of CutSet...
         cut_indices = random.sample(range(len(self)), min(n_cuts, len(self)))
         cuts = [self[idx] for idx in cut_indices]
         if n_cuts == 1:
             return cuts[0]
-        return CutSet.from_cuts(cuts)
+        return CutSet(cuts)
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "CutSet":
         """
@@ -2194,7 +2200,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 progress = partial(
                     tqdm, desc="Storing audio recordings", total=len(self)
                 )
-            return CutSet.from_cuts(
+            return CutSet(
                 progress(
                     cut.save_audio(
                         storage_path=file_storage_path(cut, storage_path),
@@ -2204,7 +2210,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     )
                     for cut in self
                 )
-            )
+            ).to_eager()
 
         # Parallel execution: prepare the CutSet splits
         cut_sets = self.split(num_jobs, shuffle=shuffle_on_split)
@@ -2495,25 +2501,28 @@ class CutSet(Serializable, AlgorithmMixin):
             len_val = "<unknown>"
         return f"CutSet(len={len_val}) [underlying data type: {type(self.data)}]"
 
-    def __contains__(self, item: Union[str, Cut]) -> bool:
-        if isinstance(item, str):
-            return item in self.cuts
+    def __contains__(self, other: Union[str, Cut]) -> bool:
+        if isinstance(other, str):
+            return any(other == item.id for item in self)
         else:
-            return item.id in self.cuts
+            return any(other.id == item.id for item in self)
 
-    def __getitem__(self, cut_id_or_index: Union[int, str]) -> "Cut":
-        if isinstance(cut_id_or_index, str):
-            return self.cuts[cut_id_or_index]
-        # ~100x faster than list(dict.values())[index] for 100k elements
-        return next(
-            val for idx, val in enumerate(self.cuts.values()) if idx == cut_id_or_index
-        )
+    def __getitem__(self, index_or_id: Union[int, str]) -> Cut:
+        try:
+            return self.cuts[index_or_id]  # int passed, eager manifest, fast
+        except TypeError:
+            # either lazy manifest or str passed, both are slow
+            if self.is_lazy:
+                return next(item for idx, item in enumerate(self) if idx == index_or_id)
+            else:
+                # string id passed, support just for backward compatibility, not recommended
+                return next(item for item in self if item.id == index_or_id)
 
     def __len__(self) -> int:
         return len(self.cuts)
 
     def __iter__(self) -> Iterable[Cut]:
-        return iter(self.cuts.values())
+        yield from self.cuts
 
 
 def mix(
@@ -2993,7 +3002,7 @@ def create_cut_set_eager(
                     else [],
                 )
             )
-    cuts = CutSet.from_cuts(cuts)
+    cuts = CutSet(cuts)
     if output_path is not None:
         cuts.to_file(output_path)
     return cuts
@@ -3391,7 +3400,7 @@ def _export_to_shar_single(
     return writer.output_paths
 
 
-class LazyCutMixer(ImitatesDict):
+class LazyCutMixer(Dillable):
     """
     Iterate over cuts from ``cuts`` CutSet while mixing randomly sampled ``mix_in_cuts`` into them.
     A typical application would be data augmentation with noise, music, babble, etc.
