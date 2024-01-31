@@ -18,7 +18,6 @@ from lhotse.utils import (
     Seconds,
     exactly_one_not_null,
     ifnone,
-    index_by_id_and_check,
     split_manifest_lazy,
     split_sequence,
 )

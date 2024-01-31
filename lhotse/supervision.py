@@ -28,7 +28,6 @@ from lhotse.utils import (
     exactly_one_not_null,
     fastcopy,
     ifnone,
-    index_by_id_and_check,
     is_equal_or_contains,
     overspans,
     perturb_num_samples,
