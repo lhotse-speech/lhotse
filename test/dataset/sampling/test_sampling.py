@@ -1,6 +1,7 @@
 import math
 import random
 import re
+from collections import Counter
 from copy import deepcopy
 from functools import partial
 from math import isclose
@@ -8,12 +9,15 @@ from statistics import mean
 from tempfile import NamedTemporaryFile
 
 import pytest
+from torch.utils.data import DataLoader
 
 from lhotse import CutSet
 from lhotse.dataset import (
     CutConcatenate,
     DynamicBucketingSampler,
+    IterableDatasetWrapper,
     RoundRobinSampler,
+    make_worker_init_fn,
     report_padding_ratio_estimate,
 )
 from lhotse.dataset.cut_transforms import concat_cuts
@@ -96,6 +100,39 @@ def test_single_cut_sampler_shuffling(sampler_cls):
     assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
     # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
     assert [c.id for c in sampled_cuts] != [c.id for c in cut_set]
+
+
+class IdentityDataset:
+    def __getitem__(self, item):
+        return item
+
+
+@pytest.mark.parametrize("sampler_cls", [DynamicCutSampler, DynamicBucketingSampler])
+@pytest.mark.parametrize("seed", [0, "randomized", "trng"])
+def test_shuffle_seed_strategies(sampler_cls, seed):
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = sampler_cls(
+        cut_set,
+        shuffle=True,
+        max_duration=10.0,
+        seed=seed,
+    )
+    dloader = DataLoader(
+        IterableDatasetWrapper(IdentityDataset(), sampler),
+        num_workers=2,
+        batch_size=None,
+        worker_init_fn=make_worker_init_fn(),
+    )
+    sampled_cuts = []
+    for batch in dloader:
+        sampled_cuts.extend(batch)
+
+    assert len(sampled_cuts) == 2 * len(cut_set)
+    uniq_ids = Counter()
+    for c in sampled_cuts:
+        uniq_ids[c.id] += 1
+    assert all(v == 2 for v in uniq_ids.values())
 
 
 def test_single_cut_sampler_time_constraints():

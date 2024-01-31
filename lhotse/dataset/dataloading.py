@@ -1,6 +1,10 @@
 import os
+import random
+import secrets
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable, Literal, Optional, Union
+
+import torch
 
 from lhotse.utils import fix_random_seed
 
@@ -57,3 +61,44 @@ def worker_init_fn(
     # because DataLoader workers did not initialize torch.distributed.
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+
+
+def resolve_seed(seed: Union[int, Literal["trng", "randomized"]]) -> int:
+    """
+    Resolves the special values of random seed supported in Lhotse.
+
+    If it's an integer, we'll just return it.
+
+    If it's "trng", we'll use the ``secrets`` module to generate a random seed
+    using a true RNG (to the extend supported by the OS).
+
+    If it's "randomized", we'll check whether we're in a dataloading worker of ``torch.utils.data.DataLoader``.
+    If we are, we expect that it was passed the result of :func:``lhotse.dataset.dataloading.make_worker_init_fn``
+    into its ``worker_init_fn`` argument, in which case we'll return a special seed exclusive to that worker.
+    If we are not in a dataloading worker (or ``num_workers`` was set to ``0``), we'll return Python's ``random``
+    module global seed.
+    """
+    if isinstance(seed, int):
+        return seed
+
+    if seed == "randomized":
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:
+            # not in a dataloader sub-process: get python global random seed
+            return random.getstate()[1][0]
+        else:
+            # in a dataloader sub-process: read out the seed we assigned to it
+            assert LHOTSE_PROCESS_SEED in os.environ, (
+                "Requested seed='randomized' for shuffling shards differently "
+                "on each DataLoader node and worker, "
+                "but lhotse.dataset.dataloading.worker_init_fn was not called."
+            )
+            return int(os.environ[LHOTSE_PROCESS_SEED])
+
+    if seed == "trng":
+        return secrets.randbelow(2**32)
+
+    raise ValueError(
+        f"Unexpected type or value of seed: {type(seed)=} {seed=}. "
+        f"Supported values are: int, 'trng', and 'randomized'."
+    )

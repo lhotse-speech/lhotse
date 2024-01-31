@@ -10,6 +10,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -20,6 +21,7 @@ import numpy as np
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.dataset.sampling.base import (
     CutSampler,
     EpochDiagnostics,
@@ -27,7 +29,7 @@ from lhotse.dataset.sampling.base import (
     TimeConstraint,
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter
-from lhotse.utils import ifnone, streaming_shuffle
+from lhotse.utils import ifnone
 
 
 class DynamicBucketingSampler(CutSampler):
@@ -86,7 +88,7 @@ class DynamicBucketingSampler(CutSampler):
         quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
-        seed: int = 0,
+        seed: Union[int, Literal["randomized", "trng"]] = 0,
         strict=None,
         shuffle_buffer_size=None,
     ) -> None:
@@ -223,7 +225,8 @@ class DynamicBucketingSampler(CutSampler):
     def __iter__(self) -> "DynamicBucketingSampler":
         if self._just_restored_state:
             return self
-        self.rng = random.Random(self.seed + self.epoch)
+        seed = resolve_seed(self.seed)
+        self.rng = random.Random(seed + self.epoch)
         # Why reset the current epoch?
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps

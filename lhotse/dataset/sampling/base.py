@@ -3,7 +3,7 @@ import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Literal, Optional, Tuple, Union
 
 from torch import distributed as dist
 from torch.utils.data import Sampler
@@ -57,7 +57,7 @@ class CutSampler(Sampler, Dillable):
         drop_last: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
-        seed: int = 0,
+        seed: Union[int, Literal["randomized", "trng"]] = 0,
     ) -> None:
         """
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.

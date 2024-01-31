@@ -8,6 +8,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -15,6 +16,7 @@ from typing import (
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.dataset.sampling.base import (
     CutSampler,
     EpochDiagnostics,
@@ -77,7 +79,7 @@ class DynamicCutSampler(CutSampler):
         quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
-        seed: int = 0,
+        seed: Union[int, Literal["trng", "randomized"]] = 0,
         strict=None,
     ) -> None:
         """
@@ -183,7 +185,8 @@ class DynamicCutSampler(CutSampler):
         # or we are iterating the same epoch again, in which case setting more steps
         # than are actually available per epoch would have broken the checkpoint restoration.
         self.diagnostics.reset_current_epoch()
-        self.rng = random.Random(self.seed + self.epoch)
+        seed = resolve_seed(self.seed)
+        self.rng = random.Random(seed + self.epoch)
         # Initiate iteration
         self.cuts_iter = [iter(cs) for cs in self.cuts]
         # Optionally shuffle
@@ -193,7 +196,7 @@ class DynamicCutSampler(CutSampler):
                 # so that they are reproducible.
                 streaming_shuffle(
                     cs,
-                    rng=random.Random(self.seed + self.epoch),
+                    rng=random.Random(seed + self.epoch),
                     bufsize=self.shuffle_buffer_size,
                 )
                 for cs in self.cuts_iter
