@@ -13,6 +13,7 @@ It is covered in more detail at https://arxiv.org/abs/1912.07875
 This data is very huge - please download manually at LIBRILIGHT_URL.
 """
 
+import json
 import logging
 import os
 from collections import defaultdict
@@ -42,28 +43,40 @@ def _parse_utterance(
     audio_path: Pathlike,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     file_name = str(audio_path).replace(".flac", "").replace(str(corpus_dir) + "/", "")
-    speaker = str(audio_path).split("/")[-3]
     audio_path = audio_path.resolve()
 
     if not audio_path.is_file():
         logging.warning(f"No such file: {audio_path}")
         return None
 
+    audio_info_path = str(audio_path).replace("flac", "json")
+    with open(audio_info_path) as f:
+        audio_infos = json.load(f)
+        speaker = audio_infos["speaker"]
+        vad_infos = audio_infos["voice_activity"]
+
     recording = Recording.from_file(
         path=audio_path,
         recording_id=file_name,
     )
-    segment = SupervisionSegment(
-        id=file_name,
-        recording_id=file_name,
-        start=0.0,
-        duration=recording.duration,
-        channel=0,
-        language="English",
-        speaker=speaker,
-    )
 
-    return recording, segment
+    segments = []
+    segment_seq = 0
+    for vad_info in vad_infos:
+        segments.append(
+            SupervisionSegment(
+                id=file_name + "_" + str(segment_seq),
+                recording_id=file_name,
+                start=vad_info[0],
+                duration=vad_info[1] - vad_info[0],
+                channel=0,
+                language="English",
+                speaker=speaker,
+            )
+        )
+        segment_seq += 1
+
+    return recording, segments
 
 
 def _prepare_subset(
@@ -92,9 +105,9 @@ def _prepare_subset(
             result = future.result()
             if result is None:
                 continue
-            recording, segment = result
+            recording, segments = result
             recordings.append(recording)
-            supervisions.append(segment)
+            supervisions.extend(segments)
 
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
