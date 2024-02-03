@@ -62,13 +62,16 @@ def _parse_utterance(
 
     segments = []
     segment_seq = 0
+    sampling_rate = 16000
     for vad_info in vad_infos:
         segments.append(
             SupervisionSegment(
                 id=file_name + "_" + str(segment_seq),
                 recording_id=file_name,
                 start=vad_info[0],
-                duration=vad_info[1] - vad_info[0],
+                duration=add_durations(
+                    vad_info[1], -vad_info[0], sampling_rate=sampling_rate
+                ),
                 channel=0,
                 language="English",
                 speaker=speaker,
