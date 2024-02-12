@@ -345,8 +345,10 @@ class TorchaudioDefaultBackend(AudioBackend):
             torchaudio_soundfile_supports_format()
         ), "We don't support saving audio with torchaudio pre v0.9.0"
         src = torch.as_tensor(src)
+        if isinstance(dest, Path):
+            dest = str(dest)
         saving_flac = format.lower() == "flac" or (
-            not isinstance(dest, BytesIO) and str(dest).endswith(".flac")
+            not isinstance(dest, BytesIO) and dest.endswith(".flac")
         )
         if saving_flac:
             # Prefer saving with soundfile backend whenever possible to avoid issue:
@@ -409,6 +411,8 @@ class TorchaudioFFMPEGBackend(AudioBackend):
 
         if not torch.is_tensor(src):
             src = torch.as_tensor(src)
+        if isinstance(dest, Path):
+            dest = str(dest)
         torchaudio.save(
             dest,
             src,
