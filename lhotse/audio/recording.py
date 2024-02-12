@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from _decimal import ROUND_HALF_UP
 
-from lhotse.audio.backend import info, save_flac_file, torchaudio_info
+from lhotse.audio.backend import info, save_audio, torchaudio_info
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
     DurationMismatchError,
@@ -279,8 +279,17 @@ class Recording:
         if all(src.type == "memory" for src in self.sources):
             return self  # nothing to do
 
+        def _aslist(x):
+            if isinstance(x, int):
+                return [x]
+            return x
+
         # Case #1: no opts specified, read audio without decoding and move it in memory.
-        if all(opt is None for opt in (channels, offset, duration)):
+        if all(opt is None for opt in (channels, offset, duration)) or (
+            (channels is None or _aslist(channels) == self.channel_ids)
+            and (offset is None or isclose(offset, 0.0))
+            and (duration is None or isclose(duration, self.duration))
+        ):
             memory_sources = [
                 AudioSource(
                     type="memory",
@@ -293,14 +302,11 @@ class Recording:
 
         # Case #2: user specified some subset of the recording, decode audio,
         #          subset it, and encode it again but save in memory.
-
         audio = self.load_audio(
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        save_flac_file(
-            stream, torch.from_numpy(audio), self.sampling_rate, format=format
-        )
+        save_audio(stream, torch.from_numpy(audio), self.sampling_rate, format=format)
         channels = ifnone(channels, self.channel_ids)
         if isinstance(channels, int):
             channels = [channels]

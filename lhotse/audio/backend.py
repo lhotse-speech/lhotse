@@ -8,13 +8,14 @@ from functools import lru_cache
 from io import BytesIO, IOBase
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, run
-from typing import Any, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Generator, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
 from lhotse.audio.utils import (
     AudioLoadingError,
+    AudioSavingError,
     VideoInfo,
     verbose_audio_loading_exceptions,
 )
@@ -33,7 +34,9 @@ def available_audio_backends() -> List[str]:
 
 
 @contextmanager
-def audio_backend(backend: Union["AudioBackend", str]):
+def audio_backend(
+    backend: Union["AudioBackend", str]
+) -> Generator["AudioBackend", None, None]:
     """
     Context manager that sets Lhotse's audio backend to the specified value
     and restores the previous audio backend at the end of its scope.
@@ -44,8 +47,8 @@ def audio_backend(backend: Union["AudioBackend", str]):
         ...     some_audio_loading_fn()
     """
     previous = get_current_audio_backend()
-    set_current_audio_backend(backend)
-    yield
+    b = set_current_audio_backend(backend)
+    yield b
     set_current_audio_backend(previous)
 
 
@@ -70,7 +73,7 @@ def get_current_audio_backend() -> "AudioBackend":
     return CURRENT_AUDIO_BACKEND
 
 
-def set_current_audio_backend(backend: Union["AudioBackend", str]) -> None:
+def set_current_audio_backend(backend: Union["AudioBackend", str]) -> "AudioBackend":
     """
     Force Lhotse to use a specific audio backend to read every audio file,
     overriding the default behaviour of educated guessing + trial-and-error.
@@ -85,10 +88,13 @@ def set_current_audio_backend(backend: Union["AudioBackend", str]) -> None:
     elif isinstance(backend, str):
         backend = AudioBackend.new(backend)
     else:
+        if isinstance(backend, type):
+            backend = backend()
         assert isinstance(
             backend, AudioBackend
         ), f"Expected str or AudioBackend, got: {backend}"
     CURRENT_AUDIO_BACKEND = backend
+    return CURRENT_AUDIO_BACKEND
 
 
 @lru_cache(maxsize=1)
@@ -207,6 +213,19 @@ class AudioBackend:
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return True
 
+    def supports_save(self) -> bool:
+        return False
+
+    def save_audio(
+        self,
+        dest: Union[str, Path, BytesIO],
+        src: Union[torch.Tensor, np.ndarray],
+        sampling_rate: int,
+        format: Optional[str] = None,
+        encoding: Optional[str] = None,
+    ) -> None:
+        raise NotImplementedError()
+
 
 class FfmpegSubprocessOpusBackend(AudioBackend):
     def read_audio(
@@ -309,6 +328,43 @@ class TorchaudioDefaultBackend(AudioBackend):
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return is_torchaudio_available()
 
+    def supports_save(self) -> bool:
+        return True
+
+    def save_audio(
+        self,
+        dest: Union[str, Path, BytesIO],
+        src: Union[torch.Tensor, np.ndarray],
+        sampling_rate: int,
+        format: Optional[str] = None,
+        encoding: Optional[str] = None,
+    ) -> None:
+        import torchaudio
+
+        assert (
+            torchaudio_soundfile_supports_format()
+        ), "We don't support saving audio with torchaudio pre v0.9.0"
+        src = torch.as_tensor(src)
+        saving_flac = format.lower() == "flac" or (
+            not isinstance(dest, BytesIO) and str(dest).endswith(".flac")
+        )
+        if saving_flac:
+            # Prefer saving with soundfile backend whenever possible to avoid issue:
+            # https://github.com/pytorch/audio/issues/2662
+            # Saving with sox_io backend to FLAC may corrupt the file.
+            torchaudio.backend.soundfile_backend.save(
+                dest,
+                src,
+                sample_rate=sampling_rate,
+                format="flac",
+                bits_per_sample=16,
+            )
+        else:
+            # Using whichever backend is enabled in torchaudio.
+            torchaudio.save(
+                dest, src, sample_rate=sampling_rate, format=format, encoding=encoding
+            )
+
 
 class TorchaudioFFMPEGBackend(AudioBackend):
     """
@@ -337,6 +393,30 @@ class TorchaudioFFMPEGBackend(AudioBackend):
         For version >= 2.1.x, this will already be the default.
         """
         return is_torchaudio_available() and torchaudio_2_0_ffmpeg_enabled()
+
+    def supports_save(self) -> bool:
+        return True
+
+    def save_audio(
+        self,
+        dest: Union[str, Path, BytesIO],
+        src: Union[torch.Tensor, np.ndarray],
+        sampling_rate: int,
+        format: Optional[str] = None,
+        encoding: Optional[str] = None,
+    ) -> None:
+        import torchaudio
+
+        if not torch.is_tensor(src):
+            src = torch.as_tensor(src)
+        torchaudio.save(
+            dest,
+            src,
+            sample_rate=sampling_rate,
+            format=format,
+            encoding=encoding,
+            backend="ffmpeg",
+        )
 
 
 class LibsndfileBackend(AudioBackend):
@@ -370,6 +450,34 @@ class LibsndfileBackend(AudioBackend):
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return True
+
+    def supports_save(self) -> bool:
+        return True
+
+    def save_audio(
+        self,
+        dest: Union[str, Path, BytesIO],
+        src: Union[torch.Tensor, np.ndarray],
+        sampling_rate: int,
+        format: Optional[str] = None,
+        encoding: Optional[str] = None,
+    ) -> None:
+        import soundfile as sf
+
+        if torch.is_tensor(src):
+            src = src.numpy()
+        if isinstance(dest, Path):
+            dest = str(dest)
+        if format == "opus":
+            format = "ogg"
+            encoding = "opus"
+        sf.write(
+            file=dest,
+            data=src.T,
+            samplerate=sampling_rate,
+            format=format,
+            subtype=encoding,
+        )
 
 
 class AudioreadBackend(AudioBackend):
@@ -458,6 +566,49 @@ class CompositeAudioBackend(AudioBackend):
             )
             raise AudioLoadingError(
                 f"Reading audio from '{path_or_fd}' failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
+            )
+
+    def supports_save(self) -> bool:
+        return any(b.supports_save() for b in self.backends)
+
+    def save_audio(
+        self,
+        dest: Union[str, Path, BytesIO],
+        src: Union[torch.Tensor, np.ndarray],
+        sampling_rate: int,
+        format: Optional[str] = None,
+        encoding: Optional[str] = None,
+    ) -> None:
+        candidates = [b for b in self.backends if b.supports_save()]
+
+        exceptions = []
+        for b in candidates:
+            try:
+                return b.save_audio(
+                    dest=dest,
+                    src=src,
+                    sampling_rate=sampling_rate,
+                    format=format,
+                    encoding=encoding,
+                )
+            except Exception as e:
+                msg = f"Exception #{len(exceptions)} ({type(b)}): "
+                if verbose_audio_loading_exceptions():
+                    exceptions.append(f"{msg}{traceback.format_exc()}")
+                else:
+                    exceptions.append(f"{msg}{type(e)}: {str(e)}")
+
+        if not exceptions:
+            raise AudioSavingError(f"No applicable backend found for saving audio.")
+        else:
+            NL = "\n"
+            maybe_info = (
+                ""
+                if verbose_audio_loading_exceptions()
+                else "\nSet LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE=1 environment variable for full stack traces."
+            )
+            raise AudioSavingError(
+                f"Saving audio failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
             )
 
 
@@ -796,7 +947,7 @@ def soundfile_load(
             frame_duration = -1
         # Load the target number of frames, and transpose to match librosa form
         return (
-            sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T,
+            sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=True).T,
             int(sampling_rate),
         )
 
@@ -1161,56 +1312,20 @@ def read_sph(
     return audio, sampling_rate
 
 
-def save_flac_file(
+def save_audio(
     dest: Union[str, Path, BytesIO],
     src: Union[torch.Tensor, np.ndarray],
-    sample_rate: int,
-    *args,
-    **kwargs,
-):
-    if is_torchaudio_available():
-        torchaudio_save_flac_safe(
-            dest=dest, src=src, sample_rate=sample_rate, *args, **kwargs
-        )
-    else:
-        import soundfile as sf
-
-        kwargs.pop("bits_per_sample", None)  # ignore this arg when not using torchaudio
-        if torch.is_tensor(src):
-            src = src.numpy()
-        sf.write(file=dest, data=src.T, samplerate=sample_rate, format="FLAC")
-
-
-def torchaudio_save_flac_safe(
-    dest: Union[str, Path, BytesIO],
-    src: Union[torch.Tensor, np.ndarray],
-    sample_rate: int,
-    *args,
-    **kwargs,
-):
-    import torchaudio
-
-    src = torch.as_tensor(src)
-    saving_flac = kwargs.get("format") == "flac" or (
-        not isinstance(dest, BytesIO) and str(dest).endswith(".flac")
+    sampling_rate: int,
+    format: Optional[str] = None,
+    encoding: Optional[str] = None,
+) -> None:
+    return get_current_audio_backend().save_audio(
+        dest=dest,
+        src=src,
+        sampling_rate=sampling_rate,
+        format=format,
+        encoding=encoding,
     )
-    if torchaudio_soundfile_supports_format() and saving_flac:
-        # Prefer saving with soundfile backend whenever possible to avoid issue:
-        # https://github.com/pytorch/audio/issues/2662
-        # Saving with sox_io backend to FLAC may corrupt the file.
-        torchaudio.backend.soundfile_backend.save(
-            dest,
-            src,
-            sample_rate=sample_rate,
-            format=kwargs.pop("format", "flac"),
-            bits_per_sample=kwargs.pop("bits_per_sample", 16),
-            *args,
-            **kwargs,
-        )
-    else:
-        torchaudio.backend.sox_io_backend.save(
-            dest, src, sample_rate=sample_rate, *args, **kwargs
-        )
 
 
 def read_audio(

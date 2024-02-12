@@ -107,6 +107,10 @@ class AudioLoadingError(Exception):
     pass
 
 
+class AudioSavingError(Exception):
+    pass
+
+
 class DurationMismatchError(Exception):
     pass
 

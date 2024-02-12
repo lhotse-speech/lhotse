@@ -1,7 +1,15 @@
+import numpy as np
 import pytest
 
 import lhotse
-from lhotse.audio.backend import CompositeAudioBackend, LibsndfileBackend
+from lhotse.audio.backend import (
+    CompositeAudioBackend,
+    LibsndfileBackend,
+    TorchaudioDefaultBackend,
+    TorchaudioFFMPEGBackend,
+)
+from lhotse.testing.random import deterministic_rng
+from lhotse.utils import INT16MAX
 
 
 def test_default_audio_backend():
@@ -44,3 +52,73 @@ def backend_set_via_env_var(monkeypatch):
 def test_envvar_audio_backend(backend_set_via_env_var):
     b = lhotse.get_current_audio_backend()
     assert isinstance(b, LibsndfileBackend)
+
+
+@pytest.mark.parametrize("backend", lhotse.available_audio_backends())
+@pytest.mark.parametrize("format", ["wav", "flac", "opus"])
+def test_save_and_load(deterministic_rng, tmp_path, backend, format):
+    if backend == "CompositeAudioBackend":
+        return
+    with lhotse.audio_backend(backend) as backend_inst:
+        if not backend_inst.supports_save():
+            return
+
+        audio = (np.random.randint(0, INT16MAX, size=(1, 16000)) / INT16MAX).astype(
+            np.float32
+        )
+        path = tmp_path / f"test.{format}"
+        lhotse.audio.backend.save_audio(path, audio, sampling_rate=16000, format=format)
+        restored, sr = lhotse.audio.backend.read_audio(path)
+
+        if format != "opus":
+            np.testing.assert_allclose(audio, restored)
+        else:
+            if backend == "LibsndfileBackend":
+                assert restored.shape == audio.shape
+            else:
+                assert restored.shape == (
+                    1,
+                    48000,
+                )  # only libnsdfile auto-resamples OPUS
+
+
+@pytest.mark.parametrize(
+    ["backend_save", "backend_read"],
+    [
+        (LibsndfileBackend, TorchaudioFFMPEGBackend),
+        (LibsndfileBackend, TorchaudioDefaultBackend),
+        (TorchaudioDefaultBackend, LibsndfileBackend),
+        (TorchaudioDefaultBackend, TorchaudioFFMPEGBackend),
+        (TorchaudioFFMPEGBackend, LibsndfileBackend),
+        (TorchaudioFFMPEGBackend, TorchaudioDefaultBackend),
+    ],
+)
+def test_save_load_opus_different_backends(
+    deterministic_rng, tmp_path, backend_save, backend_read
+):
+    with lhotse.audio_backend(LibsndfileBackend):
+        audio = (np.random.randint(0, INT16MAX, size=(1, 16000)) / INT16MAX).astype(
+            np.float32
+        )
+        path = tmp_path / "test.opus"
+        lhotse.audio.backend.save_audio(path, audio, sampling_rate=16000, format="opus")
+
+        recording_old = lhotse.Recording.from_file(path)
+
+    with lhotse.audio_backend(TorchaudioFFMPEGBackend):
+        # Raw read/save utilities work across backends
+        restored, sr = lhotse.audio.backend.read_audio(path)
+        assert restored.shape == (1, 48000)
+
+        # lhotse Recording works when created with a different backend
+        restored2 = recording_old.load_audio()
+        np.testing.assert_allclose(restored2, restored)
+        # transcoding does not raise exception
+        recording_old.to_cut().truncate(duration=0.2).move_to_memory(audio_format="wav")
+
+        # lhotse Recording works when created with the same backend but data saved using different backend
+        recording_new = lhotse.Recording.from_file(path)
+        restored3 = recording_new.load_audio()
+        np.testing.assert_allclose(restored3, restored)
+        # transcoding does not raise exception
+        recording_new.to_cut().truncate(duration=0.2).move_to_memory(audio_format="wav")
