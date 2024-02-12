@@ -11,6 +11,7 @@ from _decimal import ROUND_HALF_UP
 from lhotse.audio.backend import info, save_audio, torchaudio_info
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
+    AudioLoadingError,
     DurationMismatchError,
     VideoInfo,
     get_audio_duration_mismatch_tolerance,
@@ -822,23 +823,12 @@ class Recording:
             return fastcopy(self)
 
         transforms = self.transforms.copy() if self.transforms is not None else []
-
-        if not any(
-            isinstance(s.source, str) and s.source.endswith(".opus")
-            for s in self.sources
-        ):
-            # OPUS is a special case for resampling.
-            # Normally, we use Torchaudio SoX bindings for resampling,
-            # but in case of OPUS we ask FFMPEG to resample it during
-            # decoding as its faster.
-            # Because of that, we have to skip adding a transform
-            # for OPUS files and only update the metadata in the manifest.
-            transforms.append(
-                Resample(
-                    source_sampling_rate=self.sampling_rate,
-                    target_sampling_rate=sampling_rate,
-                ).to_dict()
-            )
+        transforms.append(
+            Resample(
+                source_sampling_rate=self.sampling_rate,
+                target_sampling_rate=sampling_rate,
+            ).to_dict()
+        )
 
         new_num_samples = compute_num_samples(
             self.duration, sampling_rate, rounding=ROUND_HALF_UP
@@ -893,7 +883,7 @@ def assert_and_maybe_fix_num_samples(
         audio = audio[:, :diff]
         return audio
     else:
-        raise ValueError(
+        raise AudioLoadingError(
             "The number of declared samples in the recording diverged from the one obtained "
             f"when loading audio (offset={offset}, duration={duration}). "
             f"This could be internal Lhotse's error or a faulty transform implementation. "

@@ -111,17 +111,17 @@ def get_default_audio_backend() -> "AudioBackend":
     """
     return CompositeAudioBackend(
         [
-            # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
-            #   which can only be decoded by binaries "shorten" and "sph2pipe").
-            FfmpegSubprocessOpusBackend(),
+            # We no longer use subprocess ffmpeg for OPUS, preferring libnsdfile backend instead.
+            # FfmpegSubprocessOpusBackend(),
+            # Use sph2pipe for .sph and shorten encoded audio
             Sph2pipeSubprocessBackend(),
             # New FFMPEG backend available only in torchaudio 2.0.x+
             TorchaudioFFMPEGBackend(),
-            # Prefer libsndfile for in-memory buffers only
+            # If using older torchaudio, prefer to try libsndfile first.
             LibsndfileBackend(),
             # Torchaudio should be able to deal with most audio types...
             TorchaudioDefaultBackend(),
-            # ... if not, try audioread...
+            # ... if not, try audioread as a hail mary...
             AudioreadBackend(),
             # ... oops.
         ]
@@ -204,7 +204,11 @@ class AudioBackend:
     ) -> Tuple[np.ndarray, int]:
         raise NotImplementedError()
 
-    def info(self, path_or_fd: Union[Pathlike, FileObject]):
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
         raise NotImplementedError()
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -214,6 +218,9 @@ class AudioBackend:
         return True
 
     def supports_save(self) -> bool:
+        return False
+
+    def supports_info(self) -> bool:
         return False
 
     def save_audio(
@@ -253,6 +260,16 @@ class FfmpegSubprocessOpusBackend(AudioBackend):
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return self.handles_special_case(path_or_fd)
 
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return opus_info(path_or_fd, force_opus_sampling_rate)
+
 
 class Sph2pipeSubprocessBackend(AudioBackend):
     def read_audio(
@@ -278,6 +295,16 @@ class Sph2pipeSubprocessBackend(AudioBackend):
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return self.handles_special_case(path_or_fd)
+
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return sph_info(path_or_fd)
 
 
 class FfmpegTorchaudioStreamerBackend(AudioBackend):
@@ -309,6 +336,16 @@ class FfmpegTorchaudioStreamerBackend(AudioBackend):
             and torchaudio_supports_ffmpeg()
             and isinstance(path_or_fd, BytesIO)
         )
+
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return torchaudio_info(path_or_fd)
 
 
 class TorchaudioDefaultBackend(AudioBackend):
@@ -367,6 +404,16 @@ class TorchaudioDefaultBackend(AudioBackend):
                 dest, src, sample_rate=sampling_rate, format=format, encoding=encoding
             )
 
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return torchaudio_info(path_or_fd)
+
 
 class TorchaudioFFMPEGBackend(AudioBackend):
     """
@@ -422,6 +469,16 @@ class TorchaudioFFMPEGBackend(AudioBackend):
             backend="ffmpeg",
         )
 
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return torchaudio_ffmpeg_streamer_info(path_or_fd)
+
 
 class LibsndfileBackend(AudioBackend):
     """
@@ -446,11 +503,11 @@ class LibsndfileBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        return (
-            not (sys.platform == "darwin")
-            and isinstance(path_or_fd, BytesIO)
-            and not torchaudio_2_0_ffmpeg_enabled()  # FFMPEG is preferable to this hack.
-        )
+        if isinstance(path_or_fd, BytesIO) and not torchaudio_2_0_ffmpeg_enabled():
+            return True  # prefer this to old torchaudio for file IO
+        if isinstance(path_or_fd, (Path, str)) and str(path_or_fd).endswith(".opus"):
+            return True  # use libnsdfile for OPUS
+        return False
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return True
@@ -483,6 +540,16 @@ class LibsndfileBackend(AudioBackend):
             subtype=encoding,
         )
 
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return soundfile_info(path_or_fd)
+
 
 class AudioreadBackend(AudioBackend):
     def read_audio(
@@ -497,6 +564,13 @@ class AudioreadBackend(AudioBackend):
             offset=offset,
             duration=duration,
         )
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return audioread_info(path_or_fd)
 
 
 class CompositeAudioBackend(AudioBackend):
@@ -613,6 +687,60 @@ class CompositeAudioBackend(AudioBackend):
             )
             raise AudioSavingError(
                 f"Saving audio failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
+            )
+
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        backends = [b for b in self.backends if b.supports_info()]
+        candidates = []
+        for b in backends:
+            if b.handles_special_case(path_or_fd):
+                candidates.append(b)
+
+        assert len(candidates) < 2, (
+            f"CompositeAudioBackend has more than one sub-backend that "
+            f"handles a given special case for input '{path_or_fd}'"
+        )
+
+        if len(candidates) == 1:
+            try:
+                return candidates[0].info(path_or_fd=path_or_fd)
+            except Exception as e:
+                raise AudioLoadingError(
+                    f"Fetching info about audio from '{path_or_fd}' failed. Details: {type(e)}: {str(e)}"
+                )
+
+        exceptions = []
+        for b in backends:
+            if b.is_applicable(path_or_fd):
+                try:
+                    return b.info(path_or_fd=path_or_fd)
+                except Exception as e:
+                    msg = f"Exception #{len(exceptions)} ({type(b)}): "
+                    if verbose_audio_loading_exceptions():
+                        exceptions.append(f"{msg}{traceback.format_exc()}")
+                    else:
+                        exceptions.append(f"{msg}{type(e)}: {str(e)}")
+
+        if not exceptions:
+            raise AudioLoadingError(
+                f"No applicable backend found for input: '{path_or_fd}'"
+            )
+        else:
+            NL = "\n"
+            maybe_info = (
+                ""
+                if verbose_audio_loading_exceptions()
+                else "\nSet LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE=1 environment variable for full stack traces."
+            )
+            raise AudioLoadingError(
+                f"Fetching info about audio from '{path_or_fd}' failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
             )
 
 
@@ -1351,39 +1479,12 @@ def info(
     force_opus_sampling_rate: Optional[int] = None,
     force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
-
-    is_path = isinstance(path, (Path, str))
-
-    if is_path and Path(path).suffix.lower() == ".sph":
-        # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
-        # can't be handled by neither pysoundfile nor pyaudioread.
-        return sph_info(path)
-
-    if is_path and Path(path).suffix.lower() == ".opus":
-        # We handle OPUS as a special case because we might need to force a certain sampling rate.
-        return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
-
     if force_read_audio:
-        # This is a reliable fallback for situations when the user knows that audio files do not
-        # have duration metadata in their headers.
-        # We will use "audioread" backend that spawns an ffmpeg process, reads the audio,
-        # and computes the duration.
-        assert (
-            is_path
-        ), f"info(obj, force_read_audio=True) is not supported for object of type: {type(path)}"
-        return audioread_info(path)
-
-    try:
-        if torchaudio_2_0_ffmpeg_enabled():
-            return torchaudio_ffmpeg_streamer_info(path)
-        else:  # hacky but easy way to proceed...
-            raise Exception("Skipping - torchaudio ffmpeg streamer unavailable")
-    except:
-        try:
-            return torchaudio_info(path)
-        except:
-            try:
-                return soundfile_info(path)
-            except:
-                return audioread_info(path)
-    # If all fail, then Python 3 will display all exception messages.
+        assert isinstance(
+            path, (str, Path)
+        ), "force_read_audio=True does not work with file-like objects"
+        return AudioreadBackend().info(path_or_fd=path)
+    return get_current_audio_backend().info(
+        path_or_fd=path,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )

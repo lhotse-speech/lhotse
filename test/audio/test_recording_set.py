@@ -535,16 +535,14 @@ class TestAudioMixer:
 def test_opus_recording_from_file():
     path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path)
-    # OPUS always overrides the sampling rate to 48000
-    assert recording.sampling_rate == 48000
+    assert recording.sampling_rate == 8000
     # OPUS may crate extra audio frames / samples...
-    assert isclose(recording.duration, 0.5054166666666666)
+    assert isclose(recording.duration, 0.505375)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 24260
-    # OPUS file read succesfully!
+    assert num_samples == 4043
 
 
 @pytest.mark.skipif(
@@ -558,12 +556,12 @@ def test_opus_recording_from_file_force_sampling_rate():
     path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 0.5055)
+    assert isclose(recording.duration, 0.505375)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 4044
+    assert num_samples == 4043
 
 
 @pytest.mark.skipif(
@@ -577,12 +575,12 @@ def test_opus_stereo_recording_from_file_force_sampling_rate():
     path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.0055)
+    assert isclose(recording.duration, 1.005375)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 8044
+    assert num_samples == 8043
 
 
 @pytest.mark.skipif(
@@ -596,7 +594,7 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
     path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.0055)
+    assert isclose(recording.duration, 1.005375)
     all_samples = recording.load_audio()
     samples = recording.load_audio(offset=0.5, duration=0.25)
     num_channels, num_samples = samples.shape

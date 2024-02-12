@@ -2,12 +2,14 @@ import numpy as np
 import pytest
 
 import lhotse
+from lhotse.audio import AudioLoadingError
 from lhotse.audio.backend import (
     CompositeAudioBackend,
     LibsndfileBackend,
     TorchaudioDefaultBackend,
     TorchaudioFFMPEGBackend,
     torchaudio_2_0_ffmpeg_enabled,
+    torchaudio_soundfile_supports_format,
 )
 from lhotse.testing.random import deterministic_rng
 from lhotse.utils import INT16MAX
@@ -77,13 +79,11 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
         if format != "opus":
             np.testing.assert_allclose(audio, restored)
         else:
-            if backend == "LibsndfileBackend":
+            if backend in ("LibsndfileBackend", "default"):
+                # only libnsdfile auto-resamples OPUS
                 assert restored.shape == audio.shape
             else:
-                assert restored.shape == (
-                    1,
-                    48000,
-                )  # only libnsdfile auto-resamples OPUS
+                assert restored.shape == (1, 48000)
 
 
 @pytest.mark.parametrize(
@@ -92,22 +92,44 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
         pytest.param(
             LibsndfileBackend,
             TorchaudioFFMPEGBackend,
+            marks=[
+                pytest.mark.skipif(
+                    not torchaudio_2_0_ffmpeg_enabled(),
+                    reason="Requires Torchaudio + FFMPEG",
+                ),
+            ],
+        ),
+        pytest.param(LibsndfileBackend, TorchaudioDefaultBackend),
+        pytest.param(
+            TorchaudioDefaultBackend,
+            LibsndfileBackend,
             marks=pytest.mark.skipif(
-                not torchaudio_2_0_ffmpeg_enabled(),
-                reason="Requires Torchaudio + FFMPEG",
+                not torchaudio_soundfile_supports_format(),
+                reason="Requires torchaudio 0.9.0+",
             ),
         ),
-        (LibsndfileBackend, TorchaudioDefaultBackend),
-        (TorchaudioDefaultBackend, LibsndfileBackend),
         pytest.param(
             TorchaudioDefaultBackend,
             TorchaudioFFMPEGBackend,
+            marks=[
+                pytest.mark.skipif(
+                    not torchaudio_2_0_ffmpeg_enabled(),
+                    reason="Requires Torchaudio + FFMPEG",
+                ),
+                pytest.mark.skipif(
+                    not torchaudio_soundfile_supports_format(),
+                    reason="Requires torchaudio 0.9.0+",
+                ),
+            ],
+        ),
+        pytest.param(
+            TorchaudioFFMPEGBackend,
+            LibsndfileBackend,
             marks=pytest.mark.skipif(
                 not torchaudio_2_0_ffmpeg_enabled(),
                 reason="Requires Torchaudio + FFMPEG",
             ),
         ),
-        (TorchaudioFFMPEGBackend, LibsndfileBackend),
         pytest.param(
             TorchaudioFFMPEGBackend,
             TorchaudioDefaultBackend,
@@ -121,7 +143,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
 def test_save_load_opus_different_backends(
     deterministic_rng, tmp_path, backend_save, backend_read
 ):
-    with lhotse.audio_backend(LibsndfileBackend):
+    with lhotse.audio_backend(backend_save):
         audio = (np.random.randint(0, INT16MAX, size=(1, 16000)) / INT16MAX).astype(
             np.float32
         )
@@ -130,20 +152,31 @@ def test_save_load_opus_different_backends(
 
         recording_old = lhotse.Recording.from_file(path)
 
-    with lhotse.audio_backend(TorchaudioFFMPEGBackend):
+    with lhotse.audio_backend(backend_read):
         # Raw read/save utilities work across backends
         restored, sr = lhotse.audio.backend.read_audio(path)
-        assert restored.shape == (1, 48000)
+        if backend_read == LibsndfileBackend:
+            assert restored.shape == (1, 16000)
+        else:
+            assert restored.shape == (1, 48000)
 
-        # lhotse Recording works when created with a different backend
-        restored2 = recording_old.load_audio()
-        np.testing.assert_allclose(restored2, restored)
-        # transcoding does not raise exception
-        recording_old.to_cut().truncate(duration=0.2).move_to_memory(audio_format="wav")
+        # lhotse Recording doesn't work when it was created with backend1 and is read with incompatible backend2
+        if backend_save == LibsndfileBackend or backend_read == LibsndfileBackend:
+            with pytest.raises(AudioLoadingError):
+                restored2 = recording_old.load_audio()
+        else:
+            # but works otherwise (e.g. using different torchaudio versions)
+            restored2 = recording_old.load_audio()
+            np.testing.assert_allclose(restored2, restored)
+            recording_old.to_cut().truncate(duration=0.2).move_to_memory(
+                audio_format="wav"
+            ).load_audio()
 
         # lhotse Recording works when created with the same backend but data saved using different backend
         recording_new = lhotse.Recording.from_file(path)
         restored3 = recording_new.load_audio()
         np.testing.assert_allclose(restored3, restored)
         # transcoding does not raise exception
-        recording_new.to_cut().truncate(duration=0.2).move_to_memory(audio_format="wav")
+        recording_new.to_cut().truncate(duration=0.2).move_to_memory(
+            audio_format="wav"
+        ).load_audio()
