@@ -249,6 +249,9 @@ def test_recording_dereverb_wpe(recording, affix_id):
     assert (samples != samples_wpe).any()
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 @pytest.mark.parametrize(
     ["factor", "affix_id"],
     [
@@ -298,6 +301,9 @@ def test_recording_set_perturb_speed(recording_set):
         assert r.sampling_rate == r_sp.sampling_rate
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_recording_set_perturb_tempo(recording_set):
     recs_sp = recording_set.perturb_tempo(factor=1.1)
     for r, r_tp in zip(recording_set, recs_sp):
@@ -535,16 +541,14 @@ class TestAudioMixer:
 def test_opus_recording_from_file():
     path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path)
-    # OPUS always overrides the sampling rate to 48000
-    assert recording.sampling_rate == 48000
+    assert recording.sampling_rate == 8000
     # OPUS may crate extra audio frames / samples...
-    assert isclose(recording.duration, 0.5054166666666666)
+    assert isclose(recording.duration, 0.505375)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 24260
-    # OPUS file read succesfully!
+    assert num_samples == 4043
 
 
 @pytest.mark.skipif(
@@ -558,12 +562,12 @@ def test_opus_recording_from_file_force_sampling_rate():
     path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 0.5055)
+    assert isclose(recording.duration, 0.505375)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 4044
+    assert num_samples == 4043
 
 
 @pytest.mark.skipif(
@@ -577,12 +581,12 @@ def test_opus_stereo_recording_from_file_force_sampling_rate():
     path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.0055)
+    assert isclose(recording.duration, 1.005375)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 8044
+    assert num_samples == 8043
 
 
 @pytest.mark.skipif(
@@ -596,7 +600,7 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
     path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.0055)
+    assert isclose(recording.duration, 1.005375)
     all_samples = recording.load_audio()
     samples = recording.load_audio(offset=0.5, duration=0.25)
     num_channels, num_samples = samples.shape

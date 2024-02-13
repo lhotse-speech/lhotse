@@ -63,6 +63,25 @@ def test_lhotse_audio_in_memory():
     assert isinstance(audio, np.ndarray)
 
 
+# @notorchaudio
+def test_lhotse_audio_in_memory_from_wav(tmp_path):
+    import soundfile as sf
+
+    import lhotse
+
+    path = str(tmp_path / "test.wav")
+    audio = np.random.randint(0, 2**16, size=(16000,)) / 2**16
+    sf.write(path, audio, samplerate=16000)
+
+    cut = lhotse.Recording.from_file(path).to_cut()
+    cut = cut.truncate(
+        duration=cut.duration / 2
+    )  # force move_to_memory to go through transcoding
+    cut = cut.move_to_memory()
+    audio = cut.load_audio()
+    assert isinstance(audio, np.ndarray)
+
+
 @notorchaudio
 @pytest.mark.parametrize("fmt", ["wav", "flac"])
 def test_lhotse_save_audios(tmp_path, fmt):
