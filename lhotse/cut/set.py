@@ -2360,8 +2360,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     cut.features = cut.features.copy_feats(writer=feature_writer)
                 if cut.has_recording:
                     cut = cut.save_audio(
-                        (audio_dir / cut.recording_id).with_suffix(".flac"),
-                        bits_per_sample=16,
+                        (audio_dir / cut.recording_id).with_suffix(".flac")
                     )
                 if cut.custom is not None:
                     for k, v in cut.custom.items():
