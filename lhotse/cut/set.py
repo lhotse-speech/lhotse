@@ -2130,12 +2130,12 @@ class CutSet(Serializable, AlgorithmMixin):
         storage_path: Pathlike,
         format: str = "wav",
         encoding: Optional[str] = None,
-        bits_per_sample: Optional[int] = None,
         num_jobs: Optional[int] = None,
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
         progress_bar: bool = True,
         shuffle_on_split: bool = True,
+        **kwargs,
     ) -> "CutSet":
         """
         Store waveforms of all cuts as audio recordings to disk.
@@ -2144,13 +2144,10 @@ class CutSet(Serializable, AlgorithmMixin):
             For each cut, a sub-directory will be created that starts with the first 3
             characters of the cut's ID. The audio recording is then stored in the sub-directory
             using filename ``{cut.id}.{format}``
-        :param format: Audio format argument supported by ``torchaudio.save``. Default is ``wav``.
-        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
-            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
-            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
-        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
-            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
-            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param format: Audio format argument supported by ``torchaudio.save`` or ``soundfile.write``.
+            Tested values are: ``wav``, ``flac``, and ``opus``.
+        :param encoding: Audio encoding argument supported by ``torchaudio.save`` or ``soundfile.write``.
+            Please refer to the documentation of the relevant library used in your audio backend.
         :param num_jobs: The number of parallel processes used to store the audio recordings.
             We will internally split the CutSet into this many chunks
             and process each chunk in parallel.
@@ -2167,6 +2164,7 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :param shuffle_on_split: Shuffle the ``CutSet`` before splitting it for the parallel workers.
             It is active only when `num_jobs > 1`. The default is True.
+        :param kwargs: Deprecated arguments go here and are ignored.
         :return: Returns a new ``CutSet``.
         """
         from cytoolz import identity
@@ -2204,8 +2202,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 progress(
                     cut.save_audio(
                         storage_path=file_storage_path(cut, storage_path),
+                        format=format,
                         encoding=encoding,
-                        bits_per_sample=bits_per_sample,
                         augment_fn=augment_fn,
                     )
                     for cut in self
@@ -2233,8 +2231,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 CutSet.save_audios,
                 cs,
                 storage_path=storage_path,
+                format=format,
                 encoding=encoding,
-                bits_per_sample=bits_per_sample,
                 augment_fn=augment_fn,
                 # Disable individual workers progress bars for readability
                 progress_bar=False,
