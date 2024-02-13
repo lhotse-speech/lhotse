@@ -249,6 +249,9 @@ def test_recording_dereverb_wpe(recording, affix_id):
     assert (samples != samples_wpe).any()
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 @pytest.mark.parametrize(
     ["factor", "affix_id"],
     [
@@ -298,6 +301,9 @@ def test_recording_set_perturb_speed(recording_set):
         assert r.sampling_rate == r_sp.sampling_rate
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_recording_set_perturb_tempo(recording_set):
     recs_sp = recording_set.perturb_tempo(factor=1.1)
     for r, r_tp in zip(recording_set, recs_sp):

@@ -303,26 +303,15 @@ class Tempo(AudioTransform):
 class Volume(AudioTransform):
     """
     Volume perturbation effect, the same one as invoked with `sox vol` in the command line.
-
-    It changes the amplitude of the original samples, so the absolute values of output samples will
-    be smaller or greater, depending on the vol factor.
+    It applies given gain (factor) to the input, without any postprocessing (such as a limiter).
     """
 
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        check_for_torchaudio()
-        check_torchaudio_version()
-        import torchaudio
-
-        sampling_rate = int(sampling_rate)  # paranoia mode
-        effect = [["vol", str(self.factor)]]
-        if isinstance(samples, np.ndarray):
-            samples = torch.from_numpy(samples)
-        augmented, _ = torchaudio.sox_effects.apply_effects_tensor(
-            samples, sampling_rate, effect
-        )
-        return augmented.numpy()
+        # We only support the simplest case in SoX which is multiplication by a gain value.
+        # https://github.com/chirlu/sox/blob/42b3557e13e0fe01a83465b672d89faddbe65f49/src/vol.c#L149
+        return samples * self.factor
 
     def reverse_timestamps(
         self,
@@ -334,40 +323,7 @@ class Volume(AudioTransform):
         This method just returnes the original offset and duration as volume perturbation
         doesn't change any these audio properies.
         """
-
         return offset, duration
-
-
-def speed(sampling_rate: int) -> List[List[str]]:
-    return [
-        ["speed", RandomValue(0.9, 1.1)],
-        [
-            "rate",
-            sampling_rate,
-        ],  # Resample back to the original sampling rate (speed changes it)
-    ]
-
-
-def reverb(sampling_rate: int) -> List[List[str]]:
-    return [
-        ["reverb", 50, 50, RandomValue(0, 100)],
-        ["remix", "-"],  # Merge all channels (reverb changes mono to stereo)
-    ]
-
-
-def volume(sampling_rate: int) -> List[List[str]]:
-    return [["vol", RandomValue(0.125, 2.0)]]
-
-
-def pitch(sampling_rate: int) -> List[List[str]]:
-    return [
-        # The returned values are 1/100ths of a semitone, meaning the default is up to a minor third shift up or down.
-        ["pitch", "-q", RandomValue(-300, 300)],
-        [
-            "rate",
-            sampling_rate,
-        ],  # Resample back to the original sampling rate (pitch changes it)
-    ]
 
 
 def check_torchaudio_version():
