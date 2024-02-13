@@ -11,7 +11,7 @@ from lhotse.audio.backend import (
     TorchaudioDefaultBackend,
     TorchaudioFFMPEGBackend,
     check_torchaudio_version_gt,
-    torchaudio_2_0_ffmpeg_enabled,
+    torchaudio_ffmpeg_backend_available,
     torchaudio_soundfile_supports_format,
 )
 from lhotse.testing.random import deterministic_rng
@@ -70,14 +70,14 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
     if (
         "Torchaudio" in backend
         and format == "opus"
-        and not check_torchaudio_version_gt("2.0.0")
+        and not check_torchaudio_version_gt("2.1.0")
     ):
-        return  #
+        return
+    if backend == "CompositeAudioBackend":
+        return
 
     path = tmp_path / f"test.{format}"
 
-    if backend == "CompositeAudioBackend":
-        return
     with lhotse.audio_backend(backend) as backend_inst:
         if not backend_inst.supports_save():
             return
@@ -101,7 +101,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
 
 
 @pytest.mark.skipif(
-    not check_torchaudio_version_gt("2.0.0"),
+    not check_torchaudio_version_gt("2.1.0"),
     reason="Older torchaudio versions don't support most configurations in this test.",
 )
 @pytest.mark.parametrize(
@@ -112,7 +112,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
             TorchaudioFFMPEGBackend,
             marks=[
                 pytest.mark.skipif(
-                    not torchaudio_2_0_ffmpeg_enabled(),
+                    not torchaudio_ffmpeg_backend_available(),
                     reason="Requires Torchaudio + FFMPEG",
                 ),
             ],
@@ -124,7 +124,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
             TorchaudioFFMPEGBackend,
             marks=[
                 pytest.mark.skipif(
-                    not torchaudio_2_0_ffmpeg_enabled(),
+                    not torchaudio_ffmpeg_backend_available(),
                     reason="Requires Torchaudio + FFMPEG",
                 ),
             ],
@@ -133,7 +133,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
             TorchaudioFFMPEGBackend,
             LibsndfileBackend,
             marks=pytest.mark.skipif(
-                not torchaudio_2_0_ffmpeg_enabled(),
+                not torchaudio_ffmpeg_backend_available(),
                 reason="Requires Torchaudio + FFMPEG",
             ),
         ),
@@ -141,7 +141,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
             TorchaudioFFMPEGBackend,
             TorchaudioDefaultBackend,
             marks=pytest.mark.skipif(
-                not torchaudio_2_0_ffmpeg_enabled(),
+                not torchaudio_ffmpeg_backend_available(),
                 reason="Requires Torchaudio + FFMPEG",
             ),
         ),

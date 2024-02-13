@@ -444,7 +444,7 @@ class TorchaudioFFMPEGBackend(AudioBackend):
         For version == 2.0.x, we also need env var TORCHAUDIO_USE_BACKEND_DISPATCHER=1
         For version >= 2.1.x, this will already be the default.
         """
-        return is_torchaudio_available() and torchaudio_2_0_ffmpeg_enabled()
+        return is_torchaudio_available() and torchaudio_ffmpeg_backend_available()
 
     def supports_save(self) -> bool:
         return True
@@ -506,7 +506,10 @@ class LibsndfileBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        if isinstance(path_or_fd, BytesIO) and not torchaudio_2_0_ffmpeg_enabled():
+        if (
+            isinstance(path_or_fd, BytesIO)
+            and not torchaudio_ffmpeg_backend_available()
+        ):
             return True  # prefer this to old torchaudio for file IO
         if isinstance(path_or_fd, (Path, str)) and str(path_or_fd).endswith(".opus"):
             return True  # use libnsdfile for OPUS
@@ -768,21 +771,12 @@ def torchaudio_supports_ffmpeg() -> bool:
 
 
 @lru_cache(maxsize=1)
-def torchaudio_2_0_ffmpeg_enabled() -> bool:
+def torchaudio_ffmpeg_backend_available() -> bool:
     """
     Returns ``True`` when torchaudio.load supports "ffmpeg" backend.
-    This requires either version 2.1.x+ or 2.0.x with env var TORCHAUDIO_USE_BACKEND_DISPATCHER=1.
+    This requires either version 2.1.x+
     """
-    if not is_torchaudio_available():
-        return False
-
-    if check_torchaudio_version_gt("2.1.0"):
-        # Enabled by default, disable with TORCHAUDIO_USE_BACKEND_DISPATCHER=0
-        return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "1") == "1"
-    if check_torchaudio_version_gt("2.0"):
-        # Disabled by default, enable with TORCHAUDIO_USE_BACKEND_DISPATCHER=1
-        return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "0") == "1"
-    return False
+    return is_torchaudio_available() and check_torchaudio_version_gt("2.1.0")
 
 
 @lru_cache(maxsize=1)
@@ -810,8 +804,8 @@ def torchaudio_info(
     """
     import torchaudio
 
-    if torchaudio_2_0_ffmpeg_enabled():
-        # Torchaudio 2.0 with official "ffmpeg" backend should solve all the special cases below.
+    if torchaudio_ffmpeg_backend_available():
+        # Torchaudio 2.1 with official "ffmpeg" backend should solve all the special cases below.
         info = torchaudio.info(path_or_fileobj, backend="ffmpeg")
         return LibsndfileCompatibleAudioInfo(
             channels=info.num_channels,
