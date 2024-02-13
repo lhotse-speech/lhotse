@@ -57,6 +57,9 @@ def test_envvar_audio_backend(backend_set_via_env_var):
     assert isinstance(b, LibsndfileBackend)
 
 
+@pytest.mark.skipif(
+    not torchaudio_soundfile_supports_format(), reason="Requires torchaudio v0.9.0+"
+)
 @pytest.mark.parametrize("backend", lhotse.available_audio_backends())
 @pytest.mark.parametrize("format", ["wav", "flac", "opus"])
 def test_save_and_load(deterministic_rng, tmp_path, backend, format):
