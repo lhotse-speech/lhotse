@@ -109,23 +109,26 @@ def get_default_audio_backend() -> "AudioBackend":
     Then, it tries to use several audio loading libraries (torchaudio, soundfile, audioread).
     In case the first fails, it tries the next one, and so on.
     """
-    return CompositeAudioBackend(
-        [
-            # We no longer use subprocess ffmpeg for OPUS, preferring libnsdfile backend instead.
-            # FfmpegSubprocessOpusBackend(),
-            # Use sph2pipe for .sph and shorten encoded audio
-            Sph2pipeSubprocessBackend(),
-            # New FFMPEG backend available only in torchaudio 2.0.x+
-            TorchaudioFFMPEGBackend(),
-            # If using older torchaudio, prefer to try libsndfile first.
-            LibsndfileBackend(),
-            # Torchaudio should be able to deal with most audio types...
-            TorchaudioDefaultBackend(),
-            # ... if not, try audioread as a hail mary...
-            AudioreadBackend(),
-            # ... oops.
-        ]
-    )
+    backends = []
+    if os.environ.get("LHOTSE_LEGACY_OPUS_LOADING", "0") == "1":
+        # We no longer use subprocess ffmpeg for OPUS, preferring libnsdfile backend instead.
+        # However, in some cases users might have manifests created with the legacy backend
+        # so we add this as an option to support them.
+        backends.append(FfmpegSubprocessOpusBackend())
+    backends += [
+        # Use sph2pipe for .sph and shorten encoded audio
+        Sph2pipeSubprocessBackend(),
+        # New FFMPEG backend available only in torchaudio 2.0.x+
+        TorchaudioFFMPEGBackend(),
+        # If using older torchaudio, prefer to try libsndfile first.
+        LibsndfileBackend(),
+        # Torchaudio should be able to deal with most audio types...
+        TorchaudioDefaultBackend(),
+        # ... if not, try audioread as a hail mary...
+        AudioreadBackend(),
+        # ... oops.
+    ]
+    return CompositeAudioBackend(backends)
 
 
 def set_ffmpeg_torchaudio_info_enabled(enabled: bool) -> None:
@@ -967,6 +970,9 @@ def torchaudio_load(
     path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
     import torchaudio
+
+    if isinstance(path_or_fd, Path):
+        path_or_fd = str(path_or_fd)
 
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
