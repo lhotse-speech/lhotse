@@ -667,6 +667,8 @@ class CompositeAudioBackend(AudioBackend):
 
         exceptions = []
         for b in candidates:
+            if not b.is_applicable(dest):
+                continue
             try:
                 return b.save_audio(
                     dest=dest,
