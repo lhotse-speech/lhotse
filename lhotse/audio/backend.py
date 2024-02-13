@@ -998,6 +998,9 @@ def torchaudio_2_ffmpeg_load(
 ) -> Tuple[np.ndarray, int]:
     import torchaudio
 
+    if isinstance(path_or_fd, Path):
+        path_or_fd = str(path_or_fd)
+
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
     frame_offset = 0
@@ -1382,7 +1385,9 @@ def parse_channel_from_ffmpeg_output(ffmpeg_stderr: bytes) -> str:
 def soundfile_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     import soundfile as sf
 
-    info_ = sf.info(str(path))
+    if isinstance(path, Path):
+        path = str(path)
+    info_ = sf.info(path)
     return LibsndfileCompatibleAudioInfo(
         channels=info_.channels,
         frames=info_.frames,

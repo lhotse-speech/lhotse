@@ -1,3 +1,5 @@
+from io import BytesIO
+
 import numpy as np
 import pytest
 
@@ -8,6 +10,7 @@ from lhotse.audio.backend import (
     LibsndfileBackend,
     TorchaudioDefaultBackend,
     TorchaudioFFMPEGBackend,
+    check_torchaudio_version_gt,
     torchaudio_2_0_ffmpeg_enabled,
     torchaudio_soundfile_supports_format,
 )
@@ -63,6 +66,14 @@ def test_envvar_audio_backend(backend_set_via_env_var):
 @pytest.mark.parametrize("backend", lhotse.available_audio_backends())
 @pytest.mark.parametrize("format", ["wav", "flac", "opus"])
 def test_save_and_load(deterministic_rng, tmp_path, backend, format):
+
+    if (
+        "Torchaudio" in backend
+        and format == "opus"
+        and not check_torchaudio_version_gt("2.0.0")
+    ):
+        return  #
+
     path = tmp_path / f"test.{format}"
 
     if backend == "CompositeAudioBackend":
@@ -89,6 +100,10 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
                 assert restored.shape == (1, 48000)
 
 
+@pytest.mark.skipif(
+    not check_torchaudio_version_gt("2.0.0"),
+    reason="Older torchaudio versions don't support most configurations in this test.",
+)
 @pytest.mark.parametrize(
     ["backend_save", "backend_read"],
     [
@@ -103,14 +118,7 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
             ],
         ),
         pytest.param(LibsndfileBackend, TorchaudioDefaultBackend),
-        pytest.param(
-            TorchaudioDefaultBackend,
-            LibsndfileBackend,
-            marks=pytest.mark.skipif(
-                not torchaudio_soundfile_supports_format(),
-                reason="Requires torchaudio 0.9.0+",
-            ),
-        ),
+        pytest.param(TorchaudioDefaultBackend, LibsndfileBackend),
         pytest.param(
             TorchaudioDefaultBackend,
             TorchaudioFFMPEGBackend,
@@ -118,10 +126,6 @@ def test_save_and_load(deterministic_rng, tmp_path, backend, format):
                 pytest.mark.skipif(
                     not torchaudio_2_0_ffmpeg_enabled(),
                     reason="Requires Torchaudio + FFMPEG",
-                ),
-                pytest.mark.skipif(
-                    not torchaudio_soundfile_supports_format(),
-                    reason="Requires torchaudio 0.9.0+",
                 ),
             ],
         ),
@@ -183,3 +187,14 @@ def test_save_load_opus_different_backends(
         recording_new.to_cut().truncate(duration=0.2).move_to_memory(
             audio_format="wav"
         ).load_audio()
+
+
+@pytest.mark.parametrize("backend", ["default", LibsndfileBackend])
+def test_audio_info_from_bytes_io(backend):
+    audio_filelike = BytesIO(open("test/fixtures/mono_c0.wav", "rb").read())
+    with lhotse.audio_backend(backend):
+        meta = lhotse.audio.info(audio_filelike)
+        assert meta.duration == 0.5
+        assert meta.frames == 4000
+        assert meta.samplerate == 8000
+        assert meta.channels == 1

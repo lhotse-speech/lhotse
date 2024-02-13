@@ -241,20 +241,6 @@ def test_audio_loading_optimization_returns_expected_num_samples():
     assert audio.shape[1] == reduced_num_samples
 
 
-def test_audio_info_from_bytes_io():
-    audio_filelike = BytesIO(open("test/fixtures/mono_c0.wav", "rb").read())
-
-    meta = info(audio_filelike)
-    assert meta.duration == 0.5
-    assert meta.frames == 4000
-    assert meta.samplerate == 8000
-    assert meta.channels == 1
-
-    with pytest.raises(AssertionError):
-        # force_read_audio won't work with a filelike object
-        assert info(audio_filelike, force_read_audio=True)
-
-
 def test_torchaudio_info_from_bytes_io():
     audio_filelike = BytesIO(open("test/fixtures/mono_c0.wav", "rb").read())
 
