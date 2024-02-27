@@ -115,18 +115,29 @@ def test_audio_tar_writer(tmp_path: Path, format: str):
     assert rmse < 0.5
 
 
-@pytest.mark.parametrize("format", ["opus", "flac"])
 @pytest.mark.parametrize(
-    "backend",
+    ["format", "backend"],
     [
-        "default",
-        "LibsndfileBackend",
-        "TorchaudioDefaultBackend",
+        ("flac", "default"),
+        ("flac", "LibsndfileBackend"),
+        ("flac", "TorchaudioDefaultBackend"),
+        ("flac", "TorchaudioFFMPEGBackend"),
+        ("opus", "default"),
+        ("opus", "LibsndfileBackend"),
         pytest.param(
+            "opus",
+            "TorchaudioDefaultBackend",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("2.1.0"),
+                reason="Older torchaudio versions won't support writing OPUS.",
+            ),
+        ),
+        pytest.param(
+            "opus",
             "TorchaudioFFMPEGBackend",
             marks=pytest.mark.skipif(
                 not check_torchaudio_version_gt("2.1.0"),
-                reason="Older torchaudio versions don't support FFMPEG backend.",
+                reason="Older torchaudio versions won't support writing OPUS.",
             ),
         ),
     ],
