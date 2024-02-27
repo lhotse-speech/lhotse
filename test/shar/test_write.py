@@ -121,7 +121,14 @@ def test_audio_tar_writer(tmp_path: Path, format: str):
         ("flac", "default"),
         ("flac", "LibsndfileBackend"),
         ("flac", "TorchaudioDefaultBackend"),
-        ("flac", "TorchaudioFFMPEGBackend"),
+        pytest.param(
+            "flac",
+            "TorchaudioFFMPEGBackend",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("2.1.0"),
+                reason="Older torchaudio versions don't support FFMPEG.",
+            ),
+        ),
         ("opus", "default"),
         ("opus", "LibsndfileBackend"),
         pytest.param(
