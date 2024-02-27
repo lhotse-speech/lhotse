@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet
-from lhotse.audio.backend import check_torchaudio_version_gt
+from lhotse.audio.backend import audio_backend, check_torchaudio_version_gt
 from lhotse.lazy import LazyJsonlIterator
 from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
 from lhotse.testing.dummies import DummyManifest
@@ -110,6 +110,48 @@ def test_audio_tar_writer(tmp_path: Path, format: str):
     deserialized_audio = deserialized_recording.resample(
         recording.sampling_rate
     ).load_audio()
+
+    rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
+    assert rmse < 0.5
+
+
+@pytest.mark.parametrize("format", ["opus", "flac"])
+@pytest.mark.parametrize(
+    "backend",
+    [
+        "default",
+        "LibsndfileBackend",
+        "TorchaudioDefaultBackend",
+        pytest.param(
+            "TorchaudioFFMPEGBackend",
+            marks=pytest.mark.skipif(
+                not check_torchaudio_version_gt("2.1.0"),
+                reason="Older torchaudio versions don't support FFMPEG backend.",
+            ),
+        ),
+    ],
+)
+def test_audio_tar_writer(tmp_path: Path, format: str, backend: str):
+    from lhotse.testing.dummies import dummy_recording
+
+    recording = dummy_recording(0, with_data=True)
+    audio = recording.load_audio()
+
+    with audio_backend(backend):
+        with AudioTarWriter(
+            str(tmp_path / "test.tar"), shard_size=None, format=format
+        ) as writer:
+            writer.write(
+                key="my-recording",
+                value=audio,
+                sampling_rate=recording.sampling_rate,
+                manifest=recording,
+            )
+        (path,) = writer.output_paths
+        ((deserialized_recording, inner_path),) = list(TarIterator(path))
+        deserialized_audio = deserialized_recording.resample(
+            recording.sampling_rate
+        ).load_audio()
 
     rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
     assert rmse < 0.5

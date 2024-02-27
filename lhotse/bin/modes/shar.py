@@ -2,7 +2,7 @@ import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import click
 import tqdm
@@ -38,6 +38,13 @@ def shar():
     help="Format in which to export features (disabled by default, enabling will make a copy of the data)",
 )
 @click.option(
+    "-c",
+    "--custom",
+    multiple=True,
+    default=[],
+    help="Custom fields to export. Use syntax NAME:FORMAT, e.g.: -c target_recording:flac -c embedding:numpy. Use format options for audio and features depending on the custom fields type, or 'jsonl' for metadata.",
+)
+@click.option(
     "-s",
     "--shard-size",
     type=int,
@@ -69,6 +76,7 @@ def export(
     outdir: str,
     audio: str,
     features: str,
+    custom: List[str],
     shard_size: int,
     shuffle: bool,
     fault_tolerant: bool,
@@ -98,6 +106,10 @@ def export(
         fields["recording"] = audio
     if features != "none":
         fields["features"] = features
+    if custom:
+        for item in custom:
+            key, fmt = item.split(":")
+            fields[key] = fmt
 
     Path(outdir).mkdir(parents=True, exist_ok=True)
     cuts.to_shar(
