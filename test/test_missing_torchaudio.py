@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -27,6 +28,20 @@ def test_lhotse_cutset_works():
     cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
     for _ in cuts:
         pass
+
+
+@notorchaudio
+def test_lhotse_cutset_exportable_to_shar(tmp_path: Path):
+    import lhotse
+
+    cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
+    cuts.to_shar(tmp_path, fields={"recording": "wav"})
+    cuts_shar = lhotse.CutSet.from_shar(in_dir=tmp_path)
+    for lhs, rhs in zip(cuts, cuts_shar):
+        assert lhs.id == rhs.id
+        lhsa = lhs.load_audio()
+        rhsa = rhs.load_audio()
+        np.testing.assert_array_equal(lhsa, rhsa)
 
 
 @notorchaudio
@@ -63,7 +78,7 @@ def test_lhotse_audio_in_memory():
     assert isinstance(audio, np.ndarray)
 
 
-# @notorchaudio
+@notorchaudio
 def test_lhotse_audio_in_memory_from_wav(tmp_path):
     import soundfile as sf
 
