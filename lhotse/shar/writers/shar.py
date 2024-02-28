@@ -34,15 +34,19 @@ class SharWriter:
     with new fields.
 
     The user has to specify which fields should be saved, and what compression to use for each of them.
-    Currently we support ``wav``, ``flac``, and ``mp3`` compression for ``recording`` and custom audio fields,
+    Currently we support ``wav``, ``flac``, ``opus``, and ``mp3`` compression for ``recording`` and custom audio fields,
     and ``lilcom`` or ``numpy`` for ``features`` and custom array fields.
 
     Example::
 
         >>> cuts = CutSet(...)  # cuts have 'recording' and 'features'
-        >>> with SharWriter("some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"}) as w:
+        >>> with SharWriter("some_dir", shard_size=100, fields={"recording": "opus", "features": "lilcom"}) as w:
         ...     for cut in cuts:
         ...         w.write(cut)
+
+    .. note:: Different audio backends in Lhotse may use different encoders for the same audio formats.
+        It is advisable to use the same audio backend for saving and loading audio data in Shar and other formats.
+        See: :class:`lhotse.audio.recording.Recording`.
 
     It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
     ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
