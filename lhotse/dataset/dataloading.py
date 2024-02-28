@@ -22,9 +22,10 @@ def make_worker_init_fn(
     Calling this function creates a worker_init_fn suitable to pass to PyTorch's DataLoader.
 
     It helps with two issues:
-    - sets the random seeds differently for each worker and node, which helps with
+
+    * sets the random seeds differently for each worker and node, which helps with
         avoiding duplication in randomized data augmentation techniques.
-    - sets environment variables that help WebDataset detect it's inside multi-GPU (DDP)
+    * sets environment variables that help WebDataset detect it's inside multi-GPU (DDP)
         training, so that it correctly de-duplicates the data across nodes.
     """
     return partial(
@@ -43,6 +44,9 @@ def worker_init_fn(
     set_different_node_and_worker_seeds: bool = True,
     seed: Optional[int] = 42,
 ) -> None:
+    """
+    Function created by :func:`~lhotse.dataset.dataloading.make_worker_init_fn`, refer to its documentation for details.
+    """
     if set_different_node_and_worker_seeds:
         process_seed = seed + 100 * worker_id
         if rank is not None:
@@ -74,7 +78,7 @@ def resolve_seed(seed: Union[int, Literal["trng", "randomized"]]) -> int:
     using a true RNG (to the extend supported by the OS).
 
     If it's "randomized", we'll check whether we're in a dataloading worker of ``torch.utils.data.DataLoader``.
-    If we are, we expect that it was passed the result of :func:``lhotse.dataset.dataloading.make_worker_init_fn``
+    If we are, we expect that it was passed the result of :func:`~lhotse.dataset.dataloading.make_worker_init_fn`
     into its ``worker_init_fn`` argument, in which case we'll return a special seed exclusive to that worker.
     If we are not in a dataloading worker (or ``num_workers`` was set to ``0``), we'll return Python's ``random``
     module global seed.

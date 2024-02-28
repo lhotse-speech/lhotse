@@ -36,7 +36,7 @@ class CutMix:
             Otherwise, new random IDs are generated for the augmented cuts (default).
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
-             select a random sub-region from the to be mixed in cut.
+            select a random sub-region from the to be mixed in cut.
         """
         self.cuts = cuts
         if len(self.cuts) == 0:

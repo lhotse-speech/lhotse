@@ -1667,7 +1667,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: Union[int, Literal["trng"]] = 42,
+        seed: Union[int, Literal["trng", "randomized"]] = 42,
         random_mix_offset: bool = False,
     ) -> "CutSet":
         """
@@ -3440,7 +3440,7 @@ class LazyCutMixer(Dillable):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: Union[int, Literal["trng"]] = 42,
+        seed: Union[int, Literal["trng", "randomized"]] = 42,
         random_mix_offset: bool = False,
     ) -> None:
         self.source = cuts
@@ -3463,10 +3463,9 @@ class LazyCutMixer(Dillable):
             assert isinstance(self.snr, (type(None), int, float))
 
     def __iter__(self):
-        if self.seed == "trng":
-            rng = secrets.SystemRandom()
-        else:
-            rng = random.Random(self.seed)
+        from lhotse.dataset.dataloading import resolve_seed
+
+        rng = random.Random(resolve_seed(self.seed))
         mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
 
         for cut in self.source:
