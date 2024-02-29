@@ -24,7 +24,7 @@ class AudioTarWriter:
     that is automatically sharded.
 
     It is different from :class:`~lhotse.shar.writers.array.ArrayTarWriter` in that it supports
-    audio-specific compression mechanisms, such as ``flac`` or ``mp3``.
+    audio-specific compression mechanisms, such as ``flac``, ``opus``, ``mp3``, or ``wav``.
 
     Example::
 

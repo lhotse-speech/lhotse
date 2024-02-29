@@ -1,5 +1,5 @@
 numpy>=1.18.1
-sphinx_rtd_theme
-sphinx==4.2.0
-sphinx-click==3.0.1
-sphinx-autodoc-typehints==1.12.0
+sphinx_rtd_theme==2.0.0
+sphinx==7.2.6
+sphinx-click==5.1.0
+sphinx-autodoc-typehints==2.0.0

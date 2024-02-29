@@ -55,13 +55,19 @@ class Recording:
     and a 1-hour session with multiple channels and speakers (e.g., in AMI).
     In the latter case, it is partitioned into data suitable for model training using :class:`~lhotse.cut.Cut`.
 
-    .. hint::
-        Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa,
-        to support multiple audio formats. For OPUS files we require ffmpeg to be installed.
+    Internally, Lhotse supports multiple audio backends to read audio file.
+    By default, we try to use libsoundfile, then torchaudio (with FFMPEG integration starting with torchaudio 2.1),
+    and then audioread (which is an ffmpeg CLI wrapper).
+    For sphere files we prefer to use sph2pipe binary as it can work with certain unique encodings such as "shorten".
 
-    .. hint::
-        Since we support importing Kaldi data dirs, if ``wav.scp`` contains unix pipes,
-        :class:`~lhotse.audio.Recording` will also handle them correctly.
+    Audio backends in Lhotse are configurable. See:
+
+    * :func:`~lhotse.audio.backend.available_audio_backends`
+    * :func:`~lhotse.audio.backend.audio_backend`,
+    * :func:`~lhotse.audio.backend.get_current_audio_backend`
+    * :func:`~lhotse.audio.backend.set_current_audio_backend`
+    * :func:`~lhotse.audio.backend.get_default_audio_backend`
+
 
     Examples
 
@@ -110,6 +116,8 @@ class Recording:
             >>> assert samples.shape == (1, 16000)
             >>> samples2 = recording.load_audio(offset=0.5)
             >>> assert samples2.shape == (1, 8000)
+
+        See also: :class:`~lhotse.audio.recording.Recording`, :class:`~lhotse.cut.Cut`, :class:`~lhotse.cut.CutSet`.
     """
 
     id: str
