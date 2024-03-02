@@ -309,7 +309,7 @@ class Spectrogram(FeatureExtractor):
         return self.config.frame_shift
 
     def feature_dim(self, sampling_rate: int) -> int:
-        return self.config.num_ceps
+        return self.extractor.fft_length // 2 + 1
 
     def extract(
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
@@ -415,7 +415,7 @@ class LogSpectrogram(FeatureExtractor):
         return self.config.frame_shift
 
     def feature_dim(self, sampling_rate: int) -> int:
-        return self.config.num_ceps
+        return self.extractor.fft_length // 2 + 1
 
     def extract(
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
