@@ -25,10 +25,11 @@ from lhotse.dataset.dataloading import resolve_seed
 from lhotse.dataset.sampling.base import (
     CutSampler,
     EpochDiagnostics,
+    SamplingConstraint,
     SamplingDiagnostics,
     TimeConstraint,
 )
-from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter
+from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
 from lhotse.utils import ifnone
 
 
@@ -76,8 +77,9 @@ class DynamicBucketingSampler(CutSampler):
     def __init__(
         self,
         *cuts: Iterable[Cut],
-        max_duration: Seconds,
+        max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
+        constraint: Optional[SamplingConstraint] = None,
         num_buckets: Optional[int] = 10,
         shuffle: bool = False,
         drop_last: bool = False,
@@ -139,6 +141,8 @@ class DynamicBucketingSampler(CutSampler):
         self.cuts = cuts
         self.max_duration = max_duration
         self.max_cuts = max_cuts
+        self.constraint = constraint
+        check_constraint(constraint, max_duration, max_cuts)
         self.shuffle = shuffle
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
@@ -171,12 +175,22 @@ class DynamicBucketingSampler(CutSampler):
             ), "Duration bins must be sorted ascendingly."
             self.duration_bins = duration_bins
         else:
+            if constraint is None:
+                constraint = TimeConstraint(
+                    max_duration=self.max_duration,
+                    max_cuts=self.max_cuts,
+                    quadratic_duration=self.quadratic_duration,
+                )
             self.duration_bins = estimate_duration_buckets(
                 islice(self.cuts[0], num_cuts_for_bins_estimate),
                 num_buckets=num_buckets,
+                constraint=constraint,
             )
 
     def state_dict(self) -> Dict[str, Any]:
+        assert (
+            self.constraint is None
+        ), "state_dict() is not supported with samplers that use a custom constraint."
         sd = super().state_dict()
         sd.update(
             {
@@ -246,6 +260,7 @@ class DynamicBucketingSampler(CutSampler):
             duration_bins=self.duration_bins,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
+            constraint=self.constraint,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
             quadratic_duration=self.quadratic_duration,
@@ -281,7 +296,11 @@ class DynamicBucketingSampler(CutSampler):
         return None
 
 
-def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Seconds]:
+def estimate_duration_buckets(
+    cuts: Iterable[Cut],
+    num_buckets: int,
+    constraint: Optional[SamplingConstraint] = None,
+) -> List[float]:
     """
     Given an iterable of cuts and a desired number of buckets, select duration values
     that should start each bucket.
@@ -293,25 +312,30 @@ def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Sec
 
     :param cuts: an iterable of :class:`lhotse.cut.Cut`.
     :param num_buckets: desired number of buckets.
+    :param constraint: object with ``.measure_length()`` method that's used to determine
+        the size of each sample. If ``None``, we'll use ``TimeConstraint``.
     :return: a list of boundary duration values (floats).
     """
     assert num_buckets > 1
 
-    durs = np.array([c.duration for c in cuts])
-    durs.sort()
-    assert num_buckets <= durs.shape[0], (
+    if constraint is None:
+        constraint = TimeConstraint()
+
+    sizes = np.array([constraint.measure_length(c) for c in cuts])
+    sizes.sort()
+    assert num_buckets <= sizes.shape[0], (
         f"The number of buckets ({num_buckets}) must be smaller than "
-        f"or equal to the number of cuts ({durs.shape[0]})."
+        f"or equal to the number of cuts ({sizes.shape[0]})."
     )
-    bucket_duration = durs.sum() / num_buckets
+    size_per_bucket = sizes.sum() / num_buckets
 
     bins = []
     tot = 0.0
-    for dur in durs:
-        if tot > bucket_duration:
-            bins.append(dur)
+    for size in sizes:
+        if tot > size_per_bucket:
+            bins.append(size)
             tot = 0.0
-        tot += dur
+        tot += size
 
     return bins
 
@@ -321,8 +345,9 @@ class DynamicBucketer:
         self,
         cuts: Iterable[Union[Cut, Tuple[Cut]]],
         duration_bins: List[Seconds],
-        max_duration: float,
+        max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
+        constraint: Optional[SamplingConstraint] = None,
         drop_last: bool = False,
         buffer_size: int = 10000,
         quadratic_duration: Optional[Seconds] = None,
@@ -334,6 +359,7 @@ class DynamicBucketer:
         self.duration_bins = duration_bins
         self.max_duration = max_duration
         self.max_cuts = max_cuts
+        self.constraint = constraint
         self.drop_last = drop_last
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
@@ -347,6 +373,7 @@ class DynamicBucketer:
             f"Argument list for 'duration_bins' is expected to be in "
             f"sorted order (got: {duration_bins})."
         )
+        check_constraint(constraint, max_duration, max_cuts)
 
         # A heuristic diagnostic first, for finding the right settings.
         mean_duration = np.mean(duration_bins)
@@ -370,11 +397,14 @@ class DynamicBucketer:
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
-            tot = TimeConstraint(
-                max_duration=self.max_duration,
-                max_cuts=self.max_cuts,
-                quadratic_duration=self.quadratic_duration,
-            )
+            if self.constraint is not None:
+                tot = self.constraint.copy()
+            else:
+                tot = TimeConstraint(
+                    max_duration=self.max_duration,
+                    max_cuts=self.max_cuts,
+                    quadratic_duration=self.quadratic_duration,
+                )
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
                 if tot.close_to_exceeding():
@@ -410,6 +440,7 @@ class DynamicBucketer:
                     maybe_shuffled,
                     max_duration=self.max_duration,
                     max_cuts=self.max_cuts,
+                    constraint=self.constraint,
                     quadratic_duration=self.quadratic_duration,
                     diagnostics=self.diagnostics,
                 )

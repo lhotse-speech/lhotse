@@ -1,5 +1,7 @@
+import copy
 import os
 import warnings
+from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
@@ -366,8 +368,55 @@ def attach_dataloading_info(cuts: CutSet, rank: int, world_size: int) -> None:
         cut.dataloading_info = info
 
 
+class SamplingConstraint(metaclass=ABCMeta):
+    """
+    Defines the interface for sampling constraints. A sampling constraint
+    keeps track of the sampled examples and lets the sampler know when it
+    should yield a mini-batch.
+
+    The users are expected to define the following methods:
+
+    * ``add``: updates the sampling constraint with the information
+        about the sampled example (e.g. current batch size, total duration).
+
+    * ``exceeded``: informs if the sampling constraint has been exceeded.
+
+    * ``close_to_exceeding``: will we exceed the sampling constraint after
+        adding one more example.
+
+    * ``reset``: resets the internal state (called after yielding a mini-batch).
+
+    * ``measure_length``: returns the "size" of an example, used to create
+        bucket distribution for bucketing samplers (e.g., for audio it may be duration;
+        for text it may be number of tokens; etc.).
+    """
+
+    @abstractmethod
+    def add(self, example: Any) -> None:
+        pass
+
+    @abstractmethod
+    def exceeded(self) -> bool:
+        pass
+
+    @abstractmethod
+    def close_to_exceeding(self) -> bool:
+        pass
+
+    @abstractmethod
+    def reset(self) -> None:
+        pass
+
+    @abstractmethod
+    def measure_length(self, example: Any) -> float:
+        pass
+
+    def copy(self) -> "SamplingConstraint":
+        return copy.copy(self)
+
+
 @dataclass
-class TimeConstraint:
+class TimeConstraint(SamplingConstraint):
     """
     Represents a time-based constraint for sampler classes.
     It is defined as maximum total batch duration (in seconds) and/or the total number of cuts.
@@ -402,13 +451,13 @@ class TimeConstraint:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
         return self.max_duration is not None or self.max_cuts is not None
 
-    def add(self, cut: Cut) -> None:
+    def add(self, example: Cut) -> None:
         """
         Increment the internal counter for the time constraint,
         selecting the right property from the input ``cut`` object.
         """
         if self.max_duration is not None:
-            duration = self._maybe_apply_quadratic_correction(cut.duration)
+            duration = self._maybe_apply_quadratic_correction(example.duration)
             self.current += duration
             self.longest_seen = max(self.longest_seen, duration)
         self.num_cuts += 1
@@ -453,6 +502,9 @@ class TimeConstraint:
         self.current = 0
         self.num_cuts = 0
         self.longest_seen = 0
+
+    def measure_length(self, example: Cut) -> float:
+        return example.duration
 
     def state_dict(self) -> Dict[str, Any]:
         return asdict(self)

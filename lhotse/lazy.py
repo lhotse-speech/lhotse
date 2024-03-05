@@ -56,11 +56,10 @@ class AlgorithmMixin(LazyMixin, Iterable):
         :return: a new ``CutSet`` with transformed cuts.
         """
         cls = type(self)
-
+        ans = cls(LazyMapper(self.data, fn=transform_fn))
         if self.is_lazy:
-            return cls(LazyMapper(self.data, fn=transform_fn))
-
-        return cls.from_items(transform_fn(item) for item in self)
+            return ans
+        return ans.to_eager()
 
     @classmethod
     def mux(
@@ -622,16 +621,32 @@ class LazyMapper(Dillable):
     A wrapper over an iterable that enables lazy function evaluation on each item.
     It works like Python's `map` built-in by applying a callable ``fn``
     to each element ``x`` and yielding the result of ``fn(x)`` further.
+
+    New in Lhotse v1.22.0: ``apply_fn`` can be provided to decide whether ``fn`` should be applied
+        to a given example or not (in which case it will return it as-is, i.e., it does not filter).
     """
 
-    def __init__(self, iterator: Iterable, fn: Callable[[Any], Any]) -> None:
+    def __init__(
+        self,
+        iterator: Iterable,
+        fn: Callable[[Any], Any],
+        apply_fn: Optional[Callable[[Any], bool]] = None,
+    ) -> None:
         self.iterator = iterator
         self.fn = fn
+        self.apply_fn = apply_fn
         assert callable(self.fn), f"LazyMapper: 'fn' arg must be callable (got {fn})."
+        if self.apply_fn is not None:
+            assert callable(
+                self.apply_fn
+            ), f"LazyMapper: 'apply_fn' arg must be callable (got {fn})."
         if (
-            isinstance(self.fn, types.LambdaType)
-            and self.fn.__name__ == "<lambda>"
-            and not is_module_available("dill")
+            (isinstance(self.fn, types.LambdaType) and self.fn.__name__ == "<lambda>")
+            or (
+                isinstance(self.apply_fn, types.LambdaType)
+                and self.apply_fn.__name__ == "<lambda>"
+            )
+            and not is_dill_enabled()
         ):
             warnings.warn(
                 "A lambda was passed to LazyMapper: it may prevent you from forking this process. "
@@ -640,7 +655,15 @@ class LazyMapper(Dillable):
             )
 
     def __iter__(self):
-        return map(self.fn, self.iterator)
+        if self.apply_fn is None:
+            yield from map(self.fn, self.iterator)
+        else:
+            for item in self.iterator:
+                if self.apply_fn(item):
+                    ans = self.fn(item)
+                else:
+                    ans = item
+                yield ans
 
     def __len__(self) -> int:
         return len(self.iterator)
