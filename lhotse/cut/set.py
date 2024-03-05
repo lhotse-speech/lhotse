@@ -3483,7 +3483,7 @@ class LazyCutMixer(Dillable):
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
-            if rng.uniform(0.0, 1.0) > self.mix_prob:
+            if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
                 yield cut
                 continue
             to_mix = next(mix_in_cuts)

@@ -70,7 +70,7 @@ class DynamicCutSampler(CutSampler):
 
     def __init__(
         self,
-        *cuts: Iterable[Cut],
+        *cuts: Iterable,
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         constraint: Optional[SamplingConstraint] = None,
@@ -391,4 +391,4 @@ def check_constraint(constraint: Optional, max_duration: Optional, max_cuts: Opt
     else:
         assert (
             max_duration is not None or max_cuts is not None
-        ), "At least one of max_duration= or max_cuts= has to be defined."
+        ), "At least one of max_duration= or max_cuts= has to be defined (or provide constraint=)."

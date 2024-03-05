@@ -76,7 +76,7 @@ class DynamicBucketingSampler(CutSampler):
 
     def __init__(
         self,
-        *cuts: Iterable[Cut],
+        *cuts: Iterable,
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         constraint: Optional[SamplingConstraint] = None,
@@ -142,16 +142,13 @@ class DynamicBucketingSampler(CutSampler):
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.constraint = constraint
-        check_constraint(constraint, max_duration, max_cuts)
         self.shuffle = shuffle
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
         self.rng = None
-        assert any(
-            v is not None for v in (self.max_duration, self.max_cuts)
-        ), "At least one of max_duration or max_cuts has to be set."
+        check_constraint(constraint, max_duration, max_cuts)
 
         if strict is not None:
             warnings.warn(
@@ -376,14 +373,17 @@ class DynamicBucketer:
         check_constraint(constraint, max_duration, max_cuts)
 
         # A heuristic diagnostic first, for finding the right settings.
-        mean_duration = np.mean(duration_bins)
-        expected_buffer_duration = buffer_size * mean_duration
-        expected_bucket_duration = expected_buffer_duration / (len(duration_bins) + 1)
-        if expected_bucket_duration < max_duration:
-            warnings.warn(
-                f"Your 'buffer_size' setting of {buffer_size} might be too low to satisfy "
-                f"a 'max_duration' of {max_duration} (given our best guess)."
+        if max_duration is not None:
+            mean_duration = np.mean(duration_bins)
+            expected_buffer_duration = buffer_size * mean_duration
+            expected_bucket_duration = expected_buffer_duration / (
+                len(duration_bins) + 1
             )
+            if expected_bucket_duration < max_duration:
+                warnings.warn(
+                    f"Your 'buffer_size' setting of {buffer_size} might be too low to satisfy "
+                    f"a 'max_duration' of {max_duration} (given our best guess)."
+                )
 
         # Init: create empty buckets (note: `num_buckets = len(duration_bins) + 1`).
         self.buckets: List[Deque[Union[Cut, Tuple[Cut, ...]]]] = [
@@ -472,8 +472,8 @@ class DynamicBucketer:
         try:
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
-                duration = (
-                    cuts[0].duration if isinstance(cuts, tuple) else cuts.duration
+                duration = self.constraint.measure_length(
+                    cuts[0] if isinstance(cuts, tuple) else cuts
                 )
                 bucket_idx = bisect_right(self.duration_bins, duration)
                 self.buckets[bucket_idx].append(cuts)
