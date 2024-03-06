@@ -64,6 +64,7 @@ from .primewords import *
 from .rir_noise import *
 from .slu import *
 from .speechcommands import *
+from .speechio import *
 from .spgispeech import *
 from .stcmds import *
 from .switchboard import *
