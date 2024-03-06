@@ -438,7 +438,7 @@ class DynamicBucketer:
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
                     maybe_shuffled,
-                    constraint=self.constraint,
+                    constraint=self.constraint.copy(),
                     diagnostics=self.diagnostics,
                 )
                 batch = next(iter(batcher))

@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import numpy as np
 import pytest
 import torch
@@ -53,7 +55,7 @@ def test_text_dynamic_bucketing_sampler(text_source):
 
 
 class TextDataset(torch.utils.data.Dataset):
-    def __getitem__(self, cuts: CutSet) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.Tensor]:
         from lhotse.dataset.collation import collate_vectors
 
         tokens = collate_vectors(
@@ -85,7 +87,7 @@ class MixedAudioTextDataset(torch.utils.data.Dataset):
 
     def __getitem__(
         self, cuts: CutSet
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
 
         text_cuts = cuts.filter(lambda c: isinstance(c, TextExample)).to_eager()
         if text_cuts:
