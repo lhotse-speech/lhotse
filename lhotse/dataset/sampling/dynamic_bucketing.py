@@ -372,6 +372,13 @@ class DynamicBucketer:
         )
         check_constraint(constraint, max_duration, max_cuts)
 
+        if self.constraint is None:
+            self.constraint = TimeConstraint(
+                max_duration=self.max_duration,
+                max_cuts=self.max_cuts,
+                quadratic_duration=self.quadratic_duration,
+            )
+
         # A heuristic diagnostic first, for finding the right settings.
         if max_duration is not None:
             mean_duration = np.mean(duration_bins)
@@ -397,14 +404,7 @@ class DynamicBucketer:
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
-            if self.constraint is not None:
-                tot = self.constraint.copy()
-            else:
-                tot = TimeConstraint(
-                    max_duration=self.max_duration,
-                    max_cuts=self.max_cuts,
-                    quadratic_duration=self.quadratic_duration,
-                )
+            tot = self.constraint.copy()
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
                 if tot.close_to_exceeding():
@@ -438,10 +438,7 @@ class DynamicBucketer:
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
                     maybe_shuffled,
-                    max_duration=self.max_duration,
-                    max_cuts=self.max_cuts,
                     constraint=self.constraint,
-                    quadratic_duration=self.quadratic_duration,
                     diagnostics=self.diagnostics,
                 )
                 batch = next(iter(batcher))

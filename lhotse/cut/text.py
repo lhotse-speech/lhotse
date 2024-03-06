@@ -21,20 +21,6 @@ class TextExample(CustomFieldMixin):
 
 @dataclass
 class TextPairExample(CustomFieldMixin):
-    source_text: str
-    target_text: str
-    source_tokens: Optional[np.ndarray] = None
-    target_tokens: Optional[np.ndarray] = None
+    source: TextExample
+    target: TextExample
     custom: Optional[Dict[str, Any]] = None
-
-    @property
-    def num_tokens(self) -> Optional[int]:
-        if self.source_tokens is None:
-            return None
-        return len(self.source_tokens)
-
-    @property
-    def num_target_tokens(self) -> Optional[int]:
-        if self.target_tokens is None:
-            return None
-        return len(self.target_tokens)

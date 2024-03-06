@@ -75,6 +75,10 @@ from lhotse.utils import (
 FW = TypeVar("FW", bound=FeaturesWriter)
 
 
+def is_cut(example) -> bool:
+    return isinstance(example, Cut)
+
+
 class CutSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.cut.CutSet` represents a collection of cuts.
@@ -939,8 +943,12 @@ class CutSet(Serializable, AlgorithmMixin):
             # Restore the requested cut_ids order.
             return cuts.sort_like(cut_ids)
 
-    def map(self, transform_fn: Callable[[T], T]) -> "CutSet":
-        ans = CutSet(LazyMapper(self.data, fn=transform_fn, apply_fn=is_cut))
+    def map(
+        self,
+        transform_fn: Callable[[T], T],
+        apply_fn: Optional[Callable[[T], bool]] = is_cut,
+    ) -> "CutSet":
+        ans = CutSet(LazyMapper(self.data, fn=transform_fn, apply_fn=apply_fn))
         if self.is_lazy:
             return ans
         return ans.to_eager()
@@ -3218,10 +3226,6 @@ def deserialize_cut(raw_cut: dict) -> Cut:
     if cut_type == "MixedCut":
         return MixedCut.from_dict(raw_cut)
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
-
-
-def is_cut(example) -> bool:
-    return isinstance(example, Cut)
 
 
 def _cut_into_windows_single(
