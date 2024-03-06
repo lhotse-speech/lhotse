@@ -68,8 +68,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
         *manifests,
         stop_early: bool = False,
         weights: Optional[List[Union[int, float]]] = None,
-        seed: Union[int, Literal["trng"]] = 0,
-        max_open_streams: Optional[int] = None,
+        seed: Union[int, Literal["trng", "randomized"]] = 0,
     ):
         """
         Merges multiple manifest iterables into a new iterable by lazily multiplexing them during iteration time.
@@ -96,7 +95,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
         cls,
         *manifests,
         weights: Optional[List[Union[int, float]]] = None,
-        seed: Union[int, Literal["trng"]] = 0,
+        seed: Union[int, Literal["trng", "randomized"]] = 0,
         max_open_streams: Optional[int] = None,
     ):
         """
@@ -315,7 +314,7 @@ class LazyIteratorChain(Dillable):
         self,
         *iterators: Iterable,
         shuffle_iters: bool = False,
-        seed: Optional[int] = None,
+        seed: Optional[Union[int, Literal["trng", "randomized"]]] = None,
     ) -> None:
         self.iterators = []
         self.shuffle_iters = shuffle_iters
@@ -330,12 +329,14 @@ class LazyIteratorChain(Dillable):
                 self.iterators.append(it)
 
     def __iter__(self):
+        from lhotse.dataset.dataloading import resolve_seed
+
         iterators = self.iterators
         if self.shuffle_iters:
             if self.seed is None:
                 rng = random  # global Python RNG
             else:
-                rng = random.Random(self.seed + self.num_iters)
+                rng = random.Random(resolve_seed(self.seed) + self.num_iters)
             rng.shuffle(iterators)
             self.num_iters += 1
         for it in iterators:
@@ -367,7 +368,7 @@ class LazyIteratorMultiplexer(Dillable):
         *iterators: Iterable,
         stop_early: bool = False,
         weights: Optional[List[Union[int, float]]] = None,
-        seed: Union[int, Literal["trng"]] = 0,
+        seed: Union[int, Literal["trng", "randomized"]] = 0,
     ) -> None:
         self.iterators = list(iterators)
         self.stop_early = stop_early
@@ -385,7 +386,9 @@ class LazyIteratorMultiplexer(Dillable):
         assert len(self.iterators) == len(self.weights)
 
     def __iter__(self):
-        rng = build_rng(self.seed)
+        from lhotse.dataset.dataloading import resolve_seed
+
+        rng = random.Random(resolve_seed(self.seed))
         iters = [iter(it) for it in self.iterators]
         exhausted = [False for _ in range(len(iters))]
 
@@ -447,7 +450,7 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
         *iterators: Iterable,
         stop_early: bool = False,
         weights: Optional[List[Union[int, float]]] = None,
-        seed: Union[int, Literal["trng"]] = 0,
+        seed: Union[int, Literal["trng", "randomized"]] = 0,
         max_open_streams: Optional[int] = None,
     ) -> None:
         self.iterators = list(iterators)
@@ -475,7 +478,9 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
         - each stream may be interpreted as a shard belonging to some larger group of streams
           (e.g. multiple shards of a given dataset).
         """
-        rng = build_rng(self.seed)
+        from lhotse.dataset.dataloading import resolve_seed
+
+        rng = random.Random(resolve_seed(self.seed))
 
         def shuffled_streams():
             # Create an infinite iterable of our streams.

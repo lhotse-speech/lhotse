@@ -128,6 +128,19 @@ In general, pre-computed features can be greatly compressed (we achieve 70% size
 
 When I/O is not the issue, it might be preferable to use on-the-fly computation as it shouldn't require any prior steps to perform the network training. It is also simpler to apply a vast range of data augmentation methods in a fully randomized way (e.g. reverberation), although Lhotse provides support for approximate feature-domain signal mixing (e.g. for additive noise augmentation) to alleviate that to some extent.
 
+Handling random seeds
+---------------------
+
+Lhotse provides several mechanisms for controlling randomness. At a basic level, there is a function :func:`lhotse.utils.fix_random_seed` which seeds Python's, numpy's and torch's RNGs with the provided number.
+
+However, many functions and classes in Lhotse accept either a random seed or an RNG instance to provide a finer control over randomness. Whenever random seed is accepted, it can be either an integer, or one of two strings: ``"randomized"`` or ``"trng"``.
+
+* ``"randomized``" seed is resolved lazily at the moment it's needed and is intended as a mechanism to provide a different seed to each dataloading worker. In order for ``"randomized"`` to work, you have to first invoke :func:`lhotse.dataset.dataloading.worker_init_fn` in a given subprocess which sets the right environment variables. With a PyTorch ``DataLoader`` you can pass the keyword argument ``worker_init_fn==make_worker_init_fn(seed=int_seed, rank=..., world_size=...)`` using :func:`lhotse.dataset.dataloading.make_worker_init_fn` which will set the right seeds for you in multiprocessing and multi-node training. Note that if you resume training, you should change the ``seed`` passed to ``make_worker_init_fn`` on each resumed run to make the model train on different data.
+* ``"trng"`` seed is also resolved lazily at runtime, but it uses a true RNG (if available on your OS; consult Python's ``secrets`` module documentation). It's an easy way to ensure that every time you iterate data it's done in different order, but may cause debugging data issues to be more difficult.
+
+.. note:: The lazy seed resolution is done by calling :func:`lhotse.dataset.dataloading.resolve_seed`.
+
+
 Dataset's list
 --------------
 
@@ -185,3 +198,8 @@ Collation utilities for building custom Datasets
 ------------------------------------------------
 
 .. automodule:: lhotse.dataset.collation
+
+Dataloading seeding utilities
+-----------------------------
+
+.. automodule:: lhotse.dataset.dataloading
