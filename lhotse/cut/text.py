@@ -25,5 +25,6 @@ class TextPairExample(CustomFieldMixin):
     target: TextExample
     custom: Optional[Dict[str, Any]] = None
 
+    @property
     def num_tokens(self) -> Optional[int]:
         return self.source.num_tokens
