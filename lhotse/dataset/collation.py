@@ -168,10 +168,13 @@ def collate_audio(
         (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
     :return: a tuple of tensors ``(audio, audio_lens)``, or ``(audio, audio_lens, cuts)``.
     """
-    if recording_field is None:
-        assert all(cut.has_recording for cut in cuts)
-    else:
-        assert all(cut.has_custom(recording_field) for cut in cuts)
+    for cut in cuts:
+        if recording_field is None:
+            assert cut.has_recording, f"Missing recording in cut {cut.id}"
+        else:
+            assert cut.has_custom(
+                recording_field
+            ), f"Missing custom recording field {recording_field} in cut {cut.id}"
 
     # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
     cut_id2num_samples = {}

@@ -298,6 +298,7 @@ def dummy_cut(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
+    recording_duration: float = 1.0,
     recording: Recording = None,
     features: Features = None,
     supervisions=None,
@@ -325,7 +326,9 @@ def dummy_cut(
         channel=0,
         recording=recording
         if recording
-        else dummy_recording(unique_id, with_data=with_data),
+        else dummy_recording(
+            unique_id, duration=recording_duration, with_data=with_data
+        ),
         features=features
         if features
         else dummy_features(unique_id, with_data=with_data),
@@ -338,6 +341,7 @@ def dummy_multi_cut(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
+    recording_duration: float = 1.0,
     recording: Recording = None,
     features: Features = None,
     supervisions: SupervisionSet = None,
@@ -347,6 +351,8 @@ def dummy_multi_cut(
 ):
     if channel is None:
         channel = [0, 1]
+    if recording_duration < duration:
+        recording_duration = duration
     return MultiCut(
         id=f"dummy-multi-cut-{unique_id:04d}",
         start=start,
@@ -356,7 +362,7 @@ def dummy_multi_cut(
         if recording
         else dummy_multi_channel_recording(
             unique_id,
-            duration=duration,
+            duration=recording_duration,
             channel_ids=channel,
             with_data=with_data,
             source_per_channel=source_per_channel,
