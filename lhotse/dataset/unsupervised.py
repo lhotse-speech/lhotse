@@ -131,6 +131,7 @@ class RecordingChunkIterableDataset(IterableDataset):
     overlapping audio chunks.
 
     The format of yielded items is the following::
+
         {
             "recording_id": str
             "begin_time": tensor with dtype=float32 shape=(1,)

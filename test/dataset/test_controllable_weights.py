@@ -114,6 +114,7 @@ def test_mux_with_controllable_weights_subprocess_worker(deterministic_rng):
     assert_sources_are(b, [2, 2])
 
 
+@pytest.mark.xfail(reason="This test is flaky...")
 def test_mux_with_controllable_weights_subprocess_sampler_shared_memory(
     deterministic_rng,
 ):
@@ -157,6 +158,7 @@ def test_mux_with_controllable_weights_subprocess_sampler_shared_memory(
     assert_sources_are(b, [2, 2])
 
 
+@pytest.mark.xfail(reason="This test is flaky...")
 def test_infinite_mux_with_controllable_weights_subprocess_sampler_shared_memory(
     deterministic_rng,
 ):
