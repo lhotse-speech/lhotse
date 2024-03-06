@@ -57,7 +57,10 @@ def log_mel_spectrogram(
         audio = audio.to(device)
 
     if len(audio.shape) == 2:
-        audio = audio[0]
+        if audio.shape[0] > 1:
+            raise ValueError("Whisper Fbank works only with single-channel recordings.")
+        else:
+            audio = audio[0]
     assert (
         len(audio.shape) == 1
     ), f"Whisper Fbank works only with single-channel recordings (shape: {audio.shape})"
