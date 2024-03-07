@@ -171,6 +171,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_spgispeech`
   * - Switchboard
     - :func:`lhotse.recipes.prepare_switchboard`
+  * - TED-LIUM v2
+    - :func:`lhotse.recipes.prepare_tedlium2`
   * - TED-LIUM v3
     - :func:`lhotse.recipes.prepare_tedlium`
   * - TIMIT
