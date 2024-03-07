@@ -55,7 +55,16 @@ def log_mel_spectrogram(
 
     if device is not None:
         audio = audio.to(device)
-    audio = audio.squeeze(0)
+
+    if len(audio.shape) == 2:
+        if audio.shape[0] > 1:
+            raise ValueError("Whisper Fbank works only with single-channel recordings.")
+        else:
+            audio = audio[0]
+    assert (
+        len(audio.shape) == 1
+    ), f"Whisper Fbank works only with single-channel recordings (shape: {audio.shape})"
+
     window = torch.hann_window(n_fft).to(audio.device)
     stft = torch.stft(audio, n_fft, hop_length, window=window, return_complex=True)
     magnitudes = stft[..., :-1].abs() ** 2
