@@ -167,6 +167,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_rir_noise`
   * - Speech Commands
     - :func:`lhotse.recipes.prepare_speechcommands`
+  * - SpeechIO
+    - :func:`lhotse.recipes.prepare_speechio`
   * - SPGISpeech
     - :func:`lhotse.recipes.prepare_spgispeech`
   * - Switchboard

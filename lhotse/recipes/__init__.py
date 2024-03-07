@@ -65,6 +65,7 @@ from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .slu import prepare_slu
 from .speechcommands import download_speechcommands, prepare_speechcommands
+from .speechio import prepare_speechio
 from .spgispeech import download_spgispeech, prepare_spgispeech
 from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
