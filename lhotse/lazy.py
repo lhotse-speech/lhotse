@@ -240,6 +240,38 @@ def dill_enabled(value: bool):
     set_dill_enabled(previous)
 
 
+class LazyTxtIterator:
+    """
+    LazyTxtIterator is a thin wrapper over builtin ``open`` function to
+    iterate over lines in a (possibly compressed) text file.
+    It can also provide the number of lines via __len__ via fast newlines counting.
+    """
+
+    def __init__(self, path: Pathlike, as_text_example: bool = True) -> None:
+        self.path = path
+        self.as_text_example = as_text_example
+        self._len = None
+
+    def __iter__(self):
+        from lhotse.cut.text import TextExample
+
+        tot = 0
+        with open_best(self.path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if self.as_text_example:
+                    line = TextExample(line)
+                yield line
+                tot += 1
+        if self._len is None:
+            self._len = tot
+
+    def __len__(self) -> int:
+        if self._len is None:
+            self._len = count_newlines_fast(self.path)
+        return self._len
+
+
 class LazyJsonlIterator:
     """
     LazyJsonlIterator provides the ability to read JSON lines as Python dicts.

@@ -374,45 +374,41 @@ class SamplingConstraint(metaclass=ABCMeta):
     Defines the interface for sampling constraints. A sampling constraint
     keeps track of the sampled examples and lets the sampler know when it
     should yield a mini-batch.
-
-    The users are expected to define the following methods:
-
-    * ``add``: updates the sampling constraint with the information
-        about the sampled example (e.g. current batch size, total duration).
-
-    * ``exceeded``: informs if the sampling constraint has been exceeded.
-
-    * ``close_to_exceeding``: will we exceed the sampling constraint after
-        adding one more example.
-
-    * ``reset``: resets the internal state (called after yielding a mini-batch).
-
-    * ``measure_length``: returns the "size" of an example, used to create
-        bucket distribution for bucketing samplers (e.g., for audio it may be duration;
-        for text it may be number of tokens; etc.).
     """
 
     @abstractmethod
     def add(self, example: Any) -> None:
+        """
+        Update the sampling constraint with the information about the sampled example
+        (e.g. current batch size, total duration).
+        """
         pass
 
     @abstractmethod
     def exceeded(self) -> bool:
+        """Inform if the sampling constraint has been exceeded."""
         pass
 
     @abstractmethod
     def close_to_exceeding(self) -> bool:
+        """Inform if we're going to exceed the sampling constraint after adding one more example."""
         pass
 
     @abstractmethod
     def reset(self) -> None:
+        """Resets the internal state (called after yielding a mini-batch)."""
         pass
 
     @abstractmethod
     def measure_length(self, example: Any) -> float:
+        """
+        Returns the "size" of an example, used to create bucket distribution for bucketing samplers
+        (e.g., for audio it may be duration; for text it may be number of tokens; etc.).
+        """
         pass
 
     def copy(self) -> "SamplingConstraint":
+        """Return a shallow copy of this constraint."""
         return copy.copy(self)
 
 

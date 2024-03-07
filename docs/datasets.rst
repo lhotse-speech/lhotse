@@ -141,6 +141,76 @@ However, many functions and classes in Lhotse accept either a random seed or an 
 .. note:: The lazy seed resolution is done by calling :func:`lhotse.dataset.dataloading.resolve_seed`.
 
 
+Customizing sampling constraints
+--------------------------------
+
+Since version 1.22.0, Lhotse provides a mechanism to customize how samplers measure the "length" of each example
+for the purpose of determining dynamic batch size. To leverage this option, use the keyword argument ``constraint``
+in :class:`~lhotse.dataset.sampling.DynamicCutSampler` or :class:`~lhotse.dataset.sampling.DynamicBucketingSampler`.
+The sampling criteria are defined by implementing a subclass of :class:`~lhotse.dataset.sampling.base.SamplingConstraint`:
+
+.. autoclass:: lhotse.dataset.sampling.base.SamplingConstraint
+    :members:
+
+The default constraint is :class:`~lhotse.dataset.sampling.base.TimeConstraint` which is created from
+``max_duration``, ``max_cuts``, and ``quadratic_duration`` args passed to samplers constructor.
+
+Sampling non-audio data
+***********************
+
+Because :class:`~lhotse.dataset.sampling.base.SamplingConstraint` defines the method ``measure_length``,
+it's possible to use a different attribute than duration (or a different formula) for computing the effective batch size.
+This enables re-using Lhotse's sampling algorithms for other data than speech, and passing around other objects than :class:`~lhotse.cut.Cut`.
+
+To showcase this, we added an experimental support for text-only dataloading. We introduced a few classes specifically for this purpose:
+
+.. autoclass:: lhotse.cut.text.TextExample
+    :members:
+
+.. autoclass:: lhotse.cut.text.TextPairExample
+    :members:
+
+.. autoclass:: lhotse.lazy.LazyTxtIterator
+    :members:
+
+.. autoclass:: lhotse.dataset.sampling.base.TokenConstraint
+    :members:
+
+A minimal example of how to perform text-only dataloading is available below (note that any of these classes may be replaced by your own implementation if that is more suitable to your work)::
+
+    import torch
+    import numpy as np
+    from lhotse import CutSet
+    from lhotse.lazy import LazyTxtIterator
+    from lhotse.cut.text import TextPairExample
+    from lhotse.dataset import DynamicBucketingSampler, TokenConstraint
+    from lhotse.dataset.collation import collate_vectors
+
+    examples = CutSet(LazyTxtIterator("data.txt"))
+
+    def tokenize(example):
+        # tokenize as individual bytes; BPE or another technique may be used here instead
+        example.tokens = np.frombuffer(example.text.encode("utf-8"), np.int8)
+        return example
+
+    examples = examples.map(tokenize, apply_fn=None)
+
+    sampler = DynamicBucketingSampler(examples, constraint=TokenConstraint(max_tokens=1024, quadratic_length=128),      num_buckets=2)
+
+    class ExampleTextDataset(torch.utils.data.Dataset):
+        def __getitem__(self, examples: CutSet):
+            tokens = [ex.tokens for ex in examples]
+            token_lens = torch.tensor([len(t) for t in tokens])
+            tokens = collate_vectors(tokens, padding_value=-1)
+            return tokens, token_lens
+
+    dloader = torch.utils.data.DataLoader(ExampleTextDataset(), sampler=sampler, batch_size=None)
+
+    for batch in dloader:
+        print(batch)
+
+.. note:: Support for this kind of dataloading is experimental in Lhotse. If you run into any rough edges, please let us know.
+
 Dataset's list
 --------------
 
