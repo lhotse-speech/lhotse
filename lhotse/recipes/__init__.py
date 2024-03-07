@@ -70,6 +70,7 @@ from .spgispeech import download_spgispeech, prepare_spgispeech
 from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
+from .tedlium2 import download_tedlium2, prepare_tedlium2
 from .thchs_30 import download_thchs_30, prepare_thchs_30
 from .this_american_life import download_this_american_life, prepare_this_american_life
 from .timit import download_timit, prepare_timit
