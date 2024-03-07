@@ -45,11 +45,13 @@ from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
 from lhotse.lazy import (
     AlgorithmMixin,
     Dillable,
+    LazyFilter,
     LazyFlattener,
     LazyIteratorChain,
     LazyManifestIterator,
     LazyMapper,
     LazySlicer,
+    T,
 )
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -71,6 +73,10 @@ from lhotse.utils import (
 )
 
 FW = TypeVar("FW", bound=FeaturesWriter)
+
+
+def is_cut(example) -> bool:
+    return isinstance(example, Cut)
 
 
 class CutSet(Serializable, AlgorithmMixin):
@@ -936,6 +942,16 @@ class CutSet(Serializable, AlgorithmMixin):
                 )
             # Restore the requested cut_ids order.
             return cuts.sort_like(cut_ids)
+
+    def map(
+        self,
+        transform_fn: Callable[[T], T],
+        apply_fn: Optional[Callable[[T], bool]] = is_cut,
+    ) -> "CutSet":
+        ans = CutSet(LazyMapper(self.data, fn=transform_fn, apply_fn=apply_fn))
+        if self.is_lazy:
+            return ans
+        return ans.to_eager()
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
@@ -3471,7 +3487,7 @@ class LazyCutMixer(Dillable):
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
-            if rng.uniform(0.0, 1.0) > self.mix_prob:
+            if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
                 yield cut
                 continue
             to_mix = next(mix_in_cuts)
