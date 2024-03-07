@@ -5,11 +5,13 @@ we try to leverage 'duration' attribute which is shared by all tested types of i
 """
 import random
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 
 import pytest
 
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
-from lhotse.lazy import LazyJsonlIterator
+from lhotse.cut.text import TextExample
+from lhotse.lazy import LazyJsonlIterator, LazyTxtIterator
 from lhotse.testing.dummies import DummyManifest, as_lazy
 from lhotse.testing.fixtures import with_dill_enabled
 from lhotse.utils import fastcopy, is_module_available
@@ -265,3 +267,39 @@ def test_lazy_jsonl_iterator_caches_len():
         assert it._len is not None
         assert it._len == expected_len
         assert len(it) == expected_len
+
+
+def test_lazy_txt_iterator(tmp_path: Path):
+    txt = tmp_path / "test.txt"
+    txt.write_text("a\nb\nc\n")
+
+    it = LazyTxtIterator(txt)
+
+    # Supports len
+    assert len(it) == 3
+
+    # Can be iterated, strips newlines
+    texts = [t for t in it]
+    assert texts == [TextExample("a"), TextExample("b"), TextExample("c")]
+
+    # Can be iterated again
+    texts = [t for t in it]
+    assert texts == [TextExample("a"), TextExample("b"), TextExample("c")]
+
+
+def test_lazy_txt_iterator_raw_text(tmp_path: Path):
+    txt = tmp_path / "test.txt"
+    txt.write_text("a\nb\nc\n")
+
+    it = LazyTxtIterator(txt, as_text_example=False)
+
+    # Supports len
+    assert len(it) == 3
+
+    # Can be iterated, strips newlines
+    texts = [t for t in it]
+    assert texts == ["a", "b", "c"]
+
+    # Can be iterated again
+    texts = [t for t in it]
+    assert texts == ["a", "b", "c"]

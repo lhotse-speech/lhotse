@@ -16,6 +16,7 @@ from typing import (
 
 from tqdm import tqdm
 
+from lhotse.custom import CustomFieldMixin
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -117,7 +118,7 @@ class AlignmentItem(NamedTuple):
 
 
 @dataclass
-class SupervisionSegment:
+class SupervisionSegment(CustomFieldMixin):
     """
     :class:`~lhotse.supervsion.SupervisionSegment` represents a time interval (segment) annotated with some
     supervision labels and/or metadata, such as the transcription, the speaker identity, the language, etc.
@@ -451,54 +452,6 @@ class SupervisionSegment:
             }
 
         return SupervisionSegment(**data)
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        """
-        This magic function is called when the user tries to set an attribute.
-        We use it as syntactic sugar to store custom attributes in ``self.custom``
-        field, so that they can be (de)serialized later.
-        """
-        if key in self.__dataclass_fields__:
-            super().__setattr__(key, value)
-        else:
-            custom = ifnone(self.custom, {})
-            if value is None:
-                custom.pop(key, None)
-            else:
-                custom[key] = value
-            if custom:
-                self.custom = custom
-
-    def __getattr__(self, name: str) -> Any:
-        """
-        This magic function is called when the user tries to access an attribute
-        of :class:`.SupervisionSegment` that doesn't exist.
-        It is used as syntactic sugar for accessing the custom supervision attributes.
-
-        We use it to look up the ``custom`` field: when it's None or empty,
-        we'll just raise AttributeError as usual.
-        If ``item`` is found in ``custom``, we'll return ``self.custom[item]``.
-
-        Example of adding custom metadata and retrieving it as an attribute::
-
-            >>> sup = SupervisionSegment('utt1', recording_id='rec1', start=0,
-            ...                          duration=1, channel=0, text='Yummy.')
-            >>> sup.gps_coordinates = "34.1021097,-79.1553182"
-            >>> coordinates = sup.gps_coordinates
-
-        """
-        try:
-            return self.custom[name]
-        except:
-            raise AttributeError(f"No such attribute: {name}")
-
-    def __delattr__(self, key: str) -> None:
-        """Used to support ``del supervision.custom_attr`` syntax."""
-        if key in self.__dataclass_fields__:
-            super().__delattr__(key)
-        if self.custom is None or key not in self.custom:
-            raise AttributeError(f"No such member: '{key}'")
-        del self.custom[key]
 
 
 class SupervisionSet(Serializable, AlgorithmMixin):

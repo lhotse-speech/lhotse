@@ -1,5 +1,7 @@
+import copy
 import os
 import warnings
+from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
@@ -10,6 +12,7 @@ from torch import distributed as dist
 from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
+from lhotse.cut.text import TextExample
 from lhotse.lazy import Dillable
 from lhotse.manipulation import combine
 from lhotse.utils import Seconds, ifnone, is_none_or_gt
@@ -366,8 +369,51 @@ def attach_dataloading_info(cuts: CutSet, rank: int, world_size: int) -> None:
         cut.dataloading_info = info
 
 
+class SamplingConstraint(metaclass=ABCMeta):
+    """
+    Defines the interface for sampling constraints. A sampling constraint
+    keeps track of the sampled examples and lets the sampler know when it
+    should yield a mini-batch.
+    """
+
+    @abstractmethod
+    def add(self, example: Any) -> None:
+        """
+        Update the sampling constraint with the information about the sampled example
+        (e.g. current batch size, total duration).
+        """
+        pass
+
+    @abstractmethod
+    def exceeded(self) -> bool:
+        """Inform if the sampling constraint has been exceeded."""
+        pass
+
+    @abstractmethod
+    def close_to_exceeding(self) -> bool:
+        """Inform if we're going to exceed the sampling constraint after adding one more example."""
+        pass
+
+    @abstractmethod
+    def reset(self) -> None:
+        """Resets the internal state (called after yielding a mini-batch)."""
+        pass
+
+    @abstractmethod
+    def measure_length(self, example: Any) -> float:
+        """
+        Returns the "size" of an example, used to create bucket distribution for bucketing samplers
+        (e.g., for audio it may be duration; for text it may be number of tokens; etc.).
+        """
+        pass
+
+    def copy(self) -> "SamplingConstraint":
+        """Return a shallow copy of this constraint."""
+        return copy.copy(self)
+
+
 @dataclass
-class TimeConstraint:
+class TimeConstraint(SamplingConstraint):
     """
     Represents a time-based constraint for sampler classes.
     It is defined as maximum total batch duration (in seconds) and/or the total number of cuts.
@@ -402,13 +448,13 @@ class TimeConstraint:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
         return self.max_duration is not None or self.max_cuts is not None
 
-    def add(self, cut: Cut) -> None:
+    def add(self, example: Cut) -> None:
         """
         Increment the internal counter for the time constraint,
         selecting the right property from the input ``cut`` object.
         """
         if self.max_duration is not None:
-            duration = self._maybe_apply_quadratic_correction(cut.duration)
+            duration = self._maybe_apply_quadratic_correction(example.duration)
             self.current += duration
             self.longest_seen = max(self.longest_seen, duration)
         self.num_cuts += 1
@@ -454,6 +500,9 @@ class TimeConstraint:
         self.num_cuts = 0
         self.longest_seen = 0
 
+    def measure_length(self, example: Cut) -> float:
+        return example.duration
+
     def state_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -497,6 +546,84 @@ class TimeConstraint:
             and self.max_cuts == other.max_cuts
             and self.quadratic_duration == other.quadratic_duration
         )
+
+
+@dataclass
+class TokenConstraint(SamplingConstraint):
+    """
+    Represents a token-based constraint for sampler classes that sample text data.
+    It is defined as maximum total number of tokens in a mini-batch and/or max batch size.
+
+    Similarly to :class:`TimeConstraint`, we support ``quadratic_length`` for quadratic
+    token penalty when sampling longer texts.
+    """
+
+    max_tokens: int = None
+    max_examples: int = None
+    current: int = 0
+    num_examples: int = 0
+    longest_seen: int = 0
+    quadratic_length: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        assert is_none_or_gt(self.max_tokens, 0)
+        assert is_none_or_gt(self.max_examples, 0)
+        assert is_none_or_gt(self.quadratic_length, 0)
+
+    def add(self, example: TextExample) -> None:
+        """
+        Increment the internal token counter for the constraint,
+        selecting the right property from the input object.
+        """
+        if self.max_tokens is not None:
+            size = self._maybe_apply_quadratic_correction(self.measure_length(example))
+            self.current += size
+            self.longest_seen = max(self.longest_seen, size)
+        self.num_examples += 1
+
+    def _maybe_apply_quadratic_correction(self, size: int) -> int:
+        if self.quadratic_length is None:
+            return size
+        # For the quadratic complexity case, we add a term that accounts for
+        # extra memory occupied by the model. The 1/quadratic_length term causes
+        # the effective length to be doubled when it's equal to quadratic_length.
+        return size + (size**2) / self.quadratic_length
+
+    def exceeded(self) -> bool:
+        """Is the constraint exceeded or not."""
+        if self.max_examples is not None and self.num_examples > self.max_examples:
+            return True
+        if self.max_tokens is None:
+            return False
+        effective_duration = self.num_examples * self.longest_seen
+        return effective_duration > self.max_tokens
+
+    def close_to_exceeding(self) -> bool:
+        """
+        Check if the batch is close to satisfying the constraints.
+        We define "closeness" as: if we added one more cut that has
+        duration/num_frames/num_samples equal to the longest seen cut
+        in the current batch, then the batch would have exceeded the constraints.
+        """
+        if self.max_examples is not None and self.num_examples >= self.max_examples:
+            return True
+
+        if self.max_tokens is not None:
+            effective_size = (self.num_examples + 1) * self.longest_seen
+            return effective_size > self.max_tokens
+        return False
+
+    def reset(self) -> None:
+        """
+        Reset the internal counter (to be used after a batch was created,
+        to start collecting a new one).
+        """
+        self.current = 0
+        self.num_examples = 0
+        self.longest_seen = 0
+
+    def measure_length(self, example: TextExample) -> float:
+        return example.num_tokens
 
 
 @dataclass

@@ -20,6 +20,7 @@ from lhotse.dataset.dataloading import resolve_seed
 from lhotse.dataset.sampling.base import (
     CutSampler,
     EpochDiagnostics,
+    SamplingConstraint,
     SamplingDiagnostics,
     TimeConstraint,
 )
@@ -69,9 +70,10 @@ class DynamicCutSampler(CutSampler):
 
     def __init__(
         self,
-        *cuts: Iterable[Cut],
+        *cuts: Iterable,
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
+        constraint: Optional[SamplingConstraint] = None,
         shuffle: bool = False,
         drop_last: bool = False,
         consistent_ids: bool = True,
@@ -88,6 +90,12 @@ class DynamicCutSampler(CutSampler):
             Note: with multiple CutSets, ``max_duration`` constraint applies only to the first CutSet.
         :param max_cuts: The maximum total number of ``cuts`` per batch.
             When only ``max_duration`` is specified, this sampler yields static batch sizes.
+        :param constraint: Provide a :class:`~lhotse.dataset.sampling.base.SamplingConstraint` object
+            defining how the sampler decides when a mini-batch is complete. It also affects which
+            attribute of the input examples decides the "size" of the example (by default it's ``.duration``).
+            Before this parameter was introduced, Lhotse samplers used
+            :class:`~lhotse.dataset.sampling.base.TimeConstraint` implicitly.
+            Introduced in Lhotse v1.22.0.
         :param shuffle: When ``True``, the cuts will be shuffled dynamically with
             a reservoir-sampling-based algorithm.
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
@@ -121,14 +129,12 @@ class DynamicCutSampler(CutSampler):
         self.cuts = cuts
         self.max_duration = max_duration
         self.max_cuts = max_cuts
+        self.constraint = constraint
         self.shuffle = shuffle
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
         self.rng = None
-        assert any(
-            v is not None for v in (self.max_duration, self.max_cuts)
-        ), "At least one of max_duration or max_cuts has to be set."
 
         if strict is not None:
             warnings.warn(
@@ -138,6 +144,9 @@ class DynamicCutSampler(CutSampler):
             )
 
     def state_dict(self) -> Dict[str, Any]:
+        assert (
+            self.constraint is None
+        ), "state_dict() is not supported with samplers that use a custom constraint."
         sd = super().state_dict()
         sd.update(
             {
@@ -212,6 +221,7 @@ class DynamicCutSampler(CutSampler):
             self.cuts_iter,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
+            constraint=self.constraint,
             drop_last=self.drop_last,
             quadratic_duration=self.quadratic_duration,
             diagnostics=self.diagnostics,
@@ -251,6 +261,7 @@ class DurationBatcher:
         datapipe: Iterable[Union[Cut, Tuple[Cut]]],
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
+        constraint: Optional[SamplingConstraint] = None,
         drop_last: bool = False,
         quadratic_duration: Optional[Seconds] = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
@@ -259,11 +270,15 @@ class DurationBatcher:
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
-        self.time_constraint = TimeConstraint(
-            max_duration=max_duration,
-            max_cuts=max_cuts,
-            quadratic_duration=quadratic_duration,
-        )
+        check_constraint(constraint, max_duration, max_cuts)
+        if constraint is not None:
+            self.constraint = constraint
+        else:
+            self.constraint = TimeConstraint(
+                max_duration=max_duration,
+                max_cuts=max_cuts,
+                quadratic_duration=quadratic_duration,
+            )
 
     def __iter__(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:
         self.cuts_iter = iter(self.datapipe)
@@ -289,7 +304,7 @@ class DurationBatcher:
             else:
                 return CutSet.from_cuts(cuts)
 
-        self.time_constraint.reset()
+        self.constraint.reset()
         cuts = []
         while True:
             # Check that we have not reached the end of the dataset.
@@ -301,7 +316,7 @@ class DurationBatcher:
                 # we may output it, unless the user requested to drop it.
                 # We also check if the batch is "almost there" to override drop_last.
                 if cuts and (
-                    not self.drop_last or self.time_constraint.close_to_exceeding()
+                    not self.drop_last or self.constraint.close_to_exceeding()
                 ):
                     # We have a partial batch and we can return it.
                     return detuplify(cuts)
@@ -316,16 +331,16 @@ class DurationBatcher:
 
             # Track the duration/frames/etc. constraints.
             cuts.append(next_cut_or_tpl)
-            self.time_constraint.add(
+            self.constraint.add(
                 next_cut_or_tpl[0]
                 if isinstance(next_cut_or_tpl, tuple)
                 else next_cut_or_tpl
             )
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if self.time_constraint.close_to_exceeding():
+            if self.constraint.close_to_exceeding():
                 # Yes. Finish sampling this batch.
-                if self.time_constraint.exceeded() and len(cuts) == 1:
+                if self.constraint.exceeded() and len(cuts) == 1:
                     warnings.warn(
                         "We have exceeded the max_duration constraint during sampling but have only 1 cut. "
                         "This is likely because max_duration was set to a very low value ~10s, "
@@ -366,3 +381,14 @@ class Filter(Iterable):
                 yield item
             else:
                 self.diagnostics.discard(item)
+
+
+def check_constraint(constraint: Optional, max_duration: Optional, max_cuts: Optional):
+    if constraint is not None:
+        assert (
+            max_duration is None and max_cuts is None
+        ), "Cannot specify both constraint= and max_duration=/max_cuts="
+    else:
+        assert (
+            max_duration is not None or max_cuts is not None
+        ), "At least one of max_duration= or max_cuts= has to be defined (or provide constraint=)."
