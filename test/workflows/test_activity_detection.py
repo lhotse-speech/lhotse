@@ -24,6 +24,9 @@ def _check_torch_version(greater_than: str):
     return False
 
 
+@pytest.mark.xfail(
+    reason="This test fails too often in the CI on downloading the SileroVAD model."
+)
 def test_silero_vad_init():
     if not _check_torch_version("1.12"):
         pytest.skip("torch >= 1.12 is required for this test")
@@ -39,6 +42,9 @@ def test_silero_vad_init():
     assert activity[0].start + activity[0].duration < recording.duration
 
 
+@pytest.mark.xfail(
+    reason="This test fails too often in the CI on downloading the SileroVAD model."
+)
 def test_silero_vad_in_parallel():
     if not _check_torch_version("1.12"):
         pytest.skip("torch >= 1.12 is required for this test")
@@ -66,6 +72,9 @@ def temporary_directory():
         yield temp_dir
 
 
+@pytest.mark.xfail(
+    reason="This test fails too often in the CI on downloading the SileroVAD model."
+)
 def test_silero_vad_workflow_simple(temporary_directory: str):
     if not _check_torch_version("1.12"):
         pytest.skip("torch >= 1.12 is required for this test")
