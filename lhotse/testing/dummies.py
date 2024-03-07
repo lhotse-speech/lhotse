@@ -99,6 +99,9 @@ def dummy_audio_source(
         data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples))
         if len(channels) > 1:
             data = data.unsqueeze(0).expand(len(channels), -1).transpose(0, 1)
+            # ensure each channel has different data for channel selection testing
+            mults = torch.tensor([1 / idx for idx in range(1, len(channels) + 1)])
+            data = data * mults
         binary_data = BytesIO()
         soundfile.write(
             binary_data,

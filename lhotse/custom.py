@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 from lhotse import Recording
-from lhotse.utils import ifnone
+from lhotse.utils import fastcopy, ifnone
 
 
 class CustomFieldMixin:
@@ -81,6 +81,14 @@ class CustomFieldMixin:
             raise AttributeError(f"No such member: '{key}'")
         del self.custom[key]
 
+    def with_custom(self, name: str, value: Any):
+        """Return a copy of this object with an extra custom field assigned to it."""
+        cpy = fastcopy(
+            self, custom=self.custom.copy() if self.custom is not None else {}
+        )
+        cpy.custom[name] = value
+        return cpy
+
     def load_custom(self, name: str) -> np.ndarray:
         """
         Load custom data as numpy array. The custom data is expected to have
@@ -103,9 +111,14 @@ class CustomFieldMixin:
             # TemporalArray supports slicing.
             return value.load(start=self.start, duration=self.duration)
         elif isinstance(value, Recording):
-            # Recording supports slicing. Note: we will not slice the channels
-            # as cut.channels referes to cut.recording and not the custom field.
-            return value.load_audio(offset=self.start, duration=self.duration)
+            # Recording supports slicing.
+            # Note: cut.channels referes to cut.recording and not the custom field.
+            # We have to use a special channel selector field instead; e.g.:
+            # if this is "target_recording", we'll look for "target_recording_channel_selector"
+            channels = self.custom.get(f"{name}_channel_selector")
+            return value.load_audio(
+                channels=channels, offset=self.start, duration=self.duration
+            )
         else:
             raise ValueError(
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "

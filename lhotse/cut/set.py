@@ -1394,34 +1394,21 @@ class CutSet(Serializable, AlgorithmMixin):
         :param rng: optional random number generator to be used with a 'random' ``offset_type``.
         :return: a new CutSet instance with truncated cuts.
         """
-        truncated_cuts = []
-        for cut in self:
-            if cut.duration <= max_duration:
-                truncated_cuts.append(cut)
-                continue
-
-            def compute_offset():
-                if offset_type == "start":
-                    return 0.0
-                last_offset = cut.duration - max_duration
-                if offset_type == "end":
-                    return last_offset
-                if offset_type == "random":
-                    if rng is None:
-                        return random.uniform(0.0, last_offset)
-                    else:
-                        return rng.uniform(0.0, last_offset)
-                raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
-
-            truncated_cuts.append(
-                cut.truncate(
-                    offset=compute_offset(),
-                    duration=max_duration,
-                    keep_excessive_supervisions=keep_excessive_supervisions,
-                    preserve_id=preserve_id,
-                )
+        assert offset_type in (
+            "start",
+            "end",
+            "random",
+        ), f"Unknown offset type: '{offset_type}'"
+        return self.map(
+            partial(
+                _truncate_single,
+                max_duration=max_duration,
+                offset_type=offset_type,
+                keep_excessive_supervisions=keep_excessive_supervisions,
+                preserve_id=preserve_id,
+                rng=rng,
             )
-        return CutSet(truncated_cuts)
+        )
 
     def extend_by(
         self,
@@ -3366,6 +3353,38 @@ def _drop_alignments(cut, *args, **kwargs):
 
 def _drop_supervisions(cut, *args, **kwargs):
     return cut.drop_supervisions(*args, **kwargs)
+
+
+def _truncate_single(
+    cut: Cut,
+    max_duration: Seconds,
+    offset_type: str,
+    keep_excessive_supervisions: bool = True,
+    preserve_id: bool = False,
+    rng: Optional[random.Random] = None,
+) -> Cut:
+    if cut.duration <= max_duration:
+        return cut
+
+    def compute_offset():
+        if offset_type == "start":
+            return 0.0
+        last_offset = cut.duration - max_duration
+        if offset_type == "end":
+            return last_offset
+        if offset_type == "random":
+            if rng is None:
+                return random.uniform(0.0, last_offset)
+            else:
+                return rng.uniform(0.0, last_offset)
+        raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
+
+    return cut.truncate(
+        offset=compute_offset(),
+        duration=max_duration,
+        keep_excessive_supervisions=keep_excessive_supervisions,
+        preserve_id=preserve_id,
+    )
 
 
 def _export_to_shar_single(
