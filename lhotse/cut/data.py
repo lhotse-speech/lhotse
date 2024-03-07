@@ -154,10 +154,9 @@ class DataCut(Cut, metaclass=ABCMeta):
             # TemporalArray supports slicing.
             return value.load(start=self.start, duration=self.duration)
         elif isinstance(value, Recording):
-            # Recording supports slicing.
-            return value.load_audio(
-                channels=self.channel, offset=self.start, duration=self.duration
-            )
+            # Recording supports slicing. Note: we will not slice the channels
+            # as cut.channels referes to cut.recording and not the custom field.
+            return value.load_audio(offset=self.start, duration=self.duration)
         else:
             raise ValueError(
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
