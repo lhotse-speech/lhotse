@@ -3,7 +3,7 @@ from typing import Optional, Sequence
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.MDCC import download_MDCC, prepare_MDCC
+from lhotse.recipes.mdcc import download_MDCC, prepare_MDCC
 from lhotse.utils import Pathlike
 
 
