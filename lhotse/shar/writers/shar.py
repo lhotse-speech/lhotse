@@ -128,6 +128,12 @@ class SharWriter:
             if cut.has_recording:
                 data = cut.load_audio()
                 recording = to_shar_placeholder(cut.recording, cut)
+                cut_channels = _aslist(cut.channel)
+                if recording.channel_ids != cut_channels:
+                    # If recording is multi-channel but the cut refers to a subset of them,
+                    # we have to update the recording manifest accordingly
+                    recording.sources[0].channels = cut_channels
+                    recording.channel_ids = cut_channels
                 self.writers["recording"].write(
                     cut.id, data, cut.sampling_rate, manifest=recording
                 )
@@ -171,13 +177,24 @@ class SharWriter:
                 else:
                     data = cut.load_custom(key)
                     placeholder_obj = to_shar_placeholder(val, cut)
+                    channel_selector_key = f"{key}_channel_selector"
                     kwargs = {}
                     if isinstance(val, Recording):
                         kwargs["sampling_rate"] = val.sampling_rate
+                        if cut.has_custom(channel_selector_key):
+                            # override custom recording channels since the audio was loaded via cut
+                            # and used the channel selector
+                            placeholder_obj.sources[0].channels = cut.custom[
+                                channel_selector_key
+                            ]
+                            placeholder_obj.channel_ids = cut.custom[
+                                channel_selector_key
+                            ]
                     self.writers[key].write(
                         cut.id, data, manifest=placeholder_obj, **kwargs
                     )
                     cut = fastcopy(cut, custom=cut.custom.copy())
+                    cut.custom.pop(channel_selector_key, None)  # no longer needed
                     setattr(cut, key, placeholder_obj)
             else:
                 self.writers[key].write_placeholder(cut.id)
@@ -224,3 +241,9 @@ def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:
         base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
 
     return f"{base_output_url}/cuts{shard_suffix}.jsonl.gz"
+
+
+def _aslist(x):
+    if isinstance(x, list):
+        return x
+    return [x]
