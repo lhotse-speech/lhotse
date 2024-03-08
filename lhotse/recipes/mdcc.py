@@ -99,8 +99,6 @@ def prepare_MDCC(
             audio_path, text_path, gender, _ = line.strip().split(",")
             audio_path = audio_dir / Path(audio_path).name
             text_path = corpus_dir / text_path
-            assert audio_path.is_file(), f"Missing {audio_path}"
-            assert text_path.is_file(), f"Missing {text_path}"
 
             recording_id = make_recording_id(Path(audio_path))
             recording = Recording.from_file(audio_path, recording_id=recording_id)
