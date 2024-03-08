@@ -3,7 +3,7 @@ from typing import Optional, Sequence
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.mdcc import download_MDCC, prepare_MDCC
+from lhotse.recipes.mdcc import download_mdcc, prepare_mdcc
 from lhotse.utils import Pathlike
 
 
@@ -25,7 +25,7 @@ def MDCC(
     output_dir: Optional[Pathlike] = None,
 ):
     """MDCC data preparation."""
-    prepare_MDCC(
+    prepare_mdcc(
         corpus_dir=corpus_dir,
         dataset_parts=dataset_parts,
         output_dir=output_dir,
@@ -45,7 +45,7 @@ def MDCC(
     force_download: Optional[bool] = False,
 ):
     """MDCC download."""
-    download_MDCC(
+    download_mdcc(
         target_dir=target_dir,
         force_download=force_download,
     )

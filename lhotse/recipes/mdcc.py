@@ -24,7 +24,7 @@ MDCC_URL = "https://drive.google.com/file/d/1epfYMMhXdBKA6nxPgUugb2Uj4DllSxkn/vi
 MDCC_PARTS = ["train", "valid", "test"]
 
 
-def download_MDCC(target_dir: Pathlike, force_download: bool = False) -> Path:
+def download_mdcc(target_dir: Pathlike, force_download: bool = False) -> Path:
     """
     Downloads the MDCC data from the Google Drive and extracts it.
     :param target_dir: the directory where MDCC data will be saved.
@@ -56,7 +56,7 @@ def download_MDCC(target_dir: Pathlike, force_download: bool = False) -> Path:
     return corpus_dir
 
 
-def prepare_MDCC(
+def prepare_mdcc(
     corpus_dir: Pathlike,
     dataset_parts: Union[str, Sequence[str]] = "all",
     output_dir: Pathlike = None,
