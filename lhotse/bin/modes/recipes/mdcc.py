@@ -19,7 +19,7 @@ from lhotse.utils import Pathlike
     help="List of dataset parts to prepare. To prepare multiple parts, pass each with `-p` "
     "Example: `-p train -p valid`",
 )
-def medical(
+def MDCC(
     corpus_dir: Pathlike,
     dataset_parts: Sequence[str],
     output_dir: Optional[Pathlike] = None,
