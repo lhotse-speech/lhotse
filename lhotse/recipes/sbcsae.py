@@ -28,7 +28,9 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, resumable_download
+from lhotse.utils import (
+    Pathlike, resumable_download, is_module_available, fastcopy,
+)
 from lhotse import fix_manifests
 from tqdm import tqdm
 TALKBANK_MP3_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/"
@@ -257,7 +259,7 @@ def prepare_sbcsae(
 
     doc_dir = corpus_dir / "documentation"
     spk2gen_dict, spk2glob_dict = generate_speaker_map_dicts(doc_dir)
-    spk_coords = generate_geolocations(corpus_dir, spk2glob_dict)
+    #spk_coords = generate_geolocations(corpus_dir, spk2glob_dict)
     supervisions = []
     trn_dir = corpus_dir / "TRN"
     for p in tqdm(list(trn_dir.glob("*.trn")), "Collecting and normalizing transcripts ..."):
@@ -269,12 +271,18 @@ def prepare_sbcsae(
 
     supervisions_ = []
     for s in supervisions:
-        # A final check against 0 duration segments though this should not
-        # occur
         if s.duration < 0.02:
-            s_ = s.pad(pad=0.02)
-        else:
+            # Just pad with a minimum 0.02 duration
+            s_reco = recordings[s.recording_id]
+            new_start = max(0, s.start - 0.01)
+            s_ = fastcopy(
+                s,
+                start=new_start,
+                duration=min(new_start + 0.02, s_reco.duration),
+            )
+        else: 
             s_ = s
+        
         if s_.speaker in spk_coords:
             s_.custom = {
                 'lat': spk_coords[s.speaker][0][0],
