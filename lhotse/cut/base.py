@@ -396,6 +396,7 @@ class Cut:
     def trim_to_supervisions(
         self,
         keep_overlapping: bool = True,
+        keep_excessive_supervisions: bool = True,
         min_duration: Optional[Seconds] = None,
         context_direction: Literal["center", "left", "right", "random"] = "center",
         keep_all_channels: bool = False,
@@ -443,6 +444,8 @@ class Cut:
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
             In this mode, we guarantee that there will always be exactly one supervision per cut.
+        :param keep_excessive_supervisions: when ``False``, it will discard supervisions which are longer than cuts.
+            Can result in cuts without supervisions.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -476,7 +479,7 @@ class Cut:
             trimmed = self.truncate(
                 offset=new_start,
                 duration=new_duration,
-                keep_excessive_supervisions=keep_overlapping,
+                keep_excessive_supervisions=keep_excessive_supervisions,
                 _supervisions_index=supervisions_index,
             )
 
@@ -488,6 +491,11 @@ class Cut:
                 # For MixedCut, we can't change the channels since it is defined by the
                 # number of channels in underlying tracks.
 
+                # Ensure that there are supervisions.
+                assert (len(trimmed.supervisions) > 0), (
+                    "Trimmed cut has no supervisions. Make sure that supervisions "
+                    "are not filtered out. Consider `keep_excessive_supervisions=True`."
+                )
                 # Ensure that all supervisions have the same channel.
                 assert (
                     len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 1
