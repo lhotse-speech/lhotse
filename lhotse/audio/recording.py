@@ -295,10 +295,10 @@ class Recording:
             return x
 
         # Case #1: no opts specified, read audio without decoding and move it in memory.
-        if all(opt is None for opt in (channels, offset, duration)) or (
+        if format is None and (all(opt is None for opt in (channels, offset, duration)) or (
             (channels is None or _aslist(channels) == self.channel_ids)
             and (offset is None or isclose(offset, 0.0))
-            and (duration is None or isclose(duration, self.duration))
+            and (duration is None or isclose(duration, self.duration)))
         ):
             memory_sources = []
             for old_source in self.sources:
