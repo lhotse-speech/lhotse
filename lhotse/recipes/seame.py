@@ -47,28 +47,26 @@ The directory structure of the corpus is
     └── train
 """
 
+import collections
+import itertools
 import logging
 import os
-import shutil
-import tarfile
-import collections
+import random as rd
+import re
+import sys
 from pathlib import Path
 from typing import Dict, Optional, Union
+
 import soundfile as sf
 
 from lhotse import AudioSource, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.qa import (
     remove_missing_recordings_and_supervisions,
     trim_supervisions_to_recordings,
 )
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
-from lhotse.manipulation import combine
-import random as rd
-import re
-import itertools
-import sys
 
 rd.seed(531)
 

@@ -12,12 +12,13 @@ About the CALLHOME Spanish corpus
         cd ../
 """
 
-from decimal import Decimal
-import os
+
 import logging
+import os
 import re
 import string
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 

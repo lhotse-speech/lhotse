@@ -12,18 +12,17 @@ About the Fisher Spanish corpus
         cd ../
 """
 
-from bs4 import BeautifulSoup
 import codecs
 import itertools as it
+import logging
 import math
 import os
-import logging
 import re
 import string
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
-
+from bs4 import BeautifulSoup
 from tqdm.auto import tqdm
 
 from lhotse.audio import RecordingSet
