@@ -18,7 +18,10 @@ from lhotse.utils import Pathlike
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
 @click.option(
-    "--mic", type=click.Choice(["ihm", "sdm"]), default="ihm", help="Microphone type."
+    "--mic",
+    type=click.Choice(["ihm", "sdm", "mdm"]),
+    default="ihm",
+    help="Microphone type.",
 )
 def icmcasr(
     corpus_dir: Pathlike,

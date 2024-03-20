@@ -16,16 +16,21 @@ jobs:
     strategy:
       matrix:
         include:
-          - python-version: "3.7"
-            torch-install-cmd: "pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html"
           - python-version: "3.8"
-            torch-install-cmd: "pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html"
+            torch-install-cmd: "pip install torch==1.12.1 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: kaldifeat
           - python-version: "3.9"
-            torch-install-cmd: "pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html"
+            torch-install-cmd: "pip install torch==2.0 torchaudio==2.0 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: kaldifeat
           - python-version: "3.10"
-            torch-install-cmd: "pip install torch==1.12.1 torchaudio==0.12.1 torchdata==0.4.1 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.1 torchaudio==2.1 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: ""
           - python-version: "3.11"
-            torch-install-cmd: "pip install torch==2.0 torchaudio==2.0 torchdata==0.6 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.2 torchaudio==2.2 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: ""
+          - python-version: "3.12"
+            torch-install-cmd: "pip install torch==2.2 torchaudio==2.2 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: ""
 
       fail-fast: false
 
@@ -49,9 +54,10 @@ jobs:
         pip install wheel numpy
         # Force the installation of a CPU-only PyTorch
         ${{ matrix.torch-install-cmd }}
+        # the torchaudio env var does nothing when torchaudio is installed, but doesn't require it's presence when it's not
         pip install '.[tests]'
         # Enable some optional tests
-        pip install h5py dill smart_open[http] kaldifeat kaldi_native_io webdataset==0.2.5 s3prl scipy nara_wpe pyloudnorm
+        pip install h5py dill smart_open[http] kaldi_native_io webdataset==0.2.5 s3prl scipy nara_wpe pyloudnorm ${{ matrix.extra_deps }}
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

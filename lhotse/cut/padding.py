@@ -398,6 +398,22 @@ class PaddingCut(Cut):
 
         return fastcopy(self, id=f"{self.id}_rvb" if affix_id else self.id)
 
+    def normalize_loudness(
+        self, target: float, affix_id: bool = False, **kwargs
+    ) -> "PaddingCut":
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of loudness normalization
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
+        )
+
     def drop_features(self) -> "PaddingCut":
         """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""
         assert (

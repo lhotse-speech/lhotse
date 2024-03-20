@@ -3,7 +3,6 @@ import re
 from typing import List, Optional, Tuple
 
 import torch
-import torchaudio
 
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import is_module_available
@@ -143,19 +142,15 @@ def _word_tokenize(text: str, language: Optional[str] = None) -> List[str]:
         return kss.split_morphemes(text, return_pos=False)
 
     elif language == "th":
-        # `pythainlp` is alive and much better, but it is a huge package bloated with dependencies
-        if not is_module_available("tltk"):
+        if not is_module_available("attacut"):
             raise ImportError(
-                "MMSForcedAligner requires the 'tltk' module to be installed to align Thai text."
-                "Please install it with 'pip install tltk'."
+                "MMSForcedAligner requires the 'attacut' module to be installed to align Thai text."
+                "Please install it with 'pip install attacut'."
             )
 
-        from tltk import nlp
+        import attacut
 
-        pieces = nlp.pos_tag(text)
-        return [
-            word if word != "<s/>" else " " for piece in pieces for word, _ in piece
-        ]
+        return attacut.tokenize(text)
 
     elif language == "my":
         if not is_module_available("pyidaungsu"):

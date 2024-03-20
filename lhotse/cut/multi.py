@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import partial, reduce
 from itertools import groupby
 from operator import add
-from typing import Any, Callable, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -364,6 +364,39 @@ class MultiCut(DataCut):
             )
 
         return fastcopy(self, supervisions=msups)
+
+    def with_channels(self, channels: Union[List[int], int]) -> DataCut:
+        """
+        Select specified channels from this cut.
+        Supports extending to other channels available in the underlying :class:`Recording`.
+        If a single channel is provided, we'll return a :class:`~lhotse.cut.MonoCut`,
+        otherwise we'll return a :class:`~lhotse.cut.MultiCut'.
+        """
+        mono = isinstance(channels, int) or len(channels) == 1
+        assert set([channels] if mono else channels).issubset(
+            set(self.recording.channel_ids)
+        ), f"Cannot select {channels=} because they are not a subset of {self.recording.channel_ids=}"
+
+        if mono:
+            from .mono import MonoCut
+
+            if isinstance(channels, Sequence):
+                (channels,) = channels
+            return MonoCut(
+                id=f"{self.id}-{channels}",
+                recording=self.recording,
+                start=self.start,
+                duration=self.duration,
+                channel=channels,
+                supervisions=[
+                    fastcopy(s, channel=channels)
+                    for s in self.supervisions
+                    if is_equal_or_contains(s.channel, channels)
+                ],
+                custom=self.custom,
+            )
+
+        return fastcopy(self, channel=channels)
 
     @staticmethod
     def from_mono(*cuts: DataCut) -> "MultiCut":

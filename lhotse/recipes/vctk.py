@@ -105,6 +105,7 @@ CREST_VCTK_URL = "http://www.udialogue.org/download/VCTK-Corpus.tar.gz"
 def download_vctk(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
+    use_edinburgh_vctk_url: Optional[bool] = False,
     url: Optional[str] = CREST_VCTK_URL,
 ) -> Path:
     """
@@ -117,6 +118,9 @@ def download_vctk(
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    if use_edinburgh_vctk_url:
+        url = EDINBURGH_VCTK_URL
 
     archive_name = url.split("/")[-1]
     archive_path = target_dir / archive_name

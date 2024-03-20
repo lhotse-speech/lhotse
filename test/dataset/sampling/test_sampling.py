@@ -1,17 +1,23 @@
+import math
 import random
+import re
+from collections import Counter
 from copy import deepcopy
 from functools import partial
-from itertools import groupby
 from math import isclose
 from statistics import mean
 from tempfile import NamedTemporaryFile
 
 import pytest
+from torch.utils.data import DataLoader
 
 from lhotse import CutSet
 from lhotse.dataset import (
+    CutConcatenate,
     DynamicBucketingSampler,
+    IterableDatasetWrapper,
     RoundRobinSampler,
+    make_worker_init_fn,
     report_padding_ratio_estimate,
 )
 from lhotse.dataset.cut_transforms import concat_cuts
@@ -24,9 +30,7 @@ from lhotse.dataset.sampling import (
 from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
-from lhotse.utils import fastcopy
-from lhotse.utils import nullcontext as does_not_raise
-from lhotse.utils import streaming_shuffle
+from lhotse.utils import fastcopy, streaming_shuffle
 
 
 @pytest.fixture
@@ -49,6 +53,28 @@ def test_dynamic_cut_sampler_max_cuts():
         tot += 1
 
     assert tot == 4
+
+
+def test_dynamic_cut_sampler_quadratic_duration():
+    # 2 cuts of 2s followed by 3 cuts of 1s
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=5)
+    for i, c in enumerate(cut_set):
+        if i < 2:
+            c.duration = 2.0
+
+    # at quadratic_duration=2.0, cuts of 1s have 1.5s and cuts of 2s have 4s
+    sampler = DynamicCutSampler(cut_set, max_duration=8.0, quadratic_duration=2.0)
+
+    batches = [b for b in sampler]
+    assert len(batches) == 2
+
+    b = batches[0]
+    assert len(b) == 2
+    assert sum(c.duration for c in b) == 4.0
+
+    b = batches[1]
+    assert len(b) == 3
+    assert sum(c.duration for c in b) == 3.0
 
 
 @pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
@@ -74,6 +100,86 @@ def test_single_cut_sampler_shuffling(sampler_cls):
     assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
     # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
     assert [c.id for c in sampled_cuts] != [c.id for c in cut_set]
+
+
+class IdentityDataset:
+    def __getitem__(self, item):
+        return item
+
+
+@pytest.mark.parametrize("sampler_cls", [DynamicCutSampler, DynamicBucketingSampler])
+@pytest.mark.parametrize("seed", [0, "randomized", "trng"])
+def test_shuffle_seed_strategies(sampler_cls, seed):
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    world_size = 2
+    sampled_cuts = []
+    for rank in range(world_size):
+        sampler = sampler_cls(
+            cut_set,
+            shuffle=True,
+            max_duration=10.0,
+            seed=seed,
+            rank=0,
+            world_size=1,
+        )
+        dloader = DataLoader(
+            IterableDatasetWrapper(IdentityDataset(), sampler),
+            num_workers=2,
+            batch_size=None,
+            worker_init_fn=make_worker_init_fn(rank=rank, world_size=world_size),
+        )
+        for batch in dloader:
+            sampled_cuts.extend(batch)
+
+    # Since we're using 2 nodes * 2 workers, an iterable dataset, and do not do anything to de-duplicate,
+    # we have 4 copies of the input data.
+    assert len(sampled_cuts) == 4 * len(cut_set)
+    uniq_ids = Counter()
+    for c in sampled_cuts:
+        uniq_ids[c.id] += 1
+    assert all(v == 4 for v in uniq_ids.values())
+
+    input_ids = list(cut_set.ids)
+    node0_worker0 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 0 and c.dataloading_info["rank"] == 0
+    ]
+    node0_worker1 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 1 and c.dataloading_info["rank"] == 0
+    ]
+    node1_worker0 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 0 and c.dataloading_info["rank"] == 1
+    ]
+    node1_worker1 = [
+        c.id
+        for c in sampled_cuts
+        if c.dataloading_info["worker_id"] == 1 and c.dataloading_info["rank"] == 1
+    ]
+
+    if seed == 0:
+        # When seed=0, ensure each copy is shuffled in the same order (but different than the input).
+        assert node0_worker0 == node0_worker1
+        assert node0_worker0 == node1_worker0
+        assert node0_worker0 == node1_worker1
+        assert node0_worker0 != input_ids
+    else:
+        # Otherwise, we expect each worker to shuffle in a different order.
+        assert node0_worker0 != node0_worker1
+        assert node0_worker0 != node1_worker0
+        assert node0_worker0 != node1_worker1
+        assert node0_worker1 != node1_worker0
+        assert node0_worker1 != node1_worker1
+        assert node1_worker0 != node1_worker1
+        assert node0_worker0 != input_ids
+        assert node0_worker1 != input_ids
+        assert node1_worker0 != input_ids
+        assert node1_worker1 != input_ids
 
 
 def test_single_cut_sampler_time_constraints():
@@ -995,18 +1101,85 @@ def test_time_constraint_strictness():
     [
         SimpleCutSampler,
         DynamicCutSampler,
-        partial(BucketingSampler, num_buckets=2),
+        pytest.param(
+            partial(BucketingSampler, num_buckets=2),
+            marks=pytest.mark.xfail(
+                reason="BucketingSampler will oversample cuts when world_size>1 and drop_last=False "
+                "more than other samplers due to its implementation."
+            ),
+        ),
         partial(DynamicBucketingSampler, num_buckets=2),
     ],
 )
-@pytest.mark.parametrize("world_size", [1, 2, 3, 4])
-def test_sampler_does_not_drop_cuts_with_multiple_ranks(world_size, sampler_fn):
+@pytest.mark.parametrize(
+    "world_size", [1, 2, 16, 32]
+)  # 32 is more than 2x of available utterances
+@pytest.mark.parametrize("batch_duration", [1, 2, 4, 8, 16])
+def test_sampler_does_not_drop_cuts_with_multiple_ranks(
+    sampler_fn, world_size, batch_duration
+):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    num_input_cuts = len(cuts)
 
-    tot_cuts = 0
+    tot_cuts = []
+    batches = []
     for rank in range(world_size):
-        sampler = sampler_fn(cuts, max_duration=1.0, world_size=world_size, rank=rank)
+        sampler = sampler_fn(
+            cuts, max_duration=batch_duration, world_size=world_size, rank=rank
+        )
         for batch in sampler:
-            tot_cuts += len(batch)
+            batches.append(batch)
+            tot_cuts.extend(batch)
 
-    assert tot_cuts == len(cuts)
+    def is_duplicate(cut):
+        return re.search(r"^.+_dup\d+$", cut.id) is not None
+
+    uniq_ids = [c.id for c in tot_cuts if not is_duplicate(c)]
+
+    if world_size < num_input_cuts:
+        # ws=1
+        #   bs=1 => 10 (10batches)
+        #   bs=2 => 10 (5batches)
+        #   bs=4 => 10 (3batches)
+        #   bs=8 => 10 (2batches)
+        #   bs=16 => 10 (1batch)
+        # ws=2
+        #   bs=1 => 10 (1+1, 1+1, 1+1, 1+1, 1+1)
+        #   bs=2 => 10 (2+2, 2+2, 1+1)
+        #   bs=4 => 10 (4+4, 1+1)
+        #   bs=8 => 10 (5+5)
+        #   bs=16 => 10 (5+5)
+        assert len(tot_cuts) == num_input_cuts
+        assert len(uniq_ids) == len(tot_cuts)  # no duplicates
+    else:
+        # ws=16
+        #   bs=1 => 16 (1x16, 6 duplicated)
+        #   bs=2 => 16 (1x16, 6 duplicated)
+        #   bs=4 => 16 (1x16, 6 duplicated)
+        #   bs=8 => 16 (1x16, 6 duplicated)
+        #   bs=16 => 16 (1x16, 6 duplicated)
+        assert num_input_cuts < len(tot_cuts)
+        assert len(tot_cuts) == world_size
+        assert len(uniq_ids) == num_input_cuts
+        assert len(tot_cuts) - len(uniq_ids) == world_size - num_input_cuts
+        assert len(batches) == world_size
+        assert all(len(b) == 1 for b in batches)
+
+
+def test_sampler_map():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    transform = CutConcatenate(gap=0.0, duration_factor=5.0)  # will glue 5 cuts into 1
+
+    sampler = DynamicCutSampler(cuts, max_duration=5.0)
+    sampler.map(transform)
+
+    batches = [b for b in sampler]
+    assert len(batches) == 2
+
+    b = batches[0]
+    assert len(b) == 1
+    assert b[0].duration == 5.0
+
+    b = batches[1]
+    assert len(b) == 1
+    assert b[0].duration == 5.0

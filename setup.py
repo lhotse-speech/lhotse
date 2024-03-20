@@ -58,6 +58,13 @@ IS_DEV_VERSION = not bool(
 )  # False = public release, True = otherwise
 
 
+LHOTSE_REQUIRE_TORCHAUDIO = os.environ.get("LHOTSE_REQUIRE_TORCHAUDIO", "1") in (
+    "1",
+    "True",
+    "true",
+    "yes",
+)
+
 if sys.version_info < (3,):
     # fmt: off
     print(
@@ -66,9 +73,9 @@ if sys.version_info < (3,):
     # fmt: on
     sys.exit(-1)
 
-if sys.version_info < (3, 7):
+if sys.version_info < (3, 8):
     print(
-        "Python 3.6 has reached end-of-life on December 31st, 2021 "
+        "Python 3.7 has reached end-of-life on June 27th, 2023 "
         "and is no longer supported by lhotse."
     )
     sys.exit(-1)
@@ -145,7 +152,6 @@ install_requires = [
     "SoundFile>=0.10",
     "click>=7.1.1",
     "cytoolz>=0.10.1",
-    "dataclasses",
     "intervaltree>= 3.1.0",
     "numpy>=1.18.1",
     "packaging",
@@ -166,18 +172,24 @@ try:
     # Otherwise, we'll just install the latest versions from PyPI for the user.
     import torch
 
-    try:
-        import torchaudio
-    except ImportError:
-        raise ValueError(
-            "We detected that you have already installed PyTorch, but haven't installed torchaudio. "
-            "Unfortunately we can't detect the compatible torchaudio version for you; "
-            "you will have to install it manually. "
-            "For instructions, please refer either to https://pytorch.org/get-started/locally/ "
-            "or https://github.com/pytorch/audio#dependencies"
-        )
+    if LHOTSE_REQUIRE_TORCHAUDIO:
+        try:
+            import torchaudio
+        except ImportError:
+            raise ValueError(
+                "We detected that you have already installed PyTorch, but haven't installed torchaudio. "
+                "Unfortunately we can't detect the compatible torchaudio version for you; "
+                "you will have to install it manually. "
+                "For instructions, please refer either to https://pytorch.org/get-started/locally/ "
+                "or https://github.com/pytorch/audio#dependencies "
+                "You can also disable torchaudio dependency by setting the following environment variable: "
+                "LHOTSE_USE_TORCHAUDIO=0"
+            )
 except ImportError:
-    install_requires.extend(["torch", "torchaudio"])
+    extras = ["torch"]
+    if LHOTSE_REQUIRE_TORCHAUDIO:
+        extras.append("torchaudio")
+    install_requires.extend(extras)
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
@@ -222,7 +234,7 @@ if os.environ.get("READTHEDOCS", False):
 setup(
     name="lhotse",
     version=LHOTSE_VERSION,
-    python_requires=">=3.7.0",
+    python_requires=">=3.8.0",
     description="Data preparation for speech processing models training.",
     author="The Lhotse Development Team",
     author_email="pzelasko@jhu.edu",
@@ -250,11 +262,11 @@ setup(
     },
     classifiers=[
         "Development Status :: 5 - Production/Stable",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",

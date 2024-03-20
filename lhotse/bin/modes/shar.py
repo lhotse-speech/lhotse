@@ -2,7 +2,7 @@ import random
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import click
 import tqdm
@@ -27,7 +27,7 @@ def shar():
     "-a",
     "--audio",
     default="none",
-    type=click.Choice(["none", "wav", "flac", "mp3"]),
+    type=click.Choice(["none", "wav", "flac", "mp3", "opus"]),
     help="Format in which to export audio (disabled by default, enabling will make a copy of the data)",
 )
 @click.option(
@@ -36,6 +36,13 @@ def shar():
     default="none",
     type=click.Choice(["none", "lilcom", "numpy"]),
     help="Format in which to export features (disabled by default, enabling will make a copy of the data)",
+)
+@click.option(
+    "-c",
+    "--custom",
+    multiple=True,
+    default=[],
+    help="Custom fields to export. Use syntax NAME:FORMAT, e.g.: -c target_recording:flac -c embedding:numpy. Use format options for audio and features depending on the custom fields type, or 'jsonl' for metadata.",
 )
 @click.option(
     "-s",
@@ -48,6 +55,11 @@ def shar():
     "--shuffle/--no-shuffle",
     default=True,
     help="Should we shuffle the cuts before splitting into shards.",
+)
+@click.option(
+    "--fault-tolerant/--fast-fail",
+    default=False,
+    help="Should we skip over cuts that failed to load data or raise an error.",
 )
 @click.option("--seed", default=0, type=int, help="Random seed.")
 @click.option(
@@ -64,8 +76,10 @@ def export(
     outdir: str,
     audio: str,
     features: str,
+    custom: List[str],
     shard_size: int,
     shuffle: bool,
+    fault_tolerant: bool,
     seed: int,
     num_jobs: int,
     verbose: bool,
@@ -92,6 +106,10 @@ def export(
         fields["recording"] = audio
     if features != "none":
         fields["features"] = features
+    if custom:
+        for item in custom:
+            key, fmt = item.split(":")
+            fields[key] = fmt
 
     Path(outdir).mkdir(parents=True, exist_ok=True)
     cuts.to_shar(
@@ -99,6 +117,7 @@ def export(
         fields=fields,
         shard_size=shard_size,
         num_jobs=num_jobs,
+        fault_tolerant=fault_tolerant,
         verbose=verbose,
     )
 

@@ -11,7 +11,7 @@ import torch
 from intervaltree import IntervalTree
 
 from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
-from lhotse.audio.backend import torchaudio_save_flac_safe
+from lhotse.audio.backend import save_audio
 from lhotse.audio.mixer import AudioMixer, VideoMixer, audio_energy
 from lhotse.augmentation import (
     AudioTransform,
@@ -365,7 +365,6 @@ class MixedCut(Cut):
     def to_mono(
         self,
         encoding: str = "flac",
-        bits_per_sample: Optional[int] = 16,
         **kwargs,
     ) -> "Cut":
         """
@@ -376,22 +375,16 @@ class MixedCut(Cut):
         .. hint:: the resulting MonoCut will have ``custom`` field populated with the
             ``custom`` value from the first track of the MixedCut.
 
-        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
-            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
-            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
-        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
-            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
-            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param encoding: any of "wav", "flac", or "opus".
         :return: a new MonoCut instance.
         """
         samples = self.load_audio(mono_downmix=True)
         stream = BytesIO()
-        torchaudio_save_flac_safe(
+        save_audio(
             stream,
             samples,
             self.sampling_rate,
             format=encoding,
-            bits_per_sample=bits_per_sample,
         )
         recording = Recording.from_bytes(stream.getvalue(), recording_id=self.id)
         return fastcopy(

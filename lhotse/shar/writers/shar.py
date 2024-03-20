@@ -1,10 +1,8 @@
 import warnings
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
-from typing_extensions import Literal
-
-from lhotse import AudioSource, Features, fastcopy
+from lhotse import fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.cut import Cut
@@ -36,15 +34,19 @@ class SharWriter:
     with new fields.
 
     The user has to specify which fields should be saved, and what compression to use for each of them.
-    Currently we support ``wav``, ``flac``, and ``mp3`` compression for ``recording`` and custom audio fields,
+    Currently we support ``wav``, ``flac``, ``opus``, and ``mp3`` compression for ``recording`` and custom audio fields,
     and ``lilcom`` or ``numpy`` for ``features`` and custom array fields.
 
     Example::
 
         >>> cuts = CutSet(...)  # cuts have 'recording' and 'features'
-        >>> with SharWriter("some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"}) as w:
+        >>> with SharWriter("some_dir", shard_size=100, fields={"recording": "opus", "features": "lilcom"}) as w:
         ...     for cut in cuts:
         ...         w.write(cut)
+
+    .. note:: Different audio backends in Lhotse may use different encoders for the same audio formats.
+        It is advisable to use the same audio backend for saving and loading audio data in Shar and other formats.
+        See: :class:`lhotse.audio.recording.Recording`.
 
     It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
     ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
@@ -126,6 +128,12 @@ class SharWriter:
             if cut.has_recording:
                 data = cut.load_audio()
                 recording = to_shar_placeholder(cut.recording, cut)
+                cut_channels = _aslist(cut.channel)
+                if recording.channel_ids != cut_channels:
+                    # If recording is multi-channel but the cut refers to a subset of them,
+                    # we have to update the recording manifest accordingly
+                    recording.sources[0].channels = cut_channels
+                    recording.channel_ids = cut_channels
                 self.writers["recording"].write(
                     cut.id, data, cut.sampling_rate, manifest=recording
                 )
@@ -169,13 +177,24 @@ class SharWriter:
                 else:
                     data = cut.load_custom(key)
                     placeholder_obj = to_shar_placeholder(val, cut)
+                    channel_selector_key = f"{key}_channel_selector"
                     kwargs = {}
                     if isinstance(val, Recording):
                         kwargs["sampling_rate"] = val.sampling_rate
+                        if cut.has_custom(channel_selector_key):
+                            # override custom recording channels since the audio was loaded via cut
+                            # and used the channel selector
+                            placeholder_obj.sources[0].channels = cut.custom[
+                                channel_selector_key
+                            ]
+                            placeholder_obj.channel_ids = cut.custom[
+                                channel_selector_key
+                            ]
                     self.writers[key].write(
                         cut.id, data, manifest=placeholder_obj, **kwargs
                     )
                     cut = fastcopy(cut, custom=cut.custom.copy())
+                    cut.custom.pop(channel_selector_key, None)  # no longer needed
                     setattr(cut, key, placeholder_obj)
             else:
                 self.writers[key].write_placeholder(cut.id)
@@ -204,6 +223,7 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
         "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
         "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
         "mp3": (partial(AudioTarWriter, format="mp3"), ".tar"),
+        "opus": (partial(AudioTarWriter, format="opus"), ".tar"),
         "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
         "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
         "jsonl": (JsonlShardWriter, ".jsonl.gz"),
@@ -221,3 +241,9 @@ def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:
         base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
 
     return f"{base_output_url}/cuts{shard_suffix}.jsonl.gz"
+
+
+def _aslist(x):
+    if isinstance(x, list):
+        return x
+    return [x]

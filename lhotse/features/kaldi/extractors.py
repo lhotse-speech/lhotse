@@ -40,6 +40,7 @@ class FbankConfig:
     num_filters: int = 80
     num_mel_bins: Optional[int] = None  # do not use
     norm_filters: bool = False
+    torchaudio_compatible_mel_scale: bool = True
     device: str = "cpu"
 
     def __post_init__(self):
@@ -165,6 +166,7 @@ class MfccConfig:
     low_freq: float = 20.0
     high_freq: float = -400.0
     num_filters: int = 23
+    torchaudio_compatible_mel_scale: bool = True
     num_mel_bins: Optional[int] = None  # do not use
     norm_filters: bool = False
     num_ceps: int = 13
@@ -307,7 +309,7 @@ class Spectrogram(FeatureExtractor):
         return self.config.frame_shift
 
     def feature_dim(self, sampling_rate: int) -> int:
-        return self.config.num_ceps
+        return self.extractor.fft_length // 2 + 1
 
     def extract(
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
@@ -413,7 +415,7 @@ class LogSpectrogram(FeatureExtractor):
         return self.config.frame_shift
 
     def feature_dim(self, sampling_rate: int) -> int:
-        return self.config.num_ceps
+        return self.extractor.fft_length // 2 + 1
 
     def extract(
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int

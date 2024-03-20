@@ -7,7 +7,7 @@ from lhotse import RecordingSet
 from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, PaddingCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
+from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut, dummy_recording
 from lhotse.testing.random import deterministic_rng
 
 
@@ -236,6 +236,13 @@ def test_truncate_mixed_cut_gap_or_padding(gapped_mixed_cut, offset):
     assert truncated_cut.end == 3.0
     audio = truncated_cut.load_audio()
     assert audio is not None
+
+
+def test_truncate_cut_set_lazy_result(cut_set):
+    with as_lazy(cut_set, ".jsonl") as lazy_cuts:
+        truncated_cut_set = lazy_cuts.truncate(max_duration=5, offset_type="start")
+        assert truncated_cut_set.is_lazy
+        assert all(c.duration == pytest.approx(5.0) for c in truncated_cut_set)
 
 
 def test_truncate_cut_set_offset_start(cut_set):

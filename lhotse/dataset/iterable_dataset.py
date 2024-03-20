@@ -2,6 +2,8 @@ import warnings
 
 import torch
 
+from lhotse import CutSet
+from lhotse.dataset.dataloading import get_rank, get_world_size
 from lhotse.dataset.sampling.base import CutSampler
 
 
@@ -54,12 +56,15 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         dataset: torch.utils.data.Dataset,
         sampler: CutSampler,
         auto_increment_epoch: bool = False,
+        reset_on_iter: bool = False,
     ) -> None:
         super().__init__()
         self.dataset = dataset
         self.sampler = sampler
         self.auto_increment_epoch = auto_increment_epoch
+        self.reset_on_iter = reset_on_iter
         self.epoch = 0
+        self._sampler_iter = None
 
         rank = self.sampler.rank
         ws = self.sampler.world_size
@@ -84,13 +89,29 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
                     cs.data.set_epoch(epoch)
 
     def __iter__(self):
-        self._sampler_iter = iter(self.sampler)
+        if self._sampler_iter is None or self.reset_on_iter:
+            self._sampler_iter = iter(self.sampler)
         return self
 
     def __next__(self) -> dict:
         try:
-            return self.dataset[next(self._sampler_iter)]
+            sampled = next(self._sampler_iter)
+            self._update_dataloading_info(sampled)
+            return self.dataset[sampled]
         except StopIteration:
             if self.auto_increment_epoch:
                 self.set_epoch(self.epoch + 1)
+            self._sampler_iter = None
             raise
+
+    def _update_dataloading_info(self, cuts: CutSet) -> None:
+        rank = get_rank()
+        world_size = get_world_size()
+        for c in cuts:
+            # dataloading_info is attached by the sampler to each cut
+            # we need to update it here, because with iterable datasets
+            # samplers typically act as if rank=0 and world_size=1
+            # and data de-duplication / per node+worker shuffling
+            # happens elsewhere.
+            c.dataloading_info["rank"] = rank
+            c.dataloading_info["world_size"] = world_size

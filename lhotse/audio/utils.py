@@ -46,6 +46,15 @@ class VideoInfo:
 
 def get_audio_duration_mismatch_tolerance() -> Seconds:
     """Retrieve the current audio duration mismatch tolerance in seconds."""
+    if (
+        _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+        != _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+    ):
+        return _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+
+    if "LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE" in os.environ:
+        return float(os.environ["LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE"])
+
     return _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 
 
@@ -95,6 +104,10 @@ class VideoLoadingError(Exception):
 
 
 class AudioLoadingError(Exception):
+    pass
+
+
+class AudioSavingError(Exception):
     pass
 
 

@@ -61,7 +61,7 @@ class BatchIO:
 
         Depending on the strategy, the dict should look like:
 
-        .. code-block:
+        .. code-block::
 
             {
                 "sequence_idx": tensor(shape=(S,)),
@@ -71,7 +71,7 @@ class BatchIO:
 
         or
 
-        .. code-block:
+        .. code-block::
 
             {
                 "sequence_idx": tensor(shape=(S,)),
@@ -128,7 +128,7 @@ class PrecomputedFeatures(BatchIO):
         Returns a dict that specifies the start and end bounds for each supervision,
         as a 1-D int tensor, in terms of frames:
 
-        .. code-block:
+        .. code-block::
 
             {
                 "sequence_idx": tensor(shape=(S,)),
@@ -234,7 +234,7 @@ class AudioSamples(BatchIO):
         Returns a dict that specifies the start and end bounds for each supervision,
         as a 1-D int tensor, in terms of samples:
 
-        .. code-block:
+        .. code-block::
 
             {
                 "sequence_idx": tensor(shape=(S,)),
@@ -411,7 +411,7 @@ class OnTheFlyFeatures(BatchIO):
         Returns a dict that specifies the start and end bounds for each supervision,
         as a 1-D int tensor, in terms of frames:
 
-        .. code-block:
+        .. code-block::
 
             {
                 "sequence_idx": tensor(shape=(S,)),

@@ -1,15 +1,21 @@
-import os
 import random
 from pathlib import Path
-from typing import Callable, Dict, Generator, List, Optional, Sequence, Tuple, Union
-
-import torch
-from typing_extensions import Literal
+from typing import (
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from lhotse.cut import Cut
-from lhotse.dataset.dataloading import LHOTSE_PROCESS_SEED
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.lazy import (
-    ImitatesDict,
+    Dillable,
     LazyIteratorChain,
     LazyJsonlIterator,
     LazyManifestIterator,
@@ -20,7 +26,7 @@ from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
 
 
-class LazySharIterator(ImitatesDict):
+class LazySharIterator(Dillable):
     """
     LazySharIterator reads cuts and their corresponding data from multiple shards,
     also recognized as the Lhotse Shar format.
@@ -115,6 +121,11 @@ class LazySharIterator(ImitatesDict):
         argument. It will cause the iterator to shuffle shards differently on each node
         and dataloading worker in PyTorch training. This is mutually exclusive with
         ``split_for_dataloading=True``.
+        Seed can be set to ``'trng'`` which, like ``'randomized'``, shuffles the shards
+        differently on each iteration, but is not possible to control (and is not reproducible).
+        ``trng`` mode is mostly useful when the user has limited control over the training loop
+        and may not be able to guarantee internal Shar epoch is being incremented, but needs
+        randomness on each iteration (e.g. useful with PyTorch Lightning).
     :param stateful_shuffle: bool, by default ``False``. When ``True``, every
         time this object is fully iterated, it increments an internal epoch counter
         and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
@@ -134,7 +145,7 @@ class LazySharIterator(ImitatesDict):
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         stateful_shuffle: bool = True,
-        seed: Union[int, Literal["randomized"]] = 42,
+        seed: Union[int, Literal["randomized"], Literal["trng"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> None:
         assert exactly_one_not_null(
@@ -211,21 +222,7 @@ class LazySharIterator(ImitatesDict):
         if self.shuffle_shards:
             shards = shards.copy()
 
-            seed = self.seed
-
-            if seed == "randomized":
-                worker_info = torch.utils.data.get_worker_info()
-                if worker_info is None:
-                    # not in a dataloader sub-process: get python global random seed
-                    seed = random.getstate()[1][0]
-                else:
-                    # in a dataloader sub-process: read out the seed we assigned to it
-                    assert LHOTSE_PROCESS_SEED in os.environ, (
-                        "Requested seed='randomized' for shuffling shards differently "
-                        "on each DataLoader node and worker, "
-                        "but lhotse.dataset.dataloading.worker_init_fn was not called."
-                    )
-                    seed = int(os.environ[LHOTSE_PROCESS_SEED])
+            seed = resolve_seed(self.seed)
 
             if self.stateful_shuffle:
                 seed += self.epoch

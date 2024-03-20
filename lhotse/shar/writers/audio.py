@@ -1,17 +1,21 @@
 import codecs
 import json
-from functools import partial
 from io import BytesIO
-from typing import List, Optional
+from typing import List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
-import torchaudio
-from typing_extensions import Literal
 
 from lhotse import Recording
+from lhotse.audio.backend import (
+    LibsndfileBackend,
+    get_current_audio_backend,
+    save_audio,
+)
+from lhotse.augmentation import get_or_create_resampler
 from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.tar import TarWriter
+from lhotse.utils import is_torchaudio_available
 
 
 class AudioTarWriter:
@@ -20,7 +24,7 @@ class AudioTarWriter:
     that is automatically sharded.
 
     It is different from :class:`~lhotse.shar.writers.array.ArrayTarWriter` in that it supports
-    audio-specific compression mechanisms, such as ``flac`` or ``mp3``.
+    audio-specific compression mechanisms, such as ``flac``, ``opus``, ``mp3``, or ``wav``.
 
     Example::
 
@@ -43,15 +47,10 @@ class AudioTarWriter:
         self,
         pattern: str,
         shard_size: Optional[int] = 1000,
-        format: Literal["wav", "flac", "mp3"] = "flac",
+        format: Literal["wav", "flac", "mp3", "opus"] = "flac",
     ):
         self.format = format
         self.tar_writer = TarWriter(pattern, shard_size)
-        self.save_fn = torchaudio.save
-        if self.format == "flac":
-            self.save_fn = partial(
-                torchaudio.backend.soundfile_backend.save, bits_per_sample=16
-            )
 
     def __enter__(self):
         self.tar_writer.__enter__()
@@ -78,13 +77,14 @@ class AudioTarWriter:
         sampling_rate: int,
         manifest: Recording,
     ) -> None:
+        value, manifest, sampling_rate = self._maybe_resample(
+            value, manifest, sampling_rate
+        )
+
         # Write binary data
         stream = BytesIO()
-        self.save_fn(
-            stream,
-            torch.from_numpy(value),
-            sampling_rate,
-            format=self.format,
+        save_audio(
+            dest=stream, src=value, sampling_rate=sampling_rate, format=self.format
         )
         self.tar_writer.write(f"{key}.{self.format}", stream)
 
@@ -97,3 +97,26 @@ class AudioTarWriter:
         )
         json_stream.seek(0)
         self.tar_writer.write(f"{key}.json", json_stream, count=False)
+
+    def _maybe_resample(
+        self,
+        audio: Union[torch.Tensor, np.ndarray],
+        manifest: Recording,
+        sampling_rate: int,
+    ) -> Tuple[Union[np.ndarray, torch.Tensor], Recording, int]:
+        # Resampling is required for some versions of OPUS encoders.
+        # First resample the manifest which only adjusts the metadata;
+        # then resample the audio array to 48kHz.
+        OPUS_DEFAULT_SAMPLING_RATE = 48000
+        if (
+            self.format == "opus"
+            and is_torchaudio_available()
+            and not isinstance(get_current_audio_backend(), LibsndfileBackend)
+            and sampling_rate != OPUS_DEFAULT_SAMPLING_RATE
+        ):
+            manifest = manifest.resample(OPUS_DEFAULT_SAMPLING_RATE)
+            audio = get_or_create_resampler(sampling_rate, OPUS_DEFAULT_SAMPLING_RATE)(
+                torch.as_tensor(audio)
+            )
+            return audio, manifest, OPUS_DEFAULT_SAMPLING_RATE
+        return audio, manifest, sampling_rate
