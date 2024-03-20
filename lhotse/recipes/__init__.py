@@ -13,6 +13,7 @@ from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
 from .bvcc import download_bvcc, prepare_bvcc
 from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
+from .callhome_spanish_st import prepare_callhome_spanish
 from .chime6 import download_chime6, prepare_chime6
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
 from .cmu_indic import download_cmu_indic, prepare_cmu_indic
@@ -29,6 +30,7 @@ from .edacc import download_edacc, prepare_edacc
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
 from .fisher_spanish import prepare_fisher_spanish
+from .fisher_spanish_st import prepare_fisher_spanish
 from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
@@ -62,6 +64,7 @@ from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
+from .seame import prepare_seame
 from .speechcommands import download_speechcommands, prepare_speechcommands
 from .spgispeech import download_spgispeech, prepare_spgispeech
 from .stcmds import download_stcmds, prepare_stcmds

@@ -167,9 +167,11 @@ def prepare_aishell4(
                             channel=recording.channel_ids,
                             language="Chinese",
                             speaker=spk_id,
-                            text=text_normalize(text.strip())
-                            if normalize_text
-                            else text.strip(),
+                            text=(
+                                text_normalize(text.strip())
+                                if normalize_text
+                                else text.strip()
+                            ),
                         )
                         supervisions.append(segment)
 

@@ -16,6 +16,7 @@ from .but_reverb_db import *
 from .bvcc import *
 from .callhome_egyptian import *
 from .callhome_english import *
+from .callhome_spanish_st import *
 from .chime6 import *
 from .cmu_arctic import *
 from .cmu_indic import *
@@ -32,6 +33,7 @@ from .edacc import *
 from .eval2000 import *
 from .fisher_english import *
 from .fisher_spanish import *
+from .fisher_spanish_st import *
 from .gale_arabic import *
 from .gale_mandarin import *
 from .gigaspeech import *
@@ -61,6 +63,7 @@ from .nsc import *
 from .peoples_speech import *
 from .primewords import *
 from .rir_noise import *
+from .seame import *
 from .speechcommands import *
 from .spgispeech import *
 from .stcmds import *

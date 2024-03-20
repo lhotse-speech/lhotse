@@ -3,6 +3,7 @@ Since the tests in this module handle very different types of *Set classes,
 we try to leverage 'duration' attribute which is shared by all tested types of items
 (cuts, features, recordings, supervisions).
 """
+
 import random
 from concurrent.futures import ProcessPoolExecutor
 

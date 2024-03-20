@@ -48,17 +48,14 @@ class FeaturesWriter(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abstractmethod
-    def storage_path(self) -> str:
-        ...
+    def storage_path(self) -> str: ...
 
     @abstractmethod
-    def write(self, key: str, value: np.ndarray) -> str:
-        ...
+    def write(self, key: str, value: np.ndarray) -> str: ...
 
     def store_array(
         self,
@@ -119,8 +116,7 @@ class FeaturesWriter(metaclass=ABCMeta):
     def __enter__(self):
         return self
 
-    def __exit__(self, *args, **kwargs):
-        ...
+    def __exit__(self, *args, **kwargs): ...
 
 
 class FeaturesReader(metaclass=ABCMeta):
@@ -150,8 +146,7 @@ class FeaturesReader(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
     def read(
@@ -159,8 +154,7 @@ class FeaturesReader(metaclass=ABCMeta):
         key: str,
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
-    ) -> np.ndarray:
-        ...
+    ) -> np.ndarray: ...
 
 
 READER_BACKENDS = {}

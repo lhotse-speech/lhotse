@@ -270,20 +270,22 @@ class SupervisionSegment:
         return fastcopy(
             self,
             id=f"{self.id}_sp{factor}" if affix_id else self.id,
-            recording_id=f"{self.recording_id}_sp{factor}"
-            if affix_id
-            else self.recording_id,
+            recording_id=(
+                f"{self.recording_id}_sp{factor}" if affix_id else self.recording_id
+            ),
             start=new_start,
             duration=new_duration,
-            alignment={
-                type: [
-                    item.perturb_speed(factor=factor, sampling_rate=sampling_rate)
-                    for item in ali
-                ]
-                for type, ali in self.alignment.items()
-            }
-            if self.alignment
-            else None,
+            alignment=(
+                {
+                    type: [
+                        item.perturb_speed(factor=factor, sampling_rate=sampling_rate)
+                        for item in ali
+                    ]
+                    for type, ali in self.alignment.items()
+                }
+                if self.alignment
+                else None
+            ),
         )
 
     def perturb_tempo(
@@ -306,9 +308,9 @@ class SupervisionSegment:
         return fastcopy(
             perturbed,
             id=f"{self.id}_tp{factor}" if affix_id else self.id,
-            recording_id=f"{self.recording_id}_tp{factor}"
-            if affix_id
-            else self.recording_id,
+            recording_id=(
+                f"{self.recording_id}_tp{factor}" if affix_id else self.recording_id
+            ),
         )
 
     def perturb_volume(
@@ -326,9 +328,9 @@ class SupervisionSegment:
         return fastcopy(
             self,
             id=f"{self.id}_vp{factor}" if affix_id else self.id,
-            recording_id=f"{self.recording_id}_vp{factor}"
-            if affix_id
-            else self.recording_id,
+            recording_id=(
+                f"{self.recording_id}_vp{factor}" if affix_id else self.recording_id
+            ),
         )
 
     def reverb_rir(
@@ -367,12 +369,14 @@ class SupervisionSegment:
             duration=add_durations(
                 self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
             ),
-            alignment={
-                type: [item.trim(end=end, start=start) for item in ali]
-                for type, ali in self.alignment.items()
-            }
-            if self.alignment
-            else None,
+            alignment=(
+                {
+                    type: [item.trim(end=end, start=start) for item in ali]
+                    for type, ali in self.alignment.items()
+                }
+                if self.alignment
+                else None
+            ),
         )
 
     def map(
@@ -417,9 +421,11 @@ class SupervisionSegment:
             self,
             alignment={
                 ali_type: [
-                    item.transform(transform_fn=transform_fn)
-                    if ali_type == type
-                    else item
+                    (
+                        item.transform(transform_fn=transform_fn)
+                        if ali_type == type
+                        else item
+                    )
                     for item in ali
                 ]
                 for ali_type, ali in self.alignment.items()

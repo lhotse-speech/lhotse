@@ -158,9 +158,9 @@ def load_kaldi_data_dir(
                 AudioSource(
                     type="command" if path_or_cmd.endswith("|") else "file",
                     channels=[0],
-                    source=path_or_cmd[:-1]
-                    if path_or_cmd.endswith("|")
-                    else path_or_cmd,
+                    source=(
+                        path_or_cmd[:-1] if path_or_cmd.endswith("|") else path_or_cmd
+                    ),
                 )
             ],
             sampling_rate=sampling_rate,
@@ -275,9 +275,11 @@ def load_kaldi_data_dir(
                             storage_type=KaldiReader.name,
                             storage_path=ark,
                             storage_key=utt_id,
-                            recording_id=supervision_set[fix_id(utt_id)].recording_id
-                            if supervision_set is not None
-                            else utt_id,
+                            recording_id=(
+                                supervision_set[fix_id(utt_id)].recording_id
+                                if supervision_set is not None
+                                else utt_id
+                            ),
                             channels=0,
                         )
                     )

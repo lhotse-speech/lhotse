@@ -86,12 +86,14 @@ class FeatureMixer:
 
     def _get_dummy_array(self, num_frames: int) -> np.ndarray:
         return np.full(
-            shape=(num_frames, self.num_features)
-            if self.num_channels == 1
-            else (
-                num_frames,
-                self.num_features,
-                self.num_channels,
+            shape=(
+                (num_frames, self.num_features)
+                if self.num_channels == 1
+                else (
+                    num_frames,
+                    self.num_features,
+                    self.num_channels,
+                )
             ),
             fill_value=self.padding_value,
             dtype=self.dtype,

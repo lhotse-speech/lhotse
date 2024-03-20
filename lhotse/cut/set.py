@@ -2670,14 +2670,18 @@ def mix(
                         track.snr
                         if snr is None
                         # When new SNR is specified but none was specified before, assign the new SNR value.
-                        else snr
-                        if track.snr is None
-                        # When both new and previous SNR were specified, assign their sum,
-                        # as the SNR for each track is defined with regard to the first track energy.
-                        else track.snr + snr
-                        if snr is not None and track is not None
-                        # When no SNR was specified whatsoever, use none.
-                        else None
+                        else (
+                            snr
+                            if track.snr is None
+                            # When both new and previous SNR were specified, assign their sum,
+                            # as the SNR for each track is defined with regard to the first track energy.
+                            else (
+                                track.snr + snr
+                                if snr is not None and track is not None
+                                # When no SNR was specified whatsoever, use none.
+                                else None
+                            )
+                        )
                     ),
                 )
                 for track in mixed_in_cut.tracks
@@ -2991,18 +2995,20 @@ def create_cut_set_eager(
                     features=feats,
                     recording=recordings[feats.recording_id] if rec_ok else None,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
-                    supervisions=list(
-                        supervisions.find(
-                            recording_id=feats.recording_id,
-                            channel=channel,
-                            start_after=feats.start,
-                            end_before=feats.end,
-                            adjust_offset=True,
-                            tolerance=tolerance,
+                    supervisions=(
+                        list(
+                            supervisions.find(
+                                recording_id=feats.recording_id,
+                                channel=channel,
+                                start_after=feats.start,
+                                end_before=feats.end,
+                                adjust_offset=True,
+                                tolerance=tolerance,
+                            )
                         )
-                    )
-                    if sup_ok
-                    else [],
+                        if sup_ok
+                        else []
+                    ),
                 )
             )
     else:
@@ -3023,9 +3029,11 @@ def create_cut_set_eager(
                     duration=recording.duration,
                     channel=channel,
                     recording=recording,
-                    supervisions=list(supervisions.find(recording_id=recording.id))
-                    if sup_ok
-                    else [],
+                    supervisions=(
+                        list(supervisions.find(recording_id=recording.id))
+                        if sup_ok
+                        else []
+                    ),
                 )
             )
     cuts = CutSet.from_cuts(cuts)
@@ -3141,18 +3149,20 @@ def create_cut_set_lazy(
                     features=feats,
                     recording=rec,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
-                    supervisions=list(
-                        sups.find(
-                            recording_id=feats.recording_id,
-                            channel=channel,
-                            start_after=feats.start,
-                            end_before=feats.end,
-                            adjust_offset=True,
-                            tolerance=tolerance,
+                    supervisions=(
+                        list(
+                            sups.find(
+                                recording_id=feats.recording_id,
+                                channel=channel,
+                                start_after=feats.start,
+                                end_before=feats.end,
+                                adjust_offset=True,
+                                tolerance=tolerance,
+                            )
                         )
-                    )
-                    if sup_ok
-                    else [],
+                        if sup_ok
+                        else []
+                    ),
                 )
                 writer.write(cut)
         return CutSet.from_jsonl_lazy(output_path)
@@ -3185,9 +3195,9 @@ def create_cut_set_lazy(
                 duration=recording.duration,
                 channel=channel,
                 recording=recording,
-                supervisions=list(sups.find(recording_id=recording.id))
-                if sup_ok
-                else [],
+                supervisions=(
+                    list(sups.find(recording_id=recording.id)) if sup_ok else []
+                ),
             )
             writer.write(cut)
 

@@ -253,15 +253,17 @@ class LazySharIterator(ImitatesDict):
 
             # Open every tarfile/jsonl so it's ready for streaming
             field_iters = {
-                field: TarIterator(path)
-                if extension_contains(".tar", path)
-                else _jsonl_tar_adaptor(LazyJsonlIterator(path), field=field)
+                field: (
+                    TarIterator(path)
+                    if extension_contains(".tar", path)
+                    else _jsonl_tar_adaptor(LazyJsonlIterator(path), field=field)
+                )
                 for field, path in field_paths.items()
             }
 
             # *field_data contains all fields for a single cut (recording, features, array, etc.)
             for cut, *field_data in zip(cuts, *field_iters.values()):
-                for (field, (maybe_manifest, data_path)) in zip(
+                for field, (maybe_manifest, data_path) in zip(
                     field_iters.keys(),
                     field_data,
                 ):

@@ -83,12 +83,10 @@ class FeatureExtractor(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def frame_shift(self) -> Seconds:
-        ...
+    def frame_shift(self) -> Seconds: ...
 
     @abstractmethod
-    def feature_dim(self, sampling_rate: int) -> int:
-        ...
+    def feature_dim(self, sampling_rate: int) -> int: ...
 
     @property
     def device(self) -> Union[str, torch.device]:

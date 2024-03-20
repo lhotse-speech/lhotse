@@ -182,11 +182,11 @@ def prepare_bengaliai_speech(
         recording_set, supervision_set = _prepare_subset(
             subset=part,
             corpus_dir=corpus_dir,
-            audio_info=train_info
-            if part == "train"
-            else valid_info
-            if part == "valid"
-            else None,
+            audio_info=(
+                train_info
+                if part == "train"
+                else valid_info if part == "valid" else None
+            ),
             num_jobs=num_jobs,
         )
 

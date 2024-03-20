@@ -40,7 +40,7 @@ class TarIterator:
         self,
     ) -> Generator[Tuple[Optional[Manifest], Path], None, None]:
         with tarfile.open(fileobj=open_best(self.source, mode="rb"), mode="r|*") as tar:
-            for ((data, data_path), (meta, meta_path)) in iterate_tarfile_pairwise(tar):
+            for (data, data_path), (meta, meta_path) in iterate_tarfile_pairwise(tar):
                 if meta is not None:
                     meta = deserialize_item(decode_json_line(meta.decode("utf-8")))
                     fill_shar_placeholder(manifest=meta, data=data, tarpath=data_path)

@@ -69,9 +69,9 @@ def test_simulate_meetings(
         num_repeats=num_repeats,
         num_speakers_per_meeting=num_speakers_per_meeting,
         max_duration_per_speaker=max_duration_per_speaker,
-        max_utterances_per_speaker=max_utterances_per_speaker
-        if max_utterances_per_speaker > 0
-        else None,
+        max_utterances_per_speaker=(
+            max_utterances_per_speaker if max_utterances_per_speaker > 0 else None
+        ),
         seed=seed,
         num_jobs=num_jobs,
     )

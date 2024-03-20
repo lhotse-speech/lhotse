@@ -9,6 +9,7 @@ This project is an effort to bridge the digital speech divide. Voice recognition
 How does it work?
 We are crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people's clips, make the dataset better for everyone.
 """
+
 import logging
 import math
 import numbers

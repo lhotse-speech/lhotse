@@ -119,7 +119,6 @@ def prepare_fisher_english(
     absolute_paths: bool = False,
     num_jobs: int = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
-
     """
     Prepares manifests for Fisher English Part 1, 2.
     Script assumes that audio_dirs and transcript_dirs are in the corpus_path.

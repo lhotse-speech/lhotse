@@ -184,9 +184,7 @@ class Recording:
         recording_id = (
             path.stem
             if recording_id is None
-            else recording_id(path)
-            if callable(recording_id)
-            else recording_id
+            else recording_id(path) if callable(recording_id) else recording_id
         )
         audio_info = info(
             path,

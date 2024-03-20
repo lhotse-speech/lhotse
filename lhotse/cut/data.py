@@ -242,8 +242,7 @@ class DataCut(Cut, metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def num_channels(self) -> Optional[int]:
-        ...
+    def num_channels(self) -> Optional[int]: ...
 
     @property
     def features_type(self) -> Optional[str]:
@@ -259,20 +258,17 @@ class DataCut(Cut, metaclass=ABCMeta):
 
     @rich_exception_info
     @abstractmethod
-    def load_features(self, **kwargs) -> Optional[np.ndarray]:
-        ...
+    def load_features(self, **kwargs) -> Optional[np.ndarray]: ...
 
     @rich_exception_info
     @abstractmethod
-    def load_audio(self, **kwargs) -> Optional[np.ndarray]:
-        ...
+    def load_audio(self, **kwargs) -> Optional[np.ndarray]: ...
 
     @rich_exception_info
     @abstractmethod
     def load_video(
         self, **kwargs
-    ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
-        ...
+    ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]: ...
 
     def move_to_memory(
         self,
@@ -317,12 +313,17 @@ class DataCut(Cut, metaclass=ABCMeta):
 
             custom = {
                 # Case 1: Array
-                k: v.move_to_memory() if isinstance(v, Array)
-                # Case 2: TemporalArray
-                else v.move_to_memory(start=self.start, duration=self.duration)
-                if isinstance(v, TemporalArray)
-                # Case 3: anything else
-                else v
+                k: (
+                    v.move_to_memory()
+                    if isinstance(v, Array)
+                    # Case 2: TemporalArray
+                    else (
+                        v.move_to_memory(start=self.start, duration=self.duration)
+                        if isinstance(v, TemporalArray)
+                        # Case 3: anything else
+                        else v
+                    )
+                )
                 for k, v in self.custom.items()
             }
 
@@ -976,9 +977,9 @@ class DataCut(Cut, metaclass=ABCMeta):
             fastcopy(
                 s,
                 id=f"{s.id}_ln{target}" if affix_id else s.id,
-                recording_id=f"{s.recording_id}_ln{target}"
-                if affix_id
-                else s.recording_id,
+                recording_id=(
+                    f"{s.recording_id}_ln{target}" if affix_id else s.recording_id
+                ),
             )
             for s in self.supervisions
         ]
@@ -1035,8 +1036,7 @@ class DataCut(Cut, metaclass=ABCMeta):
         rir_channels: List[int] = [0],
         room_rng_seed: Optional[int] = None,
         source_rng_seed: Optional[int] = None,
-    ) -> "DataCut":
-        ...
+    ) -> "DataCut": ...
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
@@ -1078,13 +1078,11 @@ class DataCut(Cut, metaclass=ABCMeta):
         merge_policy: str = "delimiter",
         custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None,
         **kwargs,
-    ) -> "DataCut":
-        ...
+    ) -> "DataCut": ...
 
     @staticmethod
     @abstractmethod
-    def from_dict(data: dict) -> "DataCut":
-        ...
+    def from_dict(data: dict) -> "DataCut": ...
 
     def with_features_path_prefix(self, path: Pathlike) -> "DataCut":
         if not self.has_features:
