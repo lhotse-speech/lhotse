@@ -424,21 +424,3 @@ def remove_punc(text):
     text = text.translate(translator)
 
     return text
-
-
-if __name__ == "__main__":
-    audio_dir_path = Path("/export/common/data/corpora/LDC/LDC2010S01")
-    transcript_dir_path = Path("/export/common/data/corpora/LDC/LDC2010T04")
-    output_dir = Path("/exp/ahussein/icefall_exp/multi_asr/data/manifests")
-    # splits = Path("/exp/ahussein/ml-code-switched-speech-translation/fisher/fisher-callhome-corpus")
-    splits = Path(
-        "/exp/ahussein/ml-code-switched-speech-translation/fisher/fisher-callhome-corpus"
-    )
-    prepare_fisher_spanish(
-        audio_dir_path,
-        transcript_dir_path,
-        splits,
-        output_dir,
-        lowercase=False,
-        remove_punc=False,
-    )

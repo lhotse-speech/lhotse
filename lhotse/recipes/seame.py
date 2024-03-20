@@ -550,12 +550,3 @@ def id2recos(path):
         recoid = p.stem.lower()
         recos[recoid] = p.resolve(strict=False)
     return recos
-
-
-if __name__ == "__main__":
-    corpus_dir = Path("/export/common/data/corpora/LDC/LDC2015S04")
-    output_dir = Path("/exp/ahussein/icefall_exp/multi_asr/data_seame/manifests")
-    splits = Path("/home/hltcoe/ahussein/SEAME-dev-set")
-    prepare_seame(
-        corpus_dir=corpus_dir, split_dir=splits, clean_text=True, output_dir=output_dir
-    )
