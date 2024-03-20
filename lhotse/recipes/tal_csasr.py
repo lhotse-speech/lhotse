@@ -41,7 +41,9 @@ def text_normalize(line: str):
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
     line = re.sub(
-        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|\.', "", line
+        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|\.',
+        "",
+        line,
     )
     line = line.replace("Ｅ", "E")
     line = line.replace("Ｎ", "N")
