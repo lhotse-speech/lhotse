@@ -185,7 +185,9 @@ def prepare_bengaliai_speech(
             audio_info=(
                 train_info
                 if part == "train"
-                else valid_info if part == "valid" else None
+                else valid_info
+                if part == "valid"
+                else None
             ),
             num_jobs=num_jobs,
         )
