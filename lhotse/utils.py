@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import random
+import secrets
 import sys
 import urllib
 import uuid
@@ -24,6 +25,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -35,7 +37,6 @@ import click
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-from typing_extensions import Literal
 
 Pathlike = Union[Path, str]
 T = TypeVar("T")
@@ -703,14 +704,6 @@ def merge_items_with_delimiter(
     return delimiter.join(chain([prefix], values))
 
 
-def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
-    id2man = {}
-    for m in manifests:
-        assert m.id not in id2man, f"Duplicated manifest ID: {m.id}"
-        id2man[m.id] = m
-    return id2man
-
-
 def exactly_one_not_null(*args) -> bool:
     not_null = [arg is not None for arg in args]
     return sum(not_null) == 1
@@ -1092,3 +1085,17 @@ class PythonLiteralOption(click.Option):
 
 def is_torchaudio_available() -> bool:
     return is_module_available("torchaudio")
+
+
+def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
+    if seed == "trng":
+        return secrets.SystemRandom()
+    else:
+        return random.Random(seed)
+
+
+_LHOTSE_DILL_ENABLED = False
+
+
+def is_dill_enabled() -> bool:
+    return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]

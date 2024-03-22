@@ -19,7 +19,6 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
 
-import soundfile as sf
 import tqdm
 
 from lhotse import (
@@ -94,6 +93,8 @@ def prepare_iwslt22_ta(
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
 
     """
+    import soundfile as sf
+
     manifests = {}
     split_files = load_splits(Path(splits))
     corpus_dir = Path(corpus_dir)

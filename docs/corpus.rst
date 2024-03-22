@@ -107,6 +107,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_fisher_english`
   * - Fisher Spanish
     - :func:`lhotse.recipes.prepare_fisher_spanish`
+  * - Fluent Speech Commands
+    - :func:`lhotse.recipes.slu`
   * - GALE Arabic Broadcast Speech
     - :func:`lhotse.recipes.prepare_gale_arabic`
   * - GALE Mandarin Broadcast Speech
@@ -143,6 +145,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_librittsr`
   * - LJ Speech
     - :func:`lhotse.recipes.prepare_ljspeech`
+  * - MDCC
+    - :func:`lhotse.recipes.prepare_mdcc`
   * - Medical
     - :func:`lhotse.recipes.prepare_medical`
   * - MiniLibriMix
@@ -165,10 +169,14 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_rir_noise`
   * - Speech Commands
     - :func:`lhotse.recipes.prepare_speechcommands`
+  * - SpeechIO
+    - :func:`lhotse.recipes.prepare_speechio`
   * - SPGISpeech
     - :func:`lhotse.recipes.prepare_spgispeech`
   * - Switchboard
     - :func:`lhotse.recipes.prepare_switchboard`
+  * - TED-LIUM v2
+    - :func:`lhotse.recipes.prepare_tedlium2`
   * - TED-LIUM v3
     - :func:`lhotse.recipes.prepare_tedlium`
   * - TIMIT

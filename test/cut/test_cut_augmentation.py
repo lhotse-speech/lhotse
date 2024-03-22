@@ -124,6 +124,9 @@ def test_cut_perturb_speed09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo09(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(0.9)
     assert cut_tp.start == 0.0
@@ -147,6 +150,9 @@ def test_cut_perturb_tempo09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo11(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(1.1)
     assert cut_tp.start == 0.0
@@ -631,9 +637,11 @@ def test_cut_perturb_volume(cut_set, cut_id, scale):
     not is_module_available("pyloudnorm"),
     reason="This test requires pyloudnorm to be installed.",
 )
-@pytest.mark.parametrize("target", [-15.0, -20.0, -25.0])
-def test_cut_normalize_loudness(libri_cut_set, target):
-    cut_set_ln = libri_cut_set.normalize_loudness(target)
+@pytest.mark.parametrize("target", [-15.0, -25.0])
+@pytest.mark.parametrize("mix_first", [True, False])
+def test_cut_normalize_loudness(libri_cut_set, target, mix_first):
+    cuts = libri_cut_set.pad(duration=120.0)
+    cut_set_ln = cuts.normalize_loudness(target, mix_first=mix_first)
 
     import pyloudnorm as pyln
 

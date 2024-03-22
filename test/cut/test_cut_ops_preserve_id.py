@@ -155,22 +155,34 @@ def test_mixed_cut_perturb_speed_affix_id_false(cut1):
 # ########################################
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo_affix_id_true(cut1):
     cut_tp = cut1.perturb_tempo(1.1)
     assert cut_tp.id != cut1.id
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo_affix_id_false(cut1):
     cut_tp = cut1.perturb_tempo(1.1, affix_id=False)
     assert cut_tp.id == cut1.id
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_mixed_cut_perturb_tempo_affix_id_true(cut1):
     premixed = cut1.append(cut1)
     cut_tp = premixed.perturb_tempo(1.1)
     assert cut_tp.id != premixed.id
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_mixed_cut_perturb_tempo_affix_id_false(cut1):
     premixed = cut1.append(cut1)
     cut_tp = premixed.perturb_tempo(1.1, affix_id=False)

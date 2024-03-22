@@ -8,9 +8,10 @@ import numpy as np
 import torch
 from _decimal import ROUND_HALF_UP
 
-from lhotse.audio.backend import info, save_flac_file, torchaudio_info
+from lhotse.audio.backend import info, save_audio, torchaudio_info
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
+    AudioLoadingError,
     DurationMismatchError,
     VideoInfo,
     get_audio_duration_mismatch_tolerance,
@@ -54,13 +55,19 @@ class Recording:
     and a 1-hour session with multiple channels and speakers (e.g., in AMI).
     In the latter case, it is partitioned into data suitable for model training using :class:`~lhotse.cut.Cut`.
 
-    .. hint::
-        Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa,
-        to support multiple audio formats. For OPUS files we require ffmpeg to be installed.
+    Internally, Lhotse supports multiple audio backends to read audio file.
+    By default, we try to use libsoundfile, then torchaudio (with FFMPEG integration starting with torchaudio 2.1),
+    and then audioread (which is an ffmpeg CLI wrapper).
+    For sphere files we prefer to use sph2pipe binary as it can work with certain unique encodings such as "shorten".
 
-    .. hint::
-        Since we support importing Kaldi data dirs, if ``wav.scp`` contains unix pipes,
-        :class:`~lhotse.audio.Recording` will also handle them correctly.
+    Audio backends in Lhotse are configurable. See:
+
+    * :func:`~lhotse.audio.backend.available_audio_backends`
+    * :func:`~lhotse.audio.backend.audio_backend`,
+    * :func:`~lhotse.audio.backend.get_current_audio_backend`
+    * :func:`~lhotse.audio.backend.set_current_audio_backend`
+    * :func:`~lhotse.audio.backend.get_default_audio_backend`
+
 
     Examples
 
@@ -109,6 +116,8 @@ class Recording:
             >>> assert samples.shape == (1, 16000)
             >>> samples2 = recording.load_audio(offset=0.5)
             >>> assert samples2.shape == (1, 8000)
+
+        See also: :class:`~lhotse.audio.recording.Recording`, :class:`~lhotse.cut.Cut`, :class:`~lhotse.cut.CutSet`.
     """
 
     id: str
@@ -279,8 +288,17 @@ class Recording:
         if all(src.type == "memory" for src in self.sources):
             return self  # nothing to do
 
+        def _aslist(x):
+            if isinstance(x, int):
+                return [x]
+            return x
+
         # Case #1: no opts specified, read audio without decoding and move it in memory.
-        if all(opt is None for opt in (channels, offset, duration)):
+        if all(opt is None for opt in (channels, offset, duration)) or (
+            (channels is None or _aslist(channels) == self.channel_ids)
+            and (offset is None or isclose(offset, 0.0))
+            and (duration is None or isclose(duration, self.duration))
+        ):
             memory_sources = [
                 AudioSource(
                     type="memory",
@@ -293,15 +311,12 @@ class Recording:
 
         # Case #2: user specified some subset of the recording, decode audio,
         #          subset it, and encode it again but save in memory.
-
         audio = self.load_audio(
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        save_flac_file(
-            stream, torch.from_numpy(audio), self.sampling_rate, format=format
-        )
-        channels = (ifnone(channels, self.channel_ids),)
+        save_audio(stream, torch.from_numpy(audio), self.sampling_rate, format=format)
+        channels = ifnone(channels, self.channel_ids)
         if isinstance(channels, int):
             channels = [channels]
         return Recording(
@@ -816,23 +831,12 @@ class Recording:
             return fastcopy(self)
 
         transforms = self.transforms.copy() if self.transforms is not None else []
-
-        if not any(
-            isinstance(s.source, str) and s.source.endswith(".opus")
-            for s in self.sources
-        ):
-            # OPUS is a special case for resampling.
-            # Normally, we use Torchaudio SoX bindings for resampling,
-            # but in case of OPUS we ask FFMPEG to resample it during
-            # decoding as its faster.
-            # Because of that, we have to skip adding a transform
-            # for OPUS files and only update the metadata in the manifest.
-            transforms.append(
-                Resample(
-                    source_sampling_rate=self.sampling_rate,
-                    target_sampling_rate=sampling_rate,
-                ).to_dict()
-            )
+        transforms.append(
+            Resample(
+                source_sampling_rate=self.sampling_rate,
+                target_sampling_rate=sampling_rate,
+            ).to_dict()
+        )
 
         new_num_samples = compute_num_samples(
             self.duration, sampling_rate, rounding=ROUND_HALF_UP
@@ -887,7 +891,7 @@ def assert_and_maybe_fix_num_samples(
         audio = audio[:, :diff]
         return audio
     else:
-        raise ValueError(
+        raise AudioLoadingError(
             "The number of declared samples in the recording diverged from the one obtained "
             f"when loading audio (offset={offset}, duration={duration}). "
             f"This could be internal Lhotse's error or a faulty transform implementation. "

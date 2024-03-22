@@ -52,6 +52,7 @@ from .librispeech import *
 from .libritts import *
 from .ljspeech import *
 from .magicdata import *
+from .mdcc import *
 from .medical import *
 from .mgb2 import *
 from .mls import *
@@ -62,13 +63,16 @@ from .nsc import *
 from .peoples_speech import *
 from .primewords import *
 from .rir_noise import *
+from .slu import *
 from .speechcommands import *
+from .speechio import *
 from .spgispeech import *
 from .stcmds import *
 from .switchboard import *
 from .tal_asr import *
 from .tal_csasr import *
 from .tedlium import *
+from .tedlium2 import *
 from .thchs_30 import *
 from .this_american_life import *
 from .timit import *
