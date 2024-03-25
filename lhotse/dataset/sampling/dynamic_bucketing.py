@@ -378,6 +378,7 @@ class DynamicBucketer:
         )
         check_constraint(constraint, max_duration, max_cuts)
 
+        self.world_size = ifnone(world_size, 1)
         if self.constraint is None:
             self.constraint = TimeConstraint(
                 max_duration=self.max_duration,
@@ -385,12 +386,15 @@ class DynamicBucketer:
                 quadratic_duration=self.quadratic_duration,
             )
 
-        self.world_size = ifnone(world_size, 1)
-        self.world_constraint = self.constraint = TimeConstraint(
-            max_duration=None if self.max_duration is None else self.max_duration * self.world_size,
-            max_cuts=self.max_cuts,
-            quadratic_duration=self.quadratic_duration,
-        )
+            self.world_constraint = self.constraint = TimeConstraint(
+                max_duration=None
+                if self.max_duration is None
+                else self.max_duration * self.world_size,
+                max_cuts=self.max_cuts,
+                quadratic_duration=self.quadratic_duration,
+            )
+        else:
+            self.world_constraint = self.constraint.copy()
 
         # A heuristic diagnostic first, for finding the right settings.
         if max_duration is not None:
