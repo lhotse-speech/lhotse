@@ -23,13 +23,10 @@ from lhotse.utils import (
     compute_start_duration_for_extended_cut,
     overlaps,
     overspans,
-<<<<<<< HEAD
+    quantize,
     safe_extract,
     safe_extract_rar,
     streaming_shuffle,
-=======
-    quantize,
->>>>>>> 61a9d5c1 (More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training)
 )
 
 
@@ -307,4 +304,3 @@ def test_click_literal_option(value, expected):
 )
 def test_quantize(val, n, expected):
     assert quantize(val, n) == expected
->>>>>>> 61a9d5c1 (More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training)
