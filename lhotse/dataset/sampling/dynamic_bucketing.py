@@ -29,7 +29,6 @@ from lhotse.dataset.sampling.base import (
     SamplingDiagnostics,
     TimeConstraint,
 )
-
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
 from lhotse.utils import ifnone, quantize
 
@@ -267,6 +266,7 @@ class DynamicBucketingSampler(CutSampler):
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
             bucket_rng=self.bucket_rng,
+            world_size=self.world_size,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(cuts_iter)
@@ -354,6 +354,7 @@ class DynamicBucketer:
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
         bucket_rng: random.Random = None,
+        world_size: Optional[int] = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
@@ -383,6 +384,13 @@ class DynamicBucketer:
                 quadratic_duration=self.quadratic_duration,
             )
 
+        self.world_size = ifnone(world_size, 1)
+        self.world_constraint = self.constraint = TimeConstraint(
+            max_duration=self.max_duration * self.world_size,
+            max_cuts=self.max_cuts,
+            quadratic_duration=self.quadratic_duration,
+        )
+
         # A heuristic diagnostic first, for finding the right settings.
         if max_duration is not None:
             mean_duration = np.mean(duration_bins)
@@ -408,7 +416,7 @@ class DynamicBucketer:
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
-            tot = self.constraint.copy()
+            tot = self.world_constraint.copy()
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
                 if tot.close_to_exceeding():
@@ -439,21 +447,27 @@ class DynamicBucketer:
                 indexes_used = []
                 if self.shuffle:
                     maybe_shuffled = pick_at_random(
-                        maybe_shuffled, rng=self.rng, out_indexes_used=indexes_used
+                        maybe_shuffled,
+                        rng=self.bucket_rng,
+                        out_indexes_used=indexes_used,
                     )
 
-                # Sample one batch from that bucket and yield it to the caller.
-                batcher = DurationBatcher(
-                    maybe_shuffled,
-                    constraint=self.constraint.copy(),
-                    diagnostics=self.diagnostics,
-                )
-                batch = next(iter(batcher))
-                if isinstance(batch, tuple):
-                    batch_size = len(batch[0])
-                else:
-                    batch_size = len(batch)
-                yield batch
+                # Sample world_size batches from that bucket and yield it to the caller.
+                # Force More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training
+                total_batch_size = 0
+                for _ in range(self.world_size):
+                    batcher = DurationBatcher(
+                        maybe_shuffled,
+                        constraint=self.constraint.copy(),
+                        diagnostics=self.diagnostics,
+                    )
+                    batch = next(iter(batcher))
+                    if isinstance(batch, tuple):
+                        batch_size = len(batch[0])
+                    else:
+                        batch_size = len(batch)
+                    total_batch_size += batch_size
+                    yield batch
                 # Remove sampled cuts from the bucket.
                 if indexes_used:
                     # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
@@ -462,10 +476,10 @@ class DynamicBucketer:
                         del sampling_bucket[idx]
                 else:
                     # No shuffling, remove first N
-                    for _ in range(batch_size):
+                    for _ in range(total_batch_size):
                         sampling_bucket.popleft()
                 # Fetch new cuts and add them to appropriate buckets.
-                self._collect_cuts_in_buckets(batch_size)
+                self._collect_cuts_in_buckets(total_batch_size)
         except StopIteration:
             pass
 
