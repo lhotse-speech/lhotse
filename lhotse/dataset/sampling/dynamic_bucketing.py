@@ -461,12 +461,12 @@ class DynamicBucketer:
                 # Sample world_size batches from that bucket and yield it to the caller.
                 # Force More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training
                 total_batch_size = 0
+                batcher = DurationBatcher(
+                    maybe_shuffled,
+                    constraint=self.constraint.copy(),
+                    diagnostics=self.diagnostics,
+                )
                 for _ in range(self.world_size):
-                    batcher = DurationBatcher(
-                        maybe_shuffled,
-                        constraint=self.constraint.copy(),
-                        diagnostics=self.diagnostics,
-                    )
                     batch = next(iter(batcher))
                     if isinstance(batch, tuple):
                         batch_size = len(batch[0])
