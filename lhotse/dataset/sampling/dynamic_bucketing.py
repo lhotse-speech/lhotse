@@ -149,7 +149,8 @@ class DynamicBucketingSampler(CutSampler):
 
         self.quadratic_duration = quadratic_duration
         check_constraint(constraint, max_duration, max_cuts)
-        self.bucket_rng = random.Random(self.seed + self.epoch)
+        seed = resolve_seed(self.seed)
+        self.bucket_rng = random.Random(seed + self.epoch)
 
         if strict is not None:
             warnings.warn(
@@ -451,6 +452,11 @@ class DynamicBucketer:
                         rng=self.bucket_rng,
                         out_indexes_used=indexes_used,
                     )
+                else:
+                    maybe_shuffled = pick_at_sequential(
+                        maybe_shuffled,
+                        out_indexes_used=indexes_used,
+                    )
 
                 # Sample world_size batches from that bucket and yield it to the caller.
                 # Force More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training
@@ -469,15 +475,11 @@ class DynamicBucketer:
                     total_batch_size += batch_size
                     yield batch
                 # Remove sampled cuts from the bucket.
-                if indexes_used:
-                    # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
-                    indexes_used.sort(reverse=True)
-                    for idx in indexes_used:
-                        del sampling_bucket[idx]
-                else:
-                    # No shuffling, remove first N
-                    for _ in range(total_batch_size):
-                        sampling_bucket.popleft()
+                # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
+                indexes_used.sort(reverse=True)
+                for idx in indexes_used:
+                    del sampling_bucket[idx]
+
                 # Fetch new cuts and add them to appropriate buckets.
                 self._collect_cuts_in_buckets(total_batch_size)
         except StopIteration:
@@ -510,6 +512,20 @@ def pick_at_random(
     """
     indexes = list(range(len(bucket)))
     rng.shuffle(indexes)
+    for idx in indexes:
+        out_indexes_used.append(idx)
+        yield bucket[idx]
+
+
+def pick_at_sequential(
+    bucket: Sequence[Union[Cut, Tuple[Cut, ...]]],
+    out_indexes_used: list,
+) -> Generator[Union[Cut, Tuple[Cut, ...]], None, None]:
+    """
+    Generator which will yield items in a sequence in a sequential order.
+    It will append the indexes of items yielded during iteration via ``out_used_indexes``.
+    """
+    indexes = list(range(len(bucket)))
     for idx in indexes:
         out_indexes_used.append(idx)
         yield bucket[idx]
