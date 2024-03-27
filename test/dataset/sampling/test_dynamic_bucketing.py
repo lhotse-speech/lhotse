@@ -48,7 +48,7 @@ def test_dynamic_bucketing_drop_last_false():
             c.duration = 2
     rng = random.Random(0)
 
-    sampler = DynamicBucketer(cuts, duration_bins=[2], max_duration=5, rng=rng)
+    sampler = DynamicBucketer(cuts, duration_bins=[2], max_duration=5, bucket_rng=rng)
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
 
@@ -84,7 +84,7 @@ def test_dynamic_bucketing_drop_last_true():
     rng = random.Random(0)
 
     sampler = DynamicBucketer(
-        cuts, duration_bins=[2], max_duration=5, rng=rng, drop_last=True
+        cuts, duration_bins=[2], max_duration=5, bucket_rng=rng, drop_last=True
     )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]

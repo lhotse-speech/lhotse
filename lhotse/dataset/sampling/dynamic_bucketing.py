@@ -30,7 +30,7 @@ from lhotse.dataset.sampling.base import (
     TimeConstraint,
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
-from lhotse.utils import ifnone
+from lhotse.utils import ifnone, quantize
 
 
 class DynamicBucketingSampler(CutSampler):
@@ -146,9 +146,11 @@ class DynamicBucketingSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
+
         self.quadratic_duration = quadratic_duration
-        self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
+        seed = resolve_seed(self.seed)
+        self.bucket_rng = random.Random(seed + self.epoch)
 
         if strict is not None:
             warnings.warn(
@@ -197,6 +199,7 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "quadratic_duration": self.quadratic_duration,
+                "bucket_rng_state": self.bucket_rng.getstate(),
             }
         )
         return sd
@@ -212,6 +215,7 @@ class DynamicBucketingSampler(CutSampler):
             shuffle_buffer_size = sd.pop("shuffle_buffer_size")
             self.buffer_size += shuffle_buffer_size
         self.quadratic_duration = sd.pop("quadratic_duration", None)
+        self.bucket_rng.setstate(sd.pop("bucket_rng_state"))
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -237,7 +241,7 @@ class DynamicBucketingSampler(CutSampler):
         if self._just_restored_state:
             return self
         seed = resolve_seed(self.seed)
-        self.rng = random.Random(seed + self.epoch)
+        self.bucket_rng = random.Random(seed + self.epoch)
         # Why reset the current epoch?
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps
@@ -262,7 +266,8 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=self.buffer_size,
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
-            rng=self.rng,
+            bucket_rng=self.bucket_rng,
+            world_size=self.world_size,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(cuts_iter)
@@ -349,7 +354,8 @@ class DynamicBucketer:
         buffer_size: int = 10000,
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
-        rng: random.Random = None,
+        bucket_rng: random.Random = None,
+        world_size: Optional[int] = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
@@ -361,10 +367,10 @@ class DynamicBucketer:
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
-        if rng is None:
-            rng = random.Random()
-        self.rng = rng
         self.shuffle = shuffle
+        if bucket_rng is None:
+            bucket_rng = random.Random()
+        self.bucket_rng = bucket_rng
 
         assert duration_bins == sorted(duration_bins), (
             f"Argument list for 'duration_bins' is expected to be in "
@@ -372,6 +378,7 @@ class DynamicBucketer:
         )
         check_constraint(constraint, max_duration, max_cuts)
 
+        self.world_size = ifnone(world_size, 1)
         if self.constraint is None:
             self.constraint = TimeConstraint(
                 max_duration=self.max_duration,
@@ -379,10 +386,24 @@ class DynamicBucketer:
                 quadratic_duration=self.quadratic_duration,
             )
 
+            max_duration = None
+            if self.max_duration is not None:
+                max_duration = self.max_duration * self.world_size
+            max_cuts = None
+            if self.max_cuts is not None:
+                max_cuts = self.max_cuts * self.world_size
+            self.world_constraint = self.constraint = TimeConstraint(
+                max_duration=max_duration,
+                max_cuts=max_cuts,
+                quadratic_duration=self.quadratic_duration,
+            )
+        else:
+            self.world_constraint = self.constraint.copy()
+
         # A heuristic diagnostic first, for finding the right settings.
         if max_duration is not None:
             mean_duration = np.mean(duration_bins)
-            expected_buffer_duration = buffer_size * mean_duration
+            expected_buffer_duration = (buffer_size * self.world_size) * mean_duration
             expected_bucket_duration = expected_buffer_duration / (
                 len(duration_bins) + 1
             )
@@ -400,11 +421,11 @@ class DynamicBucketer:
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
-        self._collect_cuts_in_buckets(self.buffer_size)
+        self._collect_cuts_in_buckets(self.buffer_size * self.world_size)
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
-            tot = self.constraint.copy()
+            tot = self.world_constraint.copy()
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
                 if tot.close_to_exceeding():
@@ -427,38 +448,51 @@ class DynamicBucketer:
                         ready_buckets = non_empty_buckets
                 # Choose a bucket to sample from.
                 # We'll only select from the buckets that have a full batch available.
-                sampling_bucket = self.rng.choice(ready_buckets)
+                bucket_idx = quantize(self.bucket_rng.random(), len(ready_buckets))
+                sampling_bucket = ready_buckets[bucket_idx]
+
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
                 indexes_used = []
                 if self.shuffle:
                     maybe_shuffled = pick_at_random(
-                        maybe_shuffled, rng=self.rng, out_indexes_used=indexes_used
+                        maybe_shuffled,
+                        rng=self.bucket_rng,
+                        out_indexes_used=indexes_used,
                     )
-                # Sample one batch from that bucket and yield it to the caller.
+                else:
+                    maybe_shuffled = pick_at_sequential(
+                        maybe_shuffled,
+                        out_indexes_used=indexes_used,
+                    )
+
+                # Sample world_size batches from that bucket and yield it to the caller.
+                # Force More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training
                 batcher = DurationBatcher(
                     maybe_shuffled,
                     constraint=self.constraint.copy(),
                     diagnostics=self.diagnostics,
                 )
-                batch = next(iter(batcher))
-                if isinstance(batch, tuple):
-                    batch_size = len(batch[0])
-                else:
-                    batch_size = len(batch)
-                yield batch
+                batcher = iter(batcher)
+
+                total_batch_size = 0
+                for _ in range(self.world_size):
+                    batch = next(batcher)
+                    if isinstance(batch, tuple):
+                        batch_size = len(batch[0])
+                    else:
+                        batch_size = len(batch)
+                    total_batch_size += batch_size
+                    yield batch
+
                 # Remove sampled cuts from the bucket.
-                if indexes_used:
-                    # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
-                    indexes_used.sort(reverse=True)
-                    for idx in indexes_used:
-                        del sampling_bucket[idx]
-                else:
-                    # No shuffling, remove first N
-                    for _ in range(batch_size):
-                        sampling_bucket.popleft()
+                # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
+                indexes_used.sort(reverse=True)
+                for idx in indexes_used:
+                    del sampling_bucket[idx]
+
                 # Fetch new cuts and add them to appropriate buckets.
-                self._collect_cuts_in_buckets(batch_size)
+                self._collect_cuts_in_buckets(total_batch_size * self.world_size)
         except StopIteration:
             pass
 
@@ -489,6 +523,20 @@ def pick_at_random(
     """
     indexes = list(range(len(bucket)))
     rng.shuffle(indexes)
+    for idx in indexes:
+        out_indexes_used.append(idx)
+        yield bucket[idx]
+
+
+def pick_at_sequential(
+    bucket: Sequence[Union[Cut, Tuple[Cut, ...]]],
+    out_indexes_used: list,
+) -> Generator[Union[Cut, Tuple[Cut, ...]], None, None]:
+    """
+    Generator which will yield items in a sequence in a sequential order.
+    It will append the indexes of items yielded during iteration via ``out_used_indexes``.
+    """
+    indexes = list(range(len(bucket)))
     for idx in indexes:
         out_indexes_used.append(idx)
         yield bucket[idx]
