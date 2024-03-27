@@ -1,4 +1,5 @@
 from . import cut_transforms, input_strategies, sampling, signal_transforms
+from .audio_tagging import AudioTaggingDataset
 from .cut_transforms import *
 from .dataloading import make_worker_init_fn
 from .diarization import DiarizationDataset
