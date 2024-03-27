@@ -322,13 +322,13 @@ def mask_along_axis_optimized(
         if mask_times == 1:
             features[:, mask_starts:mask_ends] = mask_value
             return features.squeeze(0)
-        for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+        for mask_start, mask_end in zip(mask_starts, mask_ends):
             features[:, mask_start:mask_end] = mask_value
     else:
         if mask_times == 1:
             features[:, :, mask_starts:mask_ends] = mask_value
             return features.squeeze(0)
-        for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+        for mask_start, mask_end in zip(mask_starts, mask_ends):
             features[:, :, mask_start:mask_end] = mask_value
 
     features = features.squeeze(0)

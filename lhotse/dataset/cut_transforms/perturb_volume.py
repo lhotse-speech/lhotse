@@ -30,11 +30,13 @@ class PerturbVolume:
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(
-            cut.perturb_volume(
-                factor=self.random.uniform(self.scale_low, self.scale_high),
-                affix_id=not self.preserve_id,
+            (
+                cut.perturb_volume(
+                    factor=self.random.uniform(self.scale_low, self.scale_high),
+                    affix_id=not self.preserve_id,
+                )
+                if self.random.random() <= self.p
+                else cut
             )
-            if self.random.random() <= self.p
-            else cut
             for cut in cuts
         )

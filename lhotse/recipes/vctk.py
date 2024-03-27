@@ -77,6 +77,7 @@ Christophe Veaux,  Junichi Yamagishi, Kirsten MacDonald,
 The Centre for Speech Technology Research (CSTR),
 University of Edinburgh
 """
+
 import logging
 import shutil
 import tarfile

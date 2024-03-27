@@ -129,9 +129,11 @@ class S3PRLSSL(FeatureExtractor):
         else:
             # The user passed a single array/tensor of shape (num_samples,)
             samples = [
-                torch.from_numpy(samples)
-                if isinstance(samples, np.ndarray)
-                else samples
+                (
+                    torch.from_numpy(samples)
+                    if isinstance(samples, np.ndarray)
+                    else samples
+                )
             ]
 
         samples = [s.to(self.config.device) for s in samples]
