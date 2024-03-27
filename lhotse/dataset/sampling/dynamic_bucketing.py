@@ -386,11 +386,15 @@ class DynamicBucketer:
                 quadratic_duration=self.quadratic_duration,
             )
 
+            max_duration = None
+            if self.max_duration is not None:
+                max_duration = self.max_duration * self.world_size
+            max_cuts = None
+            if self.max_cuts is not None:
+                max_cuts = self.max_cuts * self.world_size
             self.world_constraint = self.constraint = TimeConstraint(
-                max_duration=None
-                if self.max_duration is None
-                else self.max_duration * self.world_size,
-                max_cuts=self.max_cuts,
+                max_duration=max_duration,
+                max_cuts=max_cuts,
                 quadratic_duration=self.quadratic_duration,
             )
         else:
@@ -399,7 +403,7 @@ class DynamicBucketer:
         # A heuristic diagnostic first, for finding the right settings.
         if max_duration is not None:
             mean_duration = np.mean(duration_bins)
-            expected_buffer_duration = buffer_size * mean_duration
+            expected_buffer_duration = (buffer_size * self.world_size) * mean_duration
             expected_bucket_duration = expected_buffer_duration / (
                 len(duration_bins) + 1
             )
@@ -417,7 +421,7 @@ class DynamicBucketer:
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
-        self._collect_cuts_in_buckets(self.buffer_size)
+        self._collect_cuts_in_buckets(self.buffer_size * self.world_size)
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
@@ -464,20 +468,23 @@ class DynamicBucketer:
 
                 # Sample world_size batches from that bucket and yield it to the caller.
                 # Force More similar mean batch duration across nodes with DynamicBucketingSampler in multi-GPU training
-                total_batch_size = 0
                 batcher = DurationBatcher(
                     maybe_shuffled,
                     constraint=self.constraint.copy(),
                     diagnostics=self.diagnostics,
                 )
+                batcher = iter(batcher)
+
+                total_batch_size = 0
                 for _ in range(self.world_size):
-                    batch = next(iter(batcher))
+                    batch = next(batcher)
                     if isinstance(batch, tuple):
                         batch_size = len(batch[0])
                     else:
                         batch_size = len(batch)
                     total_batch_size += batch_size
                     yield batch
+
                 # Remove sampled cuts from the bucket.
                 # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
                 indexes_used.sort(reverse=True)
@@ -485,7 +492,7 @@ class DynamicBucketer:
                     del sampling_bucket[idx]
 
                 # Fetch new cuts and add them to appropriate buckets.
-                self._collect_cuts_in_buckets(total_batch_size)
+                self._collect_cuts_in_buckets(total_batch_size * self.world_size)
         except StopIteration:
             pass
 
