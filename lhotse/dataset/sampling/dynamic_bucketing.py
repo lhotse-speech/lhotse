@@ -392,7 +392,7 @@ class DynamicBucketer:
             max_cuts = None
             if self.max_cuts is not None:
                 max_cuts = self.max_cuts * self.world_size
-            self.world_constraint = self.constraint = TimeConstraint(
+            self.world_constraint = TimeConstraint(
                 max_duration=max_duration,
                 max_cuts=max_cuts,
                 quadratic_duration=self.quadratic_duration,
