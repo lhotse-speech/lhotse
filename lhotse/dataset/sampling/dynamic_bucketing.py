@@ -501,6 +501,7 @@ class DynamicBucketer:
 
     def _collect_cuts_in_buckets(self, n_cuts: int):
         try:
+            tot = self.world_constraint.copy()
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
                 duration = self.constraint.measure_length(
@@ -508,6 +509,18 @@ class DynamicBucketer:
                 )
                 bucket_idx = bisect_right(self.duration_bins, duration)
                 self.buckets[bucket_idx].append(cuts)
+
+                tot.add(cuts[0] if isinstance(cuts, tuple) else cuts)
+
+            if self.world_size > 1:
+                while not tot.close_to_exceeding():
+                    cuts = next(self.cuts_iter)
+                    duration = self.constraint.measure_length(
+                        cuts[0] if isinstance(cuts, tuple) else cuts
+                    )
+                    bucket_idx = bisect_right(self.duration_bins, duration)
+                    self.buckets[bucket_idx].append(cuts)
+                    tot.add(cuts[0] if isinstance(cuts, tuple) else cuts)
         except StopIteration:
             pass
 
