@@ -33,13 +33,13 @@ from tqdm.auto import tqdm
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
-from lhotse.dataset.dataloading import resolve_seed
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
@@ -3501,7 +3501,9 @@ class LazyCutMixer(Dillable):
 
     def __iter__(self):
         
-        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=self.rng, buffer_size=100))
+        mix_in_cuts = iter(
+            self.mix_in_cuts.repeat().shuffle(rng=self.rng, buffer_size=100)
+        )
 
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
@@ -3516,8 +3518,11 @@ class LazyCutMixer(Dillable):
                 if isinstance(self.snr, (list, tuple))
                 else self.snr
             )
-            # This rounding is needed here to avoid triggering assertions on durations (e.g., in truncate) 
-            target_mixed_duration = round(self.duration if self.duration is not None else cut.duration - 0.05, ndigits=8)
+            # This rounding is needed here to avoid triggering assertions on durations (e.g., in truncate)
+            target_mixed_duration = round(
+                self.duration if self.duration is not None else cut.duration - 0.05,
+                ndigits=8,
+            )
             to_mix = self.maybe_truncate_cut(to_mix, target_mixed_duration)
             # Actual mixing
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
@@ -3532,7 +3537,9 @@ class LazyCutMixer(Dillable):
             #       where we mix in some noise cut that effectively has 0 frames of features.
             while mixed_in_duration < target_mixed_duration:
                 to_mix = next(mix_in_cuts)
-                to_mix = self.maybe_truncate_cut(to_mix, target_mixed_duration - mixed_in_duration)
+                to_mix = self.maybe_truncate_cut(
+                    to_mix, target_mixed_duration - mixed_in_duration
+                )
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
@@ -3561,8 +3568,8 @@ class LazyCutMixer(Dillable):
 
     def maybe_truncate_cut(self, cut: Cut, target_duration: Seconds) -> Cut:
         if self.random_mix_offset and cut.duration > target_duration:
-                cut = cut.truncate(
-                    offset=self.rng.uniform(0, cut.duration - target_duration),
-                    duration=target_duration,
-                )
+            cut = cut.truncate(
+                offset=self.rng.uniform(0, cut.duration - target_duration),
+                duration=target_duration,
+            )
         return cut
