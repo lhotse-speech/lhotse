@@ -33,6 +33,7 @@ from tqdm.auto import tqdm
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
@@ -3487,6 +3488,7 @@ class LazyCutMixer(Dillable):
         self.mix_prob = mix_prob
         self.seed = seed
         self.random_mix_offset = random_mix_offset
+        self.rng = random.Random(resolve_seed(self.seed))
 
         assert 0.0 <= self.mix_prob <= 1.0
         assert self.duration is None or self.duration > 0
@@ -3498,29 +3500,25 @@ class LazyCutMixer(Dillable):
             assert isinstance(self.snr, (type(None), int, float))
 
     def __iter__(self):
-        from lhotse.dataset.dataloading import resolve_seed
-
-        rng = random.Random(resolve_seed(self.seed))
-        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+        
+        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=self.rng, buffer_size=100))
 
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
-            if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
+            if not is_cut(cut) or self.rng.uniform(0.0, 1.0) > self.mix_prob:
                 yield cut
                 continue
             to_mix = next(mix_in_cuts)
             # Determine the SNR - either it's specified or we need to sample one.
             cut_snr = (
-                rng.uniform(*self.snr)
+                self.rng.uniform(*self.snr)
                 if isinstance(self.snr, (list, tuple))
                 else self.snr
             )
-            if self.random_mix_offset and to_mix.duration > cut.duration:
-                to_mix = to_mix.truncate(
-                    offset=rng.uniform(0, to_mix.duration - cut.duration),
-                    duration=cut.duration,
-                )
+            # This rounding is needed here to avoid triggering assertions on durations (e.g., in truncate) 
+            target_mixed_duration = round(self.duration if self.duration is not None else cut.duration - 0.05, ndigits=8)
+            to_mix = self.maybe_truncate_cut(to_mix, target_mixed_duration)
             # Actual mixing
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
             # Did the user specify a duration?
@@ -3532,10 +3530,9 @@ class LazyCutMixer(Dillable):
             # Keep sampling until we mixed in a "duration" amount of noise.
             # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
             #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (
-                self.duration if self.duration is not None else cut.duration - 0.05
-            ):
+            while mixed_in_duration < target_mixed_duration:
                 to_mix = next(mix_in_cuts)
+                to_mix = self.maybe_truncate_cut(to_mix, target_mixed_duration - mixed_in_duration)
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
@@ -3551,7 +3548,7 @@ class LazyCutMixer(Dillable):
                 )
             # We truncate the mixed to either the original duration or the requested duration.
             mixed = mixed.truncate(
-                duration=self.duration if self.duration is not None else cut.duration,
+                duration=target_mixed_duration,
                 preserve_id=self.preserve_id is not None,
             )
             yield mixed
@@ -3561,3 +3558,11 @@ class LazyCutMixer(Dillable):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+    def maybe_truncate_cut(self, cut: Cut, target_duration: Seconds) -> Cut:
+        if self.random_mix_offset and cut.duration > target_duration:
+                cut = cut.truncate(
+                    offset=self.rng.uniform(0, cut.duration - target_duration),
+                    duration=target_duration,
+                )
+        return cut
