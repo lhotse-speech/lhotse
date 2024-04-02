@@ -437,6 +437,7 @@ class TimeConstraint(SamplingConstraint):
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
+    longest_fn: Callable = max
     quadratic_duration: Optional[Seconds] = None
 
     def __post_init__(self) -> None:
@@ -456,7 +457,10 @@ class TimeConstraint(SamplingConstraint):
         if self.max_duration is not None:
             duration = self._maybe_apply_quadratic_correction(example.duration)
             self.current += duration
-            self.longest_seen = max(self.longest_seen, duration)
+            if self.longest_seen == 0:
+                self.longest_seen = duration
+            else:
+                self.longest_seen = self.longest_fn(self.longest_seen, duration)
         self.num_cuts += 1
 
     def _maybe_apply_quadratic_correction(self, duration: Seconds) -> Seconds:

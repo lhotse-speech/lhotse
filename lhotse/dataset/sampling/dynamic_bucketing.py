@@ -1,3 +1,4 @@
+import logging
 import random
 import warnings
 from bisect import bisect_right
@@ -18,6 +19,7 @@ from typing import (
 )
 
 import numpy as np
+from sympy import true
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
@@ -267,6 +269,7 @@ class DynamicBucketingSampler(CutSampler):
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
             bucket_rng=self.bucket_rng,
+            rank=self.rank,
             world_size=self.world_size,
             diagnostics=self.diagnostics,
         )
@@ -355,6 +358,7 @@ class DynamicBucketer:
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
         bucket_rng: random.Random = None,
+        rank: Optional[int] = None,
         world_size: Optional[int] = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
@@ -378,6 +382,7 @@ class DynamicBucketer:
         )
         check_constraint(constraint, max_duration, max_cuts)
 
+        self.rank = ifnone(rank, 0)
         self.world_size = ifnone(world_size, 1)
         if self.constraint is None:
             self.constraint = TimeConstraint(
@@ -396,8 +401,14 @@ class DynamicBucketer:
                 max_duration=max_duration,
                 max_cuts=max_cuts,
                 quadratic_duration=self.quadratic_duration,
+                longest_fn=min
+                if self.world_size > 1
+                else max,  # make sure that `batch = next(batcher)` will not crash
             )
         else:
+            assert (
+                self.world_size == 1
+            ), "When using a custom constraint, 'world_size' should be set to 1."
             self.world_constraint = self.constraint.copy()
 
         # A heuristic diagnostic first, for finding the right settings.
@@ -421,7 +432,12 @@ class DynamicBucketer:
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
-        self._collect_cuts_in_buckets(self.buffer_size * self.world_size)
+        is_exceeded = False
+        num_cuts = [0, 0]  # [total_cuts, total_duration]
+        try:
+            self._collect_cuts_in_buckets(self.buffer_size * self.world_size, num_cuts)
+        except StopIteration:
+            is_exceeded = True
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
@@ -435,14 +451,17 @@ class DynamicBucketer:
         # The iteration code starts here.
         # On each step we're sampling a new batch.
         try:
+            ready_buckets = [b for b in self.buckets if is_ready(b)]
             while True:
-                ready_buckets = [b for b in self.buckets if is_ready(b)]
                 if not ready_buckets:
                     # No bucket has enough data to yield for the last full batch.
                     non_empty_buckets = [b for b in self.buckets if b]
                     if self.drop_last or len(non_empty_buckets) == 0:
+                        logging.info(
+                            f"({self.rank}/{self.world_size}) DynamicBucketer no more data to sample, exiting. num_cuts {num_cuts} is_exceeded {is_exceeded}."
+                        )
                         # Either the user requested only full batches, or we have nothing left.
-                        raise StopIteration()
+                        raise StopIteration
                     else:
                         # Sample from partial batches that are left.
                         ready_buckets = non_empty_buckets
@@ -491,38 +510,42 @@ class DynamicBucketer:
                 for idx in indexes_used:
                     del sampling_bucket[idx]
 
-                # Fetch new cuts and add them to appropriate buckets.
-                self._collect_cuts_in_buckets(total_batch_size * self.world_size)
+                if not is_exceeded:
+                    try:
+                        # Fetch new cuts and add them to appropriate buckets.
+                        self._collect_cuts_in_buckets(
+                            total_batch_size * self.world_size, num_cuts
+                        )
+                        if len(ready_buckets) <= 1:
+                            # More than 1 ready buckets for better randomness
+                            while True:
+                                ready_buckets = [b for b in self.buckets if is_ready(b)]
+                                if len(ready_buckets) >= 2:
+                                    break
+                                self._collect_cuts_in_buckets(
+                                    total_batch_size * self.world_size, num_cuts
+                                )
+                            continue
+                    except StopIteration:
+                        is_exceeded = True
+
+                ready_buckets = [b for b in self.buckets if is_ready(b)]
         except StopIteration:
             pass
 
         # Cleanup.
         self.cuts_iter = None
 
-    def _collect_cuts_in_buckets(self, n_cuts: int):
-        try:
-            tot = self.world_constraint.copy()
-            for _ in range(n_cuts):
-                cuts = next(self.cuts_iter)
-                duration = self.constraint.measure_length(
-                    cuts[0] if isinstance(cuts, tuple) else cuts
-                )
-                bucket_idx = bisect_right(self.duration_bins, duration)
-                self.buckets[bucket_idx].append(cuts)
-
-                tot.add(cuts[0] if isinstance(cuts, tuple) else cuts)
-
-            if self.world_size > 1:
-                while not tot.close_to_exceeding():
-                    cuts = next(self.cuts_iter)
-                    duration = self.constraint.measure_length(
-                        cuts[0] if isinstance(cuts, tuple) else cuts
-                    )
-                    bucket_idx = bisect_right(self.duration_bins, duration)
-                    self.buckets[bucket_idx].append(cuts)
-                    tot.add(cuts[0] if isinstance(cuts, tuple) else cuts)
-        except StopIteration:
-            pass
+    def _collect_cuts_in_buckets(self, n_cuts: int, num_cuts: List[int]):
+        for _ in range(n_cuts):
+            cuts = next(self.cuts_iter)
+            duration = self.constraint.measure_length(
+                cuts[0] if isinstance(cuts, tuple) else cuts
+            )
+            bucket_idx = bisect_right(self.duration_bins, duration)
+            self.buckets[bucket_idx].append(cuts)
+            num_cuts[0] += 1
+            num_cuts[1] += duration
 
 
 def pick_at_random(
