@@ -3501,7 +3501,11 @@ class LazyCutMixer(Dillable):
         from lhotse.dataset.dataloading import resolve_seed
 
         rng = random.Random(resolve_seed(self.seed))
-        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+
+        if self.mix_in_cuts.is_lazy:
+            mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+        else:
+            mix_in_cuts = iter(self.mix_in_cuts.shuffle(rng=rng))
 
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
