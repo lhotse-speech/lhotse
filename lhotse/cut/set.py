@@ -3464,6 +3464,9 @@ class LazyCutMixer(Dillable):
     :param random_mix_offset: an optional bool.
         When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
          select a random sub-region from the to be mixed in cut.
+    :param stateful: when True, each time this object is iterated we will shuffle the noise cuts
+        using a different random seed. This is useful when you often re-start the iteration and
+        don't want to keep seeing the same noise examples. Enabled by default.
     """
 
     def __init__(
@@ -3477,6 +3480,7 @@ class LazyCutMixer(Dillable):
         mix_prob: float = 1.0,
         seed: Union[int, Literal["trng", "randomized"]] = 42,
         random_mix_offset: bool = False,
+        stateful: bool = True,
     ) -> None:
         self.source = cuts
         self.mix_in_cuts = mix_in_cuts
@@ -3487,6 +3491,8 @@ class LazyCutMixer(Dillable):
         self.mix_prob = mix_prob
         self.seed = seed
         self.random_mix_offset = random_mix_offset
+        self.stateful = stateful
+        self.num_times_iterated = 0
 
         assert 0.0 <= self.mix_prob <= 1.0
         assert self.duration is None or self.duration > 0
@@ -3500,28 +3506,49 @@ class LazyCutMixer(Dillable):
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
 
-        rng = random.Random(resolve_seed(self.seed))
-        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+        rng = random.Random(resolve_seed(self.seed) + self.num_times_iterated)
+        if self.stateful:
+            self.num_times_iterated += 1
 
+        if self.mix_in_cuts.is_lazy:
+            # If the noise input is lazy, we'll shuffle it approximately.
+            # We set the shuffling buffer size to 2000 because that's the size of MUSAN,
+            # so even if the user forgets to convert MUSAN to an eager manifest, they will
+            # get roughly the same quality of noise randomness.
+            # Note: we can't just call .to_eager() as the noise CutSet can technically be
+            #       very large, or even hold data in-memory in case of webdataset/Lhotse Shar sources.
+            def noise_gen():
+                yield from self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=2000)
+
+        else:
+            # Eager nose cuts are just fully reshuffled in a different order on each noise "epoch".
+            def noise_gen():
+                #
+                while True:
+                    yield from self.mix_in_cuts.shuffle(rng=rng)
+
+        mix_in_cuts = iter(noise_gen())
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
             if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
                 yield cut
                 continue
-            to_mix = next(mix_in_cuts)
             # Determine the SNR - either it's specified or we need to sample one.
             cut_snr = (
                 rng.uniform(*self.snr)
                 if isinstance(self.snr, (list, tuple))
                 else self.snr
             )
-            if self.random_mix_offset and to_mix.duration > cut.duration:
-                to_mix = to_mix.truncate(
-                    offset=rng.uniform(0, to_mix.duration - cut.duration),
-                    duration=cut.duration,
-                )
+            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+            #       where we mix in some noise cut that effectively has 0 frames of features.
+            target_mixed_duration = round(
+                self.duration if self.duration is not None else cut.duration - 0.05,
+                ndigits=8,
+            )
             # Actual mixing
+            to_mix = next(mix_in_cuts)
+            to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
@@ -3532,10 +3559,9 @@ class LazyCutMixer(Dillable):
             # Keep sampling until we mixed in a "duration" amount of noise.
             # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
             #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (
-                self.duration if self.duration is not None else cut.duration - 0.05
-            ):
+            while mixed_in_duration < target_mixed_duration:
                 to_mix = next(mix_in_cuts)
+                to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
@@ -3550,11 +3576,23 @@ class LazyCutMixer(Dillable):
                     mixed_in_duration + to_mix.duration, ndigits=8
                 )
             # We truncate the mixed to either the original duration or the requested duration.
+            # Note: we don't use 'target_mixed_duration' here because it may have subtracted
+            #       a tiny bit of actual target duration to avoid errors related to edge effects.
             mixed = mixed.truncate(
                 duration=self.duration if self.duration is not None else cut.duration,
                 preserve_id=self.preserve_id is not None,
             )
             yield mixed
+
+    def _maybe_truncate_cut(
+        self, cut: Cut, target_duration: Seconds, rng: random.Random
+    ) -> Cut:
+        if self.random_mix_offset and cut.duration > target_duration:
+            cut = cut.truncate(
+                offset=rng.uniform(0, cut.duration - target_duration),
+                duration=target_duration,
+            )
+        return cut
 
     def __len__(self) -> int:
         return len(self.source)
