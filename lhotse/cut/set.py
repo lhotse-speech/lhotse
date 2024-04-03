@@ -1670,7 +1670,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: Union[int, Literal["trng", "randomized"]] = 42,
+        seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
     ) -> "CutSet":
         """
@@ -1699,7 +1699,7 @@ class CutSet(Serializable, AlgorithmMixin):
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
         :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
             If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
-            on each iteration.
+            on each iteration. You can also directly pass a ``random.Random`` instance here.
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
              select a random sub-region from the to be mixed in cut.
@@ -3460,7 +3460,7 @@ class LazyCutMixer(Dillable):
         Values lower than 1.0 mean that some cuts in the output will be unchanged.
     :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
         If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
-        on each iteration.
+        on each iteration. You can also directly pass a ``random.Random`` instance here.
     :param random_mix_offset: an optional bool.
         When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
          select a random sub-region from the to be mixed in cut.
@@ -3478,7 +3478,7 @@ class LazyCutMixer(Dillable):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
-        seed: Union[int, Literal["trng", "randomized"]] = 42,
+        seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
         stateful: bool = True,
     ) -> None:
@@ -3506,7 +3506,10 @@ class LazyCutMixer(Dillable):
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
 
-        rng = random.Random(resolve_seed(self.seed) + self.num_times_iterated)
+        if isinstance(self.seed, random.Random):
+            rng = self.seed
+        else:
+            rng = random.Random(resolve_seed(self.seed) + self.num_times_iterated)
         if self.stateful:
             self.num_times_iterated += 1
 
