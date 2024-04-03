@@ -3534,19 +3534,21 @@ class LazyCutMixer(Dillable):
             if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
                 yield cut
                 continue
-            to_mix = next(mix_in_cuts)
             # Determine the SNR - either it's specified or we need to sample one.
             cut_snr = (
                 rng.uniform(*self.snr)
                 if isinstance(self.snr, (list, tuple))
                 else self.snr
             )
-            if self.random_mix_offset and to_mix.duration > cut.duration:
-                to_mix = to_mix.truncate(
-                    offset=rng.uniform(0, to_mix.duration - cut.duration),
-                    duration=cut.duration,
-                )
+            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+            #       where we mix in some noise cut that effectively has 0 frames of features.
+            target_mixed_duration = round(
+                self.duration if self.duration is not None else cut.duration - 0.05,
+                ndigits=8,
+            )
             # Actual mixing
+            to_mix = next(mix_in_cuts)
+            to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
@@ -3557,10 +3559,9 @@ class LazyCutMixer(Dillable):
             # Keep sampling until we mixed in a "duration" amount of noise.
             # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
             #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (
-                self.duration if self.duration is not None else cut.duration - 0.05
-            ):
+            while mixed_in_duration < target_mixed_duration:
                 to_mix = next(mix_in_cuts)
+                to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
@@ -3575,11 +3576,23 @@ class LazyCutMixer(Dillable):
                     mixed_in_duration + to_mix.duration, ndigits=8
                 )
             # We truncate the mixed to either the original duration or the requested duration.
+            # Note: we don't use 'target_mixed_duration' here because it may have subtracted
+            #       a tiny bit of actual target duration to avoid errors related to edge effects.
             mixed = mixed.truncate(
                 duration=self.duration if self.duration is not None else cut.duration,
                 preserve_id=self.preserve_id is not None,
             )
             yield mixed
+
+    def _maybe_truncate_cut(
+        self, cut: Cut, target_duration: Seconds, rng: random.Random
+    ) -> Cut:
+        if self.random_mix_offset and cut.duration > target_duration:
+            cut = cut.truncate(
+                offset=rng.uniform(0, cut.duration - target_duration),
+                duration=target_duration,
+            )
+        return cut
 
     def __len__(self) -> int:
         return len(self.source)
