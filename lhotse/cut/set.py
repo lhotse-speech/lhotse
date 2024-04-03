@@ -3464,6 +3464,9 @@ class LazyCutMixer(Dillable):
     :param random_mix_offset: an optional bool.
         When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
          select a random sub-region from the to be mixed in cut.
+    :param stateful: when True, each time this object is iterated we will shuffle the noise cuts
+        using a different random seed. This is useful when you often re-start the iteration and
+        don't want to keep seeing the same noise examples. Enabled by default.
     """
 
     def __init__(
@@ -3477,6 +3480,7 @@ class LazyCutMixer(Dillable):
         mix_prob: float = 1.0,
         seed: Union[int, Literal["trng", "randomized"]] = 42,
         random_mix_offset: bool = False,
+        stateful: bool = True,
     ) -> None:
         self.source = cuts
         self.mix_in_cuts = mix_in_cuts
@@ -3487,6 +3491,8 @@ class LazyCutMixer(Dillable):
         self.mix_prob = mix_prob
         self.seed = seed
         self.random_mix_offset = random_mix_offset
+        self.stateful = stateful
+        self.num_times_iterated = 0
 
         assert 0.0 <= self.mix_prob <= 1.0
         assert self.duration is None or self.duration > 0
@@ -3500,9 +3506,28 @@ class LazyCutMixer(Dillable):
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
 
-        rng = random.Random(resolve_seed(self.seed))
-        mix_in_cuts = iter(self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=100))
+        rng = random.Random(resolve_seed(self.seed) + self.num_times_iterated)
+        if self.stateful:
+            self.num_times_iterated += 1
 
+        if self.mix_in_cuts.is_lazy:
+            # If the noise input is lazy, we'll shuffle it approximately.
+            # We set the shuffling buffer size to 2000 because that's the size of MUSAN,
+            # so even if the user forgets to convert MUSAN to an eager manifest, they will
+            # get roughly the same quality of noise randomness.
+            # Note: we can't just call .to_eager() as the noise CutSet can technically be
+            #       very large, or even hold data in-memory in case of webdataset/Lhotse Shar sources.
+            def noise_gen():
+                yield from self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=2000)
+
+        else:
+            # Eager nose cuts are just fully reshuffled in a different order on each noise "epoch".
+            def noise_gen():
+                #
+                while True:
+                    yield from self.mix_in_cuts.shuffle(rng=rng)
+
+        mix_in_cuts = iter(noise_gen())
         for cut in self.source:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
