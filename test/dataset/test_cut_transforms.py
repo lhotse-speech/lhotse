@@ -123,9 +123,9 @@ def test_cut_mix_is_stateful():
     noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=102)
 
     # called twice on the same input, expecting different results
-    tfnm = CutMix(noise_cuts, snr=None, p=1.0, seed=0, preserve_id=True)
-    out1 = tfnm(speech_cuts)
-    out2 = tfnm(speech_cuts)
+    tnfm = CutMix(noise_cuts, snr=None, p=1.0, seed=0, preserve_id=True)
+    out1 = tnfm(speech_cuts)
+    out2 = tnfm(speech_cuts)
     assert list(out1) != list(out2)
 
 
