@@ -1,7 +1,9 @@
+import random
 import warnings
-from typing import Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
 
 from lhotse import CutSet
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.utils import Decibels
 
 
@@ -18,7 +20,7 @@ class CutMix:
         p: float = 0.5,
         pad_to_longest: bool = True,
         preserve_id: bool = False,
-        seed: int = 42,
+        seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
     ) -> None:
         """
@@ -34,6 +36,9 @@ class CutMix:
             to match the duration of the longest Cut in a batch.
         :param preserve_id: When ``True``, preserves the IDs the cuts had before augmentation.
             Otherwise, new random IDs are generated for the augmented cuts (default).
+        :param seed: an optional int or "trng". Random seed for choosing the cuts to mix and the SNR.
+            If "trng" is provided, we'll use the ``secrets`` module for non-deterministic results
+            on each iteration. You can also directly pass a ``random.Random`` instance here.
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
             select a random sub-region from the to be mixed in cut.
@@ -48,6 +53,7 @@ class CutMix:
         self.pad_to_longest = pad_to_longest
         self.preserve_id = preserve_id
         self.seed = seed
+        self.rng = None
         self.random_mix_offset = random_mix_offset
 
     def __call__(self, cuts: CutSet) -> CutSet:
@@ -55,6 +61,8 @@ class CutMix:
         # Dummy transform - return
         if len(self.cuts) == 0:
             return cuts
+
+        self._lazy_rng_init()
 
         maybe_max_duration = (
             max(c.duration for c in cuts) if self.pad_to_longest else None
@@ -65,6 +73,14 @@ class CutMix:
             snr=self.snr,
             mix_prob=self.p,
             preserve_id="left" if self.preserve_id else None,
-            seed=self.seed,
+            seed=self.rng,
             random_mix_offset=self.random_mix_offset,
         ).to_eager()
+
+    def _lazy_rng_init(self):
+        if self.rng is not None:
+            return
+        if isinstance(self.seed, random.Random):
+            self.rng = self.seed
+        else:
+            self.rng = random.Random(resolve_seed(self.seed))
