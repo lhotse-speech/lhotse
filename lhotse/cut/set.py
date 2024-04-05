@@ -3564,7 +3564,7 @@ class LazyCutMixer(Dillable):
             #       where we mix in some noise cut that effectively has 0 frames of features.
             while mixed_in_duration < target_mixed_duration:
                 to_mix = next(mix_in_cuts)
-                to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
+                to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration - mixed_in_duration, rng)
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
