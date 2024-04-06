@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from lhotse.cut import CutSet, MixedCut
+from lhotse.testing.dummies import DummyManifest, as_lazy
 from lhotse.testing.fixtures import random_cut_set
 
 
@@ -59,3 +60,19 @@ def test_cut_set_mixing_with_random_mix_offset():
     offset_mix = speech_cuts.mix(noise_cuts, random_mix_offset=True)
     for a, b in zip(normal_mix, offset_mix):
         assert not np.array_equal(a.load_audio(), b.load_audio())
+
+
+def test_cut_set_mixing_less_noise_cuts_than_speech_cuts_eager_noise_cutset():
+    speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+    noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=101)
+    mixed_cuts = speech_cuts.mix(noise_cuts)
+    for c in mixed_cuts:
+        assert isinstance(c, MixedCut)
+
+
+def test_cut_set_mixing_less_noise_cuts_than_speech_cuts_lazy_noise_cutset():
+    speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=101).repeat(2)
+    mixed_cuts = speech_cuts.mix(noise_cuts)
+    for c in mixed_cuts:
+        assert isinstance(c, MixedCut)
