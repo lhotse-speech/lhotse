@@ -219,11 +219,9 @@ def parse_transcripts(
                     speaker=row["speaker"],
                     gender=row["gender"],
                     language="Mandarin",
-                    text=(
-                        row["text"]
-                        if not segment_words
-                        else " ".join(jieba.cut(row["text"]))
-                    ),
+                    text=row["text"]
+                    if not segment_words
+                    else " ".join(jieba.cut(row["text"])),
                     channel=row["channel"],
                     custom={
                         "dialect": row["dialect"],

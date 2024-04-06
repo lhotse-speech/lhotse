@@ -162,11 +162,9 @@ def _annotate_cuts(
         ]
         new_cut = fastcopy(
             cut,
-            supervisions=(
-                _postprocess_timestamps(supervisions)
-                if force_nonoverlapping
-                else supervisions
-            ),
+            supervisions=_postprocess_timestamps(supervisions)
+            if force_nonoverlapping
+            else supervisions,
         )
         yield new_cut
 

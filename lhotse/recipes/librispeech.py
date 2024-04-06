@@ -262,9 +262,9 @@ def parse_utterance(
         language="English",
         speaker=re.sub(r"-.*", r"", recording.id),
         text=text.strip(),
-        alignment=(
-            {"word": alignments[recording_id]} if recording_id in alignments else None
-        ),
+        alignment={"word": alignments[recording_id]}
+        if recording_id in alignments
+        else None,
     )
     return recording, segment
 

@@ -336,11 +336,9 @@ def prepare_chime6(
                     channel = _get_channel(
                         spk_id,
                         session,
-                        ref=(
-                            segment["ref"]
-                            if use_reference_array and part != "train"
-                            else None
-                        ),
+                        ref=segment["ref"]
+                        if use_reference_array and part != "train"
+                        else None,
                     )
                     start = TimeFormatConverter.hms_to_seconds(segment["start_time"])
                     end = TimeFormatConverter.hms_to_seconds(segment["end_time"])
@@ -358,13 +356,11 @@ def prepare_chime6(
                             ),
                             language="English",
                             speaker=spk_id,
-                            custom=(
-                                {
-                                    "location": segment["location"],
-                                }
-                                if part != "train" and "location" in segment
-                                else None
-                            ),
+                            custom={
+                                "location": segment["location"],
+                            }
+                            if part != "train" and "location" in segment
+                            else None,
                         )
                     )
 

@@ -3,7 +3,6 @@ Primewords is an open-source Chinese Mandarin corpus released by Shanghai Primew
 Publicly available on https://www.openslr.org/47/
 Primewords (99 hours)
 """
-
 import json
 import logging
 import shutil

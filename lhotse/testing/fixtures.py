@@ -122,9 +122,9 @@ class RandomCutTestCase:
                     start=0,
                     duration=cut.duration,
                     text="irrelevant",
-                    alignment=(
-                        self._with_alignment(cut, "irrelevant") if alignment else None
-                    ),
+                    alignment=self._with_alignment(cut, "irrelevant")
+                    if alignment
+                    else None,
                 )
             )
         if custom_field:

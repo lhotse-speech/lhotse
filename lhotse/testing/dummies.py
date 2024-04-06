@@ -327,12 +327,14 @@ def dummy_cut(
         start=start,
         duration=duration,
         channel=0,
-        recording=(
-            recording if recording else dummy_recording(unique_id, with_data=with_data)
+        recording=recording
+        if recording
+        else dummy_recording(
+            unique_id, duration=recording_duration, with_data=with_data
         ),
-        features=(
-            features if features else dummy_features(unique_id, with_data=with_data)
-        ),
+        features=features
+        if features
+        else dummy_features(unique_id, with_data=with_data),
         supervisions=supervisions if supervisions is not None else [],
         custom=custom,
     )
@@ -359,21 +361,18 @@ def dummy_multi_cut(
         start=start,
         duration=duration,
         channel=channel,
-        recording=(
-            recording
-            if recording
-            else dummy_multi_channel_recording(
-                unique_id,
-                channel_ids=channel,
-                with_data=with_data,
-                source_per_channel=source_per_channel,
-            )
+        recording=recording
+        if recording
+        else dummy_multi_channel_recording(
+            unique_id,
+            duration=recording_duration,
+            channel_ids=channel,
+            with_data=with_data,
+            source_per_channel=source_per_channel,
         ),
-        features=(
-            features
-            if features
-            else dummy_multi_channel_features(unique_id, channels=channel)
-        ),
+        features=features
+        if features
+        else dummy_multi_channel_features(unique_id, channels=channel),
         supervisions=supervisions if supervisions is not None else [],
     )
 

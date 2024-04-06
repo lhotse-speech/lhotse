@@ -29,13 +29,10 @@ class PerturbTempo:
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(
-            (
-                cut.perturb_tempo(
-                    factor=self.random.choice(self.factors),
-                    affix_id=not self.preserve_id,
-                )
-                if self.random.random() <= self.p
-                else cut
+            cut.perturb_tempo(
+                factor=self.random.choice(self.factors), affix_id=not self.preserve_id
             )
+            if self.random.random() <= self.p
+            else cut
             for cut in cuts
         )

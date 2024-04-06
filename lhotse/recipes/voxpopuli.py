@@ -22,7 +22,6 @@ NOTE: Our data preparation is slightly different from the original repository. I
 we only use the metadata to create manifests, i.e., we do not create segment-level wav files,
 unlike the original repository. In this way, we can avoid duplicating the audio files.
 """
-
 import csv
 import gzip
 import logging

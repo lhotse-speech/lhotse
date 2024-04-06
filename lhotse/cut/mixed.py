@@ -1302,25 +1302,23 @@ class MixedCut(Cut):
                 idx for idx, t in enumerate(self.tracks) if isinstance(t.cut, DataCut)
             ][0]
             new_tracks = [
-                (
-                    fastcopy(
-                        t,
-                        cut=fastcopy(
-                            t.cut,
-                            supervisions=[
-                                SupervisionSegment(
-                                    id=self.id,
-                                    recording_id=t.cut.recording_id,
-                                    start=-t.offset,
-                                    duration=self.duration,
-                                    channel=-1,
-                                )
-                            ],
-                        ),
-                    )
-                    if idx == first_non_padding_idx
-                    else t
+                fastcopy(
+                    t,
+                    cut=fastcopy(
+                        t.cut,
+                        supervisions=[
+                            SupervisionSegment(
+                                id=self.id,
+                                recording_id=t.cut.recording_id,
+                                start=-t.offset,
+                                duration=self.duration,
+                                channel=-1,
+                            )
+                        ],
+                    ),
                 )
+                if idx == first_non_padding_idx
+                else t
                 for idx, t in enumerate(self.tracks)
             ]
         else:

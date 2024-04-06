@@ -23,7 +23,6 @@ Audio samples of the ground-truth and TTS generated samples are available at the
 [2] Yuma Koizumi, Heiga Zen, Shigeki Karita, Yifan Ding, Kohei Yatabe, Nobuyuki Morioka, Yu Zhang, Wei Han, Ankur Bapna, and Michiel Bacchiani, "Miipher: A Robust Speech Restoration Model Integrating Self-Supervised Speech and Text Representations," arXiv, 2023.
 
 """
-
 import logging
 import re
 import shutil

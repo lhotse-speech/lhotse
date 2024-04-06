@@ -157,22 +157,18 @@ class PaddingCut(Cut):
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
             feat_value=self.feat_value,
-            num_frames=(
-                compute_num_frames(
-                    duration=new_duration,
-                    frame_shift=self.frame_shift,
-                    sampling_rate=self.sampling_rate,
-                )
-                if self.num_frames is not None
-                else None
-            ),
-            num_samples=(
-                compute_num_samples(
-                    duration=new_duration, sampling_rate=self.sampling_rate
-                )
-                if self.num_samples is not None
-                else None
-            ),
+            num_frames=compute_num_frames(
+                duration=new_duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate,
+            )
+            if self.num_frames is not None
+            else None,
+            num_samples=compute_num_samples(
+                duration=new_duration, sampling_rate=self.sampling_rate
+            )
+            if self.num_samples is not None
+            else None,
         )
 
     # noinspection PyUnusedLocal
@@ -205,22 +201,18 @@ class PaddingCut(Cut):
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
             feat_value=self.feat_value,
-            num_frames=(
-                compute_num_frames(
-                    duration=new_duration,
-                    frame_shift=self.frame_shift,
-                    sampling_rate=self.sampling_rate,
-                )
-                if self.num_frames is not None
-                else None
-            ),
-            num_samples=(
-                compute_num_samples(
-                    duration=new_duration, sampling_rate=self.sampling_rate
-                )
-                if self.num_samples is not None
-                else None
-            ),
+            num_frames=compute_num_frames(
+                duration=new_duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate,
+            )
+            if self.num_frames is not None
+            else None,
+            num_samples=compute_num_samples(
+                duration=new_duration, sampling_rate=self.sampling_rate
+            )
+            if self.num_samples is not None
+            else None,
         )
 
     def pad(

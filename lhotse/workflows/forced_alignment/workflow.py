@@ -4,7 +4,6 @@ alignment with Wav2Vec2 created by Moto Hira.
 
 Link: https://pytorch.org/audio/stable/pipelines.html
 """
-
 from functools import partial
 from typing import Generator
 

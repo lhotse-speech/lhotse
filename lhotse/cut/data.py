@@ -212,17 +212,12 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
             custom = {
                 # Case 1: Array
-                k: (
-                    v.move_to_memory()
-                    if isinstance(v, Array)
-                    # Case 2: TemporalArray
-                    else (
-                        v.move_to_memory(start=self.start, duration=self.duration)
-                        if isinstance(v, TemporalArray)
-                        # Case 3: anything else
-                        else v
-                    )
-                )
+                k: v.move_to_memory() if isinstance(v, Array)
+                # Case 2: TemporalArray
+                else v.move_to_memory(start=self.start, duration=self.duration)
+                if isinstance(v, TemporalArray)
+                # Case 3: anything else
+                else v
                 for k, v in self.custom.items()
             }
 
@@ -878,9 +873,9 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             fastcopy(
                 s,
                 id=f"{s.id}_ln{target}" if affix_id else s.id,
-                recording_id=(
-                    f"{s.recording_id}_ln{target}" if affix_id else s.recording_id
-                ),
+                recording_id=f"{s.recording_id}_ln{target}"
+                if affix_id
+                else s.recording_id,
             )
             for s in self.supervisions
         ]

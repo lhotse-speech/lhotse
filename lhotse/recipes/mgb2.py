@@ -17,7 +17,6 @@ development set of 10 hours, and a similar evaluation set of 10 hours.
 Both the development and evaluation data have been released in the 2016 MGB
 challenge
 """
-
 from itertools import chain
 from logging import info
 from os import path, system

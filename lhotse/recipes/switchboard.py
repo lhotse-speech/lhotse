@@ -10,7 +10,6 @@ About the Switchboard corpus
 
     This data is not available for free - your institution needs to have an LDC subscription.
 """
-
 import tarfile
 from itertools import chain
 from pathlib import Path

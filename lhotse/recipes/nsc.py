@@ -21,7 +21,6 @@ Under Part 6, speakers were made to speak following the 3 styles within either o
 
 We currently only support the part 3 recordings, in "same room close mic" and "separate rooms phone mic" environments.
 """
-
 import itertools
 import logging
 import zipfile

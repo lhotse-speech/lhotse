@@ -6,7 +6,6 @@ for a total of 34000 sentences. Sentences are of the form "put red at G9 now".
 
 Source: https://zenodo.org/record/3625687
 """
-
 import subprocess
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed

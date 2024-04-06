@@ -7,7 +7,6 @@ Z. Chen et al., "Continuous speech separation: dataset and analysis,"
 ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP),
 Barcelona, Spain, 2020
 """
-
 import json
 import logging
 import subprocess
@@ -175,11 +174,9 @@ def prepare_libricss(
             audio_path = (
                 session / "clean" / "mix.wav"
                 if type == "ihm-mix"
-                else (
-                    session / "clean" / "each_spk.wav"
-                    if type == "ihm"
-                    else session / "record" / "raw_recording.wav"
-                )
+                else session / "clean" / "each_spk.wav"
+                if type == "ihm"
+                else session / "record" / "raw_recording.wav"
             )
             recording = Recording.from_file(audio_path, recording_id=recording_id)
 

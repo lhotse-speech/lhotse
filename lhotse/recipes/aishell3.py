@@ -10,7 +10,6 @@ character-level and pinyin-level are provided along with the recordings.
 The word & tone transcription accuracy rate is above 98%, through professional
 speech annotation and strict quality inspection for tone and prosody.
 """
-
 import logging
 import shutil
 import tarfile

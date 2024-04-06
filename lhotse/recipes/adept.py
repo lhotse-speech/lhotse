@@ -20,7 +20,6 @@ More details can be found in pre-print about the dataset (https://arxiv.org/abs/
 
 Source: https://zenodo.org/record/5117102#.YVsHlS-B3T9
 """
-
 import json
 import logging
 import shutil

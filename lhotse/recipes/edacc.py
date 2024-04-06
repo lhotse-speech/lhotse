@@ -20,7 +20,6 @@ Recordings, linguistic backgrounds, data statement, and evaluation scripts are r
 
 Source: https://datashare.ed.ac.uk/handle/10283/4836
 """
-
 import logging
 import math
 import shutil

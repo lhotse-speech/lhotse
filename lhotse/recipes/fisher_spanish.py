@@ -66,6 +66,7 @@ def prepare_fisher_spanish(
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+
     """
     Prepares manifests for Fisher Spanish.
     We create two manifests: one with recordings, and the other one with text supervisions.

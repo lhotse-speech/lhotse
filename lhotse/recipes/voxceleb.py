@@ -28,7 +28,6 @@ the original owners of the video.
 
 This Lhotse recipe prepares the VoxCeleb1 and VoxCeleb2 datasets.
 """
-
 import logging
 import shutil
 import tempfile

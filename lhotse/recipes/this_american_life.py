@@ -5,7 +5,6 @@ We hope that this dataset can serve as a new benchmark for the difficult tasks o
 
 To learn more, please read our paper at: https://arxiv.org/pdf/2005.08072.pdf, and check the README.txt.
 """
-
 import glob
 import json
 import logging

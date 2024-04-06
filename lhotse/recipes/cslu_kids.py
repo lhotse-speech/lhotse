@@ -20,7 +20,6 @@ Prompted speech is verified and divided into following categories:
 
 This data is not available for free - your institution needs to have an LDC subscription.
 """
-
 import logging
 import re
 from pathlib import Path

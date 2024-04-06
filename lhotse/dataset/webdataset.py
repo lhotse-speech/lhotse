@@ -48,7 +48,6 @@ Read the documentation of the items below to understand each component better.
                │           └────────┘  └────────┘  └────────┘│
                └─────────────────────────────────────────────┘
 """
-
 import logging
 import pickle
 import random

@@ -20,7 +20,6 @@ can be made by improving labelling etc.
 
 Note: The Lhotse recipe is currently not downloading or using the phonetic labeling.
 """
-
 import logging
 import shutil
 import tarfile

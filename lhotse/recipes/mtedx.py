@@ -20,7 +20,6 @@ A subset of this audio is translated and split into the following partitions:
 
 This recipe only prepares the ASR portion of the data.
 """
-
 import logging
 import re
 import tarfile
@@ -70,7 +69,6 @@ ISOCODE2LANG = {
     "ar": "Arabic",
     "de": "German",
 }
-
 
 ###############################################################################
 #                             Download and Untar
@@ -170,7 +168,6 @@ def prepare_mtedx(
 # All remaining functions are just helper functions, mainly for text
 # normalization and parsing the vtt files that come with the mtedx corpus
 ###############################################################################
-
 
 # Prepare data for a single language
 def prepare_single_mtedx_language(

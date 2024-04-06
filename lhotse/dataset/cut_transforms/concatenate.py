@@ -37,11 +37,9 @@ class CutConcatenate:
         return concat_cuts(
             cuts,
             gap=self.gap,
-            max_duration=(
-                self.max_duration
-                if self.max_duration
-                else cuts[0].duration * self.duration_factor
-            ),
+            max_duration=self.max_duration
+            if self.max_duration
+            else cuts[0].duration * self.duration_factor,
         )
 
 

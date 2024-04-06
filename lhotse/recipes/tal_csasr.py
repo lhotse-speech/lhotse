@@ -2,7 +2,6 @@
 optional TAL_CSASR(587 hours) if available(https://ai.100tal.com/dataset).
 It is a mandarin-english code-switch corpus.
 """
-
 import logging
 import re
 from collections import defaultdict
@@ -41,9 +40,7 @@ def text_normalize(line: str):
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
     line = re.sub(
-        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|\.',
-        "",
-        line,
+        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|\.', "", line
     )
     line = line.replace("Ｅ", "E")
     line = line.replace("Ｎ", "N")

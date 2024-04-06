@@ -89,7 +89,7 @@ def test_silero_vad_workflow_simple(temporary_directory: str):
         + ["--output-supervisions-manifest", str(output_manifest_path)]
         + ["--model-name", "silero_vad_16k"]
         + ["--device", "cpu"]
-        + ["--jobs", "1"],
+        + ["--jobs", "1"]
         # "--force_download",
     )
 
