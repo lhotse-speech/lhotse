@@ -23,7 +23,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-from bs4 import BeautifulSoup
 from tqdm.auto import tqdm
 
 from lhotse.audio import RecordingSet
@@ -236,6 +235,7 @@ def load_splits(splits_dir):
 
 def process_cs(line, rm_punc=False, lc=False):
     """Function to detect if sentence contains English words (code switching)"""
+    from bs4 import BeautifulSoup  # local import
     soup = BeautifulSoup(line, features="html.parser")
     # Find all foreign tags which indicates English words
     foreign_tags = soup.find_all("foreign", lang="English")
