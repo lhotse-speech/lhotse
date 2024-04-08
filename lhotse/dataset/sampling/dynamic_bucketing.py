@@ -130,7 +130,7 @@ class DynamicBucketingSampler(CutSampler):
             avoid some buckets depleting prematurely. Instead of sampling buckets uniformly,
             we keep track of the number of times they were sampled and bias the sampling to
             prefer the under-sampled buckets. The prior factor controls the bias strength
-            (larger prior factor means less bias; 50-100 is a reasonable starting value).
+            (larger prior factor means less bias; we suggest starting with 10).
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -526,8 +526,7 @@ class DynamicBucketer:
             Keeping the ``buffer_size`` sufficiently large will help ensure we typically select
             from a full or almost full set of buckets.
         """
-        active_bucket_indexes = np.asarray(active_bucket_indexes)
-        num_buckets = active_bucket_indexes.shape[0]
+        num_buckets = len(active_bucket_indexes)
         prior = np.ones(num_buckets) / num_buckets
         prior_num_obs = self.prior_factor * num_buckets
 
@@ -538,7 +537,9 @@ class DynamicBucketer:
         active_weights = (prior * prior_num_obs + posterior * posterior_num_obs) / (
             prior_num_obs + posterior_num_obs
         )
-        selected = np.random.choice(active_bucket_indexes, p=active_weights).item()
+        (selected,) = self.rng.choices(
+            active_bucket_indexes, weights=active_weights, k=1
+        )
         return selected
 
 
