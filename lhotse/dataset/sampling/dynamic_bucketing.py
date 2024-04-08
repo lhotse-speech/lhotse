@@ -88,6 +88,7 @@ class DynamicBucketingSampler(CutSampler):
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 20000,
         quadratic_duration: Optional[Seconds] = None,
+        prior_factor: Optional[float] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: Union[int, Literal["randomized", "trng"]] = 0,
@@ -125,6 +126,11 @@ class DynamicBucketingSampler(CutSampler):
         :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
             a cuts duration. This helps get a more even GPU utilization across different input lengths
             when models have quadratic input complexity. Set between 15 and 40 for transformers.
+        :param prior_factor: When set, we'll perform approximate proportional sampling to
+            avoid some buckets depleting prematurely. Instead of sampling buckets uniformly,
+            we keep track of the number of times they were sampled and bias the sampling to
+            prefer the under-sampled buckets. The prior factor controls the bias strength
+            (larger prior factor means less bias; 50-100 is a reasonable starting value).
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -147,6 +153,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
+        self.prior_factor = prior_factor
         self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
 
@@ -197,6 +204,7 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "quadratic_duration": self.quadratic_duration,
+                "prior_factor": self.prior_factor,
             }
         )
         return sd
@@ -212,6 +220,7 @@ class DynamicBucketingSampler(CutSampler):
             shuffle_buffer_size = sd.pop("shuffle_buffer_size")
             self.buffer_size += shuffle_buffer_size
         self.quadratic_duration = sd.pop("quadratic_duration", None)
+        self.prior_factor = sd.pop("prior_factor", None)
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -262,6 +271,7 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=self.buffer_size,
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
+            prior_factor=self.prior_factor,
             rng=self.rng,
             diagnostics=self.diagnostics,
         )
@@ -349,6 +359,7 @@ class DynamicBucketer:
         buffer_size: int = 10000,
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
+        prior_factor: Optional[float] = None,
         rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
@@ -397,6 +408,13 @@ class DynamicBucketer:
             deque() for _ in range(len(duration_bins) + 1)
         ]
 
+        self.prior_factor = prior_factor
+        self.bucket_counter = np.zeros(self.num_buckets, dtype=np.uint64)
+
+    @property
+    def num_buckets(self):
+        return len(self.duration_bins) + 1
+
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
@@ -415,19 +433,26 @@ class DynamicBucketer:
         # On each step we're sampling a new batch.
         try:
             while True:
-                ready_buckets = [b for b in self.buckets if is_ready(b)]
-                if not ready_buckets:
+                ready_indexes = [
+                    idx for idx, b in enumerate(self.buckets) if is_ready(b)
+                ]
+                if not ready_indexes:
                     # No bucket has enough data to yield for the last full batch.
-                    non_empty_buckets = [b for b in self.buckets if b]
-                    if self.drop_last or len(non_empty_buckets) == 0:
+                    non_empty_indexes = [idx for idx, b in enumerate(self.buckets) if b]
+                    if self.drop_last or len(non_empty_indexes) == 0:
                         # Either the user requested only full batches, or we have nothing left.
                         raise StopIteration()
                     else:
                         # Sample from partial batches that are left.
-                        ready_buckets = non_empty_buckets
+                        ready_indexes = non_empty_indexes
                 # Choose a bucket to sample from.
                 # We'll only select from the buckets that have a full batch available.
-                sampling_bucket = self.rng.choice(ready_buckets)
+                if self.prior_factor is None:
+                    selected_bucket_index = self.rng.choice(ready_indexes)
+                else:
+                    selected_bucket_index = self._select_bucket_map(ready_indexes)
+                self.bucket_counter[selected_bucket_index] += 1
+                sampling_bucket = self.buckets[selected_bucket_index]
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
                 indexes_used = []
@@ -476,6 +501,45 @@ class DynamicBucketer:
                 self.buckets[bucket_idx].append(cuts)
         except StopIteration:
             pass
+
+    def _select_bucket_map(self, active_bucket_indexes: List[int]) -> int:
+        """
+        Select the bucket to sample from, biasing the choice towards buckets that were less frequently sampled
+        than others.
+
+        This method has the following steps:
+
+        * Assume a uniform prior over all buckets.
+
+        * Take the observed counts of selected buckets so far, inverse them, and normalize by the sum to obtain
+            "correction" probabilities that we'll treat as a posterior distribution.
+
+        * Use the Bayesian MAP formula to get the actual bucket sampling weights.
+            The inverse of observed counts could lead to an overly sharp distribution.
+            The prior weight is equal to the number of buckets times ``prior_factor``,
+            and the posterior weight is equal to the number of mini-batches already yielded by this sampler.
+            This way we won't intervene too much at the beginning of the training, and gradually
+            increase the correction for buckets that become undersampled.
+
+        * Select the bucket to sample from, limited to the buckets that are currently "active"
+            (i.e., have enough data to form a mini-batch).
+            Keeping the ``buffer_size`` sufficiently large will help ensure we typically select
+            from a full or almost full set of buckets.
+        """
+        active_bucket_indexes = np.asarray(active_bucket_indexes)
+        num_buckets = active_bucket_indexes.shape[0]
+        prior = np.ones(num_buckets) / num_buckets
+        prior_num_obs = self.prior_factor * num_buckets
+
+        posterior = 1 / (self.bucket_counter[active_bucket_indexes] + 1)
+        posterior = posterior / posterior.sum()
+        posterior_num_obs = self.bucket_counter.sum()
+
+        active_weights = (prior * prior_num_obs + posterior * posterior_num_obs) / (
+            prior_num_obs + posterior_num_obs
+        )
+        selected = np.random.choice(active_bucket_indexes, p=active_weights).item()
+        return selected
 
 
 def pick_at_random(
