@@ -1,4 +1,3 @@
-import logging
 import random
 import warnings
 from bisect import bisect_right
@@ -447,27 +446,42 @@ class DynamicBucketer:
                     return True
             return False
 
+        def is_ready_buckets(ready_buckets: List[Tuple[int, Deque]] = []):
+            ready_indexs = [v[0] for v in ready_buckets]
+            for b, bucket in enumerate(self.buckets):
+                if b in ready_indexs:
+                    continue
+                if is_ready(bucket):
+                    ready_buckets.append((b, bucket))
+            return ready_buckets
+
         # The iteration code starts here.
         # On each step we're sampling a new batch.
         try:
-            ready_buckets = [b for b in self.buckets if is_ready(b)]
+            ready_buckets = is_ready_buckets()
             while True:
                 if not ready_buckets:
                     # No bucket has enough data to yield for the last full batch.
-                    non_empty_buckets = [b for b in self.buckets if b]
+                    non_empty_buckets = [
+                        (b, bucket) for b, bucket in enumerate(self.buckets) if bucket
+                    ]
                     if self.drop_last or len(non_empty_buckets) == 0:
-                        logging.info(
+                        print(
                             f"({self.rank}/{self.world_size}) DynamicBucketer no more ready buckets to sample. num_cuts {num_cuts} is_exceeded {is_exceeded}."
                         )
+                        assert (
+                            is_exceeded
+                        ), f"Your 'buffer_size' setting of {self.buffer_size} is too low."
                         # Either the user requested only full batches, or we have nothing left.
                         raise StopIteration()
                     else:
                         # Sample from partial batches that are left.
                         ready_buckets = non_empty_buckets
+
                 # Choose a bucket to sample from.
                 # We'll only select from the buckets that have a full batch available.
                 bucket_idx = quantize(self.bucket_rng.random(), len(ready_buckets))
-                sampling_bucket = ready_buckets[bucket_idx]
+                b, sampling_bucket = ready_buckets[bucket_idx]
 
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
@@ -494,14 +508,18 @@ class DynamicBucketer:
                 batcher = iter(batcher)
 
                 total_batch_size = 0
-                for _ in range(self.world_size):
-                    batch = next(batcher)
-                    if isinstance(batch, tuple):
-                        batch_size = len(batch[0])
-                    else:
-                        batch_size = len(batch)
-                    total_batch_size += batch_size
-                    yield batch
+                try:
+                    for _ in range(self.world_size):
+                        batch = next(batcher)
+                        if isinstance(batch, tuple):
+                            batch_size = len(batch[0])
+                        else:
+                            batch_size = len(batch)
+                        total_batch_size += batch_size
+                        yield batch
+                except StopIteration:
+                    # yield from non_empty_buckets
+                    pass
 
                 # Remove sampled cuts from the bucket.
                 # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
@@ -509,24 +527,20 @@ class DynamicBucketer:
                 for idx in indexes_used:
                     del sampling_bucket[idx]
 
+                ready_buckets.pop(bucket_idx)
                 if not is_exceeded:
                     try:
                         # Fetch new cuts and add them to appropriate buckets.
                         self._collect_cuts_in_buckets(total_batch_size, num_cuts)
-                        if len(ready_buckets) <= 1:
-                            # More than 1 ready buckets for better randomness
-                            while True:
-                                ready_buckets = [b for b in self.buckets if is_ready(b)]
-                                if len(ready_buckets) >= 2:
-                                    break
-                                self._collect_cuts_in_buckets(
-                                    total_batch_size, num_cuts
-                                )
-                            continue
+                        ready_buckets = is_ready_buckets(ready_buckets)
+                        while len(ready_buckets) < 2:
+                            self._collect_cuts_in_buckets(total_batch_size, num_cuts)
+                            ready_buckets = is_ready_buckets(ready_buckets)
                     except StopIteration:
+                        ready_buckets = is_ready_buckets(ready_buckets)
                         is_exceeded = True
-
-                ready_buckets = [b for b in self.buckets if is_ready(b)]
+                else:
+                    ready_buckets = is_ready_buckets(ready_buckets)
         except StopIteration:
             pass
 
