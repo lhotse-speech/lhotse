@@ -3562,11 +3562,7 @@ class LazyCutMixer(Dillable):
             # Keep sampling until we mixed in a "duration" amount of noise.
             # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
             #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (
-                target_mixed_duration - 0.05
-                if self.duration is None
-                else target_mixed_duration
-            ):
+            while mixed_in_duration < target_mixed_duration - 0.05:
                 to_mix = next(mix_in_cuts)
                 to_mix = self._maybe_truncate_cut(
                     to_mix, target_mixed_duration - mixed_in_duration, rng
