@@ -19,7 +19,6 @@ from typing import (
 )
 
 import numpy as np
-from sympy import true
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
@@ -458,10 +457,10 @@ class DynamicBucketer:
                     non_empty_buckets = [b for b in self.buckets if b]
                     if self.drop_last or len(non_empty_buckets) == 0:
                         logging.info(
-                            f"({self.rank}/{self.world_size}) DynamicBucketer no more data to sample, exiting. num_cuts {num_cuts} is_exceeded {is_exceeded}."
+                            f"({self.rank}/{self.world_size}) DynamicBucketer no more ready buckets to sample. num_cuts {num_cuts} is_exceeded {is_exceeded}."
                         )
                         # Either the user requested only full batches, or we have nothing left.
-                        raise StopIteration
+                        raise StopIteration()
                     else:
                         # Sample from partial batches that are left.
                         ready_buckets = non_empty_buckets
@@ -513,9 +512,7 @@ class DynamicBucketer:
                 if not is_exceeded:
                     try:
                         # Fetch new cuts and add them to appropriate buckets.
-                        self._collect_cuts_in_buckets(
-                            total_batch_size * self.world_size, num_cuts
-                        )
+                        self._collect_cuts_in_buckets(total_batch_size, num_cuts)
                         if len(ready_buckets) <= 1:
                             # More than 1 ready buckets for better randomness
                             while True:
@@ -523,7 +520,7 @@ class DynamicBucketer:
                                 if len(ready_buckets) >= 2:
                                     break
                                 self._collect_cuts_in_buckets(
-                                    total_batch_size * self.world_size, num_cuts
+                                    total_batch_size, num_cuts
                                 )
                             continue
                     except StopIteration:
