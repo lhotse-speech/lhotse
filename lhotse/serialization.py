@@ -128,6 +128,8 @@ def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
             except Exception as e:
                 print(e)
                 print(item)
+                
+                raise Exception("Serialization error!")
 
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
