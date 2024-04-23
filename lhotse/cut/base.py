@@ -677,7 +677,7 @@ class Cut:
         from .set import CutSet
 
         if not self.supervisions:
-            return self
+            return CutSet([self])
         supervisions = sorted(self.supervisions, key=lambda s: s.start)
         supervision_group = [supervisions[0]]
         cur_end = supervisions[0].end
