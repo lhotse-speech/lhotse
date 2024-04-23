@@ -9,6 +9,7 @@ This project is an effort to bridge the digital speech divide. Voice recognition
 How does it work?
 We are crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people's clips, make the dataset better for everyone.
 """
+import csv
 import logging
 import math
 import numbers
@@ -149,14 +150,13 @@ def _parse_utterance(
     language: str,
     audio_info: str,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
-    audio_info = audio_info.split("\t", -1)
-    audio_path = lang_path / "clips" / audio_info[1]
+    audio_path = lang_path / "clips" / audio_info["path"]
 
     if not audio_path.is_file():
         logging.info(f"No such file: {audio_path}")
         return None
 
-    recording_id = Path(audio_info[1]).stem
+    recording_id = Path(audio_info["path"]).stem
     recording = Recording.from_file(path=audio_path, recording_id=recording_id)
 
     segment = SupervisionSegment(
@@ -166,12 +166,13 @@ def _parse_utterance(
         duration=recording.duration,
         channel=0,
         language=language,
-        speaker=audio_info[0],
-        text=audio_info[2].strip(),
-        gender=audio_info[6],
+        speaker=audio_info["client_id"],
+        text=audio_info["sentence"].strip(),
+        gender=audio_info["gender"],
         custom={
-            "age": audio_info[5],
-            "accents": audio_info[7],
+            "age": audio_info["age"],
+            "accents": audio_info["accents"],
+            "variant": audio_info["variant"]
         },
     )
     return recording, segment
@@ -207,9 +208,16 @@ def _prepare_part(
             futures = []
             recordings = []
             supervisions = []
+            
+            audio_infos = []
 
-            with open(tsv_path) as f:
-                audio_infos = iter(f.readlines())
+            # Create a dict for each row
+            # Ex: {'client_id': '0da3ad6381619ef478d86896731ccbf88c6209354a892a5c69b8259a67919b4755b14427ef80b197c4c3886e906849dd6af792d3e631eb9ac1cbc110019f5201', 'path': 'common_voice_de_19058316.mp3', 'sentence_id': '9416f9e6c0524877a0437e143c62c8502160b0bf6246126c94894deca0fcad28', 'sentence': 'Alle Fluchtwege sind abgeschnitten.', 'sentence_domain': '', 'up_votes': '2', 'down_votes': '0', 'age': 'teens', 'gender': 'male_masculine', 'accents': 'Deutschland Deutsch', 'variant': '', 'locale': 'de', 'segment': ''}
+
+
+            with open(tsv_path, 'r') as f:
+                reader = csv.DictReader(file, delimiter='\t')
+                audio_infos = [row for row in reader]
 
             for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
                 futures.append(
