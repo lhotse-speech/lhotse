@@ -454,6 +454,7 @@ def resumable_download(
     filename: Pathlike,
     force_download: bool = False,
     completed_file_size: Optional[int] = None,
+    missing_ok: bool = False,
 ) -> None:
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
@@ -518,7 +519,13 @@ def resumable_download(
         except urllib.error.HTTPError as e:
             # "Request Range Not Satisfiable" means the requested range
             # starts after the file ends OR that the server does not support range requests.
-            if e.code == 416:
+            if e.code == 404 and missing_ok:
+                logging.warning(
+                    f"{url} does not exist (error 404). Skipping this file."
+                )
+                if Path(filename).is_file():
+                    os.remove(filename)
+            elif e.code == 416:
                 content_range = e.headers.get("Content-Range", None)
                 if content_range is None:
                     # sometimes, the server actually supports range requests
