@@ -216,7 +216,7 @@ def _prepare_part(
 
 
             with open(tsv_path, 'r') as f:
-                reader = csv.DictReader(file, delimiter='\t')
+                reader = csv.DictReader(f, delimiter='\t')
                 audio_infos = [row for row in reader]
 
             for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
