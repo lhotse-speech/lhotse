@@ -123,7 +123,11 @@ def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
     with open_best(path, "w") as f:
         for item in data:
-            print(json.dumps(item, ensure_ascii=False), file=f)
+            try:
+                print(json.dumps(item, ensure_ascii=False), file=f)
+            except Exception as e:
+                print(e)
+                print(item)
 
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
