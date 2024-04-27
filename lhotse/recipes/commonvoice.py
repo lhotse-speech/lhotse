@@ -172,7 +172,7 @@ def _parse_utterance(
         custom={
             "age": audio_info["age"],
             "accents": audio_info["accents"],
-            "variant": audio_info["variant"]
+            "variant": audio_info["variant"],
         },
     )
     return recording, segment
@@ -208,26 +208,22 @@ def _prepare_part(
             futures = []
             recordings = []
             supervisions = []
-            
             audio_infos = []
 
-            # Create a dict for each row
-            # Ex: {'client_id': '0da3ad6381619ef478d86896731ccbf88c6209354a892a5c69b8259a67919b4755b14427ef80b197c4c3886e906849dd6af792d3e631eb9ac1cbc110019f5201', 'path': 'common_voice_de_19058316.mp3', 'sentence_id': '9416f9e6c0524877a0437e143c62c8502160b0bf6246126c94894deca0fcad28', 'sentence': 'Alle Fluchtwege sind abgeschnitten.', 'sentence_domain': '', 'up_votes': '2', 'down_votes': '0', 'age': 'teens', 'gender': 'male_masculine', 'accents': 'Deutschland Deutsch', 'variant': '', 'locale': 'de', 'segment': ''}
+            with open(tsv_path, "r") as f:
 
+                # Note: using QUOTE_NONE as CV dataset contains unbalanced quotes, cleanup needed later
+                audio_infos = csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
 
-            with open(tsv_path, 'r') as f:
-                reader = csv.DictReader(f, delimiter='\t')
-                audio_infos = [row for row in reader]
-
-            for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
-                futures.append(
-                    ex.submit(
-                        _parse_utterance,
-                        lang_path,
-                        lang,
-                        audio_info,
+                for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
+                    futures.append(
+                        ex.submit(
+                            _parse_utterance,
+                            lang_path,
+                            lang,
+                            audio_info,
+                        )
                     )
-                )
 
             for future in tqdm(futures, desc="Processing"):
                 result = future.result()
