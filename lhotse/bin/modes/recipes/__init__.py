@@ -10,6 +10,7 @@ from .aspire import *
 from .atcosim import *
 from .audio_mnist import *
 from .babel import *
+from .baker_zh import *
 from .bengaliai_speech import *
 from .broadcast_news import *
 from .but_reverb_db import *

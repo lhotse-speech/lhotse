@@ -9,7 +9,7 @@ from lhotse import CutSet
 from lhotse.audio.backend import audio_backend, check_torchaudio_version_gt
 from lhotse.lazy import LazyJsonlIterator
 from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
-from lhotse.testing.dummies import DummyManifest
+from lhotse.testing.dummies import DummyManifest, dummy_cut
 
 
 def test_tar_writer(tmp_path: Path):
@@ -687,3 +687,49 @@ def test_shar_writer_pipe(tmp_path: Path):
         assert cut.custom_recording.sources[0].type == "shar"
         with pytest.raises(RuntimeError):
             cut.load_custom_recording()
+
+
+def test_shar_writer_truncates_temporal_array_and_features(tmp_path: Path):
+    # Basic data and sanity check of shapes.
+    cut = dummy_cut(0, with_data=True)
+    for k in "custom_embedding custom_features custom_recording".split():
+        cut = cut.drop_custom(k)
+    ref_audio = cut.load_audio()
+    ref_feats = cut.load_features()
+    ref_indxs = cut.load_custom_indexes()
+    assert ref_audio.shape == (1, 16000)
+    assert ref_feats.shape == (100, 23)
+    assert ref_indxs.shape == (100,)
+
+    # Truncated cut before writing to Shar and sanity check of shapes and content.
+    cut = cut.truncate(offset=0.2, duration=0.6)
+    trunc_audio = cut.load_audio()
+    trunc_feats = cut.load_features()
+    trunc_indxs = cut.load_custom_indexes()
+    assert trunc_audio.shape == (1, 9600)
+    np.testing.assert_array_equal(trunc_audio, ref_audio[:, 3200:-3200])
+    assert trunc_feats.shape == (60, 23)
+    np.testing.assert_array_equal(trunc_feats, ref_feats[20:-20, :])
+    assert trunc_indxs.shape == (60,)
+    np.testing.assert_array_equal(trunc_indxs, ref_indxs[20:-20])
+
+    # System under test.
+    with SharWriter(
+        tmp_path,
+        fields={"recording": "wav", "features": "numpy", "custom_indexes": "numpy"},
+        shard_size=None,
+    ) as writer:
+        writer.write(cut)
+
+    # Truncated cut restored from Shar and sanity check of shapes and content.
+    sharcuts = CutSet.from_shar(in_dir=writer.output_dir)
+    cut = sharcuts[0]
+    trunc_audio = cut.load_audio()
+    trunc_feats = cut.load_features()
+    trunc_indxs = cut.load_custom_indexes()
+    assert trunc_audio.shape == (1, 9600)
+    np.testing.assert_array_equal(trunc_audio, ref_audio[:, 3200:-3200])
+    assert trunc_feats.shape == (60, 23)
+    np.testing.assert_array_equal(trunc_feats, ref_feats[20:-20, :])
+    assert trunc_indxs.shape == (60,)
+    np.testing.assert_array_equal(trunc_indxs, ref_indxs[20:-20])
