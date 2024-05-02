@@ -35,18 +35,20 @@ def prepare_reazonspeech(
                     continue
                 item = json.loads(line)
                 recordings.append(
-                    Recording.from_file(item['audio_filepath'], recording_id=str(idx))
+                    Recording.from_file(item["audio_filepath"], recording_id=str(idx))
                 )
-                supervisions.append(SupervisionSegment(
-                    id=str(idx),
-                    recording_id=str(idx),
-                    start=0.0,
-                    duration=item['duration'],
-                    channel=0,
-                    language="Japanese",
-                    speaker=str(idx),
-                    text=item['text']
-                ))
+                supervisions.append(
+                    SupervisionSegment(
+                        id=str(idx),
+                        recording_id=str(idx),
+                        start=0.0,
+                        duration=item["duration"],
+                        channel=0,
+                        language="Japanese",
+                        speaker=str(idx),
+                        text=item["text"],
+                    )
+                )
                 idx += 1
 
         recording_set = RecordingSet.from_recordings(recordings)
@@ -58,7 +60,9 @@ def prepare_reazonspeech(
             supervision_set.to_file(
                 output_dir / f"reazonspeech_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"reazonspeech_recordings_{part}.jsonl.gz")
+            recording_set.to_file(
+                output_dir / f"reazonspeech_recordings_{part}.jsonl.gz"
+            )
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
