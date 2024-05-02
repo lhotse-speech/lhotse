@@ -7,8 +7,8 @@ import pytest
 import torch.utils.data
 
 from lhotse import CutSet
-from lhotse.dataset import IterableDatasetWrapper
-from lhotse.dataset.sampling.stateless import StatelessSampler
+from lhotse.dataset import CutConcatenate, IterableDatasetWrapper
+from lhotse.dataset.sampling import StatelessSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy
 
 
@@ -239,3 +239,16 @@ def test_stateless_sampler_base_seed_is_deterministic(cuts_files: Tuple[Path]):
             break  # the sampler is infinite
 
     assert b1 == b2
+
+
+def test_stateless_sampler_map(cuts_files: Tuple[Path]):
+    path = cuts_files[0]
+    index_path = cuts_files[0].parent / "cuts.idx"
+    transform = CutConcatenate(gap=0.0, duration_factor=5.0)  # will glue 5 cuts into 1
+
+    sampler = StatelessSampler(path, index_path, max_duration=5.0, base_seed=0)
+    sampler.map(transform)
+
+    b = next(iter(sampler))
+    assert len(b) == 1
+    assert b[0].duration == 5.0

@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import random
+import secrets
 import sys
 import urllib
 import uuid
@@ -24,6 +25,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Optional,
     Sequence,
     Tuple,
@@ -35,7 +37,6 @@ import click
 import numpy as np
 import torch
 from tqdm.auto import tqdm
-from typing_extensions import Literal
 
 Pathlike = Union[Path, str]
 T = TypeVar("T")
@@ -453,6 +454,7 @@ def resumable_download(
     filename: Pathlike,
     force_download: bool = False,
     completed_file_size: Optional[int] = None,
+    missing_ok: bool = False,
 ) -> None:
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
@@ -517,7 +519,13 @@ def resumable_download(
         except urllib.error.HTTPError as e:
             # "Request Range Not Satisfiable" means the requested range
             # starts after the file ends OR that the server does not support range requests.
-            if e.code == 416:
+            if e.code == 404 and missing_ok:
+                logging.warning(
+                    f"{url} does not exist (error 404). Skipping this file."
+                )
+                if Path(filename).is_file():
+                    os.remove(filename)
+            elif e.code == 416:
                 content_range = e.headers.get("Content-Range", None)
                 if content_range is None:
                     # sometimes, the server actually supports range requests
@@ -701,14 +709,6 @@ def merge_items_with_delimiter(
     if len(values) == 1 or return_first:
         return values[0]
     return delimiter.join(chain([prefix], values))
-
-
-def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
-    id2man = {}
-    for m in manifests:
-        assert m.id not in id2man, f"Duplicated manifest ID: {m.id}"
-        id2man[m.id] = m
-    return id2man
 
 
 def exactly_one_not_null(*args) -> bool:
@@ -1092,3 +1092,17 @@ class PythonLiteralOption(click.Option):
 
 def is_torchaudio_available() -> bool:
     return is_module_available("torchaudio")
+
+
+def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
+    if seed == "trng":
+        return secrets.SystemRandom()
+    else:
+        return random.Random(seed)
+
+
+_LHOTSE_DILL_ENABLED = False
+
+
+def is_dill_enabled() -> bool:
+    return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]

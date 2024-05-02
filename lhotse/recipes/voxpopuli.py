@@ -25,9 +25,8 @@ unlike the original repository. In this way, we can avoid duplicating the audio 
 import csv
 import gzip
 import logging
-import shutil
+import re
 import tarfile
-import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
@@ -130,7 +129,7 @@ def prepare_voxpopuli(
     source_lang: Optional[str] = None,
     target_lang: Optional[str] = None,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Prepares and returns the VoxPopuli manifests which consist of Recordings and Supervisions.
 
@@ -142,7 +141,7 @@ def prepare_voxpopuli(
     :param source_lang: str, the source language for the s2s task, can be one of S2S_SRC_LANGUAGES.
     :param target_lang: str, the target language for the s2s task, can be one of S2S_TGT_LANGUAGES.
     :param num_jobs: int, the number of parallel jobs to use for preparing the manifests.
-    :return: Dict[str, Union[RecordingSet, SupervisionSet]], the manifests.
+    :return: Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]], the manifests.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -188,30 +187,50 @@ def prepare_voxpopuli(
     return manifests
 
 
+class RecordingIdFn:
+    """
+    This functor class avoids error in multiprocessing:
+    `AttributeError: Can't pickle local object '_prepare_voxpopuli_asr.<locals>.<lambda>'`
+    """
+
+    def __init__(self, language: str):
+        self.language = language
+
+    def __call__(self, path: Path) -> str:
+        recording_id = re.sub(f"_{self.language}$", "", path.stem)
+        recording_id = re.sub("_original$", "", recording_id)
+        return recording_id
+
+
 def _prepare_voxpopuli_asr(
     corpus_dir: Path, output_dir: Path, lang: str, num_jobs: int = 1
-) -> Tuple[RecordingSet, SupervisionSet]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Download metadata TSV and prepare manifests for the ASR task.
     """
     # First create recordings. We remove the affix "_original" from the recording ID
     logging.info("Preparing recordings (this may take a few minutes)...")
-    in_root = corpus_dir / "raw_audios" / "original"
+    in_root = corpus_dir / "raw_audios" / lang
     recordings = RecordingSet.from_dir(
         in_root,
         "*.ogg",
         num_jobs=num_jobs,
-        recording_id=lambda x: x.stem.replace("_original", ""),
+        recording_id=RecordingIdFn(language=lang),
     )
 
     # Now create supervisions
-    temp_dir = Path(tempfile.mkdtemp(prefix=f"voxpopuli_asr_", dir=output_dir))
 
     # Get metadata TSV
     url = f"{DOWNLOAD_BASE_URL}/annotations/asr/asr_{lang}.tsv.gz"
-    tsv_path = temp_dir / Path(url).name
+
+    tsv_path = output_dir / Path(url).name
+
     if not tsv_path.exists():
+        logging.info(f"Downloading : {url} -> {tsv_path}")
         download_url_to_file(url, tsv_path)
+    else:
+        logging.info(f"Using pre-downloaded annotations {tsv_path}")
+
     with gzip.open(tsv_path, "rt") as f:
         metadata = [x for x in csv.DictReader(f, delimiter="|")]
 
@@ -258,8 +277,6 @@ def _prepare_voxpopuli_asr(
         )
         manifests[split]["supervisions"] = SupervisionSet.from_segments(segments[split])
 
-    # Delete temp dir along with its contents
-    shutil.rmtree(temp_dir)
     return manifests
 
 

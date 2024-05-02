@@ -64,7 +64,7 @@ def test_audio_samples_with_custom_field(libri_cut_set):
 
 def test_audio_samples_with_missing_custom_field(libri_cut_set):
     batchio = AudioSamples()
-    with pytest.raises(AttributeError):
+    with pytest.raises(AssertionError):
         audio, audio_lens = batchio(libri_cut_set, recording_field="my_favorite_song")
 
 

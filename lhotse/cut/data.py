@@ -2,7 +2,6 @@ import logging
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from decimal import ROUND_DOWN
-from functools import partial
 from math import isclose
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -12,6 +11,7 @@ from intervaltree import IntervalTree
 
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
+from lhotse.custom import CustomFieldMixin
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
 from lhotse.features.io import FeaturesWriter
@@ -25,7 +25,6 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     fastcopy,
-    ifnone,
     measure_overlap,
     overlaps,
     overspans,
@@ -36,7 +35,7 @@ from lhotse.utils import (
 
 
 @dataclass
-class DataCut(Cut, metaclass=ABCMeta):
+class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
     """
     :class:`~lhotse.cut.DataCut` is a base class for cuts that point to actual audio data.
     It can be either a :class:`~lhotse.cut.MonoCut` or a :class:`~lhotse.cut.MultiCut`.
@@ -70,110 +69,6 @@ class DataCut(Cut, metaclass=ABCMeta):
 
     # Store anything else the user might want.
     custom: Optional[Dict[str, Any]] = None
-
-    def __setattr__(self, key: str, value: Any) -> None:
-        """
-        This magic function is called when the user tries to set an attribute.
-        We use it as syntactic sugar to store custom attributes in ``self.custom``
-        field, so that they can be (de)serialized later.
-        Setting a ``None`` value will remove the attribute from ``custom``.
-        """
-        if key in self.__dataclass_fields__:
-            super().__setattr__(key, value)
-        else:
-            custom = ifnone(self.custom, {})
-            if value is None:
-                custom.pop(key, None)
-            else:
-                custom[key] = value
-            if custom:
-                self.custom = custom
-
-    def __getattr__(self, name: str) -> Any:
-        """
-        This magic function is called when the user tries to access an attribute
-        of :class:`.MonoCut` that doesn't exist. It is used for accessing the custom
-        attributes of cuts.
-
-        We use it to look up the ``custom`` field: when it's None or empty,
-        we'll just raise AttributeError as usual.
-        If ``item`` is found in ``custom``, we'll return ``custom[item]``.
-        If ``item`` starts with "load_", we'll assume the name of the relevant
-        attribute comes after that, and that value of that field is of type
-        :class:`~lhotse.array.Array` or :class:`~lhotse.array.TemporalArray`.
-        We'll return its ``load`` method to call by the user.
-
-        Example of attaching and reading an alignment as TemporalArray::
-
-            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
-            >>> cut.alignment = TemporalArray(...)
-            >>> ali = cut.load_alignment()
-
-        """
-        custom = self.custom
-        if custom is None:
-            raise AttributeError(f"No such attribute: {name}")
-        if name in custom:
-            # Somebody accesses raw [Temporal]Array manifest
-            # or wrote a custom piece of metadata into MonoCut.
-            return self.custom[name]
-        elif name.startswith("load_"):
-            # Return the method for loading [Temporal]Arrays,
-            # to be invoked by the user.
-            attr_name = name[5:]
-            return partial(self.load_custom, attr_name)
-        raise AttributeError(f"No such attribute: {name}")
-
-    def __delattr__(self, key: str) -> None:
-        """Used to support ``del cut.custom_attr`` syntax."""
-        if key in self.__dataclass_fields__:
-            super().__delattr__(key)
-        if self.custom is None or key not in self.custom:
-            raise AttributeError(f"No such member: '{key}'")
-        del self.custom[key]
-
-    def load_custom(self, name: str) -> np.ndarray:
-        """
-        Load custom data as numpy array. The custom data is expected to have
-        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
-        :class:`~lhotse.array.TemporalArray` manifest.
-
-        .. note:: It works with Array manifests stored via attribute assignments,
-            e.g.: ``cut.my_custom_data = Array(...)``.
-
-        :param name: name of the custom attribute.
-        :return: a numpy array with the data.
-        """
-        from lhotse.array import Array, TemporalArray
-
-        value = self.custom.get(name)
-        if isinstance(value, Array):
-            # Array does not support slicing.
-            return value.load()
-        elif isinstance(value, TemporalArray):
-            # TemporalArray supports slicing.
-            return value.load(start=self.start, duration=self.duration)
-        elif isinstance(value, Recording):
-            # Recording supports slicing.
-            return value.load_audio(
-                channels=self.channel, offset=self.start, duration=self.duration
-            )
-        else:
-            raise ValueError(
-                f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
-                f"defined, and its value has to be a manifest of type Array or TemporalArray."
-            )
-
-    def has_custom(self, name: str) -> bool:
-        """
-        Check if the Cut has a custom attribute with name ``name``.
-
-        :param name: name of the custom attribute.
-        :return: a boolean.
-        """
-        if self.custom is None:
-            return False
-        return name in self.custom
 
     @property
     def recording_id(self) -> str:
@@ -946,7 +841,9 @@ class DataCut(Cut, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
-    def normalize_loudness(self, target: float, affix_id: bool = False) -> "DataCut":
+    def normalize_loudness(
+        self, target: float, affix_id: bool = False, **kwargs
+    ) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily apply loudness normalization.
 
