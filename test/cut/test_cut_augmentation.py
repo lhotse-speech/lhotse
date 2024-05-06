@@ -1,3 +1,6 @@
+import os
+from tempfile import NamedTemporaryFile
+
 import numpy as np
 import pytest
 import torch
@@ -6,7 +9,7 @@ from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
 from lhotse.cut import PaddingCut
 from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
-from lhotse.utils import fastcopy, is_module_available
+from lhotse.utils import fastcopy, is_module_available, nullcontext
 
 
 @pytest.fixture
@@ -652,9 +655,14 @@ def test_cut_normalize_loudness(libri_cut_set, target, mix_first):
         assert loudness == pytest.approx(target, abs=0.5)
 
 
-def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
+@pytest.mark.parametrize("in_memory", [True, False])
+def test_cut_reverb_rir(
+    libri_cut_with_supervision, libri_recording_rvb, rir, in_memory
+):
 
     cut = libri_cut_with_supervision
+    if in_memory:
+        rir = rir.move_to_memory()
     cut_rvb = cut.reverb_rir(rir)
     assert cut_rvb.start == cut.start
     assert cut_rvb.duration == cut.duration
@@ -674,6 +682,48 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     rvb_audio_from_fixture = libri_recording_rvb.load_audio()
 
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
+
+
+@pytest.mark.parametrize("with_serialization", [True, False])
+def test_cut_reverb_rir_input_is_cut(
+    libri_cut_with_supervision, libri_recording_rvb, rir, with_serialization
+):
+
+    cut = libri_cut_with_supervision
+    rir = rir.to_cut()
+
+    with (
+        NamedTemporaryFile(suffix=".jsonl", mode="w")
+        if with_serialization
+        else nullcontext()
+    ) as f:
+        if with_serialization:
+            CutSet([rir]).to_file(f.name)
+            f.flush()
+            os.fsync(f.fileno())
+            rir = CutSet.from_file(f.name)[0]
+
+        cut_rvb = cut.reverb_rir(rir)
+        assert cut_rvb.start == cut.start
+        assert cut_rvb.duration == cut.duration
+        assert cut_rvb.end == cut.end
+        assert cut_rvb.num_samples == cut.num_samples
+
+        assert cut_rvb.recording.duration == cut.recording.duration
+        assert cut_rvb.recording.num_samples == cut.recording.num_samples
+
+        assert cut_rvb.supervisions[0].start == cut.supervisions[0].start
+        assert cut_rvb.supervisions[0].duration == cut.supervisions[0].duration
+        assert cut_rvb.supervisions[0].end == cut.supervisions[0].end
+
+        assert cut_rvb.load_audio().shape == cut.load_audio().shape
+        assert cut_rvb.recording.load_audio().shape == cut.recording.load_audio().shape
+
+        rvb_audio_from_fixture = libri_recording_rvb.load_audio()
+
+        np.testing.assert_array_almost_equal(
+            cut_rvb.load_audio(), rvb_audio_from_fixture
+        )
 
 
 def test_cut_reverb_rir_assert_sampling_rate(libri_cut_with_supervision, rir):
