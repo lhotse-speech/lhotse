@@ -1,7 +1,7 @@
 import math
-import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 
@@ -165,12 +165,6 @@ class RecordingChunkIterableDataset(IterableDataset):
         self.validate()
 
     def validate(self) -> None:
-        if not torchaudio_supports_ffmpeg():
-            raise RuntimeError(
-                "Using FFMPEG streamer backend for reading is supported only "
-                "with PyTorch 1.12+ and torchaudio 0.12+"
-            )
-
         for r in self.recordings:
             assert (
                 len(r.sources) == 1
@@ -183,25 +177,21 @@ class RecordingChunkIterableDataset(IterableDataset):
             ), f"We currently only support single-channel audio in this dataset (got {r.num_channels} channels in recording {r.id})."
 
     def __iter__(self):
-        import torchaudio
+        import soundfile as sf
 
         for r in self.recordings[self.start : self.end]:
             chunk_size = compute_num_samples(self.chunk_size, r.sampling_rate)
-            chunk_shift = compute_num_samples(self.chunk_shift, r.sampling_rate)
-
-            streamer = torchaudio.io.StreamReader(src=r.sources[0].source)
-            assert streamer.num_src_streams == 1, (
-                "Lhotse doesn't support files with more than one FFMPEG source stream yet "
-                "(not to be confused with multi-channel)."
+            chunk_overlap = compute_num_samples(
+                self.chunk_size - self.chunk_shift, r.sampling_rate
             )
-            streamer.add_basic_audio_stream(frames_per_chunk=chunk_size)
 
             begin_time = 0
             end_time = self.chunk_size
-            buffer = ShiftingBuffer(chunk_size=chunk_size, chunk_shift=chunk_shift)
-            for (incoming_audio,) in streamer.stream():
-                buffer.push(incoming_audio.squeeze())
-                for chunk in buffer.get_chunks():
+            with sf.SoundFile(r.sources[0].source, "rb") as stream:
+                for chunk in stream.blocks(
+                    chunk_size, overlap=chunk_overlap, dtype=np.float32
+                ):
+                    chunk = torch.as_tensor(chunk)
                     yield {
                         "recording_id": r.id,
                         "begin_time": torch.as_tensor(begin_time, dtype=torch.float32),
@@ -210,56 +200,6 @@ class RecordingChunkIterableDataset(IterableDataset):
                     }
                     begin_time += self.chunk_shift
                     end_time = begin_time + self.chunk_size
-            remainder = buffer.flush()
-            if remainder.shape[0] > 0:
-                yield {
-                    "recording_id": r.id,
-                    "begin_time": torch.as_tensor(begin_time, dtype=torch.float32),
-                    "end_time": torch.as_tensor(end_time, dtype=torch.float32),
-                    "audio": remainder,
-                }
-
-
-class ShiftingBuffer:
-    """
-    Utility for iterating over streaming audio chunks that supports chunk_shift < chunk_size.
-    It is useful when running model predictions on overlapping chunks of audio data.
-    """
-
-    def __init__(self, chunk_size: int, chunk_shift: int):
-        self.buf = torch.empty(1, 0)
-        self.chunk_size = chunk_size
-        self.chunk_shift = chunk_shift
-
-    def push(self, audio: torch.Tensor) -> None:
-        """Add new chunk of audio to the buffer. Expects shape (num_samples, )."""
-        self.buf = torch.cat([self.buf, audio.unsqueeze(0)], dim=1)
-
-    def get_chunks(self) -> torch.Tensor:
-        """
-        Retrieve chunks accumulated so far, adjusted for chunk_shift.
-        For chunk_shift < chunk_size, there will typically be more chunks
-        returned from this function than were pushed into the buffer because
-        of overlap.
-        The returned shape is (num_chunks, chunk_size).
-        """
-        out, self.buf = _get_strided_batch_streaming(
-            self.buf,
-            window_shift=self.chunk_shift,
-            window_length=self.chunk_size,
-            snip_edges=True,
-        )
-        return out.squeeze(0)
-
-    def flush(self) -> torch.Tensor:
-        """
-        Flush out the remainder chunk from the buffer.
-        Typically it will be shorter than chunk_size.
-        The returned shape is (remainder_size, ).
-        """
-        out = self.buf.squeeze(0)
-        self.buf = torch.empty(1, 0)
-        return out
 
 
 def audio_chunk_collate(batch: List[Dict]):
