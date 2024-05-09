@@ -81,4 +81,4 @@ def voxpopuli(
 )
 def voxpopuli(target_dir: Pathlike, subset: str):
     """voxpopuli download."""
-    download_voxpopuli(target_dir)
+    download_voxpopuli(target_dir, subset)
