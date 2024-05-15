@@ -175,7 +175,7 @@ class CutSetStatistics:
         if self.sup_custom:
             print("SUPERVISION custom fields:")
             for key, val in self.sup_custom.most_common():
-                cut_stats.append(f"- {key} (in {val} cuts)")
+                print(f"- {key} (in {val} cuts)")
 
         total_speech = np.array(self.speech_durations).sum()
         total_speaking_time = np.array(self.speaking_time_durations).sum()
