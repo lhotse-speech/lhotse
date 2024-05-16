@@ -334,7 +334,10 @@ class Recording:
         )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        d = asdict_nonull(self)
+        if self.transforms is not None:
+            d["transforms"] = [t.to_dict() for t in self.transforms]
+        return d
 
     def to_cut(self):
         """
@@ -489,10 +492,15 @@ class Recording:
         )
 
         for t in ifnone(self.transforms, ()):
-            assert t["name"] not in (
-                "Speed",
-                "Tempo",
-            ), "Recording.load_video() does not support speed/tempo perturbation."
+            if isinstance(t, dict):
+                assert t["name"] not in (
+                    "Speed",
+                    "Tempo",
+                ), "Recording.load_video() does not support speed/tempo perturbation."
+            else:
+                assert not isinstance(
+                    t, (Speed, Tempo)
+                ), "Recording.load_video() does not support speed/tempo perturbation."
 
         if not with_audio:
             video, _ = self._video_source.load_video(

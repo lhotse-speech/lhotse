@@ -9,7 +9,6 @@ import numpy as np
 import torch
 
 from lhotse.audio import Recording
-from lhotse.cut import Cut
 from lhotse.cut.data import DataCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
