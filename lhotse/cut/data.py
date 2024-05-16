@@ -22,6 +22,7 @@ from lhotse.utils import (
     Seconds,
     TimeSpan,
     add_durations,
+    asdict_nonull,
     compute_num_frames,
     compute_num_samples,
     fastcopy,
@@ -69,6 +70,16 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
     # Store anything else the user might want.
     custom: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> dict:
+        d = asdict_nonull(self)
+        if self.has_recording:
+            d["recording"] = self.recording.to_dict()
+        if self.custom is not None:
+            for k, v in self.custom.items():
+                if isinstance(v, Recording):
+                    d["custom"][k] = v.to_dict()
+        return {**d, "type": type(self).__name__}
 
     @property
     def recording_id(self) -> str:
