@@ -37,7 +37,7 @@ def reazonspeech(
 @click.argument("target_dir", type=click.Path())
 @click.option(
     "--subset",
-    type=click.Choice(("auto") + REAZONSPEECH),
+    type=click.Choice(("auto",) + REAZONSPEECH),
     multiple=True,
     default=["auto"],
     help="List of dataset parts to prepare (default: small-v1). To prepare multiple parts, pass each with `--subset` "
