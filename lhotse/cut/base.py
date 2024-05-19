@@ -22,7 +22,6 @@ from lhotse.utils import (
     compute_start_duration_for_extended_cut,
     fastcopy,
     ifnone,
-    is_torchaudio_available,
     overlaps,
     to_hashable,
 )
