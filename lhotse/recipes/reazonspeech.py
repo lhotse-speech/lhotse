@@ -1,5 +1,5 @@
 """
-ReazonSpeech is an open-source dataset that contains a diverse set of natural Japanese speech, 
+ReazonSpeech is an open-source dataset that contains a diverse set of natural Japanese speech,
 collected from terrestrial television streams. It contains more than 35,000 hours of audio.
 
 The dataset is available on Hugging Face. For more details, please visit:
@@ -10,20 +10,15 @@ Paper: https://research.reazon.jp/_static/reazonspeech_nlp2023.pdf
 
 import json
 import logging
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
-import re
 import num2words
-
 from tqdm.auto import tqdm
 
-from lhotse import (
-    CutSet,
-    fix_manifests,
-    validate_recordings_and_supervisions,
-)
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.parallel import parallel_map
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
@@ -54,8 +49,9 @@ def normalize(s):
     :return: str, normalized string.
     """
     s = s.translate(PUNCTUATIONS).translate(ZEN2HAN)
-    conv = lambda m: num2words.num2words(m.group(0), lang='ja')
-    return re.sub(r'\d+\.?\d*', conv, s)
+    conv = lambda m: num2words.num2words(m.group(0), lang="ja")
+    return re.sub(r"\d+\.?\d*", conv, s)
+
 
 def write_to_json(data, filename):
     """
@@ -63,8 +59,9 @@ def write_to_json(data, filename):
     :param data: The data to write.
     :param filename: The name of the file to write to.
     """
-    with open(filename, 'w', encoding='utf-8') as f:
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 def download_reazonspeech(
     target_dir: Pathlike = ".",
@@ -84,7 +81,7 @@ def download_reazonspeech(
         )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    corpus_dir = target_dir/ "ReazonSpeech"
+    corpus_dir = target_dir / "ReazonSpeech"
 
     if dataset_parts == "auto":
         dataset_parts = ("small-v1",)
@@ -93,32 +90,37 @@ def download_reazonspeech(
 
     for part in dataset_parts:
         logging.info(f"Downloading ReazonSpeech part: {part}")
-        ds = load_dataset("reazon-research/reazonspeech", part, trust_remote_code=True, cache_dir=corpus_dir)["train"]
+        ds = load_dataset(
+            "reazon-research/reazonspeech",
+            part,
+            trust_remote_code=True,
+            cache_dir=corpus_dir,
+        )["train"]
 
     # Prepare data for JSON export
     data_for_json = []
     idx = 0
     for item in ds:
         # Calculate the duration of the audio file
-        audio_array = item['audio']['array']
-        sampling_rate = item['audio']['sampling_rate']
+        audio_array = item["audio"]["array"]
+        sampling_rate = item["audio"]["sampling_rate"]
         duration = len(audio_array) / float(sampling_rate)
-        
+
         # Create a dictionary for the current record
         record = {
             "id": str(idx),
-            "audio_filepath": item['audio']['path'],
-            "text": normalize(item['transcription']),
-            "duration": duration
+            "audio_filepath": item["audio"]["path"],
+            "text": normalize(item["transcription"]),
+            "duration": duration,
         }
-        
+
         # Append the record to the list
         data_for_json.append(record)
         idx += 1
-    
+
     # Write data to a JSON file
     write_to_json(data_for_json, corpus_dir / "dataset.json")
-    
+
     return corpus_dir
 
 
@@ -137,9 +139,9 @@ def prepare_reazonspeech(
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    
+
     # Split the dataset into train, dev, and test
-    with open(corpus_dir / "dataset.json", 'r', encoding='utf-8') as file:
+    with open(corpus_dir / "dataset.json", "r", encoding="utf-8") as file:
         full = json.load(file)
         dev = full[:1000]
         test = full[1000:1100]
@@ -148,7 +150,7 @@ def prepare_reazonspeech(
         write_to_json(train, corpus_dir / "train.json")
         write_to_json(dev, corpus_dir / "dev.json")
         write_to_json(test, corpus_dir / "test.json")
-    
+
     parts = ("train", "dev", "test")
 
     output_dir = Path(output_dir)
@@ -171,7 +173,7 @@ def prepare_reazonspeech(
             continue
 
         filename = corpus_dir / f"{part}.json"
-        with open(filename, 'r', encoding='utf-8') as file:
+        with open(filename, "r", encoding="utf-8") as file:
             items = json.load(file)
 
         with RecordingSet.open_writer(
@@ -216,9 +218,7 @@ def prepare_reazonspeech(
     return dict(manifests)
 
 
-def parse_utterance(
-    item: Any
-) -> Optional[Tuple[Recording, SupervisionSegment]]:
+def parse_utterance(item: Any) -> Optional[Tuple[Recording, SupervisionSegment]]:
     """
     Process a single utterance from the ReazonSpeech dataset.
     :param item: The utterance to process.
@@ -233,5 +233,5 @@ def parse_utterance(
         channel=0,
         language="Japanese",
         text=item["text"],
-        )
+    )
     return recording, segments

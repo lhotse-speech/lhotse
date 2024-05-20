@@ -6,7 +6,7 @@ import click
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes.reazonspeech import (
     REAZONSPEECH,
-    download_reazonspeech, 
+    download_reazonspeech,
     prepare_reazonspeech,
 )
 from lhotse.utils import Pathlike
@@ -25,9 +25,10 @@ __all__ = ["reazonspeech"]
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
 def reazonspeech(
-    corpus_dir: Pathlike, 
+    corpus_dir: Pathlike,
     output_dir: Pathlike,
-    num_jobs: int,):
+    num_jobs: int,
+):
     """ReazonSpeech ASR data preparation."""
     logging.basicConfig(level=logging.INFO)
     prepare_reazonspeech(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
