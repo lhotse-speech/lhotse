@@ -254,7 +254,7 @@ class DynamicBucketingSampler(CutSampler):
             bucket_rng_seed = 1234
             worker_info = torch.utils.data.get_worker_info()
             if worker_info is not None:
-                bucket_rng_seed += worker_info.worker_id
+                bucket_rng_seed += worker_info.id
             bucket_rng = random.Random(bucket_rng_seed)
         else:
             bucket_rng = None
