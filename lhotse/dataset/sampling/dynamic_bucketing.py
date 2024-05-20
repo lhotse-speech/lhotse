@@ -1,5 +1,6 @@
 import random
 import warnings
+import zlib
 from bisect import bisect_right
 from collections import deque
 from itertools import islice
@@ -18,6 +19,7 @@ from typing import (
 )
 
 import numpy as np
+import torch
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
@@ -91,6 +93,7 @@ class DynamicBucketingSampler(CutSampler):
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: Union[int, Literal["randomized", "trng"]] = 0,
+        sync_buckets: bool = False,
         strict=None,
         shuffle_buffer_size=None,
     ) -> None:
@@ -125,6 +128,8 @@ class DynamicBucketingSampler(CutSampler):
         :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
             a cuts duration. This helps get a more even GPU utilization across different input lengths
             when models have quadratic input complexity. Set between 15 and 40 for transformers.
+        :param sync_buckets: When set, we'll try to make each DDP rank sample from as close
+            duration buckets as possible to minimize the tail worker effect.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -147,6 +152,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
+        self.sync_buckets = sync_buckets
         self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
 
@@ -238,6 +244,20 @@ class DynamicBucketingSampler(CutSampler):
             return self
         seed = resolve_seed(self.seed)
         self.rng = random.Random(seed + self.epoch)
+        if self.sync_buckets:
+            # Bucket sync requested. To achieve that we will fix the RNG seed for a special bucket RNG
+            # in a deterministic way. We also consider whether the sampler object lives in the training loop
+            # process (map-style dataset or num_workers=0) or the dataloading subprocess (iterable-style dataset).
+            # In the latter case, we want each worker to choose different buckets but still be in sync
+            # with workers with the same IDs on other ranks.
+            # Note: PyTorch dataloader always iterates workers sequentially, so they won't get out-of-order.
+            bucket_rng_seed = 1234
+            worker_info = torch.utils.data.get_worker_info()
+            if worker_info is not None:
+                bucket_rng_seed += worker_info.worker_id
+            bucket_rng = random.Random(bucket_rng_seed)
+        else:
+            bucket_rng = None
         # Why reset the current epoch?
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps
@@ -263,6 +283,7 @@ class DynamicBucketingSampler(CutSampler):
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
             rng=self.rng,
+            bucket_rng=bucket_rng,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(cuts_iter)
@@ -350,6 +371,7 @@ class DynamicBucketer:
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
         rng: random.Random = None,
+        bucket_rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
@@ -364,6 +386,7 @@ class DynamicBucketer:
         if rng is None:
             rng = random.Random()
         self.rng = rng
+        self.bucket_rng = bucket_rng
         self.shuffle = shuffle
 
         assert duration_bins == sorted(duration_bins), (
@@ -402,32 +425,11 @@ class DynamicBucketer:
         self.cuts_iter = iter(self.cuts)
         self._collect_cuts_in_buckets(self.buffer_size)
 
-        # Init: determine which buckets are "ready"
-        def is_ready(bucket: Deque[Cut]):
-            tot = self.constraint.copy()
-            for c in bucket:
-                tot.add(c[0] if isinstance(c, tuple) else c)
-                if tot.close_to_exceeding():
-                    return True
-            return False
-
         # The iteration code starts here.
         # On each step we're sampling a new batch.
         try:
             while True:
-                ready_buckets = [b for b in self.buckets if is_ready(b)]
-                if not ready_buckets:
-                    # No bucket has enough data to yield for the last full batch.
-                    non_empty_buckets = [b for b in self.buckets if b]
-                    if self.drop_last or len(non_empty_buckets) == 0:
-                        # Either the user requested only full batches, or we have nothing left.
-                        raise StopIteration()
-                    else:
-                        # Sample from partial batches that are left.
-                        ready_buckets = non_empty_buckets
-                # Choose a bucket to sample from.
-                # We'll only select from the buckets that have a full batch available.
-                sampling_bucket = self.rng.choice(ready_buckets)
+                sampling_bucket = self._select_bucket()
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
                 indexes_used = []
@@ -465,7 +467,60 @@ class DynamicBucketer:
         # Cleanup.
         self.cuts_iter = None
 
-    def _collect_cuts_in_buckets(self, n_cuts: int):
+    def _select_bucket(self) -> Deque[Cut]:
+        if self.bucket_rng is None:
+            # Bucket selection algo 1:
+            # * there is just one RNG for choosing buckets and choosing samples randomly from the buckets
+            # * check which buckets are ready, and then use the RNG to select one of them.
+            # * no guarantees about bucket selection sync across GPUs.
+            ready_buckets = [b for b in self.buckets if self._is_ready(b)]
+            if not ready_buckets:
+                # No bucket has enough data to yield for the last full batch.
+                non_empty_buckets = [b for b in self.buckets if b]
+                if self.drop_last or len(non_empty_buckets) == 0:
+                    # Either the user requested only full batches, or we have nothing left.
+                    raise StopIteration()
+                else:
+                    # Sample from partial batches that are left.
+                    ready_buckets = non_empty_buckets
+            # Choose a bucket to sample from.
+            # We'll only select from the buckets that have a full batch available.
+            return self.rng.choice(ready_buckets)
+        else:
+            # Bucket selection algo 2:
+            # * bucket selection has its own independent RNG.
+            # * when bucket selection RNG is initialized identically on all ranks/workers,
+            #     then each rank will initially select the same bucket for batch sampling
+            # * if one of the ranks selects a bucket that is not filled enough,
+            #     it will scan the neighbouring buckets until it finds one that's ready
+            # * if no bucket is ready, we end iteration
+            bucket_idx = self.bucket_rng.randrange(len(self.buckets))
+
+            def valid_idx() -> bool:
+                return 0 <= bucket_idx < len(self.buckets)
+
+            num_attempts = 0
+            seen_min, seen_max = bucket_idx, bucket_idx
+            while not (valid_idx() and self._is_ready(self.buckets[bucket_idx])):
+                if seen_min < 0 and seen_max >= len(self.buckets):
+                    raise StopIteration()
+                num_attempts += 1
+                bucket_idx = (
+                    bucket_idx + (1 if num_attempts % 2 == 0 else -1) * num_attempts
+                )
+                seen_min = min(seen_min, bucket_idx)
+                seen_max = max(seen_max, bucket_idx)
+            return self.buckets[bucket_idx]
+
+    def _is_ready(self, bucket: Deque[Cut]) -> bool:
+        tot = self.constraint.copy()
+        for c in bucket:
+            tot.add(c[0] if isinstance(c, tuple) else c)
+            if tot.close_to_exceeding():
+                return True
+        return False
+
+    def _collect_cuts_in_buckets(self, n_cuts: int) -> None:
         try:
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
