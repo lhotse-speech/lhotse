@@ -1,3 +1,5 @@
+import bisect
+import heapq
 import random
 import warnings
 from bisect import bisect_right
@@ -161,28 +163,29 @@ class DynamicBucketingSampler(CutSampler):
             _emit_shuffle_buffer_size_warning()
             self.buffer_size += shuffle_buffer_size
 
-        if duration_bins is not None:
-            if num_buckets is not None:
-                assert len(duration_bins) == num_buckets - 1, (
-                    f"num_buckets=={num_buckets} but len(duration_bins)=={len(duration_bins)} "
-                    f"(bins are the boundaries, it should be one less than the number of buckets)."
-                )
-            assert list(duration_bins) == sorted(
-                duration_bins
-            ), "Duration bins must be sorted ascendingly."
-            self.duration_bins = duration_bins
-        else:
-            if constraint is None:
-                constraint = TimeConstraint(
-                    max_duration=self.max_duration,
-                    max_cuts=self.max_cuts,
-                    quadratic_duration=self.quadratic_duration,
-                )
-            self.duration_bins = estimate_duration_buckets(
-                islice(self.cuts[0], num_cuts_for_bins_estimate),
-                num_buckets=num_buckets,
-                constraint=constraint,
-            )
+        # if duration_bins is not None:
+        #     if num_buckets is not None:
+        #         assert len(duration_bins) == num_buckets - 1, (
+        #             f"num_buckets=={num_buckets} but len(duration_bins)=={len(duration_bins)} "
+        #             f"(bins are the boundaries, it should be one less than the number of buckets)."
+        #         )
+        #     assert list(duration_bins) == sorted(
+        #         duration_bins
+        #     ), "Duration bins must be sorted ascendingly."
+        #     self.duration_bins = duration_bins
+        # else:
+        #     if constraint is None:
+        #         constraint = TimeConstraint(
+        #             max_duration=self.max_duration,
+        #             max_cuts=self.max_cuts,
+        #             quadratic_duration=self.quadratic_duration,
+        #         )
+        #     self.duration_bins = estimate_duration_buckets(
+        #         islice(self.cuts[0], num_cuts_for_bins_estimate),
+        #         num_buckets=num_buckets,
+        #         constraint=constraint,
+        #     )
+        self.num_buckets = num_buckets
 
     def state_dict(self) -> Dict[str, Any]:
         assert (
@@ -254,6 +257,7 @@ class DynamicBucketingSampler(CutSampler):
         # Convert Iterable[Cut] -> Iterable[CutSet]
         cuts_iter = DynamicBucketer(
             cuts_iter,
+            # num_buckets=self.num_buckets,
             duration_bins=self.duration_bins,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
@@ -504,3 +508,94 @@ def _emit_shuffle_buffer_size_warning():
         "This argument will be deprecated in a future Lhotse version.",
         category=DeprecationWarning,
     )
+
+
+# class MoreDynamicBucketer:
+#     def __init__(
+#             self,
+#             cuts: Iterable[Union[Cut, Tuple[Cut]]],
+#             num_buckets: int = 30,
+#             max_duration: Optional[Seconds] = None,
+#             max_cuts: Optional[int] = None,
+#             constraint: Optional[SamplingConstraint] = None,
+#             drop_last: bool = False,
+#             buffer_size: int = 10000,
+#             quadratic_duration: Optional[Seconds] = None,
+#             shuffle: bool = False,
+#             rng: random.Random = None,
+#             diagnostics: Optional[SamplingDiagnostics] = None,
+#     ) -> None:
+#         self.cuts = cuts
+#         self.num_buckets = num_buckets
+#         self.max_duration = max_duration
+#         self.max_cuts = max_cuts
+#         self.constraint = constraint
+#         self.drop_last = drop_last
+#         self.buffer_size = buffer_size
+#         self.quadratic_duration = quadratic_duration
+#         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
+#         if rng is None:
+#             rng = random.Random()
+#         self.rng = rng
+#         self.shuffle = shuffle
+#
+#         check_constraint(constraint, max_duration, max_cuts)
+#
+#         if self.constraint is None:
+#             self.constraint = TimeConstraint(
+#                 max_duration=self.max_duration,
+#                 max_cuts=self.max_cuts,
+#                 quadratic_duration=self.quadratic_duration,
+#             )
+#
+#         self.buffer = []
+#
+#     def __iter__(self) -> Generator[CutSet, None, None]:
+#         # Init: sample `buffer_size` cuts and assign them to the right buckets.
+#         self.cuts_iter = iter(self.cuts)
+#         self._collect_cuts_in_buckets()
+#
+#         # The iteration code starts here.
+#         # On each step we're sampling a new batch.
+#         try:
+#             while True:
+#                 left_idx = self.rng.randint(0, len(self.buffer) - 1)
+#                 right_idx = left_idx
+#                 direction = left_idx < len(self.buffer)
+#                 constraint = self.constraint.copy()
+#                 batch = [self.buffer[left_idx]]
+#                 while not constraint.close_to_exceeding():
+#                     if direction:
+#                         right_idx += 1
+#                         next_idx = right_idx
+#                     else:
+#                         left_idx -= 1
+#                         next_idx = left_idx
+#                         # TODO: bounds checking [0, N)
+#                         # TODO: raise StopIteration if end of samples
+#                     sampled = self.buffer[next_idx]
+#                     batch.append(sampled)
+#                     constraint.add(sampled[0] if isinstance(sampled, tuple) else sampled)
+#                     direction = not direction
+#
+#                 yield batch
+#
+#                 self.buffer = self.buffer[:left_idx] + self.buffer[right_idx:]
+#                 self._collect_cuts_in_buckets()
+#         except StopIteration:
+#             pass
+#
+#         # Cleanup.
+#         self.cuts_iter = None
+#
+#     def _collect_cuts_in_buckets(self):
+#         try:
+#             while len(self.buffer) < self.buffer_size:
+#                 cuts = next(self.cuts_iter)
+#                 bisect.insort_right(
+#                     self.buffer,
+#                     cuts,
+#                     key=lambda c: self.constraint.measure_length(c[0] if isinstance(c, tuple) else c)
+#                 )
+#         except StopIteration:
+#             return
