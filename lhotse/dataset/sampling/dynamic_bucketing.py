@@ -1,11 +1,11 @@
 import random
 import warnings
-import zlib
 from bisect import bisect_right
 from collections import deque
 from itertools import islice
 from typing import (
     Any,
+    Callable,
     Deque,
     Dict,
     Generator,
@@ -93,7 +93,7 @@ class DynamicBucketingSampler(CutSampler):
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: Union[int, Literal["randomized", "trng"]] = 0,
-        sync_buckets: bool = False,
+        sync_buckets: bool = True,
         strict=None,
         shuffle_buffer_size=None,
     ) -> None:
@@ -494,22 +494,45 @@ class DynamicBucketer:
             # * if one of the ranks selects a bucket that is not filled enough,
             #     it will scan the neighbouring buckets until it finds one that's ready
             # * if no bucket is ready, we end iteration
-            bucket_idx = self.bucket_rng.randrange(len(self.buckets))
 
-            def valid_idx() -> bool:
-                return 0 <= bucket_idx < len(self.buckets)
+            def scan_buckets(predicate: Callable[[Deque[Cut]], bool]) -> int:
+                bucket_idx = self.bucket_rng.randrange(len(self.buckets))
 
-            num_attempts = 0
-            seen_min, seen_max = bucket_idx, bucket_idx
-            while not (valid_idx() and self._is_ready(self.buckets[bucket_idx])):
-                if seen_min < 0 and seen_max >= len(self.buckets):
+                def valid_idx() -> bool:
+                    return 0 <= bucket_idx < len(self.buckets)
+
+                num_attempts = 0
+                seen_min, seen_max = bucket_idx, bucket_idx
+                while not (valid_idx() and predicate(self.buckets[bucket_idx])):
+                    if seen_min < 0 and seen_max >= len(self.buckets):
+                        raise BucketsDontHaveEnoughData()
+                    num_attempts += 1
+                    bucket_idx = (
+                        bucket_idx + (1 if num_attempts % 2 == 0 else -1) * num_attempts
+                    )
+                    seen_min = min(seen_min, bucket_idx)
+                    seen_max = max(seen_max, bucket_idx)
+
+                return bucket_idx
+
+            try:
+                # Typical case: at least one bucket has enough data to sample from.
+                bucket_idx = scan_buckets(self._is_ready)
+            except BucketsDontHaveEnoughData:
+                # We didn't hit the typical case either because we are finishing
+                # the epoch, or because the buffers are too small.
+                if self.drop_last:
+                    # The user doesn't want partial mini-batches: early exit.
                     raise StopIteration()
-                num_attempts += 1
-                bucket_idx = (
-                    bucket_idx + (1 if num_attempts % 2 == 0 else -1) * num_attempts
-                )
-                seen_min = min(seen_min, bucket_idx)
-                seen_max = max(seen_max, bucket_idx)
+                # The user wants to iterate the full dataset.
+                # We'll try again, this time accepting buckets that have any amount of data available,
+                # which may yield partial batches.
+                try:
+                    bucket_idx = scan_buckets(lambda b: len(b) > 0)
+                except BucketsDontHaveEnoughData:
+                    # We exhausted the full dataset.
+                    raise StopIteration()
+
             return self.buckets[bucket_idx]
 
     def _is_ready(self, bucket: Deque[Cut]) -> bool:
@@ -547,6 +570,10 @@ def pick_at_random(
     for idx in indexes:
         out_indexes_used.append(idx)
         yield bucket[idx]
+
+
+class BucketsDontHaveEnoughData(Exception):
+    pass
 
 
 def _emit_shuffle_buffer_size_warning():

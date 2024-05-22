@@ -133,11 +133,11 @@ def test_dynamic_bucketing_sampler():
     assert len(batches[0]) == 2
     assert sum(c.duration for c in batches[0]) == 4
 
-    assert len(batches[1]) == 2
-    assert sum(c.duration for c in batches[1]) == 4
+    assert len(batches[1]) == 5
+    assert sum(c.duration for c in batches[1]) == 5
 
-    assert len(batches[2]) == 5
-    assert sum(c.duration for c in batches[2]) == 5
+    assert len(batches[2]) == 2
+    assert sum(c.duration for c in batches[2]) == 4
 
     assert len(batches[3]) == 1
     assert sum(c.duration for c in batches[3]) == 2
@@ -177,14 +177,14 @@ def test_dynamic_bucketing_sampler_precomputed_duration_bins():
     assert len(batches[0]) == 2
     assert sum(c.duration for c in batches[0]) == 4
 
-    assert len(batches[1]) == 2
-    assert sum(c.duration for c in batches[1]) == 3
+    assert len(batches[1]) == 4
+    assert sum(c.duration for c in batches[1]) == 5
 
     assert len(batches[2]) == 2
     assert sum(c.duration for c in batches[2]) == 3
 
-    assert len(batches[3]) == 4
-    assert sum(c.duration for c in batches[3]) == 5
+    assert len(batches[3]) == 2
+    assert sum(c.duration for c in batches[3]) == 3
 
 
 def test_dynamic_bucketing_sampler_max_duration_and_max_cuts():
@@ -353,17 +353,17 @@ def test_dynamic_bucketing_sampler_cut_pairs():
 
     bidx = 1
     sc, tc = batches[bidx][0], batches[bidx][1]
-    assert len(sc) == 2
-    assert len(tc) == 2
-    assert sum(c.duration for c in sc) == 4
-    assert sum(c.duration for c in tc) == 4
-
-    bidx = 2
-    sc, tc = batches[bidx][0], batches[bidx][1]
     assert len(sc) == 5
     assert len(tc) == 5
     assert sum(c.duration for c in sc) == 5
     assert sum(c.duration for c in tc) == 5
+
+    bidx = 2
+    sc, tc = batches[bidx][0], batches[bidx][1]
+    assert len(sc) == 2
+    assert len(tc) == 2
+    assert sum(c.duration for c in sc) == 4
+    assert sum(c.duration for c in tc) == 4
 
     bidx = 3
     sc, tc = batches[bidx][0], batches[bidx][1]
@@ -494,21 +494,21 @@ def test_dynamic_bucketing_sampler_cut_triplets():
 
     bidx = 1
     c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
-    assert len(c1) == 2
-    assert len(c2) == 2
-    assert len(c3) == 2
-    assert sum(c.duration for c in c1) == 4
-    assert sum(c.duration for c in c2) == 4
-    assert sum(c.duration for c in c3) == 4
-
-    bidx = 2
-    c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
     assert len(c1) == 5
     assert len(c2) == 5
     assert len(c3) == 5
     assert sum(c.duration for c in c1) == 5
     assert sum(c.duration for c in c2) == 5
     assert sum(c.duration for c in c3) == 5
+
+    bidx = 2
+    c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
+    assert len(c1) == 2
+    assert len(c2) == 2
+    assert len(c3) == 2
+    assert sum(c.duration for c in c1) == 4
+    assert sum(c.duration for c in c2) == 4
+    assert sum(c.duration for c in c3) == 4
 
     bidx = 3
     c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
