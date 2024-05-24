@@ -2,6 +2,7 @@ import random
 import warnings
 from bisect import bisect_right
 from collections import deque
+from dataclasses import dataclass
 from itertools import islice
 from typing import (
     Any,
@@ -275,6 +276,7 @@ class DynamicBucketingSampler(CutSampler):
         cuts_iter = DynamicBucketer(
             cuts_iter,
             duration_bins=self.duration_bins,
+            world_size=self.world_size,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             constraint=self.constraint,
@@ -358,11 +360,50 @@ def estimate_duration_buckets(
     return bins
 
 
+class BucketSelectionState:
+    """
+    Helper class used in the context of bucket selection synchronization across DDP ranks.
+    It's only necessary when using a map-style dataset (i.e., the sampler lives in the training loop process)
+    and world_size is greater than 1. In these cases we have to use the same bucket idx ``world_size`` times
+    to ensure each rank uses the same bucket. This is due to how CutSampler distributes mini-batches
+    across ranks, ensuring the number of steps is always equal for each rank.
+    """
+
+    def __init__(
+        self, bucket_rng: random.Random, num_buckets: int, world_size: int
+    ) -> None:
+        self._bucket_rng = bucket_rng
+        self._num_buckets = num_buckets
+        self._world_size = world_size
+        self._usage_count = 0
+        self._bucket_idx = None
+
+    def select_bucket_idx(self) -> int:
+        if self._bucket_idx is None or self._usage_count == self._world_size:
+            self._bucket_idx = self._bucket_rng.randrange(self._num_buckets)
+            self._usage_count = 0
+        self._usage_count += 1
+        return self._bucket_idx
+
+    def save(self) -> Dict[str, Any]:
+        return {
+            "_bucket_rng": self._bucket_rng.getstate(),
+            "_bucket_idx": self._bucket_idx,
+            "_usage_count": self._usage_count,
+        }
+
+    def restore(self, ckpt: Dict[str, Any]) -> None:
+        self._bucket_rng.setstate(ckpt["_bucket_rng"])
+        self._bucket_idx = ckpt["_bucket_idx"]
+        self._usage_count = ckpt["_usage_count"]
+
+
 class DynamicBucketer:
     def __init__(
         self,
         cuts: Iterable[Union[Cut, Tuple[Cut]]],
         duration_bins: List[Seconds],
+        world_size: int,
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         constraint: Optional[SamplingConstraint] = None,
@@ -376,6 +417,7 @@ class DynamicBucketer:
     ) -> None:
         self.cuts = cuts
         self.duration_bins = duration_bins
+        self.world_size = world_size
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.constraint = constraint
@@ -425,11 +467,17 @@ class DynamicBucketer:
         self.cuts_iter = iter(self.cuts)
         self._collect_cuts_in_buckets(self.buffer_size)
 
+        state = BucketSelectionState(
+            bucket_rng=self.bucket_rng,
+            num_buckets=len(self.buckets),
+            world_size=self.world_size,
+        )
+
         # The iteration code starts here.
         # On each step we're sampling a new batch.
         try:
             while True:
-                sampling_bucket = self._select_bucket()
+                sampling_bucket = self._select_bucket(state)
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
                 indexes_used = []
@@ -467,7 +515,7 @@ class DynamicBucketer:
         # Cleanup.
         self.cuts_iter = None
 
-    def _select_bucket(self) -> Deque[Cut]:
+    def _select_bucket(self, state: BucketSelectionState) -> Deque[Cut]:
         if self.bucket_rng is None:
             # Bucket selection algo 1:
             # * there is just one RNG for choosing buckets and choosing samples randomly from the buckets
@@ -496,7 +544,7 @@ class DynamicBucketer:
             # * if no bucket is ready, we end iteration
 
             def scan_buckets(predicate: Callable[[Deque[Cut]], bool]) -> int:
-                bucket_idx = self.bucket_rng.randrange(len(self.buckets))
+                bucket_idx = state.select_bucket_idx()
 
                 def valid_idx() -> bool:
                     return 0 <= bucket_idx < len(self.buckets)
@@ -515,9 +563,18 @@ class DynamicBucketer:
 
                 return bucket_idx
 
+            # This try/except is first trying to choose a bucket to sample a full mini-batch from,
+            # and if that fails and drop_last=False, it tries again, this time accepting partial mini-batch.
+            # Because we have no guarantee that samplers in different ranks will start exhausting the buckets
+            # at the same time, it takes only a single occurrence of all buckets not being ready to permanently
+            # run out-of-sync.
+            # For this reason, we create a checkpoint of the bucket sampling state, and if we go into except
+            # fallback, we restore this state first to ensure we use the bucket_rng exactly the same number
+            # of times on each rank, no matter the circumstance.
+            ckpt = state.save()
             try:
                 # Typical case: at least one bucket has enough data to sample from.
-                bucket_idx = scan_buckets(self._is_ready)
+                selected_bucket_idx = scan_buckets(self._is_ready)
             except BucketsDontHaveEnoughData:
                 # We didn't hit the typical case either because we are finishing
                 # the epoch, or because the buffers are too small.
@@ -528,12 +585,13 @@ class DynamicBucketer:
                 # We'll try again, this time accepting buckets that have any amount of data available,
                 # which may yield partial batches.
                 try:
-                    bucket_idx = scan_buckets(lambda b: len(b) > 0)
+                    state.restore(ckpt)
+                    selected_bucket_idx = scan_buckets(lambda b: len(b) > 0)
                 except BucketsDontHaveEnoughData:
                     # We exhausted the full dataset.
                     raise StopIteration()
 
-            return self.buckets[bucket_idx]
+            return self.buckets[selected_bucket_idx]
 
     def _is_ready(self, bucket: Deque[Cut]) -> bool:
         tot = self.constraint.copy()
