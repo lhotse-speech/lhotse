@@ -1,9 +1,11 @@
 import random
 from collections import deque
-from typing import Optional
+from typing import Optional, List
 
 from lhotse import CutSet
 from lhotse.cut import Cut
+
+import torch
 
 
 class DataSource:
@@ -98,3 +100,37 @@ class DataSource:
 
     def __len__(self) -> int:
         return len(self._shuffled_items)
+
+
+class WeightedDataSource(DataSource):
+    """
+    An iterator wrapper over CutSet that helps with the sampling process:
+    it allows for deterministic re-shuffling of elements and "returning"
+    sampled elements to be yielded again.
+
+    Every cut has a sampling weight. If the cut has already been drawn in
+    this epoch, we avoid sampling it again until next epoch.
+    """
+
+    def __init__(self, items: CutSet, weights: List):
+        super().__init__(items=items)
+        self.orig_weights = weights
+        self.weights = torch.tensor(weights)
+
+    def __iter__(self) -> "WeightedDataSource":
+        self.reset()
+        self._iter = iter(self._shuffled_items)
+        self.weights = torch.tensor(self.orig_weights) # recover the original weight
+        return self
+
+    def __next__(self) -> Cut:
+        if self._reusable:
+            next_cut = self._reusable.popleft()
+        else:
+            cut_idx = torch.multinomial(self.weights, 1)
+            self.weights[cut_idx] = 1e-3
+            next_cut = self._orig_items[cut_idx.item()]
+        if not self.is_lazy:
+            self._remaining_duration -= next_cut.duration
+            self.remaining_cuts -= 1
+        return next_cut
