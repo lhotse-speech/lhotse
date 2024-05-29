@@ -15,7 +15,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
-import num2words
 from tqdm.auto import tqdm
 
 from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
@@ -48,6 +47,12 @@ def normalize(s):
     :param s: str, input string.
     :return: str, normalized string.
     """
+    if is_module_available("num2words"):
+        import num2words
+    else:
+        raise ImportError(
+            "To process the ReazonSpeech corpus, please install optional dependency: pip install num2words"
+        )
     s = s.translate(PUNCTUATIONS).translate(ZEN2HAN)
     conv = lambda m: num2words.num2words(m.group(0), lang="ja")
     return re.sub(r"\d+\.?\d*", conv, s)
@@ -59,6 +64,7 @@ def write_to_json(data, filename):
     :param data: The data to write.
     :param filename: The name of the file to write to.
     """
+    
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
