@@ -612,7 +612,7 @@ class nullcontext(AbstractContextManager):
     Note(pzelasko): This is copied from Python 3.7 stdlib so that we can use it in 3.6.
     """
 
-    def __init__(self, enter_result=None):
+    def __init__(self, enter_result=None, *args, **kwargs):
         self.enter_result = enter_result
 
     def __enter__(self):
