@@ -1,9 +1,10 @@
 import warnings
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 from lhotse import CutSet, Seconds
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
 from lhotse.dataset.sampling.data_source import WeightedDataSource
+
 
 class WeightedSimpleCutSampler(CutSampler):
     """
@@ -14,7 +15,7 @@ class WeightedSimpleCutSampler(CutSampler):
 
     When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
     the batch size is dynamic.
-    
+
     Example usage:
 
         >>> dataset = K2SpeechRecognitionDataset(cuts)
@@ -25,10 +26,12 @@ class WeightedSimpleCutSampler(CutSampler):
         ...     sampler.set_epoch(epoch)
         ...     train(loader)
     """
+
     def __init__(
         self,
         cuts: CutSet,
         cuts_weight: List,
+        num_samples: int,
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
@@ -61,18 +64,23 @@ class WeightedSimpleCutSampler(CutSampler):
             seed=seed,
         )
         assert cuts.is_lazy == False, "This sampler does not support lazy mode!"
-        assert shuffle == False, "This sampler does not need shuffle as it performs sampling"
+        assert (
+            shuffle == False
+        ), "This sampler does not need shuffle as it performs sampling"
         assert any(
             v is not None for v in (max_duration, max_cuts)
         ), "At least one of max_duration or max_cuts has to be set."
-        self.data_source = WeightedDataSource(cuts, weights=cuts_weight)
+        self.data_source = WeightedDataSource(
+            cuts, weights=cuts_weight, num_samples=num_samples
+        )
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
             max_cuts=max_cuts,
         )
 
         self.weights = cuts_weight
-    
+        self.num_samples = num_samples
+
     @property
     def remaining_duration(self) -> Optional[float]:
         """
@@ -110,6 +118,7 @@ class WeightedSimpleCutSampler(CutSampler):
             {
                 "time_constraint": self.time_constraint.state_dict(),
                 "weights": self.weights,
+                "num_samples": self.num_samples,
             }
         )
         return state_dict
@@ -150,6 +159,7 @@ class WeightedSimpleCutSampler(CutSampler):
         self.data_source.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
 
         self.weights = state_dict.pop("weights")
+        self.num_samples = state_dict.pop("num_samples")
 
     def __iter__(self) -> "WeightedSimpleCutSampler":
         """
@@ -176,7 +186,6 @@ class WeightedSimpleCutSampler(CutSampler):
         # required to do this operation.
         self.time_constraint.reset()
         cuts = []
-        cuts_ids = []
         while True:
 
             # Check that we have not reached the end of the dataset.
@@ -197,11 +206,6 @@ class WeightedSimpleCutSampler(CutSampler):
                     # signal the iteration code to stop.
                     self.diagnostics.discard(cuts)
                     raise StopIteration()
-            
-            # Check if the same cut has been drawn in this batch
-            if next_cut.id in cuts_ids:
-                self.diagnostics.discard_single(next_cut)
-                continue
 
             # Check whether the cut we're about to sample satisfies optional user-requested predicate.
             if not self._filter_fn(next_cut):
@@ -216,8 +220,6 @@ class WeightedSimpleCutSampler(CutSampler):
             if not self.time_constraint.exceeded():
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut)
-                # Append the id of the current
-                cuts_ids.append(next_cut.id)
             else:
                 # Yes. Do we have at least one cut in the batch?
                 if cuts:
@@ -234,8 +236,5 @@ class WeightedSimpleCutSampler(CutSampler):
                         "Consider increasing max_frames/max_cuts/max_duration."
                     )
                     cuts.append(next_cut)
-                    # Append the id of the current
-                    cuts_ids.append(next_cut.id)
 
         return CutSet.from_cuts(cuts)
-        
