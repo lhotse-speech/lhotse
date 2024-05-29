@@ -1,11 +1,12 @@
 import random
 from collections import deque
-from typing import Optional, List
+from typing import List, Optional
+
+import numpy as np
 
 from lhotse import CutSet
 from lhotse.cut import Cut
 
-import numpy as np
 
 class DataSource:
     """
@@ -107,20 +108,31 @@ class WeightedDataSource(DataSource):
     it allows for deterministic re-shuffling of elements and "returning"
     sampled elements to be yielded again.
 
-    Every cut has a sampling weight. If the cut has already been drawn in
-    this epoch, we avoid sampling it again until next epoch.
+    Every cut has a sampling weight. At the beginning of each epoch, we
+    pre-compute the indexes by sampling from multi-nomial distribution without
+    replacement. The data source will be exhausted if the number of drawn cuts
+    exceed num_samples
     """
 
     def __init__(self, items: CutSet, weights: List, num_samples: int):
+        """The constructor of the weighted data source
+
+        Args:
+            items (CutSet): The cutset itself
+            weights (List): A list of values representing the weight of each cut. All values must be positive
+            num_samples (int): The number of samples to be drawn. Must smaller than the total number of cuts
+        """
         super().__init__(items=items)
         assert len(items) == len(weights), "The length should match"
-        assert num_samples < len(weights), "The number of samples to be drawn should not exceed the dataset size"
-        
+        assert num_samples < len(
+            weights
+        ), "The number of samples to be drawn should not exceed the dataset size"
+
         # normalize the weight
         weights = np.array(weights)
         weights = weights / weights.sum()
 
-        self.weights = weights # should neven be changed 
+        self.weights = weights
         self.num_samples = num_samples
         self.sampled_indexes = None
 
@@ -143,7 +155,7 @@ class WeightedDataSource(DataSource):
         self.reset()
         self._iter = iter(self._shuffled_items)
         self.sampled_indexes = np.random.choice(
-            len(self.weights), 
+            len(self.weights),
             self.num_samples,
             p=self.weights,
             replace=False,
@@ -156,7 +168,7 @@ class WeightedDataSource(DataSource):
             next_cut = self._reusable.popleft()
         else:
             next_cut = self._orig_items[next(self.sampled_indexes)]
-            
+
         if not self.is_lazy:
             self._remaining_duration -= next_cut.duration
             self.remaining_cuts -= 1
