@@ -64,7 +64,7 @@ def write_to_json(data, filename):
     :param data: The data to write.
     :param filename: The name of the file to write to.
     """
-    
+
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
