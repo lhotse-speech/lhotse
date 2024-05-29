@@ -12,6 +12,7 @@ class WeightedSimpleCutSampler(CutSampler):
     To enable global sampling, cuts must be in eager mode.
 
     When performing sampling, it avoids having duplicated cuts in the same batch.
+    The sampler terminates if the number of sampled cuts reach :attr:`num_samples`
 
     When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
     the batch size is dynamic.
@@ -20,7 +21,7 @@ class WeightedSimpleCutSampler(CutSampler):
 
         >>> dataset = K2SpeechRecognitionDataset(cuts)
         >>> weights = get_weights(cuts)
-        >>> sampler = WeightedSimpleCutSampler(cuts, weights, max_duration=200.0)
+        >>> sampler = WeightedSimpleCutSampler(cuts, weights, num_samples=100, max_duration=200.0)
         >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
         >>> for epoch in range(start_epoch, n_epochs):
         ...     sampler.set_epoch(epoch)
@@ -44,6 +45,8 @@ class WeightedSimpleCutSampler(CutSampler):
         WeightedSimpleCutSampler's constructor
 
         :param cuts: the ``CutSet`` to sample data from.
+        :param cuts_weight: the weight of each cut for sampling.
+        :param num_samples: the number of samples to be drawn.
         :param max_duration: The maximum total recording duration from ``cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
