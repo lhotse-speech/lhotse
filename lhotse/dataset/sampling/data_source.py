@@ -114,6 +114,8 @@ class WeightedDataSource(DataSource):
 
     def __init__(self, items: CutSet, weights: List):
         super().__init__(items=items)
+        assert len(items) == len(weights), "The length should match"
+        
         self.orig_weights = weights
         self.weights = torch.tensor(weights)
 

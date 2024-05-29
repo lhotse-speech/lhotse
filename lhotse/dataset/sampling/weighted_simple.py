@@ -8,10 +8,22 @@ from lhotse.dataset.sampling.data_source import WeightedDataSource
 class WeightedSimpleCutSampler(CutSampler):
     """
     Samples cuts from a CutSet, where the sampling prob is given by a list.
-    To enable global sampling, cuts should not in lazy mode
+    To enable global sampling, cuts must be in eager mode.
 
+    When performing sampling, it avoids having duplicated cuts in the same batch.
+
+    When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
+    the batch size is dynamic.
+    
     Example usage:
 
+        >>> dataset = K2SpeechRecognitionDataset(cuts)
+        >>> weights = get_weights(cuts)
+        >>> sampler = WeightedSimpleCutSampler(cuts, weights, max_duration=200.0)
+        >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
+        >>> for epoch in range(start_epoch, n_epochs):
+        ...     sampler.set_epoch(epoch)
+        ...     train(loader)
     """
     def __init__(
         self,
