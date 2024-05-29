@@ -5,8 +5,7 @@ from typing import Optional, List
 from lhotse import CutSet
 from lhotse.cut import Cut
 
-import torch
-
+import numpy as np
 
 class DataSource:
     """
@@ -112,26 +111,52 @@ class WeightedDataSource(DataSource):
     this epoch, we avoid sampling it again until next epoch.
     """
 
-    def __init__(self, items: CutSet, weights: List):
+    def __init__(self, items: CutSet, weights: List, num_samples: int):
         super().__init__(items=items)
         assert len(items) == len(weights), "The length should match"
+        assert num_samples < len(weights), "The number of samples to be drawn should not exceed the dataset size"
         
-        self.orig_weights = weights
-        self.weights = torch.tensor(weights)
+        # normalize the weight
+        weights = np.array(weights)
+        weights = weights / weights.sum()
+
+        self.weights = weights # should neven be changed 
+        self.num_samples = num_samples
+        self.sampled_indexes = None
+
+    def reset(self) -> None:
+        """Reset the iterable state of DataSource."""
+        self._iter = None
+        self.sampled_indexes = None
+        self._reusable.clear()
+        self._remaining_duration = self._total_duration
+        self.remaining_cuts = self._total_cuts
+
+    def fast_forward(self, steps: int) -> None:
+        """Advance the data source by ``steps`` amount of steps."""
+        assert steps >= 0
+        iter(self)
+        for i in range(steps):
+            next(self.sampled_indexes)
 
     def __iter__(self) -> "WeightedDataSource":
         self.reset()
         self._iter = iter(self._shuffled_items)
-        self.weights = torch.tensor(self.orig_weights) # recover the original weight
+        self.sampled_indexes = np.random.choice(
+            len(self.weights), 
+            self.num_samples,
+            p=self.weights,
+            replace=False,
+        )
+        self.sampled_indexes = iter(self.sampled_indexes)
         return self
 
     def __next__(self) -> Cut:
         if self._reusable:
             next_cut = self._reusable.popleft()
         else:
-            cut_idx = torch.multinomial(self.weights, 1)
-            self.weights[cut_idx] = 1e-3
-            next_cut = self._orig_items[cut_idx.item()]
+            next_cut = self._orig_items[next(self.sampled_indexes)]
+            
         if not self.is_lazy:
             self._remaining_duration -= next_cut.duration
             self.remaining_cuts -= 1
