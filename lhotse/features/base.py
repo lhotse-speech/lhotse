@@ -472,7 +472,7 @@ class Features:
             start = self.start
         # In case the caller requested only a sub-span of the features, trim them.
         # Left trim
-        if start < self.start - 1e-5:
+        if start < self.start - 1e-3:
             raise ValueError(
                 f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                 f"The available range is ({self.start}, {self.end}) seconds."
