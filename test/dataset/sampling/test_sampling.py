@@ -25,6 +25,7 @@ from lhotse.dataset.sampling import (
     BucketingSampler,
     CutPairsSampler,
     SimpleCutSampler,
+    WeightedSimpleCutSampler,
     ZipSampler,
 )
 from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
@@ -1022,6 +1023,54 @@ def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
         assert len(set(c.id for c in sampled_src_cuts)) == len(sampled_src_cuts)
         # Invariant 3: the items are shuffled
         assert [c.id for c in sampled_src_cuts] != [c.id for c in lazy_cuts]
+
+
+def test_weighted_sampler_num_samples():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    weight = [random.random() for i in range(100)]
+    num_samples = 32
+
+    sampler = WeightedSimpleCutSampler(
+        cut_set,
+        weight,
+        num_samples=num_samples,
+        max_duration=10.0,
+        drop_last=True,
+    )
+
+    sampled_cuts = []
+    num_cuts = 0
+    for batch in sampler:
+        sampled_cuts.extend(batch)
+        num_cuts += len(batch)
+
+    assert num_cuts <= num_samples
+
+
+def test_weighted_sampler_across_epochs():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    weight = [random.random() for i in range(100)]
+    num_samples = 32
+
+    sampler = WeightedSimpleCutSampler(
+        cut_set,
+        weight,
+        num_samples=num_samples,
+        max_duration=10.0,
+        drop_last=True,
+    )
+
+    # 1st epoch
+    sampler.set_epoch(1)
+    batch = next(iter(sampler))
+    cut_ids1 = [c.id for c in batch]
+
+    # 2st epoch
+    sampler.set_epoch(2)
+    batch = next(iter(sampler))
+    cut_ids2 = [c.id for c in batch]
+
+    assert set(cut_ids1) != set(cut_ids2)
 
 
 @pytest.mark.parametrize("datasize", [10, 1000, 20000])
