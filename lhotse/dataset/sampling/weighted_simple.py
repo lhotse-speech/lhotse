@@ -70,10 +70,7 @@ class WeightedSimpleCutSampler(SimpleCutSampler):
             max_cuts=max_cuts,
             seed=seed,
         )
-        assert cuts.is_lazy == False, "This sampler does not support lazy mode!"
-        assert (
-            shuffle == False
-        ), "This sampler does not need shuffle as it performs sampling"
+        assert not cuts.is_lazy, "This sampler does not support lazy mode!"
         self.data_source = WeightedDataSource(
             cuts, weights=cuts_weight, num_samples=num_samples
         )
@@ -128,8 +125,6 @@ class WeightedSimpleCutSampler(SimpleCutSampler):
         super().load_state_dict(state_dict)
 
         # Restore the data source's state
-        if self.shuffle:
-            self.data_source.shuffle(self.seed + self.epoch)
         self.data_source.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
 
         self.weights = state_dict.pop("weights")
@@ -148,7 +143,5 @@ class WeightedSimpleCutSampler(SimpleCutSampler):
         # than are actually available per epoch would have broken the checkpoint restoration.
         self.diagnostics.reset_current_epoch()
         # Reset the state to the beginning of the epoch.
-        if self.shuffle:
-            self.data_source.shuffle(self.seed + self.epoch)
         iter(self.data_source)
         return self
