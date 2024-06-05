@@ -1,4 +1,7 @@
 import random
+from itertools import islice
+
+import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.sampling.dynamic_bucketing import (
@@ -6,7 +9,7 @@ from lhotse.dataset.sampling.dynamic_bucketing import (
     DynamicBucketingSampler,
     estimate_duration_buckets,
 )
-from lhotse.testing.dummies import DummyManifest
+from lhotse.testing.dummies import DummyManifest, dummy_cut
 
 
 def test_estimate_duration_buckets_2b():
@@ -48,7 +51,9 @@ def test_dynamic_bucketing_drop_last_false():
             c.duration = 2
     rng = random.Random(0)
 
-    sampler = DynamicBucketer(cuts, duration_bins=[2], max_duration=5, rng=rng)
+    sampler = DynamicBucketer(
+        cuts, duration_bins=[2], max_duration=5, rng=rng, world_size=1
+    )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
 
@@ -84,7 +89,7 @@ def test_dynamic_bucketing_drop_last_true():
     rng = random.Random(0)
 
     sampler = DynamicBucketer(
-        cuts, duration_bins=[2], max_duration=5, rng=rng, drop_last=True
+        cuts, duration_bins=[2], max_duration=5, rng=rng, drop_last=True, world_size=1
     )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
@@ -133,11 +138,11 @@ def test_dynamic_bucketing_sampler():
     assert len(batches[0]) == 2
     assert sum(c.duration for c in batches[0]) == 4
 
-    assert len(batches[1]) == 2
-    assert sum(c.duration for c in batches[1]) == 4
+    assert len(batches[1]) == 5
+    assert sum(c.duration for c in batches[1]) == 5
 
-    assert len(batches[2]) == 5
-    assert sum(c.duration for c in batches[2]) == 5
+    assert len(batches[2]) == 2
+    assert sum(c.duration for c in batches[2]) == 4
 
     assert len(batches[3]) == 1
     assert sum(c.duration for c in batches[3]) == 2
@@ -177,14 +182,14 @@ def test_dynamic_bucketing_sampler_precomputed_duration_bins():
     assert len(batches[0]) == 2
     assert sum(c.duration for c in batches[0]) == 4
 
-    assert len(batches[1]) == 2
-    assert sum(c.duration for c in batches[1]) == 3
+    assert len(batches[1]) == 4
+    assert sum(c.duration for c in batches[1]) == 5
 
     assert len(batches[2]) == 2
     assert sum(c.duration for c in batches[2]) == 3
 
-    assert len(batches[3]) == 4
-    assert sum(c.duration for c in batches[3]) == 5
+    assert len(batches[3]) == 2
+    assert sum(c.duration for c in batches[3]) == 3
 
 
 def test_dynamic_bucketing_sampler_max_duration_and_max_cuts():
@@ -353,17 +358,17 @@ def test_dynamic_bucketing_sampler_cut_pairs():
 
     bidx = 1
     sc, tc = batches[bidx][0], batches[bidx][1]
-    assert len(sc) == 2
-    assert len(tc) == 2
-    assert sum(c.duration for c in sc) == 4
-    assert sum(c.duration for c in tc) == 4
-
-    bidx = 2
-    sc, tc = batches[bidx][0], batches[bidx][1]
     assert len(sc) == 5
     assert len(tc) == 5
     assert sum(c.duration for c in sc) == 5
     assert sum(c.duration for c in tc) == 5
+
+    bidx = 2
+    sc, tc = batches[bidx][0], batches[bidx][1]
+    assert len(sc) == 2
+    assert len(tc) == 2
+    assert sum(c.duration for c in sc) == 4
+    assert sum(c.duration for c in tc) == 4
 
     bidx = 3
     sc, tc = batches[bidx][0], batches[bidx][1]
@@ -494,21 +499,21 @@ def test_dynamic_bucketing_sampler_cut_triplets():
 
     bidx = 1
     c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
-    assert len(c1) == 2
-    assert len(c2) == 2
-    assert len(c3) == 2
-    assert sum(c.duration for c in c1) == 4
-    assert sum(c.duration for c in c2) == 4
-    assert sum(c.duration for c in c3) == 4
-
-    bidx = 2
-    c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
     assert len(c1) == 5
     assert len(c2) == 5
     assert len(c3) == 5
     assert sum(c.duration for c in c1) == 5
     assert sum(c.duration for c in c2) == 5
     assert sum(c.duration for c in c3) == 5
+
+    bidx = 2
+    c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
+    assert len(c1) == 2
+    assert len(c2) == 2
+    assert len(c3) == 2
+    assert sum(c.duration for c in c1) == 4
+    assert sum(c.duration for c in c2) == 4
+    assert sum(c.duration for c in c3) == 4
 
     bidx = 3
     c1, c2, c3 = batches[bidx][0], batches[bidx][1], batches[bidx][2]
@@ -562,3 +567,106 @@ def test_dynamic_bucketing_quadratic_duration():
     b = batches[3]
     assert len(b) == 1  # single cut
     assert sum(c.duration for c in b) == 30  # 30s long
+
+
+@pytest.mark.parametrize("sync_buckets", [True, False])
+def test_dynamic_bucketing_sampler_sync_buckets_iterable_dataset_usage(sync_buckets):
+    # With iterable datasets a sampler replica will be placed in each dataloading worker,
+    # given world_size=1, and have its data shuffled differently than other replicas.
+    # To simulate that in this test, we provide a different seed and rank=0 world_size=1.
+    dur_rng = random.Random(0)
+    cuts = CutSet(
+        [
+            dummy_cut(i, duration=dur_rng.choices([1, 10], weights=[0.9, 0.1])[0])
+            for i in range(10000)
+        ]
+    )
+
+    common = dict(
+        max_duration=5,
+        num_buckets=2,
+        rank=0,
+        sync_buckets=sync_buckets,
+        world_size=1,
+        drop_last=True,
+        shuffle=True,
+        duration_bins=[5.0],
+    )
+    s0 = DynamicBucketingSampler(cuts, seed=0, **common)
+    s1 = DynamicBucketingSampler(cuts, seed=1, **common)
+
+    # check the first 30 mini-batches
+    batches0 = [b for b in islice(s0, 30)]
+    batches1 = [b for b in islice(s1, 30)]
+    cuts0 = CutSet([c for b in batches0 for c in b])
+    cuts1 = CutSet([c for b in batches1 for c in b])
+
+    # Invariant: no duplicated cut IDs across ranks
+    assert set(cuts0.ids) & set(cuts1.ids) == set()
+
+    if sync_buckets:
+        matching_ids = []
+        # Ensure identical batch sizes and example durations
+        for bidx, (b0, b1) in enumerate(zip(batches0, batches1)):
+            assert len(b0) == len(b1), bidx
+            for c0, c1 in zip(b0, b1):
+                assert c0.duration == c1.duration
+                matching_ids.append(c0.id == c1.id)
+        # At least some IDs are mismatching because despite identical shapes, the actual sampled data is different.
+        assert not all(matching_ids)
+    if not sync_buckets:
+        # some shapes will be mismatched because different buckets were selected.
+        matching_shapes = [len(b0) == len(b1) for b0, b1 in zip(batches0, batches1)]
+        assert not all(matching_shapes)
+
+
+@pytest.mark.parametrize("sync_buckets", [True, False])
+def test_dynamic_bucketing_sampler_sync_buckets_map_dataset_usage(sync_buckets):
+    # With map datasets the sampler lives in the training loop process and must have synced random seed
+    # with other ranks in DDP.
+    # The data is de-duplicated by sampling world_size batches and keeping the batch at rank index.
+    # To simulate that in this test, we provide the same seed, world_size=2 and set rank appropriately.
+    dur_rng = random.Random(0)
+    cuts = CutSet(
+        [
+            dummy_cut(i, duration=dur_rng.choices([1, 10], weights=[0.9, 0.1])[0])
+            for i in range(10000)
+        ]
+    )
+
+    common = dict(
+        max_duration=5,
+        num_buckets=2,
+        seed=0,
+        sync_buckets=sync_buckets,
+        world_size=2,
+        drop_last=True,
+        shuffle=True,
+        duration_bins=[5.0],
+    )
+    s0 = DynamicBucketingSampler(cuts, rank=0, **common)
+    s1 = DynamicBucketingSampler(cuts, rank=1, **common)
+
+    # check the first 30 mini-batches
+    batches0 = [b for b in islice(s0, 30)]
+    batches1 = [b for b in islice(s1, 30)]
+    cuts0 = CutSet([c for b in batches0 for c in b])
+    cuts1 = CutSet([c for b in batches1 for c in b])
+
+    # Invariant: no duplicated cut IDs across ranks
+    assert set(cuts0.ids) & set(cuts1.ids) == set()
+
+    if sync_buckets:
+        matching_ids = []
+        # Ensure identical batch sizes and example durations
+        for bidx, (b0, b1) in enumerate(zip(batches0, batches1)):
+            assert len(b0) == len(b1), bidx
+            for c0, c1 in zip(b0, b1):
+                assert c0.duration == c1.duration
+                matching_ids.append(c0.id == c1.id)
+        # At least some IDs are mismatching because despite identical shapes, the actual sampled data is different.
+        assert not all(matching_ids)
+    if not sync_buckets:
+        # some shapes will be mismatched because different buckets were selected.
+        matching_shapes = [len(b0) == len(b1) for b0, b1 in zip(batches0, batches1)]
+        assert not all(matching_shapes)

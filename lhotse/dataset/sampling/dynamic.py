@@ -134,7 +134,6 @@ class DynamicCutSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
-        self.rng = None
 
         if strict is not None:
             warnings.warn(
@@ -195,7 +194,6 @@ class DynamicCutSampler(CutSampler):
         # than are actually available per epoch would have broken the checkpoint restoration.
         self.diagnostics.reset_current_epoch()
         seed = resolve_seed(self.seed)
-        self.rng = random.Random(seed + self.epoch)
         # Initiate iteration
         self.cuts_iter = [iter(cs) for cs in self.cuts]
         # Optionally shuffle
