@@ -4,9 +4,10 @@ from typing import Any, Dict, List, Optional
 from lhotse import CutSet, Seconds
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
 from lhotse.dataset.sampling.data_source import WeightedDataSource
+from lhotse.dataset.sampling.simple import SimpleCutSampler
 
 
-class WeightedSimpleCutSampler(CutSampler):
+class WeightedSimpleCutSampler(SimpleCutSampler):
     """
     Samples cuts from a CutSet, where the sampling prob is given by a list.
     To enable global sampling, cuts must be in eager mode.
@@ -60,55 +61,25 @@ class WeightedSimpleCutSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
+            cuts=cuts,
             drop_last=drop_last,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
+            max_duration=max_duration,
+            max_cuts=max_cuts,
             seed=seed,
         )
         assert cuts.is_lazy == False, "This sampler does not support lazy mode!"
         assert (
             shuffle == False
         ), "This sampler does not need shuffle as it performs sampling"
-        assert any(
-            v is not None for v in (max_duration, max_cuts)
-        ), "At least one of max_duration or max_cuts has to be set."
         self.data_source = WeightedDataSource(
             cuts, weights=cuts_weight, num_samples=num_samples
-        )
-        self.time_constraint = TimeConstraint(
-            max_duration=max_duration,
-            max_cuts=max_cuts,
         )
 
         self.weights = cuts_weight
         self.num_samples = num_samples
-
-    @property
-    def remaining_duration(self) -> Optional[float]:
-        """
-        Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
-        Not available when the CutSet is read in lazy mode (returns None).
-        """
-        return self.data_source.remaining_duration
-
-    @property
-    def remaining_cuts(self) -> Optional[int]:
-        """
-        Remaining number of cuts in the sampler.
-        Not available when the CutSet is read in lazy mode (returns None).
-        """
-        return self.data_source.remaining_cuts
-
-    @property
-    def num_cuts(self) -> Optional[int]:
-        """
-        Total number of cuts in the sampler.
-        Not available when the CutSet is read in lazy mode (returns None).
-        """
-        if self.data_source.is_lazy:
-            return None
-        return len(self.data_source)
 
     def state_dict(self) -> Dict[str, Any]:
         """
@@ -181,63 +152,3 @@ class WeightedSimpleCutSampler(CutSampler):
             self.data_source.shuffle(self.seed + self.epoch)
         iter(self.data_source)
         return self
-
-    def _next_batch(self) -> CutSet:
-        # Keep iterating the underlying CutSet as long as we hit or exceed the constraints
-        # provided by user (the max number of frames or max number of cuts).
-        # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
-        # required to do this operation.
-        self.time_constraint.reset()
-        cuts = []
-        while True:
-
-            # Check that we have not reached the end of the dataset.
-            try:
-                # If this doesn't raise (typical case), it's not the end: keep processing.
-                next_cut = next(self.data_source)
-            except StopIteration:
-                # No more cuts to sample from: if we have a partial batch,
-                # we may output it, unless the user requested to drop it.
-                # We also check if the batch is "almost there" to override drop_last.
-                if cuts and (
-                    not self.drop_last or self.time_constraint.close_to_exceeding()
-                ):
-                    # We have a partial batch and we can return it.
-                    return CutSet.from_cuts(cuts)
-                else:
-                    # There is nothing more to return or it's discarded:
-                    # signal the iteration code to stop.
-                    self.diagnostics.discard(cuts)
-                    raise StopIteration()
-
-            # Check whether the cut we're about to sample satisfies optional user-requested predicate.
-            if not self._filter_fn(next_cut):
-                # No - try another one.
-                self.diagnostics.discard_single(next_cut)
-                continue
-
-            # Track the duration/frames/etc. constraints.
-            self.time_constraint.add(next_cut)
-
-            # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded():
-                # No - add the next cut to the batch, and keep trying.
-                cuts.append(next_cut)
-            else:
-                # Yes. Do we have at least one cut in the batch?
-                if cuts:
-                    # Yes. Return the batch, but keep the currently drawn cut for later.
-                    self.data_source.take_back(next_cut)
-                    break
-                else:
-                    # No. We'll warn the user that the constrains might be too tight,
-                    # and return the cut anyway.
-                    warnings.warn(
-                        "The first cut drawn in batch collection violates "
-                        "the max_frames, max_cuts, or max_duration constraints - "
-                        "we'll return it anyway. "
-                        "Consider increasing max_frames/max_cuts/max_duration."
-                    )
-                    cuts.append(next_cut)
-
-        return CutSet.from_cuts(cuts)
