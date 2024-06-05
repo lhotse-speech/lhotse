@@ -310,9 +310,13 @@ def split_manifest_lazy(
     if prefix == "":
         prefix = "split"
 
-    items = iter(it)
     split_idx = start_idx
     splits = []
+    items = iter(it)
+    try:
+        item = next(items)
+    except StopIteration:
+        return splits
     while True:
         try:
             written = 0
@@ -321,9 +325,9 @@ def split_manifest_lazy(
                 (output_dir / prefix).with_suffix(f".{idx}.jsonl.gz")
             ) as writer:
                 while written < chunk_size:
-                    item = next(items)
                     writer.write(item)
                     written += 1
+                    item = next(items)
             split_idx += 1
         except StopIteration:
             break
@@ -612,7 +616,7 @@ class nullcontext(AbstractContextManager):
     Note(pzelasko): This is copied from Python 3.7 stdlib so that we can use it in 3.6.
     """
 
-    def __init__(self, enter_result=None):
+    def __init__(self, enter_result=None, *args, **kwargs):
         self.enter_result = enter_result
 
     def __enter__(self):

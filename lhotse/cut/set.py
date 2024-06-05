@@ -916,9 +916,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
         if last is not None:
             assert last > 0
-            if last > len(self):
-                return self
             N = len(self)
+            if last > N:
+                return self
             return CutSet.from_cuts(islice(self, N - last, N))
 
         if supervision_ids is not None:

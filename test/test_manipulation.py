@@ -10,6 +10,7 @@ from lhotse.features import FeatureSet
 from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
 from lhotse.testing.dummies import DummyManifest, as_lazy
+from lhotse.utils import nullcontext
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
@@ -113,6 +114,17 @@ def test_split_lazy_even(manifest_type):
         )
 
 
+def test_split_lazy_edge_case_extra_shard(tmp_path):
+    N = 512
+    chsz = 32
+    nshrd = 16
+    manifest = DummyManifest(CutSet, begin_id=0, end_id=N - 1)
+    manifest_subsets = manifest.split_lazy(output_dir=tmp_path, chunk_size=chsz)
+    assert len(manifest_subsets) == nshrd
+    for item in sorted(tmp_path.glob("*")):
+        print(item)
+
+
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_combine(manifest_type):
     expected = DummyManifest(manifest_type, begin_id=0, end_id=200)
@@ -133,19 +145,25 @@ def test_combine(manifest_type):
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
-def test_subset_first(manifest_type):
+@mark.parametrize("lazy", [False, True])
+def test_subset_first(manifest_type, lazy):
+    ctx = as_lazy if lazy else nullcontext
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
-    expected = DummyManifest(manifest_type, begin_id=0, end_id=10)
-    subset = any_set.subset(first=10)
-    assert subset == expected
+    with ctx(any_set, ".jsonl") as any_set:
+        expected = DummyManifest(manifest_type, begin_id=0, end_id=10)
+        subset = any_set.subset(first=10)
+        assert subset == expected
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
-def test_subset_last(manifest_type):
+@mark.parametrize("lazy", [False, True])
+def test_subset_last(manifest_type, lazy):
+    ctx = as_lazy if lazy else nullcontext
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
-    expected = DummyManifest(manifest_type, begin_id=190, end_id=200)
-    subset = any_set.subset(last=10)
-    assert subset == expected
+    with ctx(any_set, ".jsonl") as any_set:
+        expected = DummyManifest(manifest_type, begin_id=190, end_id=200)
+        subset = any_set.subset(last=10)
+        assert subset == expected
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
