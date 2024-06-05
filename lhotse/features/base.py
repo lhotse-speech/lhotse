@@ -701,9 +701,10 @@ class FeatureSet(Serializable, AlgorithmMixin):
 
         if last is not None:
             assert last > 0
-            if last > len(self):
+            N = len(self)
+            if last > N:
                 return self
-            return FeatureSet.from_features(self.features[-last:])
+            return FeatureSet.from_items(islice(self, N - last, N))
 
     def find(
         self,
