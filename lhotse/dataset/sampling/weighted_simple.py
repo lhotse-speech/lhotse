@@ -2,7 +2,7 @@ import warnings
 from typing import Any, Dict, List, Optional
 
 from lhotse import CutSet, Seconds
-from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
+from lhotse.dataset.sampling.base import TimeConstraint
 from lhotse.dataset.sampling.data_source import WeightedDataSource
 from lhotse.dataset.sampling.simple import SimpleCutSampler
 
