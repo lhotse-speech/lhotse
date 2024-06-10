@@ -123,7 +123,7 @@ def prepare_ksponspeech(
             trans_path = corpus_dir / f"{part}.trn"
             with open(trans_path) as f:
                 for line in f:
-                    futures.append(ex.submit(parse_utterance, part, line))
+                    futures.append(ex.submit(parse_utterance, corpus_dir, part, line))
 
             for future in tqdm(futures, desc="Processing", leave=False):
                 result = future.result()
@@ -181,14 +181,16 @@ def pcm_to_wav(
 
 
 def parse_utterance(
+    corpus_dir: Pathlike,
     part: str,
     line: str,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    corpus_dir = Path(corpus_dir)
     audio_path, normalized_line = normalize(line)
     if "eval" in part:
         audio_path = audio_path.split("/", maxsplit=1)[1]
 
-    audio_path = Path("KsponSpeech") / audio_path
+    audio_path = corpus_dir / audio_path
     recording_id = audio_path.stem
 
     # Create the Recording first
@@ -197,7 +199,6 @@ def parse_utterance(
         return None
     wav_path = audio_path.with_suffix(".wav")
     wav_path = pcm_to_wav(audio_path, wav_path)
-    print(wav_path)
     recording = Recording.from_file(wav_path, recording_id=recording_id)
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
