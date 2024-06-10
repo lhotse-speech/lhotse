@@ -122,6 +122,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `pip install lhotse[webdataset]`. We support "compiling" your data into WebDataset tarball format for more effective IO. You can still interact with the data as if it was a regular lazy CutSet. To learn more, check out the following tutorial: [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb)
 - `pip install h5py` if you want to extract speech features and store them as HDF5 arrays.
 - `pip install dill`. When `dill` is installed, we'll use it to pickle CutSet that uses a lambda function in calls such as `.map` or `.filter`. This is helpful in PyTorch DataLoader with `num_jobs>0`. Without `dill`, depending on your environment, you'll see an exception or a hanging script.
+- `pip install aistore` to read manifests, tar fles, and other data from AIStore using AIStore-supported URLs (set `AIS_ENDPOINT` environment variable to activate it). See [AIStore documentation](https://aiatscale.org) for more details.
 - `pip install smart_open` to read and write manifests and data in any location supported by `smart_open` (e.g. cloud, http).
 - `pip install opensmile` for feature extraction using the OpenSmile toolkit's Python wrapper.
 

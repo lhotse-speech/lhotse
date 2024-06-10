@@ -155,6 +155,8 @@ Optional dependencies
 
 * ``pip install dill``. When ``dill`` is installed, we'll use it to pickle CutSet that uses a lambda function in calls such as ``.map`` or ``.filter``. This is helpful in PyTorch DataLoader with ``num_jobs>0``. Without ``dill``, depending on your environment, you'll see an exception or a hanging script.
 
+* ``pip install aistore`` to read manifests, tar fles, and other data from AIStore using AIStore-supported URLs (set ``AIS_ENDPOINT`` environment variable to activate it). See |AIStore| for more details.
+
 * ``pip install smart_open`` to read and write manifests and data in any location supported by ``smart_open`` (e.g. cloud, http).
 
 * ``pip install opensmile`` for feature extraction using the OpenSmile toolkit's Python wrapper.
@@ -227,3 +229,4 @@ the speech starts roughly at the first second (100 frames):
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
 .. _orjson: https://pypi.org/project/orjson/
+.. _AIStore: https://aiatscale.org
