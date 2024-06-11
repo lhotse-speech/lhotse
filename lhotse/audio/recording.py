@@ -336,7 +336,9 @@ class Recording:
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
         if self.transforms is not None:
-            d["transforms"] = [t.to_dict() for t in self.transforms]
+            d["transforms"] = [
+                t if isinstance(t, dict) else t.to_dict() for t in self.transforms
+            ]
         return d
 
     def to_cut(self):
@@ -866,8 +868,15 @@ class Recording:
     @staticmethod
     def from_dict(data: dict) -> "Recording":
         raw_sources = data.pop("sources")
+        try:
+            transforms = data.pop("transforms")
+            transforms = [AudioTransform.from_dict(t) for t in transforms]
+        except KeyError:
+            transforms = None
         return Recording(
-            sources=[AudioSource.from_dict(s) for s in raw_sources], **data
+            sources=[AudioSource.from_dict(s) for s in raw_sources],
+            transforms=transforms,
+            **data,
         )
 
 
