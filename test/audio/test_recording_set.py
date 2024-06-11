@@ -638,7 +638,6 @@ def test_memory_recording_dict_serialization():
 def test_recording_to_dict_with_transform_dict():
     path = "test/fixtures/mono_c0.wav"
     recording = Recording.from_file(path)
-    # recording.transforms = [ReverbWithImpulseResponse()]
     recording = recording.reverb_rir()
     serialized = recording.to_dict()
     recording_restored = Recording.from_dict(serialized)
