@@ -10,7 +10,7 @@ The transcription provides a dual transcription consisting of orthography and pr
 and disfluency tags for spontaneity of speech, such as filler words, repeated words, and word fragments.
 
 The original audio data has a pcm extension.
-During preprocessing, it is converted into a file in the wav extension and saved anew.
+During preprocessing, it is converted into a file in the flac extension and saved anew.
 
 KsponSpeech is publicly available on an open data hub site of the Korea government.
 The dataset must be downloaded manually.
@@ -170,16 +170,16 @@ def prepare_ksponspeech(
     return manifests
 
 
-def pcm_to_wav(
+def pcm_to_flac(
     pcm_path: Union[str, Path],
-    wav_path: Union[str, Path],
+    flac_path: Union[str, Path],
     sample_rate: Optional[int] = 16000,
     channels: Optional[int] = 1,
     bit_depth: Optional[int] = 16,
 ) -> Path:
     # typecasting
     pcm_path = Path(pcm_path)
-    wav_path = Path(wav_path)
+    flac_path = Path(flac_path)
 
     data, _ = sf.read(
         pcm_path,
@@ -189,8 +189,8 @@ def pcm_to_wav(
         subtype="PCM_16",
     )
 
-    sf.write(wav_path, data, sample_rate, format="WAV", subtype="PCM_16")
-    return wav_path
+    sf.write(flac_path, data, sample_rate, format="FLAC")
+    return flac_path
 
 
 def parse_utterance(
@@ -211,9 +211,9 @@ def parse_utterance(
     if not audio_path.is_file():
         logging.warning(f"No such file: {audio_path}")
         return None
-    wav_path = audio_path.with_suffix(".wav")
-    wav_path = pcm_to_wav(audio_path, wav_path)
-    recording = Recording.from_file(wav_path, recording_id=recording_id)
+    flac_path = audio_path.with_suffix(".flac")
+    flac_path = pcm_to_flac(audio_path, flac_path)
+    recording = Recording.from_file(flac_path, recording_id=recording_id)
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
         id=recording_id,
