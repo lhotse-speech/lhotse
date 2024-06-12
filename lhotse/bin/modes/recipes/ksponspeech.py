@@ -28,6 +28,12 @@ __all__ = ["ksponspeech"]
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
+@click.option(
+    "--normalize-text",
+    type=click.Choice(["none", "default"], case_sensitive=False),
+    default="default",
+    help="Type of text normalization to apply.",
+)
 def ksponspeech(
     corpus_dir: Pathlike,
     output_dir: Pathlike,

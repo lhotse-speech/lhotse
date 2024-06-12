@@ -46,6 +46,7 @@ KSPONSPEECH = (
 
 def normalize(
     raw_content: str,
+    normalize_text: str = "default",
 ) -> Tuple[str, str]:
     """
     Normalizing KsponSpeech text datasets with '.trn' extension.
@@ -57,21 +58,27 @@ def normalize(
     4. Remove other special characters and double spaces from text labeling.
 
     :param raw_content: A raw text labeling content containing file name and text labeling.
+    :param normalize_text: str, the text normalization type. Available options: "default", "none".
     :return: A tuple with file name and normalized text labeling.
     """
     if len(raw_content) == 0:
         return ""
 
     original_content_id, content = raw_content.split(" :: ")
-    content = re.sub(r"[a-z]/", "", content)
-    content = re.sub(r"\((.*?)\)/\((.*?)\)", r"\1", content)
-    content = content.replace("*", "")
-    content = content.replace("+", "")
-    content = content.replace("/", "")
-    while "  " in content:
-        content = content.replace("  ", " ")
 
-    return original_content_id, content.strip()
+    if normalize_text == "none":
+        return original_content_id, content
+
+    elif normalize_text == "default":
+        content = re.sub(r"[a-z]/", "", content)
+        content = re.sub(r"\((.*?)\)/\((.*?)\)", r"\1", content)
+        content = content.replace("*", "")
+        content = content.replace("+", "")
+        content = content.replace("/", "")
+        while "  " in content:
+            content = content.replace("  ", " ")
+
+        return original_content_id, content.strip()
 
 
 def prepare_ksponspeech(
@@ -79,6 +86,7 @@ def prepare_ksponspeech(
     dataset_parts: Union[str, Sequence[str]] = "all",
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
+    normalize_text: str = "default",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
@@ -89,6 +97,7 @@ def prepare_ksponspeech(
         By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
+    :param normalize_text: str, the text normalization type. Available options: "default", "none".
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
@@ -123,7 +132,11 @@ def prepare_ksponspeech(
             trans_path = corpus_dir / f"{part}.trn"
             with open(trans_path) as f:
                 for line in f:
-                    futures.append(ex.submit(parse_utterance, corpus_dir, part, line))
+                    futures.append(
+                        ex.submit(
+                            parse_utterance, corpus_dir, part, line, normalize_text
+                        )
+                    )
 
             for future in tqdm(futures, desc="Processing", leave=False):
                 result = future.result()
@@ -184,9 +197,10 @@ def parse_utterance(
     corpus_dir: Pathlike,
     part: str,
     line: str,
+    normalize_text: str = "default",
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     corpus_dir = Path(corpus_dir)
-    audio_path, normalized_line = normalize(line)
+    audio_path, normalized_line = normalize(line, normalize_text)
     if "eval" in part:
         audio_path = audio_path.split("/", maxsplit=1)[1]
 
