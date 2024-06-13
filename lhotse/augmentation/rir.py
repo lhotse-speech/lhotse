@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from types import NoneType
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -70,7 +71,7 @@ class ReverbWithImpulseResponse(AudioTransform):
                 "early_only": self.early_only,
                 "rir_channels": list(self.rir_channels),
                 "rir_generator": self.rir_generator
-                if isinstance(self.rir_generator, dict)
+                if isinstance(self.rir_generator, (dict, NoneType))
                 else self.rir_generator.to_dict(),
             },
         }
