@@ -71,7 +71,7 @@ class ReverbWithImpulseResponse(AudioTransform):
                 "early_only": self.early_only,
                 "rir_channels": list(self.rir_channels),
                 "rir_generator": self.rir_generator
-                if isinstance(self.rir_generator, (dict, NoneType))
+                if self.rir_generator is None or isinstance(self.rir_generator, dict)
                 else self.rir_generator.to_dict(),
             },
         }
