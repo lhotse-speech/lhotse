@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
-from types import NoneType
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
