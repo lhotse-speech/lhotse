@@ -27,7 +27,7 @@ class PerturbSpeed:
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.random is None:
-            self.random = random
+            self.random = random.Random()
         return CutSet.from_cuts(
             cut.perturb_speed(
                 factor=self.random.choice(self.factors), affix_id=not self.preserve_id

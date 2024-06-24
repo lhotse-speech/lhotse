@@ -33,7 +33,7 @@ class ReverbWithImpulseResponse:
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.random is None:
-            self.random = random
+            self.random = random.Random()
         return CutSet.from_cuts(
             cut.reverb_rir(
                 rir_recording=self.random.choice(self.rir_recordings)

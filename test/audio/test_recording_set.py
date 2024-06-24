@@ -14,6 +14,7 @@ from lhotse import (
 )
 from lhotse.audio import DurationMismatchError
 from lhotse.audio.mixer import AudioMixer
+from lhotse.augmentation import ReverbWithImpulseResponse
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX, fastcopy, is_module_available
 from lhotse.utils import nullcontext as does_not_raise
@@ -632,3 +633,12 @@ def test_memory_recording_dict_serialization():
     rec_reconstructed = Recording.from_dict(data)
     assert rec == rec_reconstructed
     np.testing.assert_equal(rec_reconstructed.load_audio(), rec.load_audio())
+
+
+def test_recording_to_dict_with_transform_dict():
+    path = "test/fixtures/mono_c0.wav"
+    recording = Recording.from_file(path)
+    recording = recording.reverb_rir()
+    serialized = recording.to_dict()
+    recording_restored = Recording.from_dict(serialized)
+    assert recording == recording_restored
