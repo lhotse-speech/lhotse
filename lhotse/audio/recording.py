@@ -156,6 +156,14 @@ class Recording:
         return None
 
     @property
+    def is_in_memory(self) -> bool:
+        return any(s.type == "memory" for s in self.sources)
+
+    @property
+    def is_placeholder(self) -> bool:
+        return any(s.type == "shar" for s in self.sources)
+
+    @property
     def num_channels(self) -> int:
         return len(self.channel_ids)
 
