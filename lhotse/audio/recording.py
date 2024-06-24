@@ -723,7 +723,9 @@ class Recording:
             transforms=transforms,
         )
 
-    def narrowband(self, codec: str, affix_id: bool = True) -> "Recording":
+    def narrowband(
+        self, codec: str, restore_orig_sr: bool = True, affix_id: bool = True
+    ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply narrowband effect while loading audio.
             by affixing it with "_nb_{codec}".
@@ -731,10 +733,23 @@ class Recording:
         :return: a modified copy of the current ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
-        transforms.append(Narrowband(codec=codec).to_dict())
+        transforms.append(
+            Narrowband(
+                codec=codec,
+                source_sampling_rate=self.sampling_rate,
+                restore_orig_sr=restore_orig_sr,
+            ).to_dict()
+        )
+        new_num_samples = compute_num_samples(
+            self.duration,
+            self.sampling_rate if restore_orig_sr else 8000,
+            rounding=ROUND_HALF_UP,
+        )
         return fastcopy(
             self,
             id=f"{self.id}_nb_{codec}" if affix_id else self.id,
+            num_samples=new_num_samples,
+            sampling_rate=self.sampling_rate if restore_orig_sr else 8000,
             transforms=transforms,
         )
 

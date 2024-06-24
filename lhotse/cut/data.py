@@ -852,11 +852,14 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
-    def narrowband(self, codec: str, affix_id: bool = True) -> "DataCut":
+    def narrowband(
+        self, codec: str, restore_orig_sr: bool = True, affix_id: bool = True
+    ) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily apply narrowband effect.
 
         :param codec: Codec name.
+        :param restore_orig_sr: Restore original sampling rate.
         :param affix_id: When true, we will modify the ``DataCut.id`` field
             by affixing it with "_nb_{codec}".
         :return: a modified copy of the current ``DataCut``.
@@ -873,7 +876,9 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             )
             self.features = None
         # Actual audio perturbation.
-        recording_nb = self.recording.narrowband(codec=codec, affix_id=affix_id)
+        recording_nb = self.recording.narrowband(
+            codec=codec, restore_orig_sr=restore_orig_sr, affix_id=affix_id
+        )
         # Match the supervision's id (and it's underlying recording id).
         supervisions_nb = [
             s.narrowband(codec=codec, affix_id=affix_id) for s in self.supervisions

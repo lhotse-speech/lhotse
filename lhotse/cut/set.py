@@ -1592,7 +1592,9 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         return self.map(partial(_perturb_volume, factor=factor, affix_id=affix_id))
 
-    def narrowband(self, codec: str, affix_id: bool = True) -> "CutSet":
+    def narrowband(
+        self, codec: str, restore_orig_sr: bool = True, affix_id: bool = True
+    ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that contains narrowband effect cuts.
         It requires the recording manifests to be present.
@@ -1600,11 +1602,16 @@ class CutSet(Serializable, AlgorithmMixin):
         The supervision manifests are remaining the same.
 
         :param codec: Codec name.
+        :param restore_orig_sr: Restore original sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(lambda cut: cut.narrowband(codec=codec, affix_id=affix_id))
+        return self.map(
+            lambda cut: cut.narrowband(
+                codec=codec, restore_orig_sr=restore_orig_sr, affix_id=affix_id
+            )
+        )
 
     def normalize_loudness(
         self, target: float, mix_first: bool = True, affix_id: bool = True

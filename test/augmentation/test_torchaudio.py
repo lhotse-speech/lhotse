@@ -270,6 +270,8 @@ def test_augmentation_chain_randomized(
 
 
 def test_narrowband(mono_audio):
-    narrowband = Narrowband(codec="mulaw")
+    narrowband = Narrowband(
+        codec="mulaw", source_sampling_rate=SAMPLING_RATE, restore_orig_sr=True
+    )
     nb = narrowband(mono_audio, SAMPLING_RATE)
     assert nb.shape == mono_audio.shape

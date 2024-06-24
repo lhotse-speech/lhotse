@@ -326,10 +326,12 @@ class Narrowband(AudioTransform):
     """
     Narrowband effect.
 
-    Resample input audio to 8000 Hz, apply codec (encode then immediately decode), then resample back to the original sampling rate.
+    Resample input audio to 8000 Hz, apply codec (encode then immediately decode), then (optionally) resample back to the original sampling rate.
     """
 
     codec: str
+    source_sampling_rate: int
+    restore_orig_sr: bool
 
     def __post_init__(self):
         check_torchaudio_version()
@@ -347,19 +349,19 @@ class Narrowband(AudioTransform):
 
         samples = torch.from_numpy(samples)
 
-        if sampling_rate != 8000:
-            resampler_down = get_or_create_resampler(sampling_rate, 8000)
+        if self.source_sampling_rate != 8000:
+            resampler_down = get_or_create_resampler(self.source_sampling_rate, 8000)
             samples = resampler_down(samples)
 
         samples = self.codec_instance(samples)
 
-        if sampling_rate != 8000:
-            resampler_up = get_or_create_resampler(8000, sampling_rate)
+        if self.restore_orig_sr and self.source_sampling_rate != 8000:
+            resampler_up = get_or_create_resampler(8000, self.source_sampling_rate)
             samples = resampler_up(samples)
 
         samples = samples.numpy()
 
-        if orig_size != samples.size:
+        if self.restore_orig_sr and orig_size != samples.size:
             samples = np.resize(samples, (1, orig_size))
 
         return samples
