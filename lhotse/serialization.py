@@ -58,9 +58,12 @@ def open_best(path: Pathlike, mode: str = "r"):
         else:
             raise ValueError(
                 f"In order to open URLs/URIs please run 'pip install smart_open' "
-                f"(if you're trying to use AIStore, either the Python SDK is not installed "
+                f"(if you're trying to use AIStore, either the Python SDK is not installed (pip install aistore) "
                 f"or {AIS_ENDPOINT_ENVVAR} is not defined."
             )
+
+    if is_module_available("smart_open"):
+        return SmartOpen.open(path, mode)
 
     compressed = strpath.endswith(".gz")
     if compressed:
