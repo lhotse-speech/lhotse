@@ -45,6 +45,7 @@ from .icmcasr import *
 from .icsi import *
 from .iwslt22_ta import *
 from .kespeech import *
+from .ksponspeech import *
 from .l2_arctic import *
 from .libricss import *
 from .librilight import *
