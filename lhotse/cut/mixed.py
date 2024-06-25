@@ -4,12 +4,23 @@ from dataclasses import dataclass
 from functools import partial, reduce
 from io import BytesIO
 from operator import add
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 import torch
 from intervaltree import IntervalTree
 
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
 from lhotse.audio.backend import save_audio
 from lhotse.audio.mixer import AudioMixer, VideoMixer, audio_energy
@@ -27,6 +38,7 @@ from lhotse.features import (
     FeatureMixer,
     create_default_feature_extractor,
 )
+from lhotse.features.base import Features
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
@@ -153,6 +165,10 @@ class MixedCut(Cut):
     def has_video(self) -> bool:
         return self._first_non_padding_cut.has_video
 
+    @property
+    def is_in_memory(self) -> bool:
+        return any(track.cut.is_in_memory for track in self.tracks)
+
     def has(self, field: str) -> bool:
         return self._first_non_padding_cut.has(field)
 
@@ -190,6 +206,22 @@ class MixedCut(Cut):
     @property
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type if self.has_features else None
+
+    def iter_data(
+        self,
+    ) -> Generator[
+        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+    ]:
+        """
+        Iterate over each data piece attached to this cut.
+        Returns a generator yielding tuples of ``(key, manifest)``, where
+        ``key`` is the name of the attribute under which ``manifest`` is found.
+        ``manifest`` is of type :class:`~lhotse.Recording`, :class:`~lhotse.Features`,
+        :class:`~lhotse.TemporalArray`, or :class:`~lhotse.Array`.
+
+        For example, if ``key`` is ``recording``, then ``manifest`` is ``self.recording``.
+        """
+        return self._first_non_padding_cut.iter_data()
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -1212,6 +1244,13 @@ class MixedCut(Cut):
             tracks=[fastcopy(t, cut=t.cut.drop_alignments()) for t in self.tracks],
         )
 
+    def drop_in_memory_data(self) -> "MixedCut":
+        """Return a copy of the current :class:`MixedCut`, which doesn't contain any in-memory data."""
+        return fastcopy(
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_in_memory_data()) for t in self.tracks],
+        )
+
     def compute_and_store_features(
         self,
         extractor: FeatureExtractor,
@@ -1540,9 +1579,19 @@ class MixedCut(Cut):
         )
 
     @property
-    def _first_non_padding_cut(self) -> DataCut:
+    def first_non_padding_cut(self) -> DataCut:
         return self._first_non_padding_track.cut
 
     @property
-    def _first_non_padding_track(self) -> MixTrack:
+    def first_non_padding_track(self) -> MixTrack:
         return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
+
+    # Note: the private properties below are kept for backward compatibility.
+
+    @property
+    def _first_non_padding_cut(self) -> DataCut:
+        return self.first_non_padding_cut
+
+    @property
+    def _first_non_padding_track(self) -> MixTrack:
+        return self.first_non_padding_track

@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -85,6 +85,10 @@ class PaddingCut(Cut):
     def num_channels(self) -> int:
         return 1
 
+    @property
+    def is_in_memory(self) -> bool:
+        return False
+
     def has(self, field: str) -> bool:
         if field == "recording":
             return self.has_recording
@@ -98,6 +102,10 @@ class PaddingCut(Cut):
     @property
     def recording_id(self) -> str:
         return "PAD"
+
+    def iter_data(self) -> Iterable:
+        """Empty iterable."""
+        return ()
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
@@ -421,11 +429,15 @@ class PaddingCut(Cut):
         return fastcopy(self, num_samples=None)
 
     def drop_supervisions(self) -> "PaddingCut":
-        """Return a copy of the current :class:`.PaddingCut`, detached from ``supervisions``."""
+        """No-op"""
         return self
 
     def drop_alignments(self) -> "PaddingCut":
-        """Return a copy of the current :class:`.PaddingCut`, detached from ``alignments``."""
+        """No-op"""
+        return self
+
+    def drop_in_memory_data(self) -> "PaddingCut":
+        """No-op."""
         return self
 
     def compute_and_store_features(

@@ -3,12 +3,23 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from decimal import ROUND_DOWN
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 import torch
 from intervaltree import IntervalTree
 
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.custom import CustomFieldMixin
@@ -80,6 +91,32 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
                 if isinstance(v, Recording):
                     d["custom"][k] = v.to_dict()
         return {**d, "type": type(self).__name__}
+
+    def iter_data(
+        self,
+    ) -> Generator[
+        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+    ]:
+        """
+        Iterate over each data piece attached to this cut.
+        Returns a generator yielding tuples of ``(key, manifest)``, where
+        ``key`` is the name of the attribute under which ``manifest`` is found.
+        ``manifest`` is of type :class:`~lhotse.Recording`, :class:`~lhotse.Features`,
+        :class:`~lhotse.TemporalArray`, or :class:`~lhotse.Array`.
+
+        For example, if ``key`` is ``recording``, then ``manifest`` is ``self.recording``.
+        """
+        if self.has_recording:
+            yield "recording", self.recording
+        if self.has_features:
+            yield "features", self.features
+        for k, v in (self.custom or {}).items():
+            if isinstance(v, (Recording, Features, Array, TemporalArray)):
+                yield k, v
+
+    @property
+    def is_in_memory(self) -> bool:
+        return any(v.is_in_memory for k, v in self.iter_data())
 
     @property
     def recording_id(self) -> str:
@@ -325,6 +362,35 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         """Return a copy of the current :class:`.DataCut`, detached from ``alignments``."""
         return fastcopy(
             self, supervisions=[fastcopy(s, alignment={}) for s in self.supervisions]
+        )
+
+    def drop_in_memory_data(self) -> "DataCut":
+        """
+        Return a copy of the current :class:`.DataCut`, detached from any in-memory data.
+        The manifests for in-memory data are converted into placeholders that can still be looked up for
+        metadata, but will fail on attempts to load the data.
+        """
+        from lhotse.shar.utils import to_shar_placeholder
+
+        custom = None
+        if self.custom is not None:
+            custom = self.custom.copy()
+            for k in custom:
+                v = custom[k]
+                if (
+                    isinstance(v, (Recording, Features, Array, TemporalArray))
+                    and v.is_in_memory
+                ):
+                    custom[k] = to_shar_placeholder(v)
+        return fastcopy(
+            self,
+            recording=to_shar_placeholder(self.recording)
+            if self.has_recording and self.recording.is_in_memory
+            else self.recording,
+            features=to_shar_placeholder(self.features)
+            if self.has_features and self.features.is_in_memory
+            else self.features,
+            custom=custom,
         )
 
     def fill_supervision(
