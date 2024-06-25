@@ -331,6 +331,24 @@ class SupervisionSegment(CustomFieldMixin):
             else self.recording_id,
         )
 
+    def narrowband(self, codec: str, affix_id: bool = True) -> "SupervisionSegment":
+        """
+        Return a ``SupervisionSegment`` with modified ids.
+
+        :param codec: Codec name.
+        :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
+            by affixing it with "_nb_{codec}".
+        :return: a modified copy of the current ``SupervisionSegment``.
+        """
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_nb_{codec}" if affix_id else self.id,
+            recording_id=f"{self.recording_id}_nb_{codec}"
+            if affix_id
+            else self.recording_id,
+        )
+
     def reverb_rir(
         self, affix_id: bool = True, channel: Optional[Union[int, List[int]]] = None
     ) -> "SupervisionSegment":
