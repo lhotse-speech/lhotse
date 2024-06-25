@@ -7,7 +7,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Pathlike, Seconds, fastcopy, ifnone
+from lhotse.utils import Pathlike, Seconds, fastcopy
 
 
 @dataclass
@@ -50,6 +50,16 @@ class Array:
     @property
     def ndim(self) -> int:
         return len(self.shape)
+
+    @property
+    def is_in_memory(self) -> bool:
+        from lhotse.features.io import is_in_memory
+
+        return is_in_memory(self.storage_type)
+
+    @property
+    def is_placeholder(self) -> bool:
+        return self.storage_type == "shar"
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -156,6 +166,14 @@ class TemporalArray:
     # We only need to specify start, as duration can be computed from
     # the shape, temporal_dim, and frame_shift.
     start: Seconds
+
+    @property
+    def is_in_memory(self) -> bool:
+        return self.array.is_in_memory
+
+    @property
+    def is_placeholder(self) -> bool:
+        return self.array.is_placeholder
 
     @property
     def shape(self) -> List[int]:

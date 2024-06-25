@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
-from lhotse.features.io import FeaturesWriter, get_reader
+from lhotse.features.io import FeaturesWriter, get_reader, is_in_memory
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import LazyMixin, Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (
@@ -458,6 +458,14 @@ class Features:
     def end(self) -> Seconds:
         return self.start + self.duration
 
+    @property
+    def is_in_memory(self) -> bool:
+        return is_in_memory(self.storage_type)
+
+    @property
+    def is_placeholder(self) -> bool:
+        return self.storage_type == "shar"
+
     def load(
         self,
         start: Optional[Seconds] = None,
@@ -472,7 +480,7 @@ class Features:
             start = self.start
         # In case the caller requested only a sub-span of the features, trim them.
         # Left trim
-        if start < self.start - 1e-5:
+        if start < self.start - 1e-3:
             raise ValueError(
                 f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                 f"The available range is ({self.start}, {self.end}) seconds."
@@ -701,9 +709,10 @@ class FeatureSet(Serializable, AlgorithmMixin):
 
         if last is not None:
             assert last > 0
-            if last > len(self):
+            N = len(self)
+            if last > N:
                 return self
-            return FeatureSet.from_features(self.features[-last:])
+            return FeatureSet.from_items(islice(self, N - last, N))
 
     def find(
         self,

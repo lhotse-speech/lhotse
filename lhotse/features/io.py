@@ -1108,6 +1108,10 @@ In-memory reader/writer
 """
 
 
+def is_in_memory(storage_type: str) -> bool:
+    return "memory" in storage_type
+
+
 def get_memory_writer(name: str):
     assert "memory" in name
     return get_writer(name)

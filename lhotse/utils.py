@@ -32,6 +32,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from urllib.parse import urlparse
 
 import click
 import numpy as np
@@ -126,6 +127,14 @@ class SmartOpen:
             transport_params=transport_params,
             **kwargs,
         )
+
+
+def is_valid_url(value: str) -> bool:
+    try:
+        result = urlparse(value)
+        return bool(result.scheme) and bool(result.netloc)
+    except AttributeError:
+        return False
 
 
 def fix_random_seed(random_seed: int):
@@ -616,7 +625,7 @@ class nullcontext(AbstractContextManager):
     Note(pzelasko): This is copied from Python 3.7 stdlib so that we can use it in 3.6.
     """
 
-    def __init__(self, enter_result=None):
+    def __init__(self, enter_result=None, *args, **kwargs):
         self.enter_result = enter_result
 
     def __enter__(self):

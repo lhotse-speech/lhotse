@@ -42,6 +42,7 @@ from .icmcasr import prepare_icmcasr
 from .icsi import download_icsi, prepare_icsi
 from .iwslt22_ta import prepare_iwslt22_ta
 from .kespeech import prepare_kespeech
+from .ksponspeech import prepare_ksponspeech
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight
@@ -153,6 +154,7 @@ __all__ = [
     "prepare_icsi",
     "prepare_iwslt22_ta",
     "prepare_kespeech",
+    "prepare_ksponspeech",
     "prepare_l2_arctic",
     "download_libricss",
     "prepare_libricss",

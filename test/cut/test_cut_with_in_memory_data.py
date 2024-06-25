@@ -2,12 +2,14 @@ from math import isclose
 from tempfile import TemporaryDirectory
 
 import numpy as np
+import pytest
 
 from lhotse import CutSet, MonoCut, NumpyFilesWriter, Recording
 from lhotse.array import Array
 from lhotse.cut import MixedCut, PaddingCut
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames
+from lhotse.utils import nullcontext as does_not_raise
 
 
 def test_features_move_to_memory():
@@ -233,3 +235,86 @@ def test_mixed_cut_to_mono_with_custom():
     audio = cut.load_audio()
     audio_mem = cut_mem.load_audio()
     np.testing.assert_almost_equal(audio, audio_mem, decimal=1)
+
+
+def test_drop_in_memory_data():
+    cut = dummy_cut(0, with_data=True)
+
+    # Assertions about test data (not the actual test)
+    assert cut.is_in_memory
+    expected_keys = {
+        "recording",
+        "features",
+        "custom_recording",
+        "custom_features",
+        "custom_indexes",
+        "custom_embedding",
+    }
+    observed_keys = set()
+    for k, v in cut.iter_data():
+        observed_keys.add(k)
+        if k == "features":
+            assert not v.is_in_memory
+        else:
+            assert v.is_in_memory
+    assert expected_keys == observed_keys
+
+    # The actual test
+    cut_nomem = cut.drop_in_memory_data()
+    assert not cut_nomem.is_in_memory
+    observed_keys = set()
+    for k, v in cut_nomem.iter_data():
+        observed_keys.add(k)
+        assert not v.is_in_memory
+        if k == "recording":
+            with pytest.raises(Exception):
+                cut_nomem.load_audio()
+        elif k == "features":
+            with does_not_raise():
+                cut_nomem.load_features()
+        else:
+            with pytest.raises(Exception):
+                cut_nomem.load_custom(k)
+    assert expected_keys == observed_keys
+
+
+def test_drop_in_memory_data_mixed():
+    cut = dummy_cut(0, with_data=True)
+    cut = cut.pad(duration=cut.duration + 2.0)
+
+    # Assertions about test data (not the actual test)
+    assert cut.is_in_memory
+    expected_keys = {
+        "recording",
+        "features",
+        "custom_recording",
+        "custom_features",
+        "custom_indexes",
+        "custom_embedding",
+    }
+    observed_keys = set()
+    for k, v in cut.iter_data():
+        observed_keys.add(k)
+        if k == "features":
+            assert not v.is_in_memory
+        else:
+            assert v.is_in_memory
+    assert expected_keys == observed_keys
+
+    # The actual test
+    cut_nomem = cut.drop_in_memory_data()
+    assert not cut_nomem.is_in_memory
+    observed_keys = set()
+    for k, v in cut_nomem.iter_data():
+        observed_keys.add(k)
+        assert not v.is_in_memory
+        if k == "recording":
+            with pytest.raises(Exception):
+                cut_nomem.load_audio()
+        elif k == "features":
+            with does_not_raise():
+                cut_nomem.load_features()
+        else:
+            with pytest.raises(Exception):
+                cut_nomem.load_custom(k)
+    assert expected_keys == observed_keys

@@ -916,9 +916,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
         if last is not None:
             assert last > 0
-            if last > len(self):
-                return self
             N = len(self)
+            if last > N:
+                return self
             return CutSet.from_cuts(islice(self, N - last, N))
 
         if supervision_ids is not None:
@@ -1763,6 +1763,14 @@ class CutSet(Serializable, AlgorithmMixin):
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from the alignments present in its supervisions.
         """
         return self.map(_drop_alignments)
+
+    def drop_in_memory_data(self) -> "CutSet":
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from any in-memory data it held.
+        The manifests for in-memory data are converted into placeholders that can still be looked up for
+        metadata, but will fail on attempts to load the data.
+        """
+        return self.map(_drop_in_memory_data)
 
     def compute_and_store_features(
         self,
@@ -3374,6 +3382,10 @@ def _drop_alignments(cut, *args, **kwargs):
 
 def _drop_supervisions(cut, *args, **kwargs):
     return cut.drop_supervisions(*args, **kwargs)
+
+
+def _drop_in_memory_data(cut, *args, **kwargs):
+    return cut.drop_in_memory_data(*args, **kwargs)
 
 
 def _truncate_single(

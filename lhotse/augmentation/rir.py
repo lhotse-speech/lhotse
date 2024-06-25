@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -69,7 +69,9 @@ class ReverbWithImpulseResponse(AudioTransform):
                 "normalize_output": self.normalize_output,
                 "early_only": self.early_only,
                 "rir_channels": list(self.rir_channels),
-                "rir_generator": self.rir_generator,
+                "rir_generator": self.rir_generator
+                if self.rir_generator is None or isinstance(self.rir_generator, dict)
+                else self.rir_generator.to_dict(),
             },
         }
 

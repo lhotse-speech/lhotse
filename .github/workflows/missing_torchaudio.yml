@@ -16,8 +16,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - python-version: "3.11"
-            torch-install-cmd: "pip install torch==2.0 --extra-index-url https://download.pytorch.org/whl/cpu"
+          - python-version: "3.12"
+            torch-install-cmd: "pip install torch==2.3 --index-url https://download.pytorch.org/whl/cpu"
 
       fail-fast: false
 

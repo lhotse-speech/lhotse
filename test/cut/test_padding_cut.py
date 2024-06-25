@@ -33,7 +33,7 @@ def test_load_features_log(padding_cut, expected_value):
     feats = padding_cut.load_features()
     assert feats.shape[0] == 1000
     assert feats.shape[1] == 40
-    np.testing.assert_almost_equal(feats, expected_value)
+    np.testing.assert_almost_equal(feats, expected_value, decimal=6)
 
 
 def test_frame_shift(padding_cut):

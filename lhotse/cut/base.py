@@ -177,6 +177,9 @@ class Cut:
     drop_features: Callable
     drop_recording: Callable
     drop_supervisions: Callable
+    drop_alignments: Callable
+    drop_in_memory_data: Callable
+    iter_data: Callable
     truncate: Callable
     pad: Callable
     extend_by: Callable
