@@ -21,7 +21,7 @@ jobs:
             extra_deps: kaldifeat
           - python-version: "3.9"
             torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: kaldifeat
+            extra_deps: ""
           - python-version: "3.10"
             torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: ""
