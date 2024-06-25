@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
-from lhotse.features.io import FeaturesWriter, get_reader
+from lhotse.features.io import FeaturesWriter, get_reader, is_in_memory
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import LazyMixin, Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (
@@ -457,6 +457,14 @@ class Features:
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
+
+    @property
+    def is_in_memory(self) -> bool:
+        return is_in_memory(self.storage_type)
+
+    @property
+    def is_placeholder(self) -> bool:
+        return self.storage_type == "shar"
 
     def load(
         self,
