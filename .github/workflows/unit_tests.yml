@@ -20,10 +20,10 @@ jobs:
             torch-install-cmd: "pip install torch==1.12.1 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: kaldifeat
           - python-version: "3.9"
-            torch-install-cmd: "pip install torch==2.0 torchaudio==2.0 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: kaldifeat
           - python-version: "3.10"
-            torch-install-cmd: "pip install torch==2.1 torchaudio==2.1 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: ""
           - python-version: "3.11"
             torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
