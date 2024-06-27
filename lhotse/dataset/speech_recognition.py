@@ -64,6 +64,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
         input_strategy: BatchIO = PrecomputedFeatures(),
+        lid: bool = False,
     ):
         """
         k2 ASR IterableDataset constructor.
@@ -78,6 +79,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             Examples: normalization, SpecAugment, etc.
         :param input_strategy: Converts cuts into a collated batch of audio/features.
             By default, reads pre-computed features from disk.
+        :param lid: adding lid information to the batch.
         """
         super().__init__()
         # Initialize the fields
@@ -85,6 +87,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
+        self.lid = lid
 
         # This attribute is a workaround to constantly growing HDF5 memory
         # throughout the epoch. It regularly closes open file handles to
@@ -132,19 +135,37 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         segments = torch.stack(list(supervision_intervals.values()), dim=1)
         for tnfm in self.input_transforms:
             inputs = tnfm(inputs, supervision_segments=segments)
-
-        batch = {
-            "inputs": inputs,
-            "supervisions": default_collate(
-                [
-                    {
-                        "text": supervision.text,
-                    }
-                    for sequence_idx, cut in enumerate(cuts)
+        if self.lid == True:
+            batch = {
+                "inputs": inputs,
+                "lids": [
+                    supervision.language
+                    for _, cut in enumerate(cuts)
                     for supervision in cut.supervisions
-                ]
-            ),
-        }
+                ],
+                "supervisions": default_collate(
+                    [
+                        {
+                            "text": supervision.text,
+                        }
+                        for sequence_idx, cut in enumerate(cuts)
+                        for supervision in cut.supervisions
+                    ]
+                ),
+            }
+        else:
+            batch = {
+                "inputs": inputs,
+                "supervisions": default_collate(
+                    [
+                        {
+                            "text": supervision.text,
+                        }
+                        for sequence_idx, cut in enumerate(cuts)
+                        for supervision in cut.supervisions
+                    ]
+                ),
+            }
         # Update the 'supervisions' field with sequence_idx and start/num frames/samples
         batch["supervisions"].update(supervision_intervals)
         if self.return_cuts:
