@@ -23,8 +23,7 @@ from lhotse.utils import Pathlike
 GIGASPEECH2_URL = "https://huggingface.co/datasets/speechcolab/gigaspeech2"
 
 GIGASPEECH2_LANGS = ("th", "id", "vi")
-# GIGASPEECH2_SPLITS = ("train_raw", "train_refined", "dev", "test")
-GIGASPEECH2_SPLITS = ("dev", "test")
+GIGASPEECH2_SPLITS = ("train_raw", "train_refined", "dev", "test")
 
 
 def _read_manifests_if_cached(
