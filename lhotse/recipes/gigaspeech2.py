@@ -14,6 +14,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
+from lhotse import load_manifest
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.supervision import SupervisionSegment, SupervisionSet
