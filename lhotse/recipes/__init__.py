@@ -33,6 +33,7 @@ from .fisher_spanish import prepare_fisher_spanish
 from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
+from .gigaspeech import prepare_gigaspeech2
 from .gigast import download_gigast, prepare_gigast
 from .grid import download_grid, prepare_grid
 from .heroico import download_heroico, prepare_heroico
