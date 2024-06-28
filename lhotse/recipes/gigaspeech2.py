@@ -97,7 +97,7 @@ def _prepare_subset(
     :return: the RecodingSet and SupervisionSet for train and valid.
     """
     lang_dir = Path(lang_dir)
-    part_dir = lang_dir / part
+    part_dir = lang_dir / part.replace("_raw", "").replace("_refined", "")
     tsv_path = lang_dir / f"{part}.tsv"
 
     audio_infos = []
