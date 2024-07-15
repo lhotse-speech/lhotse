@@ -221,6 +221,7 @@ class MixedCut(Cut):
         ans = {
             "id": self.id,
             "tracks": [t.to_dict() for t in self.tracks],
+            "type": type(self).__name__,
         }
         if self.transforms:
             ans["transforms"] = [t.to_dict() for t in self.transforms]
@@ -1573,12 +1574,13 @@ class MixedCut(Cut):
     def from_dict(data: dict) -> "MixedCut":
         if "type" in data:
             data.pop("type")
+        transforms = None
+        if "transforms" in data:
+            transforms = [AudioTransform.from_dict(t) for t in data["transforms"]]
         return MixedCut(
             id=data["id"],
             tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
-            transforms=[
-                AudioTransform.from_dict(t) for t in data.get("transforms", ())
-            ],
+            transforms=transforms,
         )
 
     def with_features_path_prefix(self, path: Pathlike) -> "MixedCut":
