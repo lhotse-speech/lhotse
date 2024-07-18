@@ -7,6 +7,7 @@ from lhotse import CutSet
 from lhotse.dataset.sampling.dynamic_bucketing import (
     DynamicBucketer,
     DynamicBucketingSampler,
+    FixedBucketBatchSizeConstraint,
     estimate_duration_buckets,
 )
 from lhotse.testing.dummies import DummyManifest, dummy_cut
@@ -670,3 +671,60 @@ def test_dynamic_bucketing_sampler_sync_buckets_map_dataset_usage(sync_buckets):
         # some shapes will be mismatched because different buckets were selected.
         matching_shapes = [len(b0) == len(b1) for b0, b1 in zip(batches0, batches1)]
         assert not all(matching_shapes)
+
+
+def test_dynamic_bucketing_sampler_fixed_batch_constraint():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    for i, c in enumerate(cuts):
+        if i < 5:
+            c.duration = 1
+        else:
+            c.duration = 2
+
+    duration_bins = [1.5, 2.5]
+    sampler = DynamicBucketingSampler(
+        cuts,
+        duration_bins=duration_bins,
+        constraint=FixedBucketBatchSizeConstraint(
+            max_seq_len_buckets=duration_bins, batch_sizes=[2, 1]
+        ),
+        seed=0,
+        shuffle=True,
+    )
+
+    batches = [b for b in sampler]
+    sampled_cuts = [c for b in batches for c in b]
+
+    # Invariant: no duplicated cut IDs
+    assert len(set(c.id for b in batches for c in b)) == len(sampled_cuts)
+
+    # Same number of sampled and source cuts.
+    assert len(sampled_cuts) == len(cuts)
+
+    # We sampled the follwoing batches with this RNG:
+    assert len(batches) == 8
+    print([len(b) for b in batches])
+
+    assert len(batches[0]) == 1
+    assert sum(c.duration for c in batches[0]) == 2
+
+    assert len(batches[1]) == 2
+    assert sum(c.duration for c in batches[1]) == 2
+
+    assert len(batches[2]) == 2
+    assert sum(c.duration for c in batches[2]) == 2
+
+    assert len(batches[3]) == 1
+    assert sum(c.duration for c in batches[3]) == 2
+
+    assert len(batches[4]) == 1
+    assert sum(c.duration for c in batches[4]) == 2
+
+    assert len(batches[5]) == 1
+    assert sum(c.duration for c in batches[5]) == 2
+
+    assert len(batches[6]) == 1
+    assert sum(c.duration for c in batches[6]) == 2
+
+    assert len(batches[7]) == 1
+    assert sum(c.duration for c in batches[7]) == 1
