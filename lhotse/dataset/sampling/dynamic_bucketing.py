@@ -160,6 +160,7 @@ class DynamicBucketingSampler(CutSampler):
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
         self.sync_buckets = sync_buckets
+        self.concurrent = concurrent
         self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
 
@@ -288,6 +289,7 @@ class DynamicBucketingSampler(CutSampler):
             shuffle=self.shuffle,
             rng=self.rng,
             bucket_rng=bucket_rng,
+            concurrent=self.concurrent,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(cuts_iter)
