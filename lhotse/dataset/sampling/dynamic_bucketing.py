@@ -134,11 +134,9 @@ class DynamicBucketingSampler(CutSampler):
             when models have quadratic input complexity. Set between 15 and 40 for transformers.
         :param sync_buckets: When set, we'll try to make each DDP rank sample from as close
             duration buckets as possible to minimize the tail worker effect.
-        :param concurrent: Enabling concurrency eliminates most of the wait to pre-populate the
+        :param concurrent: Enabling concurrency eliminates most of the waiting to pre-populate the
             bucketing buffers before the sampler starts yielding examples. For tarred/Lhotse Shar data
-            this can eliminate 2-3 minutes of waiting at the start of the training. Instead of waiting,
-            the sampler will launch a background thread and concurrently fill the bucketing buffer.
-            This feature is experimental and in case of very slow data reading can lead to race conditions.
+            this can speed up the start of the training. This feature is experimental.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -583,11 +581,7 @@ class DynamicBucketer:
 
         if self.concurrent:
             self._start_data_producer_thread()
-            while (
-                sum(len(b) for b in self.buckets) < self.buffer_size / 10
-                and not self._source_exhausted
-            ):
-                time.sleep(1.0)
+            self._maybe_wait_for_producer()
         else:
             self._collect_cuts_in_buckets(self.buffer_size)
 
@@ -631,8 +625,10 @@ class DynamicBucketer:
                     # No shuffling, remove first N
                     for _ in range(batch_size):
                         sampling_bucket.popleft()
-                if not self.concurrent:
-                    # Fetch new cuts and add them to appropriate buckets.
+                # Fetch new cuts and add them to appropriate buckets.
+                if self.concurrent:
+                    self._maybe_wait_for_producer()
+                else:
                     self._collect_cuts_in_buckets(batch_size)
         except StopIteration:
             pass
@@ -727,10 +723,15 @@ class DynamicBucketer:
         return False
 
     def _start_data_producer_thread(self):
+        """Start concurrent filling of the bucket buffer in a background thread."""
+
         def producer():
             try:
                 self._source_exhausted = False
                 while not self._source_exhausted:
+                    if sum(len(b) for b in self.buckets) == self.buffer_size:
+                        time.sleep(0.1)
+                        continue
                     cuts = next(self.cuts_iter)
                     duration = self.constraint.measure_length(
                         cuts[0] if isinstance(cuts, tuple) else cuts
@@ -743,7 +744,16 @@ class DynamicBucketer:
         self._producer_thread = threading.Thread(target=producer)
         self._producer_thread.start()
 
+    def _maybe_wait_for_producer(self):
+        """Triggers wait for producer if the bucket buffers are less than 10% utilized."""
+        while (
+            sum(len(b) for b in self.buckets) < self.buffer_size / 10
+            and not self._source_exhausted
+        ):
+            time.sleep(1.0)
+
     def _collect_cuts_in_buckets(self, n_cuts: int) -> None:
+        """Fetches ``n_cuts`` from the input data iterable. Doesn't use concurrency."""
         try:
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
