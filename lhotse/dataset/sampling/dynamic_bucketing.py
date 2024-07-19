@@ -98,7 +98,7 @@ class DynamicBucketingSampler(CutSampler):
         rank: Optional[int] = None,
         seed: Union[int, Literal["randomized", "trng"]] = 0,
         sync_buckets: bool = True,
-        concurrent: bool = True,
+        concurrent: bool = False,
         strict=None,
         shuffle_buffer_size=None,
     ) -> None:
