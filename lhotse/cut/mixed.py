@@ -84,6 +84,16 @@ class MixTrack:
         cut_dict["type"] = data.pop("type")
         return MixTrack(deserialize_cut(cut_dict), **data)
 
+    def to_dict(self) -> Dict:
+        ans = {
+            "cut": self.cut.to_dict(),
+            "type": self.type,
+            "offset": self.offset,
+        }
+        if self.snr is not None:
+            ans["snr"] = self.snr
+        return ans
+
 
 @dataclass
 class MixedCut(Cut):
@@ -125,7 +135,7 @@ class MixedCut(Cut):
 
     id: str
     tracks: List[MixTrack]
-    transforms: Optional[List[Dict]] = None
+    transforms: Optional[List[AudioTransform]] = None
 
     @property
     def supervisions(self) -> List[SupervisionSegment]:
@@ -206,6 +216,16 @@ class MixedCut(Cut):
     @property
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type if self.has_features else None
+
+    def to_dict(self) -> dict:
+        ans = {
+            "id": self.id,
+            "tracks": [t.to_dict() for t in self.tracks],
+            "type": type(self).__name__,
+        }
+        if self.transforms:
+            ans["transforms"] = [t.to_dict() for t in self.transforms]
+        return ans
 
     def iter_data(
         self,
@@ -793,7 +813,7 @@ class MixedCut(Cut):
 
         if mix_first:
             transforms = self.transforms.copy() if self.transforms is not None else []
-            transforms.append(LoudnessNormalization(target=target).to_dict())
+            transforms.append(LoudnessNormalization(target=target))
             return fastcopy(
                 self,
                 id=f"{self.id}_ln{target}" if affix_id else self.id,
@@ -908,7 +928,7 @@ class MixedCut(Cut):
                     early_only=early_only,
                     rir_channels=rir_channels if rir_channels is not None else [0],
                     rir_generator=rir_generator,
-                ).to_dict()
+                )
             )
             return fastcopy(
                 self,
@@ -1133,7 +1153,10 @@ class MixedCut(Cut):
 
             # We'll apply the transforms now (if any).
             transforms = [
-                AudioTransform.from_dict(params) for params in self.transforms or []
+                tnfm
+                if isinstance(tnfm, AudioTransform)
+                else AudioTransform.from_dict(tnfm)
+                for tnfm in self.transforms or []
             ]
             for tfn in transforms:
                 audio = tfn(audio, self.sampling_rate)
@@ -1551,9 +1574,13 @@ class MixedCut(Cut):
     def from_dict(data: dict) -> "MixedCut":
         if "type" in data:
             data.pop("type")
+        transforms = None
+        if "transforms" in data:
+            transforms = [AudioTransform.from_dict(t) for t in data["transforms"]]
         return MixedCut(
             id=data["id"],
             tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
+            transforms=transforms,
         )
 
     def with_features_path_prefix(self, path: Pathlike) -> "MixedCut":
