@@ -29,6 +29,7 @@ from .dihard3 import *
 from .dipco import *
 from .earnings21 import *
 from .earnings22 import *
+from .ears import *
 from .edacc import *
 from .eval2000 import *
 from .fisher_english import *

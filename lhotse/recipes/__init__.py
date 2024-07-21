@@ -26,6 +26,7 @@ from .dihard3 import prepare_dihard3
 from .dipco import download_dipco, prepare_dipco
 from .earnings21 import download_earnings21, prepare_earnings21
 from .earnings22 import download_earnings22, prepare_earnings22
+from .ears import download_ears, prepare_ears
 from .edacc import download_edacc, prepare_edacc
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
@@ -131,6 +132,8 @@ __all__ = [
     "prepare_earnings21",
     "download_earnings22",
     "prepare_earnings22",
+    "download_ears",
+    "prepare_ears",
     "download_edacc",
     "prepare_edacc",
     "prepare_eval2000",
