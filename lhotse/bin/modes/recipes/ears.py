@@ -2,20 +2,14 @@ from typing import Optional, Sequence, Union
 
 import click
 
-from lhotse.bin.modes import prepare
-from lhotse.recipes.ears import prepare_ears
+from lhotse.bin.modes import download, prepare
+from lhotse.recipes.ears import download_ears, prepare_ears
 from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
-@click.option(
-    "-l",
-    "--languages",
-    default="auto",
-    help="Languages to prepare (scans CORPUS_DIR for language codes by default).",
-)
 @click.option(
     "-j",
     "--num-jobs",
@@ -26,7 +20,6 @@ from lhotse.utils import Pathlike
 def ears(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    languages: Union[str, Sequence[str]] = "auto",
     num_jobs: int = 1,
 ):
     """EARS data preparation."""
@@ -36,3 +29,13 @@ def ears(
         num_jobs=num_jobs,
     )
 
+
+@download.command(context_settings=dict(show_default=True))
+@click.argument("target_dir", type=click.Path())
+def ears(
+    target_dir: Pathlike,
+):
+    """EARS data download."""
+    download_ears(
+        target_dir=target_dir,
+    )
