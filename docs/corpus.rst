@@ -99,6 +99,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_earnings21`
   * - Earnings'22
     - :func:`lhotse.recipes.prepare_earnings22`
+  * - EARS
+    - :func:`lhotse.recipes.prepare_ears`
   * - The Edinburgh International Accents of English Corpus
     - :func:`lhotse.recipes.prepare_edacc`
   * - English Broadcast News 1997
