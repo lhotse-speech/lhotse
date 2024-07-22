@@ -137,7 +137,8 @@ class DynamicBucketingSampler(CutSampler):
             duration buckets as possible to minimize the tail worker effect.
         :param concurrent: Enabling concurrency eliminates most of the waiting to pre-populate the
             bucketing buffers before the sampler starts yielding examples. For tarred/Lhotse Shar data
-            this can speed up the start of the training. This feature is experimental.
+            this can speed up the start of the training. Note that enabling concurrency will cause the
+            sampling results to be non-deterministic. This feature is experimental.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
