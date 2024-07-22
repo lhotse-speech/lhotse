@@ -14,12 +14,12 @@ evaluation server can be found online.
 """
 
 
-from collections import defaultdict
-import logging
 import json
+import logging
 import re
 import shutil
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Union
 
@@ -32,7 +32,12 @@ from lhotse import (
     fix_manifests,
     validate_recordings_and_supervisions,
 )
-from lhotse.recipes.utils import manifests_exist, DEFAULT_DETECTED_MANIFEST_TYPES, TYPES_TO_CLASSES, load_manifest
+from lhotse.recipes.utils import (
+    DEFAULT_DETECTED_MANIFEST_TYPES,
+    TYPES_TO_CLASSES,
+    load_manifest,
+    manifests_exist,
+)
 from lhotse.utils import Pathlike, resumable_download
 
 
@@ -72,9 +77,7 @@ def _read_manifests_if_cached_no_parts(
         if not path.is_file():
             continue
         if lazy:
-            manifests[manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(
-                path
-            )
+            manifests[manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(path)
         else:
             manifests[manifest] = load_manifest(path)
     return dict(manifests)
@@ -97,14 +100,16 @@ def download_ears(
     resumable_download(
         "https://raw.githubusercontent.com/facebookresearch/ears_dataset/main/speaker_statistics.json",
         filename=target_dir / "speaker_statistics.json",
-        force_download=force_download
+        force_download=force_download,
     )
     resumable_download(
         "https://raw.githubusercontent.com/facebookresearch/ears_dataset/main/transcripts.json",
         filename=target_dir / "transcripts.json",
-        force_download=force_download
+        force_download=force_download,
     )
-    for part in tqdm(range(1, 108), desc="Downloading the 107 speakers of the EARS dataset"):
+    for part in tqdm(
+        range(1, 108), desc="Downloading the 107 speakers of the EARS dataset"
+    ):
         part = f"p{part:03d}"
         url = f"https://github.com/facebookresearch/ears_dataset/releases/download/dataset"
         zip_name = f"{part}.zip"
@@ -141,7 +146,7 @@ def prepare_ears(
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    dataset_parts=[f"p{spk:03d}" for spk in range(1,108)]
+    dataset_parts = [f"p{spk:03d}" for spk in range(1, 108)]
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -183,7 +188,7 @@ def prepare_ears(
             part_path,
             "*.wav",
             num_jobs=num_jobs,
-            recording_id=lambda path: f"{spk_id}_{path.stem}"
+            recording_id=lambda path: f"{spk_id}_{path.stem}",
         )
         recordings_list.append(recordings)
         for rec in recordings:
@@ -206,7 +211,7 @@ def prepare_ears(
 
     recordings = []
     for recs in recordings_list:
-        recordings+=list(recs)
+        recordings += list(recs)
     recordings = RecordingSet.from_recordings(recordings)
     supervisions = SupervisionSet.from_segments(supervisions)
     recordings, supervisions = fix_manifests(recordings, supervisions)
