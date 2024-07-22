@@ -1,9 +1,12 @@
 import random
+import threading
+import time
 import warnings
 from bisect import bisect_right
 from collections import deque
 from dataclasses import asdict, dataclass
 from itertools import islice
+from queue import Queue
 from typing import (
     Any,
     Callable,
@@ -95,6 +98,7 @@ class DynamicBucketingSampler(CutSampler):
         rank: Optional[int] = None,
         seed: Union[int, Literal["randomized", "trng"]] = 0,
         sync_buckets: bool = True,
+        concurrent: bool = False,
         strict=None,
         shuffle_buffer_size=None,
     ) -> None:
@@ -131,6 +135,10 @@ class DynamicBucketingSampler(CutSampler):
             when models have quadratic input complexity. Set between 15 and 40 for transformers.
         :param sync_buckets: When set, we'll try to make each DDP rank sample from as close
             duration buckets as possible to minimize the tail worker effect.
+        :param concurrent: Enabling concurrency eliminates most of the waiting to pre-populate the
+            bucketing buffers before the sampler starts yielding examples. For tarred/Lhotse Shar data
+            this can speed up the start of the training. Note that enabling concurrency will cause the
+            sampling results to be non-deterministic. This feature is experimental.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -154,6 +162,7 @@ class DynamicBucketingSampler(CutSampler):
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
         self.sync_buckets = sync_buckets
+        self.concurrent = concurrent
         self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
 
@@ -282,6 +291,7 @@ class DynamicBucketingSampler(CutSampler):
             shuffle=self.shuffle,
             rng=self.rng,
             bucket_rng=bucket_rng,
+            concurrent=self.concurrent,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(cuts_iter)
@@ -516,6 +526,7 @@ class DynamicBucketer:
         shuffle: bool = False,
         rng: random.Random = None,
         bucket_rng: random.Random = None,
+        concurrent: bool = False,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
@@ -533,6 +544,7 @@ class DynamicBucketer:
         self.rng = rng
         self.bucket_rng = bucket_rng
         self.shuffle = shuffle
+        self.concurrent = concurrent
 
         assert duration_bins == sorted(duration_bins), (
             f"Argument list for 'duration_bins' is expected to be in "
@@ -561,14 +573,19 @@ class DynamicBucketer:
                 )
 
         # Init: create empty buckets (note: `num_buckets = len(duration_bins) + 1`).
-        self.buckets: List[Deque[Union[Cut, Tuple[Cut, ...]]]] = [
-            deque() for _ in range(len(duration_bins) + 1)
-        ]
+        self.buckets: List[Queue] = [Queue() for _ in range(len(duration_bins) + 1)]
+
+        self._producer_thread = None
 
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
-        self._collect_cuts_in_buckets(self.buffer_size)
+
+        if self.concurrent:
+            self._start_data_producer_thread()
+            self._maybe_wait_for_producer()
+        else:
+            self._collect_cuts_in_buckets(self.buffer_size)
 
         state = BucketSelectionState(
             bucket_rng=self.bucket_rng,
@@ -588,6 +605,9 @@ class DynamicBucketer:
                     maybe_shuffled = pick_at_random(
                         maybe_shuffled, rng=self.rng, out_indexes_used=indexes_used
                     )
+                else:
+                    with sampling_bucket.mutex:
+                        maybe_shuffled = list(sampling_bucket.queue)
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
                     maybe_shuffled,
@@ -604,21 +624,26 @@ class DynamicBucketer:
                 if indexes_used:
                     # Shuffling, sort indexes of yielded elements largest -> smallest and remove them
                     indexes_used.sort(reverse=True)
-                    for idx in indexes_used:
-                        del sampling_bucket[idx]
+                    with sampling_bucket.mutex:
+                        _q = sampling_bucket.queue
+                        for idx in indexes_used:
+                            del _q[idx]
                 else:
                     # No shuffling, remove first N
                     for _ in range(batch_size):
-                        sampling_bucket.popleft()
+                        sampling_bucket.get()
                 # Fetch new cuts and add them to appropriate buckets.
-                self._collect_cuts_in_buckets(batch_size)
+                if self.concurrent:
+                    self._maybe_wait_for_producer()
+                else:
+                    self._collect_cuts_in_buckets(batch_size)
         except StopIteration:
             pass
 
         # Cleanup.
         self.cuts_iter = None
 
-    def _select_bucket(self, state: BucketSelectionState) -> Deque[Cut]:
+    def _select_bucket(self, state: BucketSelectionState) -> Queue:
         if self.bucket_rng is None:
             # Bucket selection algo 1:
             # * there is just one RNG for choosing buckets and choosing samples randomly from the buckets
@@ -646,7 +671,7 @@ class DynamicBucketer:
             #     it will scan the neighbouring buckets until it finds one that's ready
             # * if no bucket is ready, we end iteration
 
-            def scan_buckets(predicate: Callable[[Deque[Cut]], bool]) -> int:
+            def scan_buckets(predicate: Callable[[Queue], bool]) -> int:
                 bucket_idx = state.select_bucket_idx()
 
                 def valid_idx() -> bool:
@@ -689,22 +714,55 @@ class DynamicBucketer:
                 # which may yield partial batches.
                 try:
                     state.restore(ckpt)
-                    selected_bucket_idx = scan_buckets(lambda b: len(b) > 0)
+                    selected_bucket_idx = scan_buckets(lambda b: b.qsize() > 0)
                 except BucketsDontHaveEnoughData:
                     # We exhausted the full dataset.
                     raise StopIteration()
 
             return self.buckets[selected_bucket_idx]
 
-    def _is_ready(self, bucket: Deque[Cut]) -> bool:
+    def _is_ready(self, bucket: Queue) -> bool:
         tot = self.constraint.copy()
-        for c in bucket:
+        with bucket.mutex:
+            contents = list(bucket.queue)
+        for c in contents:
             tot.add(c[0] if isinstance(c, tuple) else c)
             if tot.close_to_exceeding():
                 return True
         return False
 
+    def _start_data_producer_thread(self):
+        """Start concurrent filling of the bucket buffer in a background thread."""
+
+        def producer():
+            try:
+                self._source_exhausted = False
+                while not self._source_exhausted:
+                    if sum(b.qsize() for b in self.buckets) == self.buffer_size:
+                        time.sleep(0.1)
+                        continue
+                    cuts = next(self.cuts_iter)
+                    duration = self.constraint.measure_length(
+                        cuts[0] if isinstance(cuts, tuple) else cuts
+                    )
+                    bucket_idx = bisect_right(self.duration_bins, duration)
+                    self.buckets[bucket_idx].put(cuts)
+            except StopIteration:
+                self._source_exhausted = True
+
+        self._producer_thread = threading.Thread(target=producer)
+        self._producer_thread.start()
+
+    def _maybe_wait_for_producer(self):
+        """Triggers wait for producer if the bucket buffers are less than 10% utilized."""
+        while (
+            sum(b.qsize() for b in self.buckets) < self.buffer_size / 10
+            and not self._source_exhausted
+        ):
+            time.sleep(1.0)
+
     def _collect_cuts_in_buckets(self, n_cuts: int) -> None:
+        """Fetches ``n_cuts`` from the input data iterable. Doesn't use concurrency."""
         try:
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
@@ -712,13 +770,22 @@ class DynamicBucketer:
                     cuts[0] if isinstance(cuts, tuple) else cuts
                 )
                 bucket_idx = bisect_right(self.duration_bins, duration)
-                self.buckets[bucket_idx].append(cuts)
+                self.buckets[bucket_idx].put(cuts)
         except StopIteration:
             pass
 
+    def __del__(self):
+        if (
+            self.concurrent
+            and self._producer_thread is not None
+            and self._producer_thread.is_alive()
+        ):
+            self._source_exhausted = True
+            self._producer_thread.join()
+
 
 def pick_at_random(
-    bucket: Sequence[Union[Cut, Tuple[Cut, ...]]],
+    bucket: Queue,
     rng: random.Random,
     out_indexes_used: list,
 ) -> Generator[Union[Cut, Tuple[Cut, ...]], None, None]:
@@ -726,6 +793,8 @@ def pick_at_random(
     Generator which will yield items in a sequence in a random order.
     It will append the indexes of items yielded during iteration via ``out_used_indexes``.
     """
+    with bucket.mutex:
+        bucket = list(bucket.queue)
     indexes = list(range(len(bucket)))
     rng.shuffle(indexes)
     for idx in indexes:
