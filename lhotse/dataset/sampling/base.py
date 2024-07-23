@@ -16,7 +16,7 @@ from lhotse.cut import Cut, CutSet
 from lhotse.cut.text import TextExample
 from lhotse.lazy import Dillable
 from lhotse.manipulation import combine
-from lhotse.utils import Seconds, ifnone, is_none_or_gt
+from lhotse.utils import Seconds, exactly_one_not_null, ifnone, is_none_or_gt
 
 
 class CutSampler(Sampler, Dillable):
@@ -408,7 +408,9 @@ class SamplingConstraint(metaclass=ABCMeta):
         """
         pass
 
-    def select_bucket(self, buckets: Any, example: Any) -> int:
+    def select_bucket(
+        self, buckets: Any, example: Any = None, example_len: Any = None
+    ) -> int:
         """
         Given a list of buckets and an example, assign the example to the correct bucket.
         This is leveraged by bucketing samplers.
@@ -417,7 +419,12 @@ class SamplingConstraint(metaclass=ABCMeta):
         the output of :meth:`SamplingConstraint.measure_length` and returns the index
         of the first bucket that has a larger length than the example.
         """
-        return bisect_right(buckets, self.measure_length(example))
+        assert exactly_one_not_null(
+            example, example_len
+        ), f"select_bucket requires either example= or example_len= as the input (we received {example=} and {example_len=})."
+        if example_len is None:
+            example_len = self.measure_length(example)
+        return bisect_right(buckets, example_len)
 
     def copy(self) -> "SamplingConstraint":
         """Return a shallow copy of this constraint."""

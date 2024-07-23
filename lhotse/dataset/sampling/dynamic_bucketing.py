@@ -3,7 +3,6 @@ import threading
 import time
 import warnings
 from bisect import bisect_right
-from collections import deque
 from dataclasses import asdict, dataclass
 from itertools import islice
 from queue import Queue
@@ -350,7 +349,9 @@ class FixedBucketBatchSizeConstraint(SamplingConstraint):
         selecting the right property from the input ``cut`` object.
         """
         seqlen = self.measure_length(example)
-        bucket_idx = bisect_right(self.max_seq_len_buckets, seqlen)
+        bucket_idx = self.select_bucket(
+            buckets=self.max_seq_len_buckets, example_len=seqlen
+        )
         assert bucket_idx < len(self.max_seq_len_buckets), (
             f"Received example with sequence length {seqlen} that exceeds "
             f"the highest allowed length {self.max_seq_len_buckets[-1]}."
