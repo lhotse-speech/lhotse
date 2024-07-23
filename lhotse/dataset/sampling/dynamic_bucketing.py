@@ -742,10 +742,10 @@ class DynamicBucketer:
                         time.sleep(0.1)
                         continue
                     cuts = next(self.cuts_iter)
-                    duration = self.constraint.measure_length(
-                        cuts[0] if isinstance(cuts, tuple) else cuts
+                    bucket_idx = self.constraint.select_bucket(
+                        buckets=self.duration_bins,
+                        example=cuts[0] if isinstance(cuts, tuple) else cuts,
                     )
-                    bucket_idx = bisect_right(self.duration_bins, duration)
                     self.buckets[bucket_idx].put(cuts)
             except StopIteration:
                 self._source_exhausted = True
@@ -766,10 +766,10 @@ class DynamicBucketer:
         try:
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
-                duration = self.constraint.measure_length(
-                    cuts[0] if isinstance(cuts, tuple) else cuts
+                bucket_idx = self.constraint.select_bucket(
+                    buckets=self.duration_bins,
+                    example=cuts[0] if isinstance(cuts, tuple) else cuts,
                 )
-                bucket_idx = bisect_right(self.duration_bins, duration)
                 self.buckets[bucket_idx].put(cuts)
         except StopIteration:
             pass

@@ -2,6 +2,7 @@ import copy
 import os
 import warnings
 from abc import ABCMeta, abstractmethod
+from bisect import bisect_right
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
@@ -406,6 +407,17 @@ class SamplingConstraint(metaclass=ABCMeta):
         (e.g., for audio it may be duration; for text it may be number of tokens; etc.).
         """
         pass
+
+    def select_bucket(self, buckets: Any, example: Any) -> int:
+        """
+        Given a list of buckets and an example, assign the example to the correct bucket.
+        This is leveraged by bucketing samplers.
+
+        Default implementation assumes that buckets are expressed in the same units as
+        the output of :meth:`SamplingConstraint.measure_length` and returns the index
+        of the first bucket that has a larger length than the example.
+        """
+        return bisect_right(buckets, self.measure_length(example))
 
     def copy(self) -> "SamplingConstraint":
         """Return a shallow copy of this constraint."""
