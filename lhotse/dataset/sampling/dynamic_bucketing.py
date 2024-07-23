@@ -2,7 +2,6 @@ import random
 import threading
 import time
 import warnings
-from bisect import bisect_right
 from dataclasses import asdict, dataclass
 from itertools import islice
 from queue import Queue
