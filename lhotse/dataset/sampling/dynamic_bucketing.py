@@ -2,8 +2,6 @@ import random
 import threading
 import time
 import warnings
-from bisect import bisect_right
-from collections import deque
 from dataclasses import asdict, dataclass
 from itertools import islice
 from queue import Queue
@@ -350,7 +348,9 @@ class FixedBucketBatchSizeConstraint(SamplingConstraint):
         selecting the right property from the input ``cut`` object.
         """
         seqlen = self.measure_length(example)
-        bucket_idx = bisect_right(self.max_seq_len_buckets, seqlen)
+        bucket_idx = self.select_bucket(
+            buckets=self.max_seq_len_buckets, example_len=seqlen
+        )
         assert bucket_idx < len(self.max_seq_len_buckets), (
             f"Received example with sequence length {seqlen} that exceeds "
             f"the highest allowed length {self.max_seq_len_buckets[-1]}."
@@ -742,10 +742,10 @@ class DynamicBucketer:
                         time.sleep(0.1)
                         continue
                     cuts = next(self.cuts_iter)
-                    duration = self.constraint.measure_length(
-                        cuts[0] if isinstance(cuts, tuple) else cuts
+                    bucket_idx = self.constraint.select_bucket(
+                        buckets=self.duration_bins,
+                        example=cuts[0] if isinstance(cuts, tuple) else cuts,
                     )
-                    bucket_idx = bisect_right(self.duration_bins, duration)
                     self.buckets[bucket_idx].put(cuts)
             except StopIteration:
                 self._source_exhausted = True
@@ -766,10 +766,10 @@ class DynamicBucketer:
         try:
             for _ in range(n_cuts):
                 cuts = next(self.cuts_iter)
-                duration = self.constraint.measure_length(
-                    cuts[0] if isinstance(cuts, tuple) else cuts
+                bucket_idx = self.constraint.select_bucket(
+                    buckets=self.duration_bins,
+                    example=cuts[0] if isinstance(cuts, tuple) else cuts,
                 )
-                bucket_idx = bisect_right(self.duration_bins, duration)
                 self.buckets[bucket_idx].put(cuts)
         except StopIteration:
             pass
