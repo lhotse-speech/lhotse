@@ -28,8 +28,11 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, resumable_download
-
+from lhotse.utils import (
+    Pathlike, resumable_download, is_module_available, fastcopy,
+)
+from lhotse import fix_manifests
+from tqdm import tqdm
 TALKBANK_MP3_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/"
 TALKBANK_WAV_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/0wav/"
 UCSB_TRANSCRIPT_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/SBCorpus.zip"
@@ -71,6 +74,7 @@ LDC_DOCS = {
     ],
 }
 
+
 lang_iterators = {
     "SBC004": iter(["Spanish"] * 17),
     "SBC006": iter(["French"] * 2),
@@ -88,6 +92,32 @@ lang_iterators = {
     "SBC057": iter(["Japanese"] * 62),
     "SBC058": iter(["Spanish"] + ["Italian"] * 2),
 }
+
+
+# These corrections to the participant metadata were needed to get geolocations
+# from the geopy package.
+annotation_corrections = {
+    "metro St.L. IL": "Saint Louis MO", # Use the MO side of the city
+    "middle Wes MO": "Missouri", # Just use the state location
+    "S.E.Texas TX": "South East Texas", # The geo package seems to parse this
+    "South Alabama mostly AL": "Andalusia Alabama", # Arbitrarily chosen nearby town
+    "South FL": "South Bay Florida", # Arbitrarily chosen nearby town
+    "Walnut Cre CA": "Walnut Creek CA", # Spelling error
+    "San Leandr CA": "San Leandro CA",
+    "Boston/Santa Fe MA/NM": "Boston/Santa Fe\tMA/NM", # Handle this specially
+    "Boston/New Mexico MA/NM": "Boston/Santa Fe\tMA/NM",
+    "Millstad IL": "Millstadt IL", # Spelling error
+    "Cleveland/San Francisco OH/CA": "Cleveland/San Fransisco\tOH/CA", # Handle specially
+    "Jamesville WI": "Janesville WI", # Spelling error
+    "Falls Church/Albuquerque VA/NM": "Falls Church/Albuquerque\tVA/NM", # Handle specially
+    "Southern Florida": "South Bay Florida", # Arbitarily chosen nearby town
+    "Massachusetts MA": "Massachusetts",
+    "New Zealand n/a": "New Zealand",
+    "French n/a": "France",
+}
+
+
+bad_stereo = ["SBC020","SBC021","SBC027","SBC028"]
 
 
 class Dummy_Spk_Iterator:
@@ -229,16 +259,46 @@ def prepare_sbcsae(
 
     doc_dir = corpus_dir / "documentation"
     spk2gen_dict, spk2glob_dict = generate_speaker_map_dicts(doc_dir)
-
+    #spk_coords = generate_geolocations(corpus_dir, spk2glob_dict)
     supervisions = []
     trn_dir = corpus_dir / "TRN"
-    for p in trn_dir.glob("*.trn"):
+    for p in tqdm(list(trn_dir.glob("*.trn")), "Collecting and normalizing transcripts ..."):
         for supervision in _filename_to_supervisions(p, spk2gen_dict, spk2glob_dict):
             supervisions.append(supervision)
 
     if len(supervisions) == 0:
         logging.warning(f"No supervisions found in {trn_dir}")
-    supervisions = SupervisionSet.from_segments(supervisions)
+
+    supervisions_ = []
+    for s in supervisions:
+        if s.duration < 0.02:
+            # Just pad with a minimum 0.02 duration
+            s_reco = recordings[s.recording_id]
+            new_start = max(0, s.start - 0.01)
+            s_ = fastcopy(
+                s,
+                start=new_start,
+                duration=min(new_start + 0.02, s_reco.duration),
+            )
+        else: 
+            s_ = s
+        
+        if s_.speaker in spk_coords:
+            s_.custom = {
+                'lat': spk_coords[s.speaker][0][0],
+                'lon': spk_coords[s.speaker][0][1],
+            }
+
+        if (
+            not isinstance(recordings[s.recording_id].channel_ids, list) or
+            len(recordings[s.recording_id].channel_ids) < 2 or
+            s.recording_id in bad_stereo
+        ):
+            s_.channel = recordings[s.recording_id].channel_ids[0]
+        supervisions_.append(s_) 
+    
+    supervisions = SupervisionSet.from_segments(supervisions_)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
 
     if output_dir is not None:
         if isinstance(output_dir, str):
@@ -250,6 +310,61 @@ def prepare_sbcsae(
     manifests = {"recordings": recordings, "supervisions": supervisions}
 
     return manifests
+
+
+def generate_geolocations(corpus: Path, spk2glob_dict: dict):
+    if not is_module_available("geopy"):
+        raise ImportError(
+            "geopy package not found. Please install..." " (pip install geopy)"
+        )
+    else:
+        from geopy.geocoders import Nominatim
+        from geopy import geocoders
+
+    speakers = corpus.rglob("documentation/LDC*/speaker.tbl")
+    # This geolocator object is repsonsible for generating a 
+    # latitiude and longitude from a textual description of a location, i.e.,
+    # CHICAGO IL --> (41,-87) 
+    geolocator = Nominatim(user_agent='myapplication')
+    spk_coords = {}
+    for spk in tqdm(list(speakers), "Generating speaker geolocations..."):
+        with open(spk) as f:
+            for l in f:
+                vals = l.strip().split(",")
+                if len(vals) < 5:
+                    continue
+                # Check non-empty
+                empty_hometown = vals[4] in ("", "?")
+                empty_state = vals[5] in ("", "?")
+                if empty_hometown and not empty_state:
+                    loc = vals[5] + ", United States"
+                elif not empty_hometown:
+                    orig_loc = vals[4] + " " + vals[5]
+                    loc = annotation_corrections.get(orig_loc, orig_loc)
+                else:
+                    continue
+                if "/" in loc:
+                    try:
+                        hometowns, states = loc.split("\t", 1)
+                        hometowns = hometowns.split("/")
+                        states = states.split("/")
+                        coords = []
+                        for h, s in zip(hometowns, states):
+                            coords.append(geolocator.geocode(f"{h} {s}", timeout=None)[1])
+                    except ValueError:
+                        states, country = loc.split(",", 1)
+                        coords = []
+                        for s in states.split("/"):
+                            coords.append(geolocator.geocode(f"{s}, {country}", timeout=None)[1])
+                else:
+                    coords = [geolocator.geocode(loc, timeout=None)[1]]
+                spk_coords[vals[0]] = coords
+    spknum2spk_name = {n.split("_")[0]: n for s, n in spk2glob_dict.items()}
+    spk_coords_ = {}
+    for s in spk_coords:
+        if s in spknum2spk_name:
+            spk_coords_[spknum2spk_name[s]] = spk_coords[s]
+    return spk_coords_
 
 
 def generate_speaker_map_dicts(doc_dir: Path):
