@@ -19,60 +19,45 @@ L. Chafe and Sandra A. Thompson (all of UC Santa Barbara), and Charles Meyer
 (UMass, Boston). For the publication of Parts 3 and 4, the authors are John W.
 Du Bois and Robert Englebretson.
 
-TODO: detail on splits and such
+If you use the corpus or our data preparation scripts, please cite the following:
+@misc{dubois_2005,
+  author={Du Bois, John W. and Chafe, Wallace L. and Meyer, Charles and Thompson, Sandra A. and Englebretson, Robert and Martey, Nii},
+  year={2000--2005},
+  title={{S}anta {B}arbara corpus of spoken {A}merican {E}nglish, {P}arts 1--4},
+  address={Philadelphia},
+  organization={Linguistic Data Consortium},
+}
+@inproceedings{maciejewski24_interspeech,
+  author={Matthew Maciejewski and Dominik Klement and Ruizhe Huang and Matthew Wiesner and Sanjeev Khudanpur},
+  title={Evaluating the {Santa Barbara} Corpus: Challenges of the Breadth of Conversational Spoken Language},
+  year=2024,
+  booktitle={Proc. Interspeech 2024}
+}
 """
 import logging
 import re
-import zipfile
+import tarfile
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Union
+from typing import Dict, Optional, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.utils import (
-    Pathlike, resumable_download, is_module_available, fastcopy,
-)
-from lhotse import fix_manifests
 from tqdm import tqdm
-TALKBANK_MP3_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/"
-TALKBANK_WAV_ROOT_URL = "https://media.talkbank.org/ca/SBCSAE/0wav/"
-UCSB_TRANSCRIPT_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/SBCorpus.zip"
-UCSB_CHAT_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/SBCSAE_chat.zip"
-UCSB_METADATA_URL = "https://www.linguistics.ucsb.edu/sites/secure.lsit.ucsb.edu.ling.d7/files/sitefiles/research/SBC/metadata.zip"
-LDC_DOC_ROOT_URL = "https://catalog.ldc.upenn.edu/docs/"
-LDC_DOCS = {
-    "LDC2000S85": [
-        "segment.tbl",
-        "segment.txt",
-        "speaker.tbl",
-        "speaker.txt",
-    ],
-    "LDC2003S06": [
-        "annotations.txt",
-        "file.tbl",
-        "segment.tbl",
-        "segment.txt",
-        "segment_summaries.txt",
-        "speaker.tbl",
-        "speaker.txt",
-        "table.txt",
-    ],
-    "LDC2004S10": [
-        "annotations.txt",
-        "file.tbl",
-        "segment.tbl",
-        "segment.txt",
-        "segment_summaries.txt",
-        "speaker.tbl",
-        "speaker.txt",
-        "table.txt",
-    ],
-    "LDC2005S25": [
-        "segment.tbl",
-        "segment.txt",
-        "speaker.doc",
-        "speaker.tbl",
-    ],
-}
+
+from lhotse import (
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    fix_manifests,
+)
+from lhotse.utils import (
+    Pathlike,
+    fastcopy,
+    is_module_available,
+    resumable_download,
+    safe_extract,
+)
+
+SBCSAE_TAR_URL = "https://www.openslr.org/resources/155/SBCSAE.tar.gz"
 
 
 lang_iterators = {
@@ -97,27 +82,27 @@ lang_iterators = {
 # These corrections to the participant metadata were needed to get geolocations
 # from the geopy package.
 annotation_corrections = {
-    "metro St.L. IL": "Saint Louis MO", # Use the MO side of the city
-    "middle Wes MO": "Missouri", # Just use the state location
-    "S.E.Texas TX": "South East Texas", # The geo package seems to parse this
-    "South Alabama mostly AL": "Andalusia Alabama", # Arbitrarily chosen nearby town
-    "South FL": "South Bay Florida", # Arbitrarily chosen nearby town
-    "Walnut Cre CA": "Walnut Creek CA", # Spelling error
+    "metro St.L. IL": "Saint Louis MO",  # Use the MO side of the city
+    "middle Wes MO": "Missouri",  # Just use the state location
+    "S.E.Texas TX": "South East Texas",  # The geo package seems to parse this
+    "South Alabama mostly AL": "Andalusia Alabama",  # Arbitrarily chosen nearby town
+    "South FL": "South Bay Florida",  # Arbitrarily chosen nearby town
+    "Walnut Cre CA": "Walnut Creek CA",  # Spelling error
     "San Leandr CA": "San Leandro CA",
-    "Boston/Santa Fe MA/NM": "Boston/Santa Fe\tMA/NM", # Handle this specially
+    "Boston/Santa Fe MA/NM": "Boston/Santa Fe\tMA/NM",  # Handle this specially
     "Boston/New Mexico MA/NM": "Boston/Santa Fe\tMA/NM",
-    "Millstad IL": "Millstadt IL", # Spelling error
-    "Cleveland/San Francisco OH/CA": "Cleveland/San Fransisco\tOH/CA", # Handle specially
-    "Jamesville WI": "Janesville WI", # Spelling error
-    "Falls Church/Albuquerque VA/NM": "Falls Church/Albuquerque\tVA/NM", # Handle specially
-    "Southern Florida": "South Bay Florida", # Arbitarily chosen nearby town
+    "Millstad IL": "Millstadt IL",  # Spelling error
+    "Cleveland/San Francisco OH/CA": "Cleveland/San Fransisco\tOH/CA",  # Handle specially
+    "Jamesville WI": "Janesville WI",  # Spelling error
+    "Falls Church/Albuquerque VA/NM": "Falls Church/Albuquerque\tVA/NM",  # Handle specially
+    "Southern Florida": "South Bay Florida",  # Arbitarily chosen nearby town
     "Massachusetts MA": "Massachusetts",
     "New Zealand n/a": "New Zealand",
     "French n/a": "France",
 }
 
 
-bad_stereo = ["SBC020","SBC021","SBC027","SBC028"]
+bad_stereo = ["SBC020", "SBC021", "SBC027", "SBC028"]
 
 
 class Dummy_Spk_Iterator:
@@ -137,93 +122,30 @@ dummy_spk_iterator = Dummy_Spk_Iterator()
 
 def download_sbcsae(
     target_dir: Pathlike = ".",
-    download_mp3: Optional[bool] = False,
     force_download: Optional[bool] = False,
 ) -> Path:
     """
-    Download the dataset. Due to availability/broken link issues, this downloads
-    from multiple sources.
+    Download and untar the dataset.
 
     :param: target_dir: Pathlike, the path of the directory where the SBCSAE
         dataset will be downloaded.
-    :param: download_mp3: bool, if True download the mp3 files as well as wav.
+    :param force_download: bool, if True, download the archive even if it already exists.
     :return: The path to the directory with the data.
     """
     target_dir = Path(target_dir)
     corpus_dir = target_dir / "SBCSAE"
     corpus_dir.mkdir(parents=True, exist_ok=True)
+    tar_path = target_dir / "SBCSAE.tar.gz"
 
     completed_detector = target_dir / ".sbcsae_completed"
     if completed_detector.is_file():
         logging.info(f"Skipping download because {completed_detector} exists.")
         return corpus_dir
 
-    # Download audio
-    wav_dir = corpus_dir / "WAV"
-    mp3_dir = corpus_dir / "MP3"
-    wav_dir.mkdir(parents=True, exist_ok=True)
-    mp3_dir.mkdir(parents=True, exist_ok=True)
-    for i in range(1, 61):
-        session = f"{i:02d}"
-        wav_path = wav_dir / ("SBC0" + session + ".wav")
-        resumable_download(
-            TALKBANK_WAV_ROOT_URL + session + ".wav",
-            filename=wav_path,
-            force_download=force_download,
-        )
-        if download_mp3:
-            mp3_path = mp3_dir / ("SBC0" + session + ".mp3")
-            resumable_download(
-                TALKBANK_MP3_ROOT_URL + session + ".mp3",
-                filename=mp3_path,
-                force_download=force_download,
-            )
-
-    # Download annotations
-    transcript_zip = corpus_dir / "TRN.zip"
-    resumable_download(
-        UCSB_TRANSCRIPT_URL, filename=transcript_zip, force_download=force_download
-    )
-    with zipfile.ZipFile(transcript_zip) as f:
-        f.extractall(path=corpus_dir)
-
-    chat_zip = corpus_dir / "CHAT.zip"
-    resumable_download(UCSB_CHAT_URL, filename=chat_zip, force_download=force_download)
-    target_chat_dir = corpus_dir / "CHAT"
-    if target_chat_dir.is_dir():
-        if not any(target_chat_dir.iterdir()):
-            target_chat_dir.rmdir()
-        elif force_download:
-            for item in target_chat_dir.iterdir():
-                item.unlink()
-            target_chat_dir.rmdir()
-    else:
-        with zipfile.ZipFile(chat_zip) as f:
-            f.extractall(path=corpus_dir)
-        chat_dir = corpus_dir / "SBCSAE"
-        chat_dir.rename(corpus_dir / "CHAT")
-
-    metadata_zip = corpus_dir / "metadata.zip"
-    resumable_download(
-        UCSB_METADATA_URL, filename=metadata_zip, force_download=force_download
-    )
-    metadata_dir = corpus_dir / "metadata"
-    metadata_dir.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(metadata_zip) as f:
-        f.extractall(path=metadata_dir)
-
-    doc_dir = corpus_dir / "documentation"
-    doc_dir.mkdir(parents=True, exist_ok=True)
-    for LDC_split in LDC_DOCS:
-        LDC_dir = doc_dir / LDC_split
-        LDC_dir.mkdir(parents=True, exist_ok=True)
-        for doc_file in LDC_DOCS[LDC_split]:
-            doc_file_url = LDC_DOC_ROOT_URL + LDC_split + "/" + doc_file
-            resumable_download(
-                doc_file_url, filename=LDC_dir / doc_file, force_download=force_download
-            )
-
-    completed_detector.touch()
+    resumable_download(SBCSAE_TAR_URL, filename=tar_path, force_download=force_download)
+    with tarfile.open(tar_path) as tar:
+        safe_extract(tar, path=corpus_dir)
+        completed_detector.touch()
 
     return corpus_dir
 
@@ -231,6 +153,7 @@ def download_sbcsae(
 def prepare_sbcsae(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
+    geolocation: Optional[bool] = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepares manifest for SBCSAE dataset.
@@ -240,7 +163,9 @@ def prepare_sbcsae(
         releases of the data. Check script comments for details if using an
         existing corpus download rather than Lhotse's download script.
     :param: output_dir: Root directory where .json manifests are stored.
-    :return:
+    :param: geolocation: Include geographic coordinates of speakers' hometowns
+        in the manifests.
+    :return: The manifests.
     """
     # Resolve corpus_dir type
     if isinstance(corpus_dir, str):
@@ -257,12 +182,18 @@ def prepare_sbcsae(
     if len(recordings) == 0:
         logging.warning(f"No .wav files found in {audio_dir}")
 
-    doc_dir = corpus_dir / "documentation"
+    doc_dir = corpus_dir / "docs"
     spk2gen_dict, spk2glob_dict = generate_speaker_map_dicts(doc_dir)
-    #spk_coords = generate_geolocations(corpus_dir, spk2glob_dict)
+
+    spk_coords = {}
+    if geolocation:
+        spk_coords = generate_geolocations(corpus_dir, spk2glob_dict)
+
     supervisions = []
     trn_dir = corpus_dir / "TRN"
-    for p in tqdm(list(trn_dir.glob("*.trn")), "Collecting and normalizing transcripts ..."):
+    for p in tqdm(
+        list(trn_dir.glob("*.trn")), "Collecting and normalizing transcripts ..."
+    ):
         for supervision in _filename_to_supervisions(p, spk2gen_dict, spk2glob_dict):
             supervisions.append(supervision)
 
@@ -280,23 +211,23 @@ def prepare_sbcsae(
                 start=new_start,
                 duration=min(new_start + 0.02, s_reco.duration),
             )
-        else: 
+        else:
             s_ = s
-        
+
         if s_.speaker in spk_coords:
             s_.custom = {
-                'lat': spk_coords[s.speaker][0][0],
-                'lon': spk_coords[s.speaker][0][1],
+                "lat": spk_coords[s.speaker][0][0],
+                "lon": spk_coords[s.speaker][0][1],
             }
 
         if (
-            not isinstance(recordings[s.recording_id].channel_ids, list) or
-            len(recordings[s.recording_id].channel_ids) < 2 or
-            s.recording_id in bad_stereo
+            not isinstance(recordings[s.recording_id].channel_ids, list)
+            or len(recordings[s.recording_id].channel_ids) < 2
+            or s.recording_id in bad_stereo
         ):
             s_.channel = recordings[s.recording_id].channel_ids[0]
-        supervisions_.append(s_) 
-    
+        supervisions_.append(s_)
+
     supervisions = SupervisionSet.from_segments(supervisions_)
     recordings, supervisions = fix_manifests(recordings, supervisions)
 
@@ -318,14 +249,14 @@ def generate_geolocations(corpus: Path, spk2glob_dict: dict):
             "geopy package not found. Please install..." " (pip install geopy)"
         )
     else:
-        from geopy.geocoders import Nominatim
         from geopy import geocoders
+        from geopy.geocoders import Nominatim
 
-    speakers = corpus.rglob("documentation/LDC*/speaker.tbl")
-    # This geolocator object is repsonsible for generating a 
+    speakers = corpus.rglob("docs/Part_*/speaker.tbl")
+    # This geolocator object is repsonsible for generating a
     # latitiude and longitude from a textual description of a location, i.e.,
-    # CHICAGO IL --> (41,-87) 
-    geolocator = Nominatim(user_agent='myapplication')
+    # CHICAGO IL --> (41,-87)
+    geolocator = Nominatim(user_agent="myapplication")
     spk_coords = {}
     for spk in tqdm(list(speakers), "Generating speaker geolocations..."):
         with open(spk) as f:
@@ -350,12 +281,16 @@ def generate_geolocations(corpus: Path, spk2glob_dict: dict):
                         states = states.split("/")
                         coords = []
                         for h, s in zip(hometowns, states):
-                            coords.append(geolocator.geocode(f"{h} {s}", timeout=None)[1])
+                            coords.append(
+                                geolocator.geocode(f"{h} {s}", timeout=None)[1]
+                            )
                     except ValueError:
                         states, country = loc.split(",", 1)
                         coords = []
                         for s in states.split("/"):
-                            coords.append(geolocator.geocode(f"{s}, {country}", timeout=None)[1])
+                            coords.append(
+                                geolocator.geocode(f"{s}, {country}", timeout=None)[1]
+                            )
                 else:
                     coords = [geolocator.geocode(loc, timeout=None)[1]]
                 spk_coords[vals[0]] = coords
@@ -372,8 +307,8 @@ def generate_speaker_map_dicts(doc_dir: Path):
     spk2glob_dict = dict()
 
     spk_num_to_reco_ids = dict()
-    for LDC_split in ["LDC2000S85", "LDC2003S06", "LDC2005S25"]:
-        filename = doc_dir / LDC_split / "segment.tbl"
+    for part in ["Part_1", "Part_2", "Part_4"]:
+        filename = doc_dir / part / "segment.tbl"
         for line in filename.read_text().split("\n"):
             if "speaker:" in line:
                 line = line.replace(" 0", "\t0")
@@ -384,8 +319,8 @@ def generate_speaker_map_dicts(doc_dir: Path):
                 if reco_id not in spk_num_to_reco_ids[spk_num]:
                     spk_num_to_reco_ids[spk_num].append(reco_id)
 
-    for LDC_split in ["LDC2000S85", "LDC2003S06", "LDC2005S25"]:
-        filename = doc_dir / LDC_split / "speaker.tbl"
+    for part in ["Part_1", "Part_2", "Part_4"]:
+        filename = doc_dir / part / "speaker.tbl"
         for line in filename.read_text().split("\n"):
             if "," not in line:
                 continue
@@ -404,9 +339,9 @@ def generate_speaker_map_dicts(doc_dir: Path):
                 spk2gen_dict[reco + "_" + name] = gen
                 spk2glob_dict[reco + "_" + name] = spk_num + "_" + name
 
-    for LDC_split in ["LDC2004S10"]:
+    for part in ["Part_3"]:
         seg_list = []
-        filename = doc_dir / LDC_split / "segment.tbl"
+        filename = doc_dir / part / "segment.tbl"
         for line in filename.read_text().split("\n"):
             if "speaker:" in line:
                 reco_id = re.sub(r"sbc0?([0-9]{3})\s.*", r"SBC\1", line)
@@ -414,7 +349,7 @@ def generate_speaker_map_dicts(doc_dir: Path):
                 seg_list.append([name, reco_id])
 
         spk_list = []
-        filename = doc_dir / LDC_split / "speaker.tbl"
+        filename = doc_dir / part / "speaker.tbl"
         for line in filename.read_text().split("\n"):
             if "," not in line:
                 continue
