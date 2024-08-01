@@ -75,6 +75,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_callhome_egyptian`
   * - CallHome English
     - :func:`lhotse.recipes.prepare_callhome_english`
+  * - CallHome Spanish Speech Translation
+    - :func:`lhotse.recipes.prepare_callhome_spanish_st`
   * - CHiME-6
     - :func:`lhotse.recipes.prepare_chime6`
   * - CMU Arctic
@@ -109,6 +111,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_fisher_english`
   * - Fisher Spanish
     - :func:`lhotse.recipes.prepare_fisher_spanish`
+  * - Fisher Spanish Speech Translation
+    - :func:`lhotse.recipes.prepare_fisher_spanish_st`
   * - Fluent Speech Commands
     - :func:`lhotse.recipes.slu`
   * - GALE Arabic Broadcast Speech
@@ -173,6 +177,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_reazonspeech`
   * - RIRs and Noises Corpus (OpenSLR 28)
     - :func:`lhotse.recipes.prepare_rir_noise`
+  * - SEAME 
+    - :func:`lhotse.recipes.prepare_seame`
   * - Speech Commands
     - :func:`lhotse.recipes.prepare_speechcommands`
   * - SpeechIO
