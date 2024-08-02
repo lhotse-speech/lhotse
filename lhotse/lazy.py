@@ -278,21 +278,67 @@ class LazyJsonlIterator:
     It can also provide the number of lines via __len__ via fast newlines counting.
     """
 
-    def __init__(self, path: Pathlike) -> None:
+    def __init__(
+        self,
+        path: Pathlike,
+        emulate_sharding_shuffle: bool = False,
+        shard_size: int = 1000,
+        seed: Optional[Union[int, Literal["trng", "randomized"]]] = None,
+    ) -> None:
         self.path = path
         self._len = None
+        self.shuffle = emulate_sharding_shuffle
+        self.shard_size = shard_size
+        self.seed = seed
 
     def __iter__(self):
+        if self.shuffle:
+            gen = self._iter_shuffled()
+        else:
+            gen = self._iter_sequential()
+        yield from map(decode_json_line, gen)
+
+    def _iter_sequential(self):
         tot = 0
         with open_best(self.path, "r") as f:
             for line in f:
-                data = decode_json_line(line)
-                yield data
+                yield line
                 tot += 1
         if self._len is None:
             self._len = tot
 
+    def _iter_shuffled(self):
+        from lhotse.dataset.dataloading import resolve_seed
+
+        rng = random.Random(resolve_seed(self.seed))
+        with open_best(self.path, "r") as f:
+            size_bytes = os.fstat(f.fileno()).st_size
+            while True:
+                # Select random offset in the file
+                offset = rng.randrange(0, size_bytes)
+                f.seek(offset)
+                # Rewind to the previous \n
+                CHUNK_SIZE = 2**14
+                while True:
+                    cur = f.tell()
+                    prev = max(0, cur - CHUNK_SIZE)
+                    f.seek(prev)
+                    if prev == 0:
+                        break
+                    content = f.read(CHUNK_SIZE)
+                    idx = content.rfind("\n")
+                    if idx > -1:
+                        f.seek(prev + idx + 1)
+                        break
+                # Iterate ``shard_size`` number of lines
+                n_read = 0
+                while n_read < self.shard_size:
+                    yield f.readline()
+                # Rinse and repeat
+
     def __len__(self) -> int:
+        if self.shuffle:
+            raise AttributeError()
         if self._len is None:
             self._len = count_newlines_fast(self.path)
         return self._len
@@ -364,10 +410,7 @@ class LazyIteratorChain(Dillable):
 
         iterators = self.iterators
         if self.shuffle_iters:
-            if self.seed is None:
-                rng = random  # global Python RNG
-            else:
-                rng = random.Random(resolve_seed(self.seed) + self.num_iters)
+            rng = random.Random(resolve_seed(self.seed) + self.num_iters)
             rng.shuffle(iterators)
             self.num_iters += 1
         for it in iterators:
