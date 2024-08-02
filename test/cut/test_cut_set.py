@@ -81,6 +81,12 @@ def test_cut_set_iteration(cut_set_with_mixed_cut):
     assert len(cuts) == 3
 
 
+def test_cut_set_prefetch_iteration(cut_set_with_mixed_cut):
+    cuts = list(cut_set_with_mixed_cut.prefetch())
+    assert len(cut_set_with_mixed_cut) == 3
+    assert len(cuts) == 3
+
+
 def test_cut_set_holds_both_simple_and_mixed_cuts(cut_set_with_mixed_cut):
     simple_cuts = cut_set_with_mixed_cut.simple_cuts
     assert all(isinstance(c, MonoCut) for c in simple_cuts)
