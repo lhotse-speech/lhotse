@@ -281,18 +281,18 @@ class LazyJsonlIterator:
     def __init__(
         self,
         path: Pathlike,
-        emulate_sharding_shuffle: bool = False,
+        shuffle_shards: bool = False,
         shard_size: int = 1000,
         seed: Optional[Union[int, Literal["trng", "randomized"]]] = None,
     ) -> None:
         self.path = path
         self._len = None
-        self.shuffle = emulate_sharding_shuffle
+        self.shuffle_shards = shuffle_shards
         self.shard_size = shard_size
         self.seed = seed
 
     def __iter__(self):
-        if self.shuffle:
+        if self.shuffle_shards:
             gen = self._iter_shuffled()
         else:
             gen = self._iter_sequential()
@@ -337,7 +337,7 @@ class LazyJsonlIterator:
                 # Rinse and repeat
 
     def __len__(self) -> int:
-        if self.shuffle:
+        if self.shuffle_shards:
             raise AttributeError()
         if self._len is None:
             self._len = count_newlines_fast(self.path)
@@ -355,9 +355,16 @@ class LazyManifestIterator(Dillable):
     might not work properly.
     """
 
-    def __init__(self, path: Pathlike) -> None:
-        assert extension_contains(".jsonl", path) or str(path) == "-"
-        self.source = LazyJsonlIterator(path)
+    def __init__(
+        self,
+        path: Pathlike,
+        shuffle_shards: bool = False,
+        shard_size: int = 1000,
+        seed: Optional[Union[int, Literal["trng", "randomized"]]] = None,
+    ) -> None:
+        self.source = LazyJsonlIterator(
+            path=path, shuffle_shards=shuffle_shards, shard_size=shard_size, seed=seed
+        )
 
     @property
     def path(self) -> Pathlike:
