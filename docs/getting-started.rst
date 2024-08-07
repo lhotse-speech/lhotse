@@ -143,7 +143,9 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 Optional dependencies
 *********************
 
-**Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package like this: ``pip install lhotse[package_name]``. The supported optional packages include:
+**Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
+
+* ``torchaudio`` used to be a core dependency in Lhotse, but is now optional. Refer to official PyTorch documentation for installation at `official Pytorch documentation for installation`_.
 
 * ``pip install lhotse[kaldi]`` for a maximal feature set related to Kaldi compatibility. It includes libraries such as ``kaldi_native_io`` (a more efficient variant of ``kaldi_io``) and ``kaldifeat`` that port some of Kaldi functionality into Python.
 
@@ -230,3 +232,4 @@ the speech starts roughly at the first second (100 frames):
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
 .. _orjson: https://pypi.org/project/orjson/
 .. _AIStore: https://aiatscale.org
+.. _official Pytorch documentation for installation: https://pytorch.org/get-started/locally/
