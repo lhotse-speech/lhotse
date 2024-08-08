@@ -150,7 +150,7 @@ def prepare_wenetspeech4tts(
                 text = lines[0].strip().split("\t")[1]
                 timestamp = lines[1].strip()
             supervisions.append(
-                segment=SupervisionSegment(
+                SupervisionSegment(
                     id=wav_name,
                     recording_id=wav_name,
                     start=0.0,
