@@ -441,3 +441,32 @@ def test_multi_cut_custom_multi_recording_channel_selector():
     audio = two_channel_out.load_target_recording()
     assert audio.shape == (2, 16000)
     np.testing.assert_allclose(ref_tgt_audio[::3], audio)
+
+
+def test_padded_cut_custom_recording():
+    original_duration = 1.0  # seconds
+    padded_duration = 2.0  # seconds
+
+    # prepare cut
+    cut = dummy_cut(unique_id=0, with_data=True, duration=original_duration)
+    cut.target_recording = dummy_recording(
+        unique_id=1, duration=cut.duration, with_data=True
+    )
+    target_recording = cut.load_target_recording()
+
+    # prepare padded cut (MixedCut)
+    padded_cut = cut.pad(duration=padded_duration)
+
+    # check the padded cut (MixedCut) has the custom attribute
+    assert padded_cut.has_custom("target_recording")
+
+    # load the audio from the padded cut
+    padded_target_recording = padded_cut.load_target_recording()
+
+    # check the non-padded component is matching
+    np.testing.assert_allclose(
+        padded_target_recording[:, : cut.num_samples], target_recording
+    )
+
+    # check the padded component is zero
+    assert np.all(padded_target_recording[:, cut.num_samples :] == 0)
