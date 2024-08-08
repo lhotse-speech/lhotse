@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from _decimal import ROUND_HALF_UP
 
-from lhotse.audio.backend import info, save_audio, torchaudio_info
+from lhotse.audio.backend import get_current_audio_backend, info, save_audio
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
     AudioLoadingError,
@@ -260,7 +260,7 @@ class Recording:
         :return: a new ``Recording`` instance that owns the byte string data.
         """
         stream = BytesIO(data)
-        audio_info = torchaudio_info(stream)
+        audio_info = get_current_audio_backend().info(stream)
         return Recording(
             id=recording_id,
             sampling_rate=audio_info.samplerate,
