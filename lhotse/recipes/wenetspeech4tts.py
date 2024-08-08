@@ -164,7 +164,7 @@ def prepare_wenetspeech4tts(
                     },
                 )
             )
-
+        recordings = RecordingSet.from_recordings(recordings)
         supervisions = SupervisionSet.from_segments(supervisions)
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
