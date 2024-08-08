@@ -97,15 +97,15 @@ def prepare_wenetspeech4tts(
     with open(corpus_dir / "DNSMOS_P808Scores" / "Basic_DNSMOS.lst") as f:
         for line in f:
             line = line.strip().split()
-            basic_dns_mos_dict[line[0]] = int(line[1])
+            basic_dns_mos_dict[line[0]] = float(line[1])
     with open(corpus_dir / "DNSMOS_P808Scores" / "Premium_DNSMOS.lst") as f:
         for line in f:
             line = line.strip().split()
-            premium_dns_mos_dict[line[0]] = int(line[1])
+            premium_dns_mos_dict[line[0]] = float(line[1])
     with open(corpus_dir / "DNSMOS_P808Scores" / "Standard_DNSMOS.lst") as f:
         for line in f:
             line = line.strip().split()
-            standard_dns_mos_dict[line[0]] = int(line[1])
+            standard_dns_mos_dict[line[0]] = float(line[1])
 
     for part in dataset_parts:
         if manifests_exist(part=part, output_dir=output_dir, prefix="wenetspeech4tts"):
