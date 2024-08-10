@@ -19,7 +19,7 @@ except ImportError:
 
 SPATIAL_LIBRISPEECH = ("train", "test")
 BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/"
-META_DATA_URL = BASE_URL + "metadata.parquet"
+META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/metadata.parquet"
 
 
 def _download_spatial_librispeech_audio_files(
