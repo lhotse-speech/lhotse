@@ -39,7 +39,24 @@ def _download_spatial_librispeech_audio_files(
         part_dir = target_dir / part
         part_dir.mkdir(parents=True, exist_ok=True)
 
-    with ThreadPoolExecutor(num_jobs) as ex:
+    if num_jobs > 1:
+        with ThreadPoolExecutor(num_jobs) as ex:
+            for sample_id, split in tqdm(
+                zip(metadata["sample_id"], metadata["split"]),
+                total=len(metadata["sample_id"]),
+            ):
+                if split not in dataset_parts:
+                    continue
+                recording_path = target_dir / split / f"{sample_id:06}.flac"
+                recording_url = f"{audio_url}/{sample_id:06}.flac"
+                if not recording_path.is_file() or force_download:
+                    ex.submit(
+                        resumable_download,
+                        recording_url,
+                        recording_path,
+                        force_download,
+                    )
+    else:
         for sample_id, split in tqdm(
             zip(metadata["sample_id"], metadata["split"]),
             total=len(metadata["sample_id"]),
@@ -49,12 +66,7 @@ def _download_spatial_librispeech_audio_files(
             recording_path = target_dir / split / f"{sample_id:06}.flac"
             recording_url = f"{audio_url}/{sample_id:06}.flac"
             if not recording_path.is_file() or force_download:
-                ex.submit(
-                    resumable_download,
-                    recording_url,
-                    recording_path,
-                    force_download,
-                )
+                resumable_download(recording_url, recording_path, force_download)
 
 
 def download_spatial_librispeech(
