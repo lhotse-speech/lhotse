@@ -3,6 +3,7 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
+import requests
 from tqdm.auto import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
@@ -22,6 +23,41 @@ BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial
 META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/metadata.parquet"
 
 
+# Implementation from https://github.com/apple/ml-spatial-librispeech/pull/1/
+def download_file(url: str) -> bytes:
+    """This function downloads and returns the content of the given url
+    Args:
+        url (str): the url of the file to be downloaded
+    Raises:
+        e: The exception that is raised by the request module
+    Returns:
+        file_content (bytes): The file content downloaded from the url
+    """
+
+    try:
+        file_content = requests.get(url, allow_redirects=True).content
+        return file_content
+    except requests.exceptions.RequestException as e:
+        raise e
+
+
+# Implementation from https://github.com/apple/ml-spatial-librispeech/pull/1/
+def save_audio_content(target_file: str, file_content: bytes):
+    """This function saves the downloaded content passed via `file_content' in the `target_file'
+    Args:
+        target_file (str): the target path for the file content to be saved to
+        file_content (bytes): the content to be saved
+
+    Raises:
+        e: the IOError raised by the writing operation
+    """
+    try:
+        with open(target_file, "wb") as file:
+            file.write(file_content)
+    except IOError as e:
+        raise e
+
+
 def _download_spatial_librispeech_audio_files(
     target_dir: Pathlike,
     dataset_parts: Sequence[str],
@@ -39,24 +75,6 @@ def _download_spatial_librispeech_audio_files(
         part_dir = target_dir / part
         part_dir.mkdir(parents=True, exist_ok=True)
 
-    if num_jobs > 1:
-        with ThreadPoolExecutor(num_jobs) as ex:
-            for sample_id, split in tqdm(
-                zip(metadata["sample_id"], metadata["split"]),
-                total=len(metadata["sample_id"]),
-            ):
-                if split not in dataset_parts:
-                    continue
-                recording_path = target_dir / split / f"{sample_id:06}.flac"
-                recording_url = f"{audio_url}/{sample_id:06}.flac"
-                if not recording_path.is_file() or force_download:
-                    ex.submit(
-                        resumable_download,
-                        recording_url,
-                        recording_path,
-                        force_download,
-                    )
-    else:
         for sample_id, split in tqdm(
             zip(metadata["sample_id"], metadata["split"]),
             total=len(metadata["sample_id"]),
@@ -66,7 +84,8 @@ def _download_spatial_librispeech_audio_files(
             recording_path = target_dir / split / f"{sample_id:06}.flac"
             recording_url = f"{audio_url}/{sample_id:06}.flac"
             if not recording_path.is_file() or force_download:
-                resumable_download(recording_url, recording_path, force_download)
+                file_content = download_file(recording_url)
+                save_audio_content(recording_path, file_content)
 
 
 def download_spatial_librispeech(
