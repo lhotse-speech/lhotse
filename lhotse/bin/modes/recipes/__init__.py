@@ -68,6 +68,7 @@ from .primewords import *
 from .reazonspeech import *
 from .rir_noise import *
 from .slu import *
+from .spatial_librispeech import *
 from .speechcommands import *
 from .speechio import *
 from .spgispeech import *
