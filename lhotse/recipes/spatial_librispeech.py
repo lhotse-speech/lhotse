@@ -18,9 +18,7 @@ except ImportError:
     )
 
 SPATIAL_LIBRISPEECH = ("train", "test")
-BASE_URL = (
-    "https://download.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/"
-)
+BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/"
 META_DATA_URL = BASE_URL + "metadata.parquet"
 
 
@@ -87,6 +85,8 @@ def download_spatial_librispeech(
         assert part in SPATIAL_LIBRISPEECH, f"Unknown dataset part: {part}"
 
     corpus_dir = target_dir / "Spatial-LibriSpeech"
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+
     completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping download, found {completed_detector}.")
