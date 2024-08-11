@@ -1,5 +1,4 @@
 import logging
-from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
@@ -84,17 +83,16 @@ def _download_spatial_librispeech_audio_files(
         part_dir = target_dir / part
         part_dir.mkdir(parents=True, exist_ok=True)
 
-        with ThreadPoolExecutor(num_jobs) as ex:
-            for sample_id, split in tqdm(
-                zip(metadata["sample_id"], metadata["split"]),
-                total=len(metadata["sample_id"]),
-            ):
-                if split not in dataset_parts:
-                    continue
-                recording_path = target_dir / split / f"{sample_id:06}.flac"
-                recording_url = f"{audio_url}/{sample_id:06}.flac"
-                if not recording_path.exists() or force_download:
-                    ex.submit(_download_and_save_audio, recording_path, recording_url)
+        for sample_id, split in tqdm(
+            zip(metadata["sample_id"], metadata["split"]),
+            total=len(metadata["sample_id"]),
+        ):
+            if split not in dataset_parts:
+                continue
+            recording_path = target_dir / split / f"{sample_id:06}.flac"
+            recording_url = f"{audio_url}/{sample_id:06}.flac"
+            if not recording_path.exists() or force_download:
+                _download_and_save_audio(recording_path, recording_url)
 
 
 def download_spatial_librispeech(
