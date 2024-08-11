@@ -24,6 +24,7 @@ META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/sp
 
 
 # Implementation from https://github.com/apple/ml-spatial-librispeech/pull/1/
+# Use the requests module to avoid the 403 forbidden error
 def download_file(url: str) -> bytes:
     """This function downloads and returns the content of the given url
     Args:
@@ -83,7 +84,7 @@ def _download_spatial_librispeech_audio_files(
                 continue
             recording_path = target_dir / split / f"{sample_id:06}.flac"
             recording_url = f"{audio_url}/{sample_id:06}.flac"
-            if not recording_path.is_file() or force_download:
+            if not recording_path.exists() or force_download:
                 file_content = download_file(recording_url)
                 save_audio_content(recording_path, file_content)
 
