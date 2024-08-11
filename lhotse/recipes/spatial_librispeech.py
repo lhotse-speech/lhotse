@@ -24,7 +24,7 @@ except ImportError:
     )
 
 SPATIAL_LIBRISPEECH = ("train", "test")
-BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/"
+BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1"
 META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/metadata.parquet"
 
 
@@ -77,12 +77,14 @@ def _download_spatial_librispeech_audio_files(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    audio_url = f"{base_url}/ambisonics/"
+    audio_url = f"{base_url}/ambisonics"
+    from concurrent.futures.thread import ThreadPoolExecutor
 
     for part in dataset_parts:
         part_dir = target_dir / part
         part_dir.mkdir(parents=True, exist_ok=True)
 
+    with ThreadPoolExecutor(num_jobs) as ex:
         for sample_id, split in tqdm(
             zip(metadata["sample_id"], metadata["split"]),
             total=len(metadata["sample_id"]),
@@ -92,7 +94,7 @@ def _download_spatial_librispeech_audio_files(
             recording_path = target_dir / split / f"{sample_id:06}.flac"
             recording_url = f"{audio_url}/{sample_id:06}.flac"
             if not recording_path.exists() or force_download:
-                _download_and_save_audio(recording_path, recording_url)
+                ex.submit(_download_and_save_audio, recording_path, recording_url)
 
 
 def download_spatial_librispeech(
@@ -176,6 +178,7 @@ def prepare_spatial_librispeech(
     """
     corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir) if output_dir is not None else corpus_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     if dataset_parts == "all":
@@ -208,6 +211,7 @@ def prepare_spatial_librispeech(
         part_metadata = metadata[metadata["split"] == part]
         for _, row in tqdm(
             part_metadata.iterrows(),
+            total=len(part_metadata["sample_id"]),
             desc=f"Processing supervision segments for split: {part}",
         ):
             recording_id = f"{row['sample_id']:06}"
