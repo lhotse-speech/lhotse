@@ -203,10 +203,6 @@ tests_require = [
     "black==22.3.0",
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
-    "pandas>2.0.0,<2.3.0",
-    "pyarrow==17.0.0",
-    "fastparquet>2023.10.0,<2024.6.0",
-    "requests==2.31.0",
 ]
 orjson_requires = ["orjson>=3.6.6"]
 webdataset_requires = ["webdataset==0.2.5"]

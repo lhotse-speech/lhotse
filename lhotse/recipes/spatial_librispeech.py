@@ -9,20 +9,6 @@ from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
 
-try:
-    import requests
-except ImportError:
-    raise ImportError(
-        "The Spatial LibriSpeech recipe requires requests dependency to download the dataset. You can install the dependency using: pip install requests"
-    )
-
-try:
-    import pandas as pd
-except ImportError:
-    raise ImportError(
-        "The Spatial LibriSpeech recipe requires pandas, pyarrow and fastparquet dependency to parse parquet formatted metadata. You can install the dependencies using: pip install pandas pyarrow fastparquet"
-    )
-
 SPATIAL_LIBRISPEECH = ("train", "test")
 BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1"
 META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/metadata.parquet"
@@ -40,6 +26,14 @@ def _download_and_save_audio(target_file: Pathlike, url: str):
         Returns:
             file_content (bytes): The file content downloaded from the url
         """
+
+        try:
+            import requests
+        except ImportError:
+            raise ImportError(
+                "The Spatial LibriSpeech recipe requires requests dependency to download the dataset. You can install the dependency using: pip install requests"
+            )
+
         try:
             file_content = requests.get(url, allow_redirects=True).content
             return file_content
@@ -66,37 +60,6 @@ def _download_and_save_audio(target_file: Pathlike, url: str):
     _save_audio_content(target_file, file_content)
 
 
-def _download_spatial_librispeech_audio_files(
-    target_dir: Pathlike,
-    dataset_parts: Sequence[str],
-    metadata: pd.DataFrame,
-    base_url: str,
-    force_download: bool = False,
-    num_jobs: int = 1,
-):
-    target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    audio_url = f"{base_url}/ambisonics"
-    from concurrent.futures.thread import ThreadPoolExecutor
-
-    for part in dataset_parts:
-        part_dir = target_dir / part
-        part_dir.mkdir(parents=True, exist_ok=True)
-
-    with ThreadPoolExecutor(num_jobs) as ex:
-        for sample_id, split in tqdm(
-            zip(metadata["sample_id"], metadata["split"]),
-            total=len(metadata["sample_id"]),
-        ):
-            if split not in dataset_parts:
-                continue
-            recording_path = target_dir / split / f"{sample_id:06}.flac"
-            recording_url = f"{audio_url}/{sample_id:06}.flac"
-            if not recording_path.exists() or force_download:
-                ex.submit(_download_and_save_audio, recording_path, recording_url)
-
-
 def download_spatial_librispeech(
     target_dir: Pathlike = ".",
     dataset_parts: Union[str, Sequence[str]] = SPATIAL_LIBRISPEECH,
@@ -113,6 +76,44 @@ def download_spatial_librispeech(
     :param base_url: str, the url of the resource.
     :return: the path to downloaded and extracted directory with data.
     """
+
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ImportError(
+            "The Spatial LibriSpeech recipe requires pandas, pyarrow and fastparquet dependency to parse parquet formatted metadata. You can install the dependencies using: pip install pandas pyarrow fastparquet"
+        )
+
+    def _download_spatial_librispeech_audio_files(
+        target_dir: Pathlike,
+        dataset_parts: Sequence[str],
+        metadata: pd.DataFrame,
+        base_url: str,
+        force_download: bool = False,
+        num_jobs: int = 1,
+    ):
+        target_dir = Path(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        audio_url = f"{base_url}/ambisonics"
+        from concurrent.futures.thread import ThreadPoolExecutor
+
+        for part in dataset_parts:
+            part_dir = target_dir / part
+            part_dir.mkdir(parents=True, exist_ok=True)
+
+        with ThreadPoolExecutor(num_jobs) as ex:
+            for sample_id, split in tqdm(
+                zip(metadata["sample_id"], metadata["split"]),
+                total=len(metadata["sample_id"]),
+            ):
+                if split not in dataset_parts:
+                    continue
+                recording_path = target_dir / split / f"{sample_id:06}.flac"
+                recording_url = f"{audio_url}/{sample_id:06}.flac"
+                if not recording_path.exists() or force_download:
+                    ex.submit(_download_and_save_audio, recording_path, recording_url)
+
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     if dataset_parts == "all":
