@@ -177,6 +177,14 @@ def prepare_spatial_librispeech(
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
+
+    try:
+        import pandas as pd
+    except ImportError:
+        raise ImportError(
+            "The Spatial LibriSpeech recipe requires pandas, pyarrow and fastparquet dependency to parse parquet formatted metadata. You can install the dependencies using: pip install pandas pyarrow fastparquet"
+        )
+
     corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir) if output_dir is not None else corpus_dir
     output_dir.mkdir(parents=True, exist_ok=True)
