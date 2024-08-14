@@ -173,6 +173,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_reazonspeech`
   * - RIRs and Noises Corpus (OpenSLR 28)
     - :func:`lhotse.recipes.prepare_rir_noise`
+  * - Spatial-LibriSpeech
+    - :func:`lhotse.recipes.prepare_spatial_librispeech`
   * - Speech Commands
     - :func:`lhotse.recipes.prepare_speechcommands`
   * - SpeechIO
