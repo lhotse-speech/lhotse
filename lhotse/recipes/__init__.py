@@ -85,6 +85,7 @@ from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .voxconverse import download_voxconverse, prepare_voxconverse
 from .voxpopuli import download_voxpopuli, prepare_voxpopuli
 from .wenet_speech import prepare_wenet_speech
+from .wenetspeech4tts import prepare_wenetspeech4tts
 from .xbmu_amdo31 import download_xbmu_amdo31, prepare_xbmu_amdo31
 from .yesno import download_yesno, prepare_yesno
 
