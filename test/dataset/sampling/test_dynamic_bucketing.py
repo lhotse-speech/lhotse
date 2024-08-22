@@ -731,3 +731,31 @@ def test_dynamic_bucketing_sampler_fixed_batch_constraint():
 
     assert len(batches[7]) == 1
     assert sum(c.duration for c in batches[7]) == 1
+
+
+def test_select_bucket_includes_upper_bound_in_bin():
+    constraint = FixedBucketBatchSizeConstraint(
+        max_seq_len_buckets=[2.0, 4.0], batch_sizes=[2, 1]
+    )
+
+    # within bounds
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=1.0) == 0
+    )
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=2.0) == 0
+    )
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=3.0) == 1
+    )
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=4.0) == 1
+    )
+    constraint.add(dummy_cut(0, duration=4.0))  # can add max duration without exception
+
+    # out of bounds
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=5.0) == 2
+    )
+    with pytest.raises(AssertionError):
+        constraint.add(dummy_cut(0, duration=5.0))
