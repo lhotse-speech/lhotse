@@ -2,7 +2,7 @@ import copy
 import os
 import warnings
 from abc import ABCMeta, abstractmethod
-from bisect import bisect_right
+from bisect import bisect_left
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
@@ -424,7 +424,7 @@ class SamplingConstraint(metaclass=ABCMeta):
         ), f"select_bucket requires either example= or example_len= as the input (we received {example=} and {example_len=})."
         if example_len is None:
             example_len = self.measure_length(example)
-        return bisect_right(buckets, example_len)
+        return bisect_left(buckets, example_len)
 
     def copy(self) -> "SamplingConstraint":
         """Return a shallow copy of this constraint."""

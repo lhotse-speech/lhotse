@@ -1232,3 +1232,27 @@ def test_sampler_map():
     b = batches[1]
     assert len(b) == 1
     assert b[0].duration == 5.0
+
+
+def test_sampler_much_less_data_than_ddp_ranks():
+    world_size = 128
+    orig_cut = dummy_cut(0)
+    cuts = CutSet([orig_cut])
+
+    samplers = [
+        DynamicCutSampler(
+            cuts, max_cuts=256, drop_last=False, world_size=world_size, rank=i
+        )
+        for i in range(world_size)
+    ]
+    # None of the ranks drops anything, all of them return the one cut we have.
+    for sampler in samplers:
+        (batch,) = [b for b in sampler]
+        assert len(batch) == 1
+        (sampled_cut,) = batch
+        assert (
+            sampled_cut.id[: len(orig_cut.id)] == orig_cut.id
+        )  # same stem, possibly added '_dupX' suffix
+        # otherwise the cuts are identical
+        sampled_cut.id = orig_cut.id
+        assert sampled_cut == orig_cut
