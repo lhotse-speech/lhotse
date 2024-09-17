@@ -34,10 +34,13 @@ If you use the corpus or our data preparation scripts, please cite the following
   booktitle={Proc. Interspeech 2024}
 }
 """
+from copy import deepcopy
+from dataclasses import dataclass
 import logging
+from math import inf
+from pathlib import Path
 import re
 import tarfile
-from pathlib import Path
 from typing import Dict, Optional, Union
 
 from tqdm import tqdm
@@ -154,6 +157,8 @@ def prepare_sbcsae(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     geolocation: Optional[bool] = False,
+    export_alignments: Optional[bool] = True,
+    fix_transcripts: Optional[bool] = True,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepares manifest for SBCSAE dataset.
@@ -239,6 +244,21 @@ def prepare_sbcsae(
         supervisions.to_file(output_dir / "sbcsae_supervisions.jsonl.gz")
 
     manifests = {"recordings": recordings, "supervisions": supervisions}
+
+    if export_alignments:
+        asr_supervisions, diar_supervisions = apply_aligned_stms(list(recordings.ids), supervisions,
+                                                                 change_text=fix_transcripts)
+        _, asr_supervisions = fix_manifests(recordings, asr_supervisions)
+        _, diar_supervisions = fix_manifests(recordings, diar_supervisions)
+
+        asr_supervisions.to_file(output_dir / "sbcsae_supervisions_asr_aligned.jsonl.gz")
+        diar_supervisions.to_file(output_dir / "sbcsae_supervisions_diar_aligned.jsonl.gz")
+
+        manifests = {
+            "asr_supervisions": asr_supervisions,
+            "diar_supervisions": diar_supervisions,
+            **manifests
+        }
 
     return manifests
 
@@ -960,3 +980,140 @@ def _parse_raw_transcript(transcript: str):
     #    transcript = transcript.replace(" L2>", "")
 
     return transcript, lang_tag
+
+
+@dataclass
+class StmSegment:
+    recording_id: str
+    speaker: str
+    start: float
+    end: float
+    text: str
+    channel: str = "1"
+
+
+def parse_stm_file(data: str) -> list[StmSegment]:
+    lines = data.split("\n")
+    stm_segments = []
+
+    for line in lines:
+        if not line:
+            continue
+
+        fields = line.strip().split()
+        reco_id, channel, speaker = fields[:3]
+        start, end = [float(time) for time in fields[3:5]]
+        text = " ".join(fields[5:])
+
+        stm_segments.append(
+            StmSegment(recording_id=reco_id, speaker=speaker, start=start, end=end, text=text, channel=channel)
+        )
+
+    return stm_segments
+
+
+def retrieve_stm_file(url) -> list[StmSegment]:
+    import urllib.request
+
+    response = urllib.request.urlopen(url)
+    data = response.read().decode("utf-8")
+
+    return parse_stm_file(data)
+
+
+def norm_txt(text: str):
+    text = text.strip()
+    text = text.lower()
+    return text
+
+
+def compute_iou(seg1: SupervisionSegment, seg2: StmSegment) -> float:
+    start = max(seg1.start, seg2.start)
+    end = min(seg1.end, seg2.end)
+
+    intersection = max(0.0, end - start)
+    union = (seg1.end - seg1.start) + (seg2.end - seg2.start) - intersection
+
+    return intersection / union
+
+
+def apply_stm(recording_ids: list[str], supervisions: SupervisionSet, aligned_stm_segs: list[StmSegment],
+              change_text: bool = False) -> SupervisionSet:
+
+    if not is_module_available("intervaltree"):
+        raise ImportError(
+            "intervaltree package not found. Please install..." " (pip install intervaltree)"
+        )
+    else:
+        from intervaltree import IntervalTree
+
+    if not is_module_available("jiwer"):
+        raise ImportError(
+            "jiwer package not found. Please install..." " (pip install jiwer==3.0.4)"
+        )
+    else:
+        from jiwer import cer
+
+    sset = deepcopy(supervisions)
+
+    per_rec_its = {}
+    for rid in recording_ids:
+        per_rec_its[rid] = IntervalTree()
+    for stm_seg in tqdm(aligned_stm_segs, desc="Building interval tree..."):
+        per_rec_its[stm_seg.recording_id][stm_seg.start:stm_seg.end] = stm_seg
+
+    for s in tqdm(sset, desc="Applying STM..."):
+        # We need to find the closest and best-matching segment.
+        # Some labeled segments were misplaced a lot and fixed by manual post-processing.
+        # Hence, in order to find a good match, we tuned collar value to find all matches.
+        # Example: 451 seconds, SBC027 recording.
+        collar = 2.0
+        matching_segments = list(filter(lambda x: x.data.speaker == s.speaker, per_rec_its[s.recording_id][s.start-collar:s.end+collar]))
+        # Alignments used slightly different speaker IDs for UNK speakers, so we relax the speaker ID matching.
+        if not matching_segments:
+            matching_segments = per_rec_its[s.recording_id][s.start-collar:s.end+collar]
+
+        best_cer = inf
+        best_cer_res = None
+        best_matching_seg = None
+        best_iou = 0.0
+
+        for matching_seg in matching_segments:
+            cer_res = cer(norm_txt(s.text), norm_txt(matching_seg.data.text), return_dict=True)
+            cer_val = cer_res["cer"]
+
+            if cer_val < best_cer:
+                best_cer = cer_val
+                best_cer_res = cer_res
+                best_matching_seg = matching_seg
+                best_iou = compute_iou(s, matching_seg.data)
+
+            # There's been an update between the alignments and the lhotse recipe, so some UNK speakers have shifted IDs.
+            # It's enough to match the speaker names (or UNK).
+            if cer_val == best_cer and matching_seg.data.speaker.split("_")[1] == s.speaker.split("_")[1]:
+                current_iou = compute_iou(s, matching_seg.data)
+                if current_iou >= best_iou:
+                    best_matching_seg = matching_seg
+                    best_cer_res = cer_res
+                    best_iou = current_iou
+
+        if s.speaker.split("_")[1] == best_matching_seg.data.speaker.split("_")[1] and best_cer_res["substitutions"] == best_cer_res["deletions"] == 0 and (best_cer < 0.5 or len(s.text) < 3):
+            s.start = best_matching_seg.data.start
+            s.duration = best_matching_seg.data.end - best_matching_seg.data.start
+            if change_text:
+                s.text = best_matching_seg.data.text
+
+            per_rec_its[s.recording_id].remove(best_matching_seg)
+
+    return sset
+
+
+def apply_aligned_stms(recording_ids: list[str], processed_supervisions: SupervisionSet,
+                       change_text: bool = False) -> tuple[SupervisionSet, SupervisionSet]:
+    aligned_for_asr_stm = retrieve_stm_file("https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_asr.stm")
+    aligned_for_diar_stm = retrieve_stm_file("https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_diar.stm")
+
+    asr_sup = apply_stm(recording_ids, processed_supervisions, aligned_for_asr_stm, change_text)
+    diar_sup = apply_stm(recording_ids, processed_supervisions, aligned_for_diar_stm, change_text)
+
+    return asr_sup, diar_sup
