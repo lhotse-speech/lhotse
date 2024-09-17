@@ -126,7 +126,10 @@ def prepare_ksponspeech(
         for part in tqdm(dataset_parts, desc="Dataset parts"):
             logging.info(f"Processing KsponSpeech subset: {part}")
             if manifests_exist(
-                part=part, output_dir=output_dir, prefix="ksponspeech", suffix="jsonl.gz"
+                part=part,
+                output_dir=output_dir,
+                prefix="ksponspeech",
+                suffix="jsonl.gz",
             ):
                 logging.info(f"KsponSpeech subset: {part} already prepared - skipping.")
                 continue
