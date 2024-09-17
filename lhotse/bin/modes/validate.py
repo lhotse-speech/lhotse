@@ -19,7 +19,11 @@ def validate_(manifest: Pathlike, read_data: bool):
     from lhotse import load_manifest, validate
 
     data = load_manifest(manifest)
-    validate(data, read_data=read_data)
+    try:
+        validate(data, read_data=read_data)
+    except AssertionError as e:
+        click.echo(f"Validation failed: {e}")
+        return 1
 
 
 @cli.command(name="validate-pair")
@@ -40,9 +44,13 @@ def validate_(recordings: Pathlike, supervisions: Pathlike, read_data: bool):
 
     recs = load_manifest(recordings)
     sups = load_manifest(supervisions)
-    validate_recordings_and_supervisions(
-        recordings=recs, supervisions=sups, read_data=read_data
-    )
+    try:
+        validate_recordings_and_supervisions(
+            recordings=recs, supervisions=sups, read_data=read_data
+        )
+    except AssertionError as e:
+        click.echo(f"Validation failed: {e}")
+        return 1
 
 
 @cli.command(name="fix")

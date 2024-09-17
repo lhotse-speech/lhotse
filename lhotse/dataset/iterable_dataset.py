@@ -2,6 +2,8 @@ import warnings
 
 import torch
 
+from lhotse import CutSet
+from lhotse.dataset.dataloading import get_rank, get_world_size
 from lhotse.dataset.sampling.base import CutSampler
 
 
@@ -93,9 +95,23 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
 
     def __next__(self) -> dict:
         try:
-            return self.dataset[next(self._sampler_iter)]
+            sampled = next(self._sampler_iter)
+            self._update_dataloading_info(sampled)
+            return self.dataset[sampled]
         except StopIteration:
             if self.auto_increment_epoch:
                 self.set_epoch(self.epoch + 1)
             self._sampler_iter = None
             raise
+
+    def _update_dataloading_info(self, cuts: CutSet) -> None:
+        rank = get_rank()
+        world_size = get_world_size()
+        for c in cuts:
+            # dataloading_info is attached by the sampler to each cut
+            # we need to update it here, because with iterable datasets
+            # samplers typically act as if rank=0 and world_size=1
+            # and data de-duplication / per node+worker shuffling
+            # happens elsewhere.
+            c.dataloading_info["rank"] = rank
+            c.dataloading_info["world_size"] = world_size

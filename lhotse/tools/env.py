@@ -1,11 +1,20 @@
+import logging
 import os
 import sys
 from pathlib import Path
 
 
-def default_tools_cachedir() -> Path:
+def default_tools_cachedir(force_mkdir: bool = False) -> Path:
     d = Path.home() / ".lhotse/tools"
-    d.mkdir(exist_ok=True, parents=True)
+    try:
+        d.mkdir(exist_ok=True, parents=True)
+    except OSError:
+        if force_mkdir:
+            raise
+        else:
+            logging.warning(
+                f"We couldn't create lhotse utilities directory: {d} (not enough space/no permissions?)"
+            )
     return d
 
 

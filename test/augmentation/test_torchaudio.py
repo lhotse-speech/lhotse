@@ -12,16 +12,12 @@ torchaudio = pytest.importorskip("torchaudio", minversion="0.6")
 from lhotse import MonoCut, Recording, Seconds
 from lhotse.augmentation import (
     AudioTransform,
+    Narrowband,
     Resample,
     ReverbWithImpulseResponse,
-    SoxEffectTransform,
     Speed,
     Tempo,
     Volume,
-    pitch,
-    reverb,
-    speed,
-    volume,
 )
 from lhotse.augmentation.utils import FastRandomRIRGenerator
 from lhotse.testing.random import deterministic_rng
@@ -68,51 +64,6 @@ def mono_rir():
 @pytest.fixture(scope="module")
 def multi_channel_rir():
     return Recording.from_file("test/fixtures/rir/real_8ch.wav")
-
-
-@pytest.mark.parametrize(
-    "audio, effect",
-    [
-        ("mono_audio", reverb),
-        ("mono_audio", pitch),
-        ("mono_audio", speed),
-        ("mono_audio", volume),
-        pytest.param("multi_channel_audio", reverb, marks=pytest.mark.xfail),
-        ("multi_channel_audio", pitch),
-        ("multi_channel_audio", speed),
-        ("multi_channel_audio", volume),
-    ],
-)
-def test_example_augmentation(audio, effect, request):
-    audio = request.getfixturevalue(audio)
-    augment_fn = SoxEffectTransform(effects=effect(SAMPLING_RATE))
-    augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
-    assert augmented_audio.shape == audio.shape
-    assert augmented_audio != audio
-
-
-@pytest.mark.parametrize("audio", ["mono_audio", "multi_channel_audio"])
-def test_speed_does_not_change_num_samples(audio, request):
-    audio = request.getfixturevalue(audio)
-    augment_fn = SoxEffectTransform(effects=speed(SAMPLING_RATE))
-    # Since speed() is not deterministic and between 0.9x - 1.1x, multiple invocations
-    # will yield either slower (more samples) or faster (less samples) signal.
-    # The truncation/padding is performed inside of SoxEffectTransform so the user should not
-    # see these changes.
-    for _ in range(10):
-        augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
-        assert augmented_audio.shape == audio.shape
-        assert augmented_audio != audio
-
-
-@pytest.mark.parametrize("audio", ["mono_audio", "multi_channel_audio"])
-def test_volume_does_not_change_num_samples(audio, request):
-    audio = request.getfixturevalue(audio)
-    augment_fn = SoxEffectTransform(effects=volume(SAMPLING_RATE))
-    for _ in range(10):
-        augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
-        assert augmented_audio.shape == audio.shape
-        assert augmented_audio != audio
 
 
 @pytest.mark.parametrize("early_only", [True, False])
@@ -252,6 +203,9 @@ def test_resample(mono_audio, sampling_rate):
     assert resampled.shape == (1, sampling_rate)
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_tempo(mono_audio):
     tempo = Tempo(factor=1.1)
     perturbed = tempo(mono_audio, SAMPLING_RATE)
@@ -313,3 +267,11 @@ def test_augmentation_chain_randomized(
         recording=recording_aug,
     )
     assert cut_aug.load_audio().shape[1] == cut_aug.num_samples
+
+
+def test_narrowband(mono_audio):
+    narrowband = Narrowband(
+        codec="mulaw", source_sampling_rate=SAMPLING_RATE, restore_orig_sr=True
+    )
+    nb = narrowband(mono_audio, SAMPLING_RATE)
+    assert nb.shape == mono_audio.shape

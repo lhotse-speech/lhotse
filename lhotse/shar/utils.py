@@ -11,14 +11,6 @@ Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
 
 def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manifest:
     if isinstance(manifest, Recording):
-        kwargs = (
-            {}
-            if cut is None
-            else dict(
-                duration=cut.duration,
-                num_samples=compute_num_samples(cut.duration, manifest.sampling_rate),
-            )
-        )
         return fastcopy(
             manifest,
             # Creates a single AudioSource out of multiple ones.
@@ -27,18 +19,35 @@ def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manife
             ],
             # Removes the transform metadata because they were already executed.
             transforms=None,
-            **kwargs,
+            duration=cut.duration if cut is not None else manifest.duration,
+            num_samples=compute_num_samples(cut.duration, manifest.sampling_rate)
+            if cut is not None
+            else manifest.num_samples,
         )
-    # TODO: modify Features/TemporalArray's start/duration/num_frames if needed to match the Cut (in case we read subset of array)
-    elif isinstance(manifest, (Array, Features)):
+    elif isinstance(manifest, Array):
         return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")
+    elif isinstance(manifest, Features):
+        return fastcopy(
+            manifest,
+            start=0,
+            duration=cut.duration if cut is not None else manifest.duration,
+            storage_type="shar",
+            storage_path="",
+            storage_key="",
+        )
     elif isinstance(manifest, TemporalArray):
         return fastcopy(
             manifest,
+            start=0,
             array=fastcopy(
-                manifest.array, storage_type="shar", storage_path="", storage_key=""
+                manifest.array,
+                storage_type="shar",
+                storage_path="",
+                storage_key="",
             ),
         )
+    else:
+        raise RuntimeError(f"Unexpected manifest type: {type(manifest)}")
 
 
 def fill_shar_placeholder(

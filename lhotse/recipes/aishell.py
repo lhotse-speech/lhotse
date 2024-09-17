@@ -135,7 +135,9 @@ def prepare_aishell(
                 channel=0,
                 language="Chinese",
                 speaker=speaker,
-                text=text.strip(),
+                text=text.strip().replace(" ", ""),
+                # here we remove the space between words in the text
+                # in advance.
             )
             supervisions.append(segment)
 

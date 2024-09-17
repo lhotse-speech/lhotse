@@ -15,9 +15,10 @@ from lhotse.features.kaldi.layers import (
     _get_strided_batch,
     _get_strided_batch_streaming,
 )
+from lhotse.testing.random import deterministic_rng
 
 
-def test_wav2win():
+def test_wav2win(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2Win()
     y, _ = t(x)
@@ -25,7 +26,7 @@ def test_wav2win():
     assert y.dtype == torch.float32
 
 
-def test_wav2fft():
+def test_wav2fft(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2FFT()
     y = t(x)
@@ -33,7 +34,7 @@ def test_wav2fft():
     assert y.dtype == torch.complex64
 
 
-def test_wav2spec():
+def test_wav2spec(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2Spec()
     y = t(x)
@@ -41,7 +42,7 @@ def test_wav2spec():
     assert y.dtype == torch.float32
 
 
-def test_wav2logspec():
+def test_wav2logspec(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2LogSpec()
     y = t(x)
@@ -49,7 +50,7 @@ def test_wav2logspec():
     assert y.dtype == torch.float32
 
 
-def test_wav2logfilterbank():
+def test_wav2logfilterbank(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2LogFilterBank()
     y = t(x)
@@ -57,7 +58,7 @@ def test_wav2logfilterbank():
     assert y.dtype == torch.float32
 
 
-def test_wav2mfcc():
+def test_wav2mfcc(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2MFCC()
     y = t(x)
@@ -65,7 +66,7 @@ def test_wav2mfcc():
     assert y.dtype == torch.float32
 
 
-def test_wav2win_is_torchscriptable():
+def test_wav2win_is_torchscriptable(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = torch.jit.script(Wav2Win())
     y, _ = t(x)
@@ -73,7 +74,7 @@ def test_wav2win_is_torchscriptable():
     assert y.dtype == torch.float32
 
 
-def test_wav2fft_is_torchscriptable():
+def test_wav2fft_is_torchscriptable(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = torch.jit.script(Wav2FFT())
     y = t(x)
@@ -81,7 +82,7 @@ def test_wav2fft_is_torchscriptable():
     assert y.dtype == torch.complex64
 
 
-def test_wav2spec_is_torchscriptable():
+def test_wav2spec_is_torchscriptable(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = torch.jit.script(Wav2Spec())
     y = t(x)
@@ -89,7 +90,7 @@ def test_wav2spec_is_torchscriptable():
     assert y.dtype == torch.float32
 
 
-def test_wav2logspec_is_torchscriptable():
+def test_wav2logspec_is_torchscriptable(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = torch.jit.script(Wav2LogSpec())
     y = t(x)
@@ -97,7 +98,7 @@ def test_wav2logspec_is_torchscriptable():
     assert y.dtype == torch.float32
 
 
-def test_wav2logfilterbank_is_torchscriptable():
+def test_wav2logfilterbank_is_torchscriptable(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = torch.jit.script(Wav2LogFilterBank())
     y = t(x)
@@ -105,7 +106,7 @@ def test_wav2logfilterbank_is_torchscriptable():
     assert y.dtype == torch.float32
 
 
-def test_wav2mfcc_is_torchscriptable():
+def test_wav2mfcc_is_torchscriptable(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = torch.jit.script(Wav2MFCC())
     y = t(x)
@@ -113,7 +114,7 @@ def test_wav2mfcc_is_torchscriptable():
     assert y.dtype == torch.float32
 
 
-def test_strided_waveform_batch_streaming_snip_edges_false():
+def test_strided_waveform_batch_streaming_snip_edges_false(deterministic_rng):
     x = torch.arange(16000).unsqueeze(0)
     window_length = 400
     window_shift = 160
@@ -158,7 +159,7 @@ def test_strided_waveform_batch_streaming_snip_edges_false():
     torch.testing.assert_allclose(y_online, y)
 
 
-def test_strided_waveform_batch_streaming_snip_edges_true():
+def test_strided_waveform_batch_streaming_snip_edges_true(deterministic_rng):
     x = torch.arange(16000).unsqueeze(0)
     window_length = 400
     window_shift = 160
@@ -199,7 +200,7 @@ def test_strided_waveform_batch_streaming_snip_edges_true():
     torch.testing.assert_allclose(y_online, y)
 
 
-def test_wav2win_streaming():
+def test_wav2win_streaming(deterministic_rng):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = Wav2Win()
     window_length = 400
@@ -243,7 +244,7 @@ def test_wav2win_streaming():
         (Wav2MFCC, 13),
     ],
 )
-def test_wav2logfilterbank_streaming(layer_type, feat_dim):
+def test_wav2logfilterbank_streaming(deterministic_rng, layer_type, feat_dim):
     x = torch.randn(1, 16000, dtype=torch.float32)
     t = layer_type()
     window_length = 400

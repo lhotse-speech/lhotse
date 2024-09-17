@@ -15,18 +15,19 @@ class TarIterator:
     """
     TarIterator is a convenience class for reading arrays/audio stored in Lhotse Shar tar files.
     It is specific to Lhotse Shar format and expects the tar file to have the following structure:
-    - each file is stored in a separate tar member
-    - the file name is the key of the array
-    - every array has two corresponding files:
-        - the metadata: the file extension is ``.json`` and the file contains
+
+    * each file is stored in a separate tar member
+    * the file name is the key of the array
+    * every array has two corresponding files:
+        * the metadata: the file extension is ``.json`` and the file contains
           a Lhotse manifest (Recording, Array, TemporalArray, Features)
           for the data item.
-        - the data: the file extension is the format of the array,
+        * the data: the file extension is the format of the array,
           and the file contents are the serialized array (possibly compressed).
-        - the data file can be empty in case some cut did not contain that field.
+        * the data file can be empty in case some cut did not contain that field.
           In that case, the data file has extension ``.nodata`` and the manifest file
           has extension ``.nometa``.
-        - these files are saved one after another, the data is first, and the metadata follows.
+        * these files are saved one after another, the data is first, and the metadata follows.
 
     Iterating over TarReader yields tuples of ``(Optional[manifest], filename)`` where
     ``manifest`` is a Lhotse manifest with binary data attached to it, and ``filename``

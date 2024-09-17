@@ -1,15 +1,17 @@
 import itertools
 import json
+import os
 import sys
 import warnings
 from codecs import StreamReader, StreamWriter
+from functools import lru_cache
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import yaml
 
-from lhotse.utils import Pathlike, is_module_available
+from lhotse.utils import Pathlike, SmartOpen, is_module_available, is_valid_url
 from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
@@ -28,7 +30,8 @@ def open_best(path: Pathlike, mode: str = "r"):
     either stdin or stdout depending on the mode.
     The concept is similar to Kaldi's "generalized pipes", but uses WebDataset syntax.
     """
-    if str(path) == "-":
+    strpath = str(path)
+    if strpath == "-":
         if mode == "r":
             return StdStreamWrapper(sys.stdin)
         elif mode == "w":
@@ -41,22 +44,35 @@ def open_best(path: Pathlike, mode: str = "r"):
     if isinstance(path, (BytesIO, StringIO, StreamWriter, StreamReader)):
         return path
 
-    if str(path).startswith("pipe:"):
+    if strpath.startswith("pipe:"):
         return open_pipe(path[5:], mode)
 
-    if is_module_available("smart_open"):
-        from smart_open import smart_open
+    if strpath.startswith("ais://"):
+        return open_aistore(path, mode)
 
-        # This will work with JSONL anywhere that smart_open supports, e.g. cloud storage.
-        open_fn = smart_open
-    else:
-        compressed = str(path).endswith(".gz")
-        if compressed and "t" not in mode and "b" not in mode:
+    if is_valid_url(strpath):
+        if is_aistore_available():
+            return open_aistore(path, mode)
+        elif is_module_available("smart_open"):
+            return SmartOpen.open(path, mode)
+        else:
+            raise ValueError(
+                f"In order to open URLs/URIs please run 'pip install smart_open' "
+                f"(if you're trying to use AIStore, either the Python SDK is not installed (pip install aistore) "
+                f"or {AIS_ENDPOINT_ENVVAR} is not defined."
+            )
+
+    if is_module_available("smart_open"):
+        return SmartOpen.open(path, mode)
+
+    compressed = strpath.endswith(".gz")
+    if compressed:
+        if "t" not in mode and "b" not in mode:
             # Opening as bytes not requested explicitly, use "t" to tell gzip to handle unicode.
             mode = mode + "t"
-        open_fn = gzip_open_robust if compressed else open
+        return gzip_open_robust(path, mode)
 
-    return open_fn(path, mode)
+    return open(path, mode)
 
 
 def open_pipe(cmd: str, mode: str):
@@ -67,6 +83,39 @@ def open_pipe(cmd: str, mode: str):
     from lhotse.utils import Pipe
 
     return Pipe(cmd, mode=mode, shell=True, bufsize=8092)
+
+
+AIS_ENDPOINT_ENVVAR = "AIS_ENDPOINT"
+
+
+@lru_cache
+def is_aistore_available() -> bool:
+    return AIS_ENDPOINT_ENVVAR in os.environ and is_valid_url(
+        os.environ[AIS_ENDPOINT_ENVVAR]
+    )
+
+
+@lru_cache
+def get_aistore_client():
+    if not is_module_available("aistore"):
+        raise ImportError(
+            "Please run 'pip install aistore' in order to read data from AIStore."
+        )
+    if not is_aistore_available():
+        raise ValueError(
+            "Set a valid URL as AIS_ENDPOINT environment variable's value to read data from AIStore."
+        )
+    from aistore import Client
+
+    endpoint_url = os.environ["AIS_ENDPOINT"]
+    return Client(endpoint_url)
+
+
+def open_aistore(uri: str, mode: str):
+    assert "r" in mode, "We only support reading from AIStore at this time."
+    client = get_aistore_client()
+    object = client.fetch_object_by_url(uri)
+    return object.get().raw()
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:

@@ -134,29 +134,6 @@ def trim_to_supervisions(
     Splits each input cut into as many cuts as there are supervisions.
     These cuts have identical start times and durations as the supervisions.
     When there are overlapping supervisions, they can be kept or discarded with options.
-
-    \b
-    For example, the following cut:
-                Cut
-        |-----------------|
-         Sup1
-        |----|  Sup2
-           |-----------|
-
-    \b
-    is transformed into two cuts:
-         Cut1
-        |----|
-         Sup1
-        |----|
-           Sup2
-           |-|
-                Cut2
-           |-----------|
-           Sup1
-           |-|
-                Sup2
-           |-----------|
     """
     cuts = CutSet.from_file(cuts)
 

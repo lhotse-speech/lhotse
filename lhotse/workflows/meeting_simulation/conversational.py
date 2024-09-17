@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Union
 import numpy as np
 from tqdm import tqdm
 
-from lhotse import RecordingSet, SupervisionSet
+from lhotse import RecordingSet, SupervisionSet, dill_enabled
 from lhotse.cut import CutSet, MixedCut, MixTrack
 from lhotse.cut.set import mix
 from lhotse.parallel import parallel_map
@@ -88,6 +88,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         hist, bin_edges = np.histogram(values, bins=100, density=True)
         return rv_histogram((hist, bin_edges))
 
+    @dill_enabled(True)
     def fit(self, meetings: Optional[SupervisionSet] = None) -> None:
         """
         Learn the distribution of the meeting parameters from a given dataset.
@@ -178,7 +179,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         ]
         diff_spk_bernoulli = self.bernoulli.rvs(p=self.prob_diff_spk_overlap, size=N)
 
-        utterances = list(utterances.data.values())
+        utterances = list(utterances)
         # First sample offsets for each utterance. These are w.r.t. start of the meeting.
         # For each subsequent utterance, we sample a pause or overlap time from the
         # corresponding distribution. Then, we add the pause/overlap time to the offset
@@ -261,6 +262,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         tracks = sorted(tracks, key=lambda x: x.offset)
         return MixedCut(id=str(uuid4()), tracks=tracks)
 
+    @dill_enabled(True)
     def simulate(
         self,
         cuts: CutSet,

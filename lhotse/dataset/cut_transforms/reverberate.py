@@ -10,8 +10,7 @@ class ReverbWithImpulseResponse:
     response with some probability :attr:`p`.
     The impulse response is chosen randomly from a specified CutSet of RIRs :attr:`rir_cuts`.
     If no RIRs are specified, we will generate them using a fast random generator (https://arxiv.org/abs/2208.04101).
-    If `early_only` is set to True, convolution is performed only with the first 50ms of
-        the impulse response.
+    If `early_only` is set to True, convolution is performed only with the first 50ms of the impulse response.
     """
 
     def __init__(
@@ -34,7 +33,7 @@ class ReverbWithImpulseResponse:
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.random is None:
-            self.random = random
+            self.random = random.Random()
         return CutSet.from_cuts(
             cut.reverb_rir(
                 rir_recording=self.random.choice(self.rir_recordings)

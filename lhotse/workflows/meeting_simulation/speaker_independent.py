@@ -6,7 +6,8 @@ from typing import List, Optional, Union
 import numpy as np
 from tqdm import tqdm
 
-from lhotse import RecordingSet, SupervisionSet
+import lhotse
+from lhotse import RecordingSet, SupervisionSet, dill_enabled
 from lhotse.cut import CutSet, MixedCut, MixTrack
 from lhotse.cut.set import mix
 from lhotse.parallel import parallel_map
@@ -51,6 +52,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
     def __repr__(self):
         return self.__class__.__name__ + f"(loc={self.loc}, scale={self.scale})"
 
+    @dill_enabled(True)
     def fit(self, meetings: Optional[SupervisionSet] = None) -> None:
         """
         Learn the distribution of the meeting parameters from a given dataset.
@@ -102,7 +104,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             zip(utterances, silence_durations)
         ):
             # Get list of cuts from CutSet
-            spk_utterances = list(spk_utterances.data.values())
+            spk_utterances = list(spk_utterances)
             track = spk_utterances[0]
             for sil, utt in zip(spk_silences[1:], spk_utterances[1:]):
                 track = mix(track, utt, offset=track.duration + sil, allow_padding=True)
@@ -113,6 +115,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             tracks.append(track)
         return MixedCut(id=str(uuid4()), tracks=tracks)
 
+    @dill_enabled(True)
     def simulate(
         self,
         cuts: CutSet,

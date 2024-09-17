@@ -51,7 +51,7 @@ The Activity Detection module provides tools for detecting activity in audio rec
     .../librispeech_recordings_train-clean-5.jsonl.gz
     ```
 
-## Trubleshooting
+## Troubleshooting
 
 If you encounter the following errors while running the activity detection.
 

@@ -2,16 +2,27 @@ import logging
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from decimal import ROUND_DOWN
-from functools import partial
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 import torch
 from intervaltree import IntervalTree
 
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
+from lhotse.custom import CustomFieldMixin
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
 from lhotse.features.io import FeaturesWriter
@@ -22,10 +33,10 @@ from lhotse.utils import (
     Seconds,
     TimeSpan,
     add_durations,
+    asdict_nonull,
     compute_num_frames,
     compute_num_samples,
     fastcopy,
-    ifnone,
     measure_overlap,
     overlaps,
     overspans,
@@ -36,7 +47,7 @@ from lhotse.utils import (
 
 
 @dataclass
-class DataCut(Cut, metaclass=ABCMeta):
+class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
     """
     :class:`~lhotse.cut.DataCut` is a base class for cuts that point to actual audio data.
     It can be either a :class:`~lhotse.cut.MonoCut` or a :class:`~lhotse.cut.MultiCut`.
@@ -71,109 +82,41 @@ class DataCut(Cut, metaclass=ABCMeta):
     # Store anything else the user might want.
     custom: Optional[Dict[str, Any]] = None
 
-    def __setattr__(self, key: str, value: Any) -> None:
+    def to_dict(self) -> dict:
+        d = asdict_nonull(self)
+        if self.has_recording:
+            d["recording"] = self.recording.to_dict()
+        if self.custom is not None:
+            for k, v in self.custom.items():
+                if isinstance(v, Recording):
+                    d["custom"][k] = v.to_dict()
+        return {**d, "type": type(self).__name__}
+
+    def iter_data(
+        self,
+    ) -> Generator[
+        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+    ]:
         """
-        This magic function is called when the user tries to set an attribute.
-        We use it as syntactic sugar to store custom attributes in ``self.custom``
-        field, so that they can be (de)serialized later.
-        Setting a ``None`` value will remove the attribute from ``custom``.
+        Iterate over each data piece attached to this cut.
+        Returns a generator yielding tuples of ``(key, manifest)``, where
+        ``key`` is the name of the attribute under which ``manifest`` is found.
+        ``manifest`` is of type :class:`~lhotse.Recording`, :class:`~lhotse.Features`,
+        :class:`~lhotse.TemporalArray`, or :class:`~lhotse.Array`.
+
+        For example, if ``key`` is ``recording``, then ``manifest`` is ``self.recording``.
         """
-        if key in self.__dataclass_fields__:
-            super().__setattr__(key, value)
-        else:
-            custom = ifnone(self.custom, {})
-            if value is None:
-                custom.pop(key, None)
-            else:
-                custom[key] = value
-            if custom:
-                self.custom = custom
+        if self.has_recording:
+            yield "recording", self.recording
+        if self.has_features:
+            yield "features", self.features
+        for k, v in (self.custom or {}).items():
+            if isinstance(v, (Recording, Features, Array, TemporalArray)):
+                yield k, v
 
-    def __getattr__(self, name: str) -> Any:
-        """
-        This magic function is called when the user tries to access an attribute
-        of :class:`.MonoCut` that doesn't exist. It is used for accessing the custom
-        attributes of cuts.
-
-        We use it to look up the ``custom`` field: when it's None or empty,
-        we'll just raise AttributeError as usual.
-        If ``item`` is found in ``custom``, we'll return ``custom[item]``.
-        If ``item`` starts with "load_", we'll assume the name of the relevant
-        attribute comes after that, and that value of that field is of type
-        :class:`~lhotse.array.Array` or :class:`~lhotse.array.TemporalArray`.
-        We'll return its ``load`` method to call by the user.
-
-        Example of attaching and reading an alignment as TemporalArray::
-
-            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
-            >>> cut.alignment = TemporalArray(...)
-            >>> ali = cut.load_alignment()
-
-        """
-        custom = self.custom
-        if custom is None:
-            raise AttributeError(f"No such attribute: {name}")
-        if name in custom:
-            # Somebody accesses raw [Temporal]Array manifest
-            # or wrote a custom piece of metadata into MonoCut.
-            return self.custom[name]
-        elif name.startswith("load_"):
-            # Return the method for loading [Temporal]Arrays,
-            # to be invoked by the user.
-            attr_name = name[5:]
-            return partial(self.load_custom, attr_name)
-        raise AttributeError(f"No such attribute: {name}")
-
-    def __delattr__(self, key: str) -> None:
-        """Used to support ``del cut.custom_attr`` syntax."""
-        if key in self.__dataclass_fields__:
-            super().__delattr__(key)
-        if self.custom is None or key not in self.custom:
-            raise AttributeError(f"No such member: '{key}'")
-        del self.custom[key]
-
-    def load_custom(self, name: str) -> np.ndarray:
-        """
-        Load custom data as numpy array. The custom data is expected to have
-        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
-        :class:`~lhotse.array.TemporalArray` manifest.
-
-        .. note:: It works with Array manifests stored via attribute assignments,
-            e.g.: ``cut.my_custom_data = Array(...)``.
-
-        :param name: name of the custom attribute.
-        :return: a numpy array with the data.
-        """
-        from lhotse.array import Array, TemporalArray
-
-        value = self.custom.get(name)
-        if isinstance(value, Array):
-            # Array does not support slicing.
-            return value.load()
-        elif isinstance(value, TemporalArray):
-            # TemporalArray supports slicing.
-            return value.load(start=self.start, duration=self.duration)
-        elif isinstance(value, Recording):
-            # Recording supports slicing.
-            return value.load_audio(
-                channels=self.channel, offset=self.start, duration=self.duration
-            )
-        else:
-            raise ValueError(
-                f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
-                f"defined, and its value has to be a manifest of type Array or TemporalArray."
-            )
-
-    def has_custom(self, name: str) -> bool:
-        """
-        Check if the Cut has a custom attribute with name ``name``.
-
-        :param name: name of the custom attribute.
-        :return: a boolean.
-        """
-        if self.custom is None:
-            return False
-        return name in self.custom
+    @property
+    def is_in_memory(self) -> bool:
+        return any(v.is_in_memory for k, v in self.iter_data())
 
     @property
     def recording_id(self) -> str:
@@ -419,6 +362,35 @@ class DataCut(Cut, metaclass=ABCMeta):
         """Return a copy of the current :class:`.DataCut`, detached from ``alignments``."""
         return fastcopy(
             self, supervisions=[fastcopy(s, alignment={}) for s in self.supervisions]
+        )
+
+    def drop_in_memory_data(self) -> "DataCut":
+        """
+        Return a copy of the current :class:`.DataCut`, detached from any in-memory data.
+        The manifests for in-memory data are converted into placeholders that can still be looked up for
+        metadata, but will fail on attempts to load the data.
+        """
+        from lhotse.shar.utils import to_shar_placeholder
+
+        custom = None
+        if self.custom is not None:
+            custom = self.custom.copy()
+            for k in custom:
+                v = custom[k]
+                if (
+                    isinstance(v, (Recording, Features, Array, TemporalArray))
+                    and v.is_in_memory
+                ):
+                    custom[k] = to_shar_placeholder(v)
+        return fastcopy(
+            self,
+            recording=to_shar_placeholder(self.recording)
+            if self.has_recording and self.recording.is_in_memory
+            else self.recording,
+            features=to_shar_placeholder(self.features)
+            if self.has_features and self.features.is_in_memory
+            else self.features,
+            custom=custom,
         )
 
     def fill_supervision(
@@ -944,6 +916,45 @@ class DataCut(Cut, metaclass=ABCMeta):
             id=f"{self.id}_vp{factor}" if affix_id else self.id,
             recording=recording_vp,
             supervisions=supervisions_vp,
+        )
+
+    def narrowband(
+        self, codec: str, restore_orig_sr: bool = True, affix_id: bool = True
+    ) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply narrowband effect.
+
+        :param codec: Codec name.
+        :param restore_orig_sr: Restore original sampling rate.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_nb_{codec}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply narrowband effect on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to apply narrowband effect on a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "volume perturbation."
+            )
+            self.features = None
+        # Actual audio perturbation.
+        recording_nb = self.recording.narrowband(
+            codec=codec, restore_orig_sr=restore_orig_sr, affix_id=affix_id
+        )
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_nb = [
+            s.narrowband(codec=codec, affix_id=affix_id) for s in self.supervisions
+        ]
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_nb_{codec}" if affix_id else self.id,
+            recording=recording_nb,
+            supervisions=supervisions_nb,
         )
 
     def normalize_loudness(

@@ -2,6 +2,7 @@ import logging
 import subprocess
 import tarfile
 from pathlib import Path
+from typing import Optional
 
 from lhotse.tools.env import default_tools_cachedir
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -10,7 +11,7 @@ SPH2PIPE_URL = "https://github.com/burrmill/sph2pipe/archive/2.5.tar.gz"
 
 
 def install_sph2pipe(
-    where: Pathlike = default_tools_cachedir(),
+    where: Optional[Pathlike] = None,
     download_from: str = SPH2PIPE_URL,
     force: bool = False,
 ) -> None:
@@ -20,6 +21,8 @@ def install_sph2pipe(
 
     It downloads an archive and then decompresses and compiles the contents.
     """
+    if where is None:
+        where = default_tools_cachedir(force_mkdir=True)
     where = Path(where)
     # Download
     download_and_untar_sph2pipe(where, url=download_from, force_download=force)

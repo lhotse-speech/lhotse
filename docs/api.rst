@@ -3,10 +3,10 @@ API Reference
 
 This page contains a comprehensive list of all classes and functions within `lhotse`.
 
-Recording manifests
+Audio loading, saving, and manifests
 -------------------
 
-Data structures used for describing audio recordings in a dataset.
+Data structures and utilities used for describing and manipulating audio recordings.
 
 .. automodule:: lhotse.audio
   :members:
@@ -23,6 +23,8 @@ Data structures used for describing supervisions in a dataset.
 
 Lhotse Shar -- sequential storage
 ---------------------------------
+
+Documentation for Lhotse Shar multi-tarfile sequential I/O format.
 
 Lhotse Shar readers
 *******************

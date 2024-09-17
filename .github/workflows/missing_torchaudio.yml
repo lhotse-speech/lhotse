@@ -16,8 +16,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - python-version: "3.11"
-            torch-install-cmd: "pip install torch==2.0 --extra-index-url https://download.pytorch.org/whl/cpu"
+          - python-version: "3.12"
+            torch-install-cmd: "pip install torch==2.3 --index-url https://download.pytorch.org/whl/cpu"
 
       fail-fast: false
 
@@ -38,7 +38,7 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install wheel numpy
+        pip install wheel numpy scipy
         # Force the installation of a CPU-only PyTorch
         ${{ matrix.torch-install-cmd }}
         # the torchaudio env var does nothing when torchaudio is installed, but doesn't require it's presence when it's not

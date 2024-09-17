@@ -125,9 +125,15 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 
 * ``LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE`` - when set to 1 we'll emit full exception stack traces when every available audio backend fails to load a given file (they might be very large).
 
+* ``LHOTSE_DILL_ENABLED`` - when it's set to ``1|True|true|yes``, we will enable ``dill``-based serialization of ``CutSet`` and ``Sampler`` across processes (it's disabled by default even when ``dill`` is installed).
+
+* ``LHOTSE_LEGACY_OPUS_LOADING`` - (``=1``) reverts to a legacy OPUS loading mechanism that triggered a new ffmpeg subprocess for each OPUS file.
+
 * ``LHOTSE_PREPARING_RELEASE`` - used internally by developers when releasing a new version of Lhotse.
 
 * ``TORCHAUDIO_USE_BACKEND_DISPATCHER`` - when set to 1 and torchaudio version is below 2.1, we'll enable the experimental ffmpeg backend of torchaudio.
+
+* ``AIS_ENDPOINT`` is read by AIStore client to determine AIStore endpoint URL. Required for AIStore dataloading.
 
 * ``RANK``, ``WORLD_SIZE``, ``WORKER``, and ``NUM_WORKERS`` are internally used to inform Lhotse Shar dataloading subprocesses.
 
@@ -148,6 +154,8 @@ Optional dependencies
 * ``pip install h5py`` if you want to extract speech features and store them as HDF5 arrays.
 
 * ``pip install dill``. When ``dill`` is installed, we'll use it to pickle CutSet that uses a lambda function in calls such as ``.map`` or ``.filter``. This is helpful in PyTorch DataLoader with ``num_jobs>0``. Without ``dill``, depending on your environment, you'll see an exception or a hanging script.
+
+* ``pip install aistore`` to read manifests, tar fles, and other data from AIStore using AIStore-supported URLs (set ``AIS_ENDPOINT`` environment variable to activate it). See |AIStore| for more details.
 
 * ``pip install smart_open`` to read and write manifests and data in any location supported by ``smart_open`` (e.g. cloud, http).
 
@@ -221,3 +229,4 @@ the speech starts roughly at the first second (100 frames):
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
 .. _orjson: https://pypi.org/project/orjson/
+.. _AIStore: https://aiatscale.org

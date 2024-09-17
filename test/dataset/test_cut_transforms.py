@@ -118,6 +118,17 @@ def test_cutmix(preserve_id: bool):
         )
 
 
+def test_cut_mix_is_stateful():
+    speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=102)
+
+    # called twice on the same input, expecting different results
+    tnfm = CutMix(noise_cuts, snr=None, p=1.0, seed=0, preserve_id=True)
+    out1 = tnfm(speech_cuts)
+    out2 = tnfm(speech_cuts)
+    assert list(out1) != list(out2)
+
+
 def test_cutmix_random_mix_offset():
     speech_cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json").resample(16000)
     noise_cuts = CutSet.from_json("test/fixtures/libri/cuts.json")

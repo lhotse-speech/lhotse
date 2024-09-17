@@ -1,15 +1,24 @@
 import logging
-import os
 import random
 from pathlib import Path
-from typing import Callable, Dict, Generator, Iterable, Optional, Sequence, Tuple, Union
+from typing import (
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import torch
-import torch.distributed as dist
 from cytoolz import compose_left
 
 from lhotse import CutSet, Seconds
 from lhotse.cut.set import deserialize_cut
+from lhotse.dataset.dataloading import get_rank, get_world_size
 from lhotse.dataset.sampling.base import SamplingDiagnostics
 from lhotse.lazy import Dillable
 from lhotse.serialization import decode_json_line
@@ -90,6 +99,8 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
     :param max_duration: Maximum total number of audio seconds in a mini-batch (dynamic batch size).
     :param max_cuts: Maximum number of examples in a mini-batch (static batch size).
     :param num_buckets: If set, enables bucketing (each mini-batch has examples of a similar duration).
+    :param duration_bins: A list of floats (seconds); when provided, we'll skip the initial
+        estimation of bucket duration bins (useful to speed-up the launching of experiments).
     :param quadratic_duration: If set, adds a penalty term for longer duration cuts.
         Works well with models that have quadratic time complexity to keep GPU utilization similar
         when using bucketing. Suggested values are between 30 and 45.
@@ -103,6 +114,7 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         num_buckets: Optional[int] = None,
+        duration_bins: List[Seconds] = None,
         quadratic_duration: Optional[Seconds] = None,
     ) -> None:
         super().__init__(data_source=None)
@@ -147,6 +159,7 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.num_buckets = num_buckets
+        self.duration_bins = duration_bins
         self.quadratic_duration = quadratic_duration
         self.base_seed = base_seed
         assert any(
@@ -217,12 +230,13 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
                 yield cut
                 n += 1
 
-        if self.num_buckets is not None and self.num_buckets > 1:
+        if self.num_buckets is not None or self.duration_bins is not None:
             inner_sampler = DynamicBucketingSampler(
                 _inner(),
                 max_duration=self.max_duration,
                 max_cuts=self.max_cuts,
                 num_buckets=self.num_buckets,
+                duration_bins=self.duration_bins,
                 shuffle=False,
                 drop_last=False,
                 quadratic_duration=self.quadratic_duration,
@@ -314,23 +328,3 @@ class ManifestIndex:
                 print(offsets[-1], file=index_f)
                 line = cuts_f.readline()
         return tuple(offsets)
-
-
-def get_world_size() -> int:
-    """Source: https://github.com/danpovey/icefall/blob/74bf02bba6016c1eb37858a4e0e8a40f7d302bdb/icefall/dist.py#L56"""
-    if "WORLD_SIZE" in os.environ:
-        return int(os.environ["WORLD_SIZE"])
-    if dist.is_available() and dist.is_initialized():
-        return dist.get_world_size()
-    else:
-        return 1
-
-
-def get_rank() -> int:
-    """Source: https://github.com/danpovey/icefall/blob/74bf02bba6016c1eb37858a4e0e8a40f7d302bdb/icefall/dist.py#L56"""
-    if "RANK" in os.environ:
-        return int(os.environ["RANK"])
-    elif dist.is_available() and dist.is_initialized():
-        return dist.get_rank()
-    else:
-        return 0

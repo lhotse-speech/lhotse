@@ -107,6 +107,10 @@ class AudioLoadingError(Exception):
     pass
 
 
+class AudioSavingError(Exception):
+    pass
+
+
 class DurationMismatchError(Exception):
     pass
 
@@ -121,6 +125,7 @@ def suppress_audio_loading_errors(enabled: bool = True):
         AudioLoadingError,
         DurationMismatchError,
         NonPositiveEnergyError,
+        ConnectionResetError,  # when reading from object stores / network sources
         enabled=enabled,
     ):
         yield
@@ -137,6 +142,7 @@ def suppress_video_loading_errors(enabled: bool = True):
         AudioLoadingError,
         DurationMismatchError,
         NonPositiveEnergyError,
+        ConnectionResetError,  # when reading from object stores / network sources
         enabled=enabled,
     ):
         yield

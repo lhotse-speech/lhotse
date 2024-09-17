@@ -1,6 +1,4 @@
-import os
 import random
-import secrets
 from pathlib import Path
 from typing import (
     Callable,
@@ -14,12 +12,10 @@ from typing import (
     Union,
 )
 
-import torch
-
 from lhotse.cut import Cut
-from lhotse.dataset.dataloading import LHOTSE_PROCESS_SEED
+from lhotse.dataset.dataloading import resolve_seed
 from lhotse.lazy import (
-    ImitatesDict,
+    Dillable,
     LazyIteratorChain,
     LazyJsonlIterator,
     LazyManifestIterator,
@@ -30,7 +26,7 @@ from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
 
 
-class LazySharIterator(ImitatesDict):
+class LazySharIterator(Dillable):
     """
     LazySharIterator reads cuts and their corresponding data from multiple shards,
     also recognized as the Lhotse Shar format.
@@ -226,24 +222,7 @@ class LazySharIterator(ImitatesDict):
         if self.shuffle_shards:
             shards = shards.copy()
 
-            seed = self.seed
-
-            if seed == "randomized":
-                worker_info = torch.utils.data.get_worker_info()
-                if worker_info is None:
-                    # not in a dataloader sub-process: get python global random seed
-                    seed = random.getstate()[1][0]
-                else:
-                    # in a dataloader sub-process: read out the seed we assigned to it
-                    assert LHOTSE_PROCESS_SEED in os.environ, (
-                        "Requested seed='randomized' for shuffling shards differently "
-                        "on each DataLoader node and worker, "
-                        "but lhotse.dataset.dataloading.worker_init_fn was not called."
-                    )
-                    seed = int(os.environ[LHOTSE_PROCESS_SEED])
-
-            if seed == "trng":
-                seed = secrets.randbelow(2**32)
+            seed = resolve_seed(self.seed)
 
             if self.stateful_shuffle:
                 seed += self.epoch

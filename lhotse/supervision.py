@@ -16,6 +16,7 @@ from typing import (
 
 from tqdm import tqdm
 
+from lhotse.custom import CustomFieldMixin
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -28,7 +29,6 @@ from lhotse.utils import (
     exactly_one_not_null,
     fastcopy,
     ifnone,
-    index_by_id_and_check,
     is_equal_or_contains,
     overspans,
     perturb_num_samples,
@@ -118,7 +118,7 @@ class AlignmentItem(NamedTuple):
 
 
 @dataclass
-class SupervisionSegment:
+class SupervisionSegment(CustomFieldMixin):
     """
     :class:`~lhotse.supervsion.SupervisionSegment` represents a time interval (segment) annotated with some
     supervision labels and/or metadata, such as the transcription, the speaker identity, the language, etc.
@@ -331,6 +331,24 @@ class SupervisionSegment:
             else self.recording_id,
         )
 
+    def narrowband(self, codec: str, affix_id: bool = True) -> "SupervisionSegment":
+        """
+        Return a ``SupervisionSegment`` with modified ids.
+
+        :param codec: Codec name.
+        :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
+            by affixing it with "_nb_{codec}".
+        :return: a modified copy of the current ``SupervisionSegment``.
+        """
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_nb_{codec}" if affix_id else self.id,
+            recording_id=f"{self.recording_id}_nb_{codec}"
+            if affix_id
+            else self.recording_id,
+        )
+
     def reverb_rir(
         self, affix_id: bool = True, channel: Optional[Union[int, List[int]]] = None
     ) -> "SupervisionSegment":
@@ -453,64 +471,16 @@ class SupervisionSegment:
 
         return SupervisionSegment(**data)
 
-    def __setattr__(self, key: str, value: Any) -> None:
-        """
-        This magic function is called when the user tries to set an attribute.
-        We use it as syntactic sugar to store custom attributes in ``self.custom``
-        field, so that they can be (de)serialized later.
-        """
-        if key in self.__dataclass_fields__:
-            super().__setattr__(key, value)
-        else:
-            custom = ifnone(self.custom, {})
-            if value is None:
-                custom.pop(key, None)
-            else:
-                custom[key] = value
-            if custom:
-                self.custom = custom
-
-    def __getattr__(self, name: str) -> Any:
-        """
-        This magic function is called when the user tries to access an attribute
-        of :class:`.SupervisionSegment` that doesn't exist.
-        It is used as syntactic sugar for accessing the custom supervision attributes.
-
-        We use it to look up the ``custom`` field: when it's None or empty,
-        we'll just raise AttributeError as usual.
-        If ``item`` is found in ``custom``, we'll return ``self.custom[item]``.
-
-        Example of adding custom metadata and retrieving it as an attribute::
-
-            >>> sup = SupervisionSegment('utt1', recording_id='rec1', start=0,
-            ...                          duration=1, channel=0, text='Yummy.')
-            >>> sup.gps_coordinates = "34.1021097,-79.1553182"
-            >>> coordinates = sup.gps_coordinates
-
-        """
-        try:
-            return self.custom[name]
-        except:
-            raise AttributeError(f"No such attribute: {name}")
-
-    def __delattr__(self, key: str) -> None:
-        """Used to support ``del supervision.custom_attr`` syntax."""
-        if key in self.__dataclass_fields__:
-            super().__delattr__(key)
-        if self.custom is None or key not in self.custom:
-            raise AttributeError(f"No such member: '{key}'")
-        del self.custom[key]
-
 
 class SupervisionSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
-    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
-    that are indexed by segment IDs.
+    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`).
 
-    It acts as a Python ``dict``, extended with an efficient ``find`` operation that indexes and caches
+    It acts as a Python ``list``, extended with an efficient ``find`` operation that indexes and caches
     the supervision segments in an interval tree.
     It allows to quickly find supervision segments that correspond to a specific time interval.
+    However, it can also work with lazy iterables.
 
     When coming from Kaldi, think of :class:`~lhotse.supervision.SupervisionSet` as a ``segments`` file on steroids,
     that may also contain *text*, *utt2spk*, *utt2gender*, *utt2dur*, etc.
@@ -548,9 +518,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             >>> shuffled = sups.shuffle()
     """
 
-    def __init__(
-        self, segments: Optional[Mapping[str, SupervisionSegment]] = None
-    ) -> None:
+    def __init__(self, segments: Optional[Iterable[SupervisionSegment]] = None) -> None:
         self.segments = ifnone(segments, {})
 
     def __eq__(self, other: "SupervisionSet") -> bool:
@@ -565,11 +533,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
 
     @property
     def ids(self) -> Iterable[str]:
-        return self.segments.keys()
+        return (s.id for s in self)
 
     @staticmethod
     def from_segments(segments: Iterable[SupervisionSegment]) -> "SupervisionSet":
-        return SupervisionSet(segments=index_by_id_and_check(segments))
+        return SupervisionSet(list(segments))
 
     from_items = from_segments
 
@@ -805,19 +773,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         if first is not None:
             assert first > 0
             out = SupervisionSet.from_items(islice(self, first))
-            if len(out) < first:
-                logging.warning(
-                    f"SupervisionSet has only {len(out)} items but first {first} were requested."
-                )
             return out
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(
-                    f"SupervisionSet has only {len(self)} items but last {last} required; "
-                    f"not doing anything."
-                )
                 return self
             return SupervisionSet.from_segments(
                 islice(self, len(self) - last, len(self))
@@ -901,24 +861,25 @@ class SupervisionSet(Serializable, AlgorithmMixin):
     def __repr__(self) -> str:
         return f"SupervisionSet(len={len(self)})"
 
-    def __getitem__(self, sup_id_or_index: Union[int, str]) -> SupervisionSegment:
-        if isinstance(sup_id_or_index, str):
-            return self.segments[sup_id_or_index]
-        # ~100x faster than list(dict.values())[index] for 100k elements
-        return next(
-            val
-            for idx, val in enumerate(self.segments.values())
-            if idx == sup_id_or_index
-        )
+    def __getitem__(self, index_or_id: Union[int, str]) -> SupervisionSegment:
+        try:
+            return self.segments[index_or_id]  # int passed, eager manifest, fast
+        except TypeError:
+            # either lazy manifest or str passed, both are slow
+            if self.is_lazy:
+                return next(item for idx, item in enumerate(self) if idx == index_or_id)
+            else:
+                # string id passed, support just for backward compatibility, not recommended
+                return next(item for item in self if item.id == index_or_id)
 
-    def __contains__(self, item: Union[str, SupervisionSegment]) -> bool:
-        if isinstance(item, str):
-            return item in self.segments
+    def __contains__(self, other: Union[str, SupervisionSegment]) -> bool:
+        if isinstance(other, str):
+            return any(other == item.id for item in self)
         else:
-            return item.id in self.segments
+            return any(other.id == item.id for item in self)
 
     def __iter__(self) -> Iterable[SupervisionSegment]:
-        return iter(self.segments.values())
+        yield from self.segments
 
     def __len__(self) -> int:
         return len(self.segments)

@@ -18,7 +18,6 @@ from lhotse.utils import (
     Seconds,
     exactly_one_not_null,
     ifnone,
-    index_by_id_and_check,
     split_manifest_lazy,
     split_sequence,
 )
@@ -26,7 +25,7 @@ from lhotse.utils import (
 
 class RecordingSet(Serializable, AlgorithmMixin):
     """
-    :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
+    :class:`~lhotse.audio.RecordingSet` represents a collection of recordings.
     It does not contain any annotation such as the transcript or the speaker identity --
     just the information needed to retrieve a recording such as its path, URL, number of channels,
     and some recording metadata (duration, number of samples).
@@ -86,7 +85,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
             >>> recs_24k = recs.resample(24000)
     """
 
-    def __init__(self, recordings: Optional[Mapping[str, Recording]] = None) -> None:
+    def __init__(self, recordings: Optional[Iterable[Recording]] = None) -> None:
         self.recordings = ifnone(recordings, {})
 
     def __eq__(self, other: "RecordingSet") -> bool:
@@ -99,11 +98,11 @@ class RecordingSet(Serializable, AlgorithmMixin):
 
     @property
     def ids(self) -> Iterable[str]:
-        return self.recordings.keys()
+        return (r.id for r in self)
 
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> "RecordingSet":
-        return RecordingSet(recordings=index_by_id_and_check(recordings))
+        return RecordingSet(list(recordings))
 
     from_items = from_recordings
 
@@ -237,19 +236,11 @@ class RecordingSet(Serializable, AlgorithmMixin):
         if first is not None:
             assert first > 0
             out = RecordingSet.from_items(islice(self, first))
-            if len(out) < first:
-                logging.warning(
-                    f"RecordingSet has only {len(out)} items but first {first} were requested."
-                )
             return out
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(
-                    f"RecordingSet has only {len(self)} items but last {last} required; "
-                    f"not doing anything."
-                )
                 return self
             return RecordingSet.from_recordings(
                 islice(self, len(self) - last, len(self))
@@ -262,7 +253,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
         offset_seconds: float = 0.0,
         duration_seconds: Optional[float] = None,
     ) -> np.ndarray:
-        return self.recordings[recording_id].load_audio(
+        return self[recording_id].load_audio(
             channels=channels, offset=offset_seconds, duration=duration_seconds
         )
 
@@ -270,16 +261,16 @@ class RecordingSet(Serializable, AlgorithmMixin):
         return RecordingSet.from_recordings(r.with_path_prefix(path) for r in self)
 
     def num_channels(self, recording_id: str) -> int:
-        return self.recordings[recording_id].num_channels
+        return self[recording_id].num_channels
 
     def sampling_rate(self, recording_id: str) -> int:
-        return self.recordings[recording_id].sampling_rate
+        return self[recording_id].sampling_rate
 
     def num_samples(self, recording_id: str) -> int:
-        return self.recordings[recording_id].num_samples
+        return self[recording_id].num_samples
 
     def duration(self, recording_id: str) -> Seconds:
-        return self.recordings[recording_id].duration
+        return self[recording_id].duration
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "RecordingSet":
         """
@@ -376,24 +367,25 @@ class RecordingSet(Serializable, AlgorithmMixin):
     def __repr__(self) -> str:
         return f"RecordingSet(len={len(self)})"
 
-    def __contains__(self, item: Union[str, Recording]) -> bool:
-        if isinstance(item, str):
-            return item in self.recordings
-        else:
-            return item.id in self.recordings
+    def __getitem__(self, index_or_id: Union[int, str]) -> Recording:
+        try:
+            return self.recordings[index_or_id]  # int passed, eager manifest, fast
+        except TypeError:
+            # either lazy manifest or str passed, both are slow
+            if self.is_lazy:
+                return next(item for idx, item in enumerate(self) if idx == index_or_id)
+            else:
+                # string id passed, support just for backward compatibility, not recommended
+                return next(item for item in self if item.id == index_or_id)
 
-    def __getitem__(self, recording_id_or_index: Union[int, str]) -> Recording:
-        if isinstance(recording_id_or_index, str):
-            return self.recordings[recording_id_or_index]
-        # ~100x faster than list(dict.values())[index] for 100k elements
-        return next(
-            val
-            for idx, val in enumerate(self.recordings.values())
-            if idx == recording_id_or_index
-        )
+    def __contains__(self, other: Union[str, Recording]) -> bool:
+        if isinstance(other, str):
+            return any(other == item.id for item in self)
+        else:
+            return any(other.id == item.id for item in self)
 
     def __iter__(self) -> Iterable[Recording]:
-        return iter(self.recordings.values())
+        yield from self.recordings
 
     def __len__(self) -> int:
         return len(self.recordings)

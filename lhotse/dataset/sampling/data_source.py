@@ -1,6 +1,8 @@
 import random
 from collections import deque
-from typing import Optional
+from typing import List, Optional
+
+import numpy as np
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -98,3 +100,76 @@ class DataSource:
 
     def __len__(self) -> int:
         return len(self._shuffled_items)
+
+
+class WeightedDataSource(DataSource):
+    """
+    An iterator wrapper over CutSet that helps with the sampling process:
+    it allows for deterministic re-shuffling of elements and "returning"
+    sampled elements to be yielded again.
+
+    Every cut has a sampling weight. At the beginning of each epoch, we
+    pre-compute the indexes by sampling from multi-nomial distribution without
+    replacement. The data source will be exhausted if the number of drawn cuts
+    exceed num_samples
+    """
+
+    def __init__(self, items: CutSet, weights: List, num_samples: int):
+        """The constructor of the weighted data source
+
+        Args:
+            items (CutSet): The cutset itself
+            weights (List): A list of values representing the weight of each cut. All values must be positive
+            num_samples (int): The number of samples to be drawn. Must smaller than the total number of cuts
+        """
+        super().__init__(items=items)
+        assert len(items) == len(weights), "The length should match"
+        assert num_samples < len(
+            weights
+        ), "The number of samples to be drawn should not exceed the dataset size"
+
+        # normalize the weight
+        weights = np.array(weights)
+        weights = weights / weights.sum()
+
+        self.weights = weights
+        self.num_samples = num_samples
+        self.sampled_indexes = None
+
+    def reset(self) -> None:
+        """Reset the iterable state of DataSource."""
+        self._iter = None
+        self.sampled_indexes = None
+        self._reusable.clear()
+        self._remaining_duration = self._total_duration
+        self.remaining_cuts = self._total_cuts
+
+    def fast_forward(self, steps: int) -> None:
+        """Advance the data source by ``steps`` amount of steps."""
+        assert steps >= 0
+        iter(self)
+        for i in range(steps):
+            next(self.sampled_indexes)
+
+    def __iter__(self) -> "WeightedDataSource":
+        self.reset()
+        self._iter = iter(self._shuffled_items)
+        self.sampled_indexes = np.random.choice(
+            len(self.weights),
+            self.num_samples,
+            p=self.weights,
+            replace=False,
+        )
+        self.sampled_indexes = iter(self.sampled_indexes)
+        return self
+
+    def __next__(self) -> Cut:
+        if self._reusable:
+            next_cut = self._reusable.popleft()
+        else:
+            next_cut = self._orig_items[next(self.sampled_indexes)]
+
+        if not self.is_lazy:
+            self._remaining_duration -= next_cut.duration
+            self.remaining_cuts -= 1
+        return next_cut

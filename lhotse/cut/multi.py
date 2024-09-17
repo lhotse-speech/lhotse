@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from functools import partial, reduce
 from itertools import groupby
 from operator import add
-from typing import Any, Callable, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -157,11 +157,11 @@ class MultiCut(DataCut):
 
     def reverb_rir(
         self,
-        rir_recording: Optional["Recording"] = None,
+        rir_recording: Optional[Union[Recording, DataCut]] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: List[int] = [0],
+        rir_channels: Sequence[int] = (0,),
         room_rng_seed: Optional[int] = None,
         source_rng_seed: Optional[int] = None,
     ) -> "MultiCut":
@@ -364,6 +364,40 @@ class MultiCut(DataCut):
             )
 
         return fastcopy(self, supervisions=msups)
+
+    def with_channels(self, channels: Union[List[int], int]) -> DataCut:
+        """
+        Select specified channels from this cut.
+        Supports extending to other channels available in the underlying :class:`Recording`.
+        If a single channel is provided, we'll return a :class:`~lhotse.cut.MonoCut`,
+        otherwise we'll return a :class:`~lhotse.cut.MultiCut`.
+        """
+        channel_is_int = isinstance(channels, int)
+        assert set([channels] if channel_is_int else channels).issubset(
+            set(self.recording.channel_ids)
+        ), f"Cannot select {channels=} because they are not a subset of {self.recording.channel_ids=}"
+
+        mono = channel_is_int or len(channels) == 1
+        if mono:
+            from .mono import MonoCut
+
+            if not channel_is_int:
+                (channels,) = channels
+            return MonoCut(
+                id=f"{self.id}-{channels}",
+                recording=self.recording,
+                start=self.start,
+                duration=self.duration,
+                channel=channels,
+                supervisions=[
+                    fastcopy(s, channel=channels)
+                    for s in self.supervisions
+                    if is_equal_or_contains(s.channel, channels)
+                ],
+                custom=self.custom,
+            )
+
+        return fastcopy(self, channel=channels)
 
     @staticmethod
     def from_mono(*cuts: DataCut) -> "MultiCut":

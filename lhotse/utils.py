@@ -32,6 +32,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from urllib.parse import urlparse
 
 import click
 import numpy as np
@@ -126,6 +127,14 @@ class SmartOpen:
             transport_params=transport_params,
             **kwargs,
         )
+
+
+def is_valid_url(value: str) -> bool:
+    try:
+        result = urlparse(value)
+        return bool(result.scheme) and bool(result.netloc)
+    except AttributeError:
+        return False
 
 
 def fix_random_seed(random_seed: int):
@@ -310,9 +319,13 @@ def split_manifest_lazy(
     if prefix == "":
         prefix = "split"
 
-    items = iter(it)
     split_idx = start_idx
     splits = []
+    items = iter(it)
+    try:
+        item = next(items)
+    except StopIteration:
+        return splits
     while True:
         try:
             written = 0
@@ -321,9 +334,9 @@ def split_manifest_lazy(
                 (output_dir / prefix).with_suffix(f".{idx}.jsonl.gz")
             ) as writer:
                 while written < chunk_size:
-                    item = next(items)
                     writer.write(item)
                     written += 1
+                    item = next(items)
             split_idx += 1
         except StopIteration:
             break
@@ -454,6 +467,7 @@ def resumable_download(
     filename: Pathlike,
     force_download: bool = False,
     completed_file_size: Optional[int] = None,
+    missing_ok: bool = False,
 ) -> None:
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
@@ -518,7 +532,13 @@ def resumable_download(
         except urllib.error.HTTPError as e:
             # "Request Range Not Satisfiable" means the requested range
             # starts after the file ends OR that the server does not support range requests.
-            if e.code == 416:
+            if e.code == 404 and missing_ok:
+                logging.warning(
+                    f"{url} does not exist (error 404). Skipping this file."
+                )
+                if Path(filename).is_file():
+                    os.remove(filename)
+            elif e.code == 416:
                 content_range = e.headers.get("Content-Range", None)
                 if content_range is None:
                     # sometimes, the server actually supports range requests
@@ -605,7 +625,7 @@ class nullcontext(AbstractContextManager):
     Note(pzelasko): This is copied from Python 3.7 stdlib so that we can use it in 3.6.
     """
 
-    def __init__(self, enter_result=None):
+    def __init__(self, enter_result=None, *args, **kwargs):
         self.enter_result = enter_result
 
     def __enter__(self):
@@ -702,14 +722,6 @@ def merge_items_with_delimiter(
     if len(values) == 1 or return_first:
         return values[0]
     return delimiter.join(chain([prefix], values))
-
-
-def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
-    id2man = {}
-    for m in manifests:
-        assert m.id not in id2man, f"Duplicated manifest ID: {m.id}"
-        id2man[m.id] = m
-    return id2man
 
 
 def exactly_one_not_null(*args) -> bool:
@@ -1100,3 +1112,10 @@ def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
         return secrets.SystemRandom()
     else:
         return random.Random(seed)
+
+
+_LHOTSE_DILL_ENABLED = False
+
+
+def is_dill_enabled() -> bool:
+    return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]

@@ -4,14 +4,25 @@ from dataclasses import dataclass
 from functools import partial, reduce
 from io import BytesIO
 from operator import add
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 import torch
 from intervaltree import IntervalTree
 
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
-from lhotse.audio.backend import save_flac_file
+from lhotse.audio.backend import save_audio
 from lhotse.audio.mixer import AudioMixer, VideoMixer, audio_energy
 from lhotse.augmentation import (
     AudioTransform,
@@ -27,6 +38,7 @@ from lhotse.features import (
     FeatureMixer,
     create_default_feature_extractor,
 )
+from lhotse.features.base import Features
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
@@ -72,6 +84,16 @@ class MixTrack:
         cut_dict["type"] = data.pop("type")
         return MixTrack(deserialize_cut(cut_dict), **data)
 
+    def to_dict(self) -> Dict:
+        ans = {
+            "cut": self.cut.to_dict(),
+            "type": self.type,
+            "offset": self.offset,
+        }
+        if self.snr is not None:
+            ans["snr"] = self.snr
+        return ans
+
 
 @dataclass
 class MixedCut(Cut):
@@ -113,7 +135,7 @@ class MixedCut(Cut):
 
     id: str
     tracks: List[MixTrack]
-    transforms: Optional[List[Dict]] = None
+    transforms: Optional[List[AudioTransform]] = None
 
     @property
     def supervisions(self) -> List[SupervisionSegment]:
@@ -153,6 +175,10 @@ class MixedCut(Cut):
     def has_video(self) -> bool:
         return self._first_non_padding_cut.has_video
 
+    @property
+    def is_in_memory(self) -> bool:
+        return any(track.cut.is_in_memory for track in self.tracks)
+
     def has(self, field: str) -> bool:
         return self._first_non_padding_cut.has(field)
 
@@ -190,6 +216,32 @@ class MixedCut(Cut):
     @property
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type if self.has_features else None
+
+    def to_dict(self) -> dict:
+        ans = {
+            "id": self.id,
+            "tracks": [t.to_dict() for t in self.tracks],
+            "type": type(self).__name__,
+        }
+        if self.transforms:
+            ans["transforms"] = [t.to_dict() for t in self.transforms]
+        return ans
+
+    def iter_data(
+        self,
+    ) -> Generator[
+        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+    ]:
+        """
+        Iterate over each data piece attached to this cut.
+        Returns a generator yielding tuples of ``(key, manifest)``, where
+        ``key`` is the name of the attribute under which ``manifest`` is found.
+        ``manifest`` is of type :class:`~lhotse.Recording`, :class:`~lhotse.Features`,
+        :class:`~lhotse.TemporalArray`, or :class:`~lhotse.Array`.
+
+        For example, if ``key`` is ``recording``, then ``manifest`` is ``self.recording``.
+        """
+        return self._first_non_padding_cut.iter_data()
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -237,6 +289,14 @@ class MixedCut(Cut):
                 f"No such attribute: '{name}' (note: custom attributes are not supported "
                 f"when a MixedCut consists of more than one MonoCut with that attribute)."
             )
+
+    def has_custom(self, name: str) -> bool:
+        (
+            non_padding_idx,
+            mono_cut,
+        ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
+
+        return hasattr(mono_cut, name)
 
     def load_custom(self, name: str) -> np.ndarray:
         """
@@ -365,7 +425,6 @@ class MixedCut(Cut):
     def to_mono(
         self,
         encoding: str = "flac",
-        bits_per_sample: Optional[int] = 16,
         **kwargs,
     ) -> "Cut":
         """
@@ -376,22 +435,16 @@ class MixedCut(Cut):
         .. hint:: the resulting MonoCut will have ``custom`` field populated with the
             ``custom`` value from the first track of the MixedCut.
 
-        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
-            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
-            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
-        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
-            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
-            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param encoding: any of "wav", "flac", or "opus".
         :return: a new MonoCut instance.
         """
         samples = self.load_audio(mono_downmix=True)
         stream = BytesIO()
-        save_flac_file(
+        save_audio(
             stream,
             samples,
             self.sampling_rate,
             format=encoding,
-            bits_per_sample=bits_per_sample,
         )
         recording = Recording.from_bytes(stream.getvalue(), recording_id=self.id)
         return fastcopy(
@@ -768,7 +821,7 @@ class MixedCut(Cut):
 
         if mix_first:
             transforms = self.transforms.copy() if self.transforms is not None else []
-            transforms.append(LoudnessNormalization(target=target).to_dict())
+            transforms.append(LoudnessNormalization(target=target))
             return fastcopy(
                 self,
                 id=f"{self.id}_ln{target}" if affix_id else self.id,
@@ -883,7 +936,7 @@ class MixedCut(Cut):
                     early_only=early_only,
                     rir_channels=rir_channels if rir_channels is not None else [0],
                     rir_generator=rir_generator,
-                ).to_dict()
+                )
             )
             return fastcopy(
                 self,
@@ -1108,7 +1161,10 @@ class MixedCut(Cut):
 
             # We'll apply the transforms now (if any).
             transforms = [
-                AudioTransform.from_dict(params) for params in self.transforms or []
+                tnfm
+                if isinstance(tnfm, AudioTransform)
+                else AudioTransform.from_dict(tnfm)
+                for tnfm in self.transforms or []
             ]
             for tfn in transforms:
                 audio = tfn(audio, self.sampling_rate)
@@ -1217,6 +1273,13 @@ class MixedCut(Cut):
         return fastcopy(
             self,
             tracks=[fastcopy(t, cut=t.cut.drop_alignments()) for t in self.tracks],
+        )
+
+    def drop_in_memory_data(self) -> "MixedCut":
+        """Return a copy of the current :class:`MixedCut`, which doesn't contain any in-memory data."""
+        return fastcopy(
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_in_memory_data()) for t in self.tracks],
         )
 
     def compute_and_store_features(
@@ -1519,9 +1582,13 @@ class MixedCut(Cut):
     def from_dict(data: dict) -> "MixedCut":
         if "type" in data:
             data.pop("type")
+        transforms = None
+        if "transforms" in data:
+            transforms = [AudioTransform.from_dict(t) for t in data["transforms"]]
         return MixedCut(
             id=data["id"],
             tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
+            transforms=transforms,
         )
 
     def with_features_path_prefix(self, path: Pathlike) -> "MixedCut":
@@ -1547,9 +1614,19 @@ class MixedCut(Cut):
         )
 
     @property
-    def _first_non_padding_cut(self) -> DataCut:
+    def first_non_padding_cut(self) -> DataCut:
         return self._first_non_padding_track.cut
 
     @property
-    def _first_non_padding_track(self) -> MixTrack:
+    def first_non_padding_track(self) -> MixTrack:
         return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
+
+    # Note: the private properties below are kept for backward compatibility.
+
+    @property
+    def _first_non_padding_cut(self) -> DataCut:
+        return self.first_non_padding_cut
+
+    @property
+    def _first_non_padding_track(self) -> MixTrack:
+        return self.first_non_padding_track

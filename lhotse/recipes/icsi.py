@@ -99,7 +99,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
-import soundfile as sf
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
@@ -391,6 +390,7 @@ def prepare_audio_grouped(
 ) -> RecordingSet:
     # Group together multiple channels from the same session.
     # We will use that to create a Recording with multiple sources (channels).
+    import soundfile as sf
     from cytoolz import groupby
 
     channel_wavs = groupby(lambda p: p.parts[-2], audio_paths)

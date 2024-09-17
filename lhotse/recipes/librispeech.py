@@ -166,7 +166,7 @@ def prepare_librispeech(
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in tqdm(dataset_parts, desc="Dataset parts"):
             logging.info(f"Processing LibriSpeech subset: {part}")
-            if manifests_exist(part=part, output_dir=output_dir):
+            if manifests_exist(part=part, output_dir=output_dir, prefix="librispeech"):
                 logging.info(f"LibriSpeech subset: {part} already prepared - skipping.")
                 continue
             recordings = []

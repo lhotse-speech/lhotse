@@ -38,14 +38,14 @@ def libri_cut(libri_cut_set) -> MonoCut:
 
 def test_load_none_feats_cut_set():
     cutset = CutSet.from_json("test/fixtures/libri/cuts_no_feats.json")
-    cut = list(cutset.cuts.values())[0]
+    cut = cutset[0]
     assert cut.features is None
     assert cut.recording is not None
 
 
 def test_load_none_recording_cut_set():
     cutset = CutSet.from_json("test/fixtures/libri/cuts_no_recording.json")
-    cut = list(cutset.cuts.values())[0]
+    cut = cutset[0]
     assert cut.recording is None
     assert cut.features is not None
 
@@ -185,7 +185,7 @@ def test_make_cuts_from_recordings(dummy_recording_set):
     assert len(cut1.supervisions) == 0
 
     assert cut1.has_recording
-    assert cut1.recording == dummy_recording_set.recordings["rec1"]
+    assert cut1.recording == dummy_recording_set["rec1"]
     assert cut1.sampling_rate == 16000
     assert cut1.recording_id == "rec1"
     assert cut1.num_samples == 160000
@@ -215,7 +215,7 @@ def test_make_cuts_from_features(dummy_feature_set):
     assert cut1.num_samples is None
 
     assert cut1.has_features
-    assert cut1.features == dummy_feature_set.features[0]
+    assert cut1.features == dummy_feature_set[0]
     assert cut1.frame_shift == 0.01
     assert cut1.num_frames == 1000
     assert cut1.num_features == 23
@@ -235,13 +235,13 @@ def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_s
     assert len(cut1.supervisions) == 0
 
     assert cut1.has_recording
-    assert cut1.recording == dummy_recording_set.recordings["rec1"]
+    assert cut1.recording == dummy_recording_set["rec1"]
     assert cut1.sampling_rate == 16000
     assert cut1.recording_id == "rec1"
     assert cut1.num_samples == 160000
 
     assert cut1.has_features
-    assert cut1.features == dummy_feature_set.features[0]
+    assert cut1.features == dummy_feature_set[0]
     assert cut1.frame_shift == 0.01
     assert cut1.num_frames == 1000
     assert cut1.num_features == 23
@@ -295,7 +295,7 @@ class TestCutOnSupervisions:
         assert cut1.supervisions[0].text == "dummy text"
 
         assert cut1.has_recording
-        assert cut1.recording == dummy_recording_set.recordings["rec1"]
+        assert cut1.recording == dummy_recording_set["rec1"]
         assert cut1.sampling_rate == 16000
         assert cut1.recording_id == "rec1"
         assert cut1.num_samples == 16000 * 4
@@ -335,7 +335,7 @@ class TestCutOnSupervisions:
         assert cut1.num_samples is None
 
         assert cut1.has_features
-        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.features == dummy_feature_set[0]
         assert cut1.frame_shift == 0.01
         assert cut1.num_frames == 400
         assert cut1.num_features == 23
@@ -365,13 +365,13 @@ class TestCutOnSupervisions:
         assert cut1.supervisions[0].text == "dummy text"
 
         assert cut1.has_recording
-        assert cut1.recording == dummy_recording_set.recordings["rec1"]
+        assert cut1.recording == dummy_recording_set["rec1"]
         assert cut1.sampling_rate == 16000
         assert cut1.recording_id == "rec1"
         assert cut1.num_samples == 16000 * 4
 
         assert cut1.has_features
-        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.features == dummy_feature_set[0]
         assert cut1.frame_shift == 0.01
         assert cut1.num_frames == 400
         assert cut1.num_features == 23
@@ -400,7 +400,7 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].text == "dummy text"
 
         assert cut1.has_recording
-        assert cut1.recording == dummy_recording_set.recordings["rec1"]
+        assert cut1.recording == dummy_recording_set["rec1"]
         assert cut1.sampling_rate == 16000
         assert cut1.recording_id == "rec1"
         assert cut1.num_samples == 160000
@@ -439,7 +439,7 @@ class TestNoCutOnSupervisions:
         assert cut1.num_samples is None
 
         assert cut1.has_features
-        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.features == dummy_feature_set[0]
         assert cut1.frame_shift == 0.01
         assert cut1.num_frames == 1000
         assert cut1.num_features == 23
@@ -468,13 +468,13 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].text == "dummy text"
 
         assert cut1.has_recording
-        assert cut1.recording == dummy_recording_set.recordings["rec1"]
+        assert cut1.recording == dummy_recording_set["rec1"]
         assert cut1.sampling_rate == 16000
         assert cut1.recording_id == "rec1"
         assert cut1.num_samples == 160000
 
         assert cut1.has_features
-        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.features == dummy_feature_set[0]
         assert cut1.frame_shift == 0.01
         assert cut1.num_frames == 1000
         assert cut1.num_features == 23

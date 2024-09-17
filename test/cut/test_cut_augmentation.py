@@ -1,12 +1,15 @@
+import os
+from tempfile import NamedTemporaryFile
+
 import numpy as np
 import pytest
 import torch
 
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
-from lhotse.cut import PaddingCut
+from lhotse.cut import Cut, MixedCut, PaddingCut
 from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
-from lhotse.utils import fastcopy, is_module_available
+from lhotse.utils import fastcopy, is_module_available, nullcontext
 
 
 @pytest.fixture
@@ -124,6 +127,9 @@ def test_cut_perturb_speed09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo09(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(0.9)
     assert cut_tp.start == 0.0
@@ -147,6 +153,9 @@ def test_cut_perturb_tempo09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo11(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(1.1)
     assert cut_tp.start == 0.0
@@ -415,6 +424,27 @@ def test_mixed_cut_start01_reverb_rir_mix_first(cut_with_supervision_start01, ri
     )
 
 
+def test_mixed_cut_start01_reverb_rir_mix_first_deserialized(
+    cut_with_supervision_start01, rir
+):
+    mixed_rvb_orig = cut_with_supervision_start01.pad(duration=0.5).reverb_rir(
+        rir_recording=rir, mix_first=True
+    )
+    mixed_rvb = MixedCut.from_dict(mixed_rvb_orig.to_dict())
+    assert mixed_rvb.start == 0  # MixedCut always starts at 0
+    assert mixed_rvb.duration == 0.5
+    assert mixed_rvb.end == 0.5
+    assert mixed_rvb.num_samples == 4000
+
+    # Check that the padding part should not be all zeros afte
+    np.testing.assert_raises(
+        AssertionError,
+        np.testing.assert_array_almost_equal,
+        mixed_rvb.load_audio()[:, 3200:],
+        np.zeros((1, 800)),
+    )
+
+
 def test_mixed_cut_start01_reverb_rir_with_fast_random(
     cut_with_supervision_start01, rir
 ):
@@ -487,6 +517,24 @@ def test_mixed_cut_normalize_loudness(cut_with_supervision_start01, target, mix_
     loudness = meter.integrated_loudness(mixed_cut_ln.load_audio().T)
     if mix_first:
         assert loudness == pytest.approx(target, abs=0.5)
+
+
+@pytest.mark.skipif(
+    not is_module_available("pyloudnorm"),
+    reason="This test requires pyloudnorm to be installed.",
+)
+def test_mixed_cut_normalize_loudness_deserialized(cut_with_supervision_start01):
+    target = -15.0
+    mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
+    mixed_cut_ln_orig = mixed_cut.normalize_loudness(target, mix_first=True)
+    mixed_cut_ln = MixedCut.from_dict(mixed_cut_ln_orig.to_dict())
+
+    import pyloudnorm as pyln
+
+    # check if loudness is correct
+    meter = pyln.Meter(mixed_cut_ln.sampling_rate)  # create BS.1770 meter
+    loudness = meter.integrated_loudness(mixed_cut_ln.load_audio().T)
+    assert loudness == pytest.approx(target, abs=0.5)
 
 
 @pytest.mark.skipif(
@@ -646,9 +694,14 @@ def test_cut_normalize_loudness(libri_cut_set, target, mix_first):
         assert loudness == pytest.approx(target, abs=0.5)
 
 
-def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
+@pytest.mark.parametrize("in_memory", [True, False])
+def test_cut_reverb_rir(
+    libri_cut_with_supervision, libri_recording_rvb, rir, in_memory
+):
 
     cut = libri_cut_with_supervision
+    if in_memory:
+        rir = rir.move_to_memory()
     cut_rvb = cut.reverb_rir(rir)
     assert cut_rvb.start == cut.start
     assert cut_rvb.duration == cut.duration
@@ -668,6 +721,48 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     rvb_audio_from_fixture = libri_recording_rvb.load_audio()
 
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
+
+
+@pytest.mark.parametrize("with_serialization", [True, False])
+def test_cut_reverb_rir_input_is_cut(
+    libri_cut_with_supervision, libri_recording_rvb, rir, with_serialization
+):
+
+    cut = libri_cut_with_supervision
+    rir = rir.to_cut()
+
+    with (
+        NamedTemporaryFile(suffix=".jsonl", mode="w")
+        if with_serialization
+        else nullcontext()
+    ) as f:
+        if with_serialization:
+            CutSet([rir]).to_file(f.name)
+            f.flush()
+            os.fsync(f.fileno())
+            rir = CutSet.from_file(f.name)[0]
+
+        cut_rvb = cut.reverb_rir(rir)
+        assert cut_rvb.start == cut.start
+        assert cut_rvb.duration == cut.duration
+        assert cut_rvb.end == cut.end
+        assert cut_rvb.num_samples == cut.num_samples
+
+        assert cut_rvb.recording.duration == cut.recording.duration
+        assert cut_rvb.recording.num_samples == cut.recording.num_samples
+
+        assert cut_rvb.supervisions[0].start == cut.supervisions[0].start
+        assert cut_rvb.supervisions[0].duration == cut.supervisions[0].duration
+        assert cut_rvb.supervisions[0].end == cut.supervisions[0].end
+
+        assert cut_rvb.load_audio().shape == cut.load_audio().shape
+        assert cut_rvb.recording.load_audio().shape == cut.recording.load_audio().shape
+
+        rvb_audio_from_fixture = libri_recording_rvb.load_audio()
+
+        np.testing.assert_array_almost_equal(
+            cut_rvb.load_audio(), rvb_audio_from_fixture
+        )
 
 
 def test_cut_reverb_rir_assert_sampling_rate(libri_cut_with_supervision, rir):

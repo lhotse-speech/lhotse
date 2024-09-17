@@ -776,7 +776,7 @@ def _get_strided_batch(
         if npad_right >= 0:
             pad_right = torch.flip(waveform[:, -npad_right:], (1,))
         else:
-            pad_right = torch.zeros(0, dtype=waveform.dtype)
+            pad_right = torch.zeros(0, dtype=waveform.dtype, device=waveform.device)
         waveform = torch.cat((pad_left, waveform, pad_right), dim=1)
 
     strides = (

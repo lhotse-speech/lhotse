@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import List, Optional
 
 import numpy as np
@@ -99,6 +99,9 @@ class FastRandomRIRGenerator:
             if self.source_seed is not None
             else np.random.default_rng()
         )
+
+    def to_dict(self):
+        return asdict(self)
 
     def __call__(self, nsource: int = 1) -> np.ndarray:
         """

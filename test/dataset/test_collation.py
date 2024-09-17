@@ -14,7 +14,13 @@ from lhotse.dataset.collation import (
     collate_custom_field,
     collate_features,
 )
-from lhotse.testing.dummies import dummy_cut, dummy_recording, dummy_supervision
+from lhotse.testing.dummies import (
+    dummy_cut,
+    dummy_multi_channel_recording,
+    dummy_multi_cut,
+    dummy_recording,
+    dummy_supervision,
+)
 
 
 @pytest.mark.parametrize("add_bos", [True, False])
@@ -374,3 +380,27 @@ def test_padding_issue_478():
 
         np.testing.assert_equal(label_alignments[0].numpy(), ali1)
         np.testing.assert_equal(label_alignments[1].numpy(), ali2)
+
+
+def test_collate_cut_multi_channel_recording_and_custom_recording_diff_num_channels():
+    cut = dummy_multi_cut(0, channel=[0, 1, 2, 3], with_data=True)
+    cut.target_recording = dummy_multi_channel_recording(
+        1, channel_ids=[0, 1], with_data=True
+    )
+    cut2 = dummy_multi_cut(2, duration=2.0, channel=[0, 1, 2, 3], with_data=True)
+    cut2.target_recording = dummy_multi_channel_recording(
+        3, duration=2.0, channel_ids=[0, 1], with_data=True
+    )
+    cuts = CutSet([cut, cut2])
+
+    expected_lens = torch.tensor([16000, 32000], dtype=torch.int32)
+
+    audio, audio_lens = collate_audio(cuts)
+    assert audio.shape == (2, 4, 32000)  # batch x channel x time
+    torch.testing.assert_close(audio_lens, expected_lens)
+
+    target_audio, target_audio_lens = collate_audio(
+        cuts, recording_field="target_recording"
+    )
+    assert target_audio.shape == (2, 2, 32000)  # batch x channel x time
+    torch.testing.assert_close(audio_lens, expected_lens)

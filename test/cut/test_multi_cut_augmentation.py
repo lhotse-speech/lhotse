@@ -89,6 +89,9 @@ def test_cut_perturb_speed09(cut_with_supervision):
     assert recording_samples.shape[1] == 285156
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo09(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(0.9)
     assert cut_tp.start == 0.0
@@ -112,6 +115,9 @@ def test_cut_perturb_tempo09(cut_with_supervision):
     assert recording_samples.shape[1] == 285156
 
 
+@pytest.mark.xfail(
+    reason="Torchaudio 2.2 dropped support for SoX, this effect may not be available."
+)
 def test_cut_perturb_tempo11(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(1.1)
     assert cut_tp.start == 0.0

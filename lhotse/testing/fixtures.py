@@ -4,6 +4,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Dict, List
 
 import numpy as np
+import pytest
 import torch
 
 from lhotse import (
@@ -20,6 +21,11 @@ from lhotse import (
 from lhotse.array import seconds_to_frames
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import Seconds, uuid4
+
+
+@pytest.fixture()
+def with_dill_enabled():
+    os.environ["LHOTSE_DILL_ENABLED"] = "1"
 
 
 def random_cut_set(n_cuts=100) -> CutSet:

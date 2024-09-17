@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -35,10 +35,14 @@ class ReverbWithImpulseResponse(AudioTransform):
 
     def __post_init__(self):
         if isinstance(self.rir, dict):
-            from lhotse import Recording
+            from lhotse.serialization import deserialize_item
 
-            # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
-            self.rir = Recording.from_dict(self.rir.copy())
+            # Pass a shallow copy of the RIR dict since deserialization is destructive
+            # If RIR is a Cut, we have to perform one extra copy (hacky but better than deepcopy).
+            rir = self.rir.copy()
+            if "recording" in self.rir:
+                rir["recording"] = rir["recording"].copy()
+            self.rir = deserialize_item(rir)
 
         assert (
             self.rir is not None or self.rir_generator is not None
@@ -51,6 +55,25 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         if self.rir_generator is not None and isinstance(self.rir_generator, dict):
             self.rir_generator = FastRandomRIRGenerator(**self.rir_generator)
+
+    def to_dict(self) -> dict:
+        from lhotse import Recording
+        from lhotse.cut import Cut
+
+        return {
+            "name": type(self).__name__,
+            "kwargs": {
+                "rir": self.rir.to_dict()
+                if isinstance(self.rir, (Recording, Cut))
+                else self.rir,
+                "normalize_output": self.normalize_output,
+                "early_only": self.early_only,
+                "rir_channels": list(self.rir_channels),
+                "rir_generator": self.rir_generator
+                if self.rir_generator is None or isinstance(self.rir_generator, dict)
+                else self.rir_generator.to_dict(),
+            },
+        }
 
     def __call__(
         self,
@@ -92,11 +115,13 @@ class ReverbWithImpulseResponse(AudioTransform):
         if self.rir is None:
             rir_ = self.rir_generator(nsource=1)
         else:
-            rir_ = (
-                self.rir.load_audio(channels=self.rir_channels)
-                if not self.early_only
-                else self.rir.load_audio(channels=self.rir_channels, duration=0.05)
-            )
+            from lhotse import Recording
+
+            rir = self.rir.to_cut() if isinstance(self.rir, Recording) else self.rir
+            rir = rir.with_channels(self.rir_channels)
+            if self.early_only:
+                rir = rir.truncate(duration=0.05)
+            rir_ = rir.load_audio()
 
         D_rir, N_rir = rir_.shape
         N_out = N_in  # Enforce shift output
