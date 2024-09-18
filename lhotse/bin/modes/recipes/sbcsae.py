@@ -20,32 +20,25 @@ __all__ = ["sbcsae"]
     help="Include geographic coordinates of speakers' hometowns in the manifests.",
 )
 @click.option(
-    "--export-alignments",
+    "--omit-realignments",
     type=bool,
     is_flag=True,
-    default=True,
-    help="Export re-aligned manifests.",
-)
-@click.option(
-    "--fix-transcripts",
-    type=bool,
-    is_flag=True,
-    default=True,
-    help="Replace transcripts by the the re-aligned ones (with manual fixes applied).",
+    default=False,
+    help="Only output the original corpus segmentation without boundary improvements.",
 )
 def sbcsae(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     geolocation: bool,
-    export_alignments: bool,
-    fix_transcripts: bool,
+    omit_realignments: bool,
 ):
     """SBCSAE data preparation."""
-    prepare_sbcsae(corpus_dir,
-                   output_dir=output_dir,
-                   geolocation=geolocation,
-                   export_alignments=export_alignments,
-                   fix_transcripts=fix_transcripts)
+    prepare_sbcsae(
+        corpus_dir,
+        output_dir=output_dir,
+        geolocation=geolocation,
+        omit_realignments=omit_realignments,
+    )
 
 
 @download.command(context_settings=dict(show_default=True))
