@@ -116,7 +116,8 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 
 ### Optional dependencies
 
-**Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package like this: `pip install lhotse[package_name]`. The supported optional packages include:
+**Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
+- `torchaudio` used to be a core dependency in Lhotse, but is now optional. Refer to [official PyTorch documentation for installation](https://pytorch.org/get-started/locally/).
 - `pip install lhotse[kaldi]` for a maximal feature set related to Kaldi compatibility. It includes libraries such as `kaldi_native_io` (a more efficient variant of `kaldi_io`) and `kaldifeat` that port some of Kaldi functionality into Python.
 - `pip install lhotse[orjson]` for up to 50% faster reading of JSONL manifests.
 - `pip install lhotse[webdataset]`. We support "compiling" your data into WebDataset tarball format for more effective IO. You can still interact with the data as if it was a regular lazy CutSet. To learn more, check out the following tutorial: [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb)
