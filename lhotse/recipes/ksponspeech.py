@@ -1,16 +1,16 @@
 """
 KsponSpeech is a large-scale spontaneous speech corpus of Korean.
-This corpus contains 969 hours of open-domain dialog utterances,
+This corpus contains 969 hours of open-domain dialogue utterances,
 spoken by about 2,000 native Korean speakers in a clean environment.
 
-All data were constructed by recording the dialogue of two people
+All data were constructed by recording the dialogue between two people
 freely conversing on a variety of topics and manually transcribing the utterances.
 
 The transcription provides a dual transcription consisting of orthography and pronunciation,
-and disfluency tags for spontaneity of speech, such as filler words, repeated words, and word fragments.
+and disfluency tags for the spontaneity of speech, such as filler words, repeated words, and word fragments.
 
-The original audio data has a pcm extension.
-During preprocessing, it is converted into a file in the flac extension and saved anew.
+The original audio data has a PCM extension.
+During preprocessing, it is converted into a file in the FLAC extension and saved anew.
 
 KsponSpeech is publicly available on an open data hub site of the Korea government.
 The dataset must be downloaded manually.
@@ -52,14 +52,14 @@ def normalize(
     Normalizing KsponSpeech text datasets with '.trn' extension.
     Perform the following processing.
 
-    1. Separate file name and text labeling from raw content using separator '::'.
-    2. Remove noise labeling characters. (e.g. `o/`, `b/`...)
-    3. Remove the actual pronunciation from the text labeling, Use the spelling content.
+    1. Separate file name and text labeling from raw content using separator ' :: ';
+    2. Remove noise labeling characters (e.g. `o/`, `b/`...);
+    3. Remove the actual pronunciation from the text labeling; use the spelling content;
     4. Remove other special characters and double spaces from text labeling.
 
-    :param raw_content: A raw text labeling content containing file name and text labeling.
-    :param normalize_text: str, the text normalization type. Available options: "default", "none".
-    :return: A tuple with file name and normalized text labeling.
+    :param raw_content: a raw text labeling content containing file name and text labeling.
+    :param normalize_text: str, the text normalization type, "default" or "none".
+    :return: a tuple with file name and normalized text labeling.
     """
     if len(raw_content) == 0:
         return ""
@@ -75,8 +75,7 @@ def normalize(
         content = content.replace("*", "")
         content = content.replace("+", "")
         content = content.replace("/", "")
-        while "  " in content:
-            content = content.replace("  ", " ")
+        content = re.sub(r"\s+", " ", content)
 
         return original_content_id, content.strip()
 
@@ -93,11 +92,11 @@ def prepare_ksponspeech(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train', 'test'.
-        By default we will infer which parts are available in ``corpus_dir``.
+    :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train', 'dev'.
+        By default, we will infer all parts.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
-    :param normalize_text: str, the text normalization type. Available options: "default", "none".
+    :param normalize_text: str, the text normalization type, "default" or "none".
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
@@ -116,15 +115,25 @@ def prepare_ksponspeech(
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts, output_dir=output_dir
+            dataset_parts=dataset_parts,
+            output_dir=output_dir,
+            prefix="ksponspeech",
+            suffix="jsonl.gz",
+            lazy=True,
         )
 
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in tqdm(dataset_parts, desc="Dataset parts"):
             logging.info(f"Processing KsponSpeech subset: {part}")
-            if manifests_exist(part=part, output_dir=output_dir):
+            if manifests_exist(
+                part=part,
+                output_dir=output_dir,
+                prefix="ksponspeech",
+                suffix="jsonl.gz",
+            ):
                 logging.info(f"KsponSpeech subset: {part} already prepared - skipping.")
                 continue
+
             recordings = []
             supervisions = []
             futures = []
