@@ -41,7 +41,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from math import inf
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from tqdm import tqdm
 
@@ -997,7 +997,7 @@ class StmSegment:
     channel: str = "1"
 
 
-def parse_stm_file(data: str) -> list[StmSegment]:
+def parse_stm_file(data: str) -> List[StmSegment]:
     lines = data.split("\n")
     stm_segments = []
 
@@ -1024,7 +1024,7 @@ def parse_stm_file(data: str) -> list[StmSegment]:
     return stm_segments
 
 
-def retrieve_stm_file(url) -> list[StmSegment]:
+def retrieve_stm_file(url) -> List[StmSegment]:
     import urllib.request
 
     response = urllib.request.urlopen(url)
