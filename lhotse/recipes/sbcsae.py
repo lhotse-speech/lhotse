@@ -41,7 +41,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from math import inf
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from tqdm import tqdm
 
@@ -1050,9 +1050,9 @@ def compute_iou(seg1: SupervisionSegment, seg2: StmSegment) -> float:
 
 
 def apply_stm(
-    recording_ids: list[str],
+    recording_ids: List[str],
     supervisions: SupervisionSet,
-    aligned_stm_segs: list[StmSegment],
+    aligned_stm_segs: List[StmSegment],
 ) -> SupervisionSet:
 
     if not is_module_available("intervaltree"):
@@ -1140,8 +1140,8 @@ def apply_stm(
 
 
 def apply_aligned_stms(
-    recording_ids: list[str], processed_supervisions: SupervisionSet
-) -> tuple[SupervisionSet, SupervisionSet]:
+    recording_ids: List[str], processed_supervisions: SupervisionSet
+) -> Tuple[SupervisionSet, SupervisionSet]:
     aligned_for_asr_stm = retrieve_stm_file(
         "https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_asr.stm"
     )
