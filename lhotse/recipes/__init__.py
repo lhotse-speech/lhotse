@@ -68,6 +68,7 @@ from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech
 from .rir_noise import download_rir_noise, prepare_rir_noise
+from .sbcsae import download_sbcsae, prepare_sbcsae
 from .slu import prepare_slu
 from .spatial_librispeech import (
     download_spatial_librispeech,
