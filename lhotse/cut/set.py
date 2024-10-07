@@ -2550,6 +2550,88 @@ class CutSet(Serializable, AlgorithmMixin):
             )
         )
 
+    def to_huggingface_dataset(self):
+        """
+        Converts a CutSet to a HuggingFace Dataset. Currently, only MonoCut with one recording source is supported.
+        Other cut types will be supported in the future.
+
+        Currently, two formats are supported:
+            1. If each cut has one supervision (e.g. LibriSpeech), each cut is represented as a single row (entry)
+               in the HuggingFace dataset with all the supervision information stored along the cut information.
+               The final HuggingFace dataset format is:
+                   ╔═══════════════════╦═══════════════════════════════╗
+                   ║      Feature      ║            Type               ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        id         ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      audio        ║ Audio()                       ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║     duration      ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║   num_channels    ║ Value(dtype='uint16')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║       text        ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║     speaker       ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║     language      ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║   {x}_alignment   ║ Sequence(Alignment)           ║
+                   ╚═══════════════════╩═══════════════════════════════╝
+               where x stands for the alignment type (commonly used: "word", "phoneme").
+
+               Alignment is represented as:
+                   ╔═══════════════════╦═══════════════════════════════╗
+                   ║      Feature      ║            Type               ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      symbol       ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║       start       ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        end        ║ Value(dtype='float32')        ║
+                   ╚═══════════════════╩═══════════════════════════════╝
+
+
+            2. If each cut has multiple supervisions (e.g. AMI), each cut is represented as a single row (entry)
+               while all the supervisions are stored in a separate list of dictionaries under the 'segments' key.
+               The final HuggingFace dataset format is:
+                   ╔══════════════╦════════════════════════════════════╗
+                   ║   Feature    ║                 Type               ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║      id      ║ Value(dtype='string')              ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║    audio     ║ Audio()                            ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║   duration   ║ Value(dtype='float32')             ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║ num_channels ║ Value(dtype='uint16')              ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║   segments   ║ Sequence(Segment)                  ║
+                   ╚══════════════╩════════════════════════════════════╝
+               where one Segment is represented as:
+                   ╔═══════════════════╦═══════════════════════════════╗
+                   ║      Feature      ║            Type               ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        text       ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║       start       ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        end        ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      channel      ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      speaker      ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      language     ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║   {x}_alignment   ║ Sequence(Alignment)           ║
+                   ╚═══════════════════╩═══════════════════════════════╝
+        :return: A HuggingFace Dataset.
+        """
+        from lhotse.hf import export_cuts_to_hf
+
+        return export_cuts_to_hf(self)
+
     def __repr__(self) -> str:
         try:
             len_val = len(self)
