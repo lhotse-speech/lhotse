@@ -35,19 +35,17 @@ and please cite as
 }
 """
 import json
+import re
+from functools import partial
 from pathlib import Path
 from typing import Dict, Optional, Union
+
 from tqdm import tqdm
-from lhotse.audio import Recording, RecordingSet
+
+from lhotse.audio import Recording, RecordingSet, set_ffmpeg_torchaudio_info_enabled
+from lhotse.parallel import parallel_map
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
-import re
-
-from functools import partial
-
-from lhotse.parallel import parallel_map
-from lhotse.audio import set_ffmpeg_torchaudio_info_enabled
-
 
 set_ffmpeg_torchaudio_info_enabled(False)
 
@@ -56,7 +54,7 @@ def _make_reco_and_sups_from_file(sf: str, msd: float = 0.5):
     corpus_dir = sf.parents[2]
     audio_dir = corpus_dir / "recos"
     fname = sf.with_suffix(".flac").stem
-    
+
     # E.g. 2023_10_01_09h_02m_54s_dur30_ZnpbY9Zx_lat3.17_long113.04
     chunk_idx = int(sf.parent.suffix.strip("."))
     reco_file = audio_dir / f"recos.{chunk_idx}" / f"{fname}.flac"
@@ -66,15 +64,15 @@ def _make_reco_and_sups_from_file(sf: str, msd: float = 0.5):
     total = 0
     with open(sf) as f:
         segments = json.load(f)
-    
+
     # Parse the file format, shown in the comment above, to get:
-    # date, station, latitude, longitude, and the estimated gender 
+    # date, station, latitude, longitude, and the estimated gender
     lat, lon = re.search(r"lat[^_]+_long[^_]+", Path(sf).stem).group(0).split("_")
     lat = float(lat.replace("lat", ""))
     lon = float(lon.replace("long", ""))
     station = re.search(r"s_dur[0-9]+_(.*)_lat[^_]+_long[^_]+", fname).groups()[0]
     fname_vals = fname.split("_")
-    date = [int(i.strip("hms")) for i in fname_vals[0:6]] # YY MM DD hh mm ss
+    date = [int(i.strip("hms")) for i in fname_vals[0:6]]  # YY MM DD hh mm ss
     for seg in segments:
         start, end = float(seg[1]), float(seg[2])
         dur = end - start
@@ -109,7 +107,7 @@ def prepare_radio(
     :param corpus_dir: Path to the collected radio samples
     :param output_dir: Pathlike, the path where manifests are written
     :return: A Dict whose key is the dataset part and the value is a Dict with
-        keys 'recordings' and 'supervisions'.  
+        keys 'recordings' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
     segment_files = corpus_dir.rglob("segs/*/*.json")
