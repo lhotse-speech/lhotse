@@ -18,7 +18,6 @@ accompanying dev and test sets. Full details can be found in
 }
 """
 import logging
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
@@ -36,16 +35,6 @@ from lhotse import (
 )
 from lhotse.parallel import parallel_map
 from lhotse.utils import Pathlike, is_module_available
-
-
-@contextmanager
-def disable_ffmpeg_torchaudio_info() -> None:
-    enabled = get_ffmpeg_torchaudio_info_enabled()
-    set_ffmpeg_torchaudio_info_enabled(False)
-    try:
-        yield
-    finally:
-        set_ffmpeg_torchaudio_info_enabled(enabled)
 
 
 # The FLEURS languages are indicated by 2-letter ISO-codes followed by a
