@@ -59,7 +59,6 @@ def fleurs(
     target_dir: Pathlike,
     lang: Optional[Union[str, Sequence[str]]],
     force_download: bool = False,
-    num_jobs: int = 1,
 ):
     """FLEURS download."""
     download_fleurs(
