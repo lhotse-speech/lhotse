@@ -36,18 +36,32 @@ and please cite as
 """
 import json
 import re
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from typing import Dict, Optional, Union
 
 from tqdm import tqdm
 
-from lhotse.audio import Recording, RecordingSet, set_ffmpeg_torchaudio_info_enabled
+from lhotse.audio import (
+    Recording,
+    RecordingSet,
+    get_ffmpeg_torchaudio_info_enabled,
+    set_ffmpeg_torchaudio_info_enabled,
+)
 from lhotse.parallel import parallel_map
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
-set_ffmpeg_torchaudio_info_enabled(False)
+
+@contextmanager
+def disable_ffmpeg_torchaudio_info() -> None:
+    enabled = get_ffmpeg_torchaudio_info_enabled()
+    set_ffmpeg_torchaudio_info_enabled(False)
+    try:
+        yield
+    finally:
+        set_ffmpeg_torchaudio_info_enabled(enabled)
 
 
 def _make_reco_and_sups_from_file(sf: str, msd: float = 0.5):
