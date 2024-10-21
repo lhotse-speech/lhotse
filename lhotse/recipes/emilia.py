@@ -27,15 +27,15 @@ Note that you need to apply for downloading.
 
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 from tqdm.auto import tqdm
 
-from lhotse.audio import Recording, RecordingSet
-from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.audio import Recording
 from lhotse.serialization import load_jsonl
-from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Pathlike
+from lhotse import MonoCut, CutSet
 
 
 def _parse_utterance(
@@ -87,7 +87,7 @@ def prepare_emilia(
     lang: str,
     num_jobs: int,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> CutSet:
     """
     Returns the manifests which consist of the Recordings and Supervisions
 
@@ -101,8 +101,7 @@ def prepare_emilia(
     :param lang: str, one of en, zh, de, ko, ja, fr
     :param num_jobs: int, number of threads for processing jsonl files
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: The RecordingSet and SupervisionSet with the keys 'recordings' and
-             'supervisions'.
+    :return: The CutSet containing the data for the given language.
     """
     if lang is None:
         raise ValueError("Please provide --lang")
@@ -121,8 +120,7 @@ def prepare_emilia(
 
     jsonl_files = data_dir.glob("*.jsonl")
 
-    recordings = []
-    supervisions = []
+    cuts = []
     futures = []
 
     with ThreadPoolExecutor(num_jobs) as ex:
@@ -147,30 +145,21 @@ def prepare_emilia(
 
             recording, segment = result
 
-            recordings.append(recording)
-            supervisions.append(segment)
+            cuts.append(
+                MonoCut(
+                    id=recording.id,
+                    recording=recording,
+                    start=0,
+                    duration=recording.duration,
+                    supervisions=[segment],
+                    channel=0,
+                )
+            )
 
-    recording_set = RecordingSet.from_recordings(recordings)
-    supervision_set = SupervisionSet.from_segments(supervisions)
-
-    recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
-    validate_recordings_and_supervisions(
-        recordings=recording_set, supervisions=supervision_set
-    )
+    cut_set = CutSet.from_cuts(cuts)
 
     if output_dir is not None:
         output_dir = Path(output_dir)
-        supervision_set.to_file(
-            output_dir / f"emilia_supervisions_{lang_uppercase}.jsonl.gz"
-        )
-        recording_set.to_file(
-            output_dir / f"emilia_recordings_{lang_uppercase}.jsonl.gz"
-        )
+        cut_set.to_file(output_dir / f"emilia_cuts_{lang_uppercase}.jsonl.gz")
 
-    manifests = dict()
-    manifests[lang_uppercase] = {
-        "recordings": recording_set,
-        "supervisions": supervision_set,
-    }
-
-    return manifests
+    return cut_set
