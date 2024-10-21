@@ -29,6 +29,7 @@ from .dihard3 import *
 from .dipco import *
 from .earnings21 import *
 from .earnings22 import *
+from .ears import *
 from .edacc import *
 from .eval2000 import *
 from .fisher_english import *
@@ -67,7 +68,9 @@ from .peoples_speech import *
 from .primewords import *
 from .reazonspeech import *
 from .rir_noise import *
+from .sbcsae import *
 from .slu import *
+from .spatial_librispeech import *
 from .speechcommands import *
 from .speechio import *
 from .spgispeech import *
@@ -86,5 +89,6 @@ from .voxceleb import *
 from .voxconverse import *
 from .voxpopuli import *
 from .wenet_speech import *
+from .wenetspeech4tts import *
 from .xbmu_amdo31 import *
 from .yesno import *

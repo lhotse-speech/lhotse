@@ -2,6 +2,7 @@ import shutil
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -10,6 +11,7 @@ import torchaudio
 
 import lhotse
 from lhotse import AudioSource, Recording
+from lhotse.audio import suppress_audio_loading_errors
 from lhotse.audio.backend import (
     info,
     read_opus_ffmpeg,
@@ -260,3 +262,27 @@ def test_set_audio_backend():
     )
     audio2 = recording.load_audio()
     np.testing.assert_array_almost_equal(audio1, audio2)
+
+
+def test_fault_tolerant_audio_network_exception():
+    def _mock_load_audio(*args, **kwargs):
+        raise ConnectionResetError()
+
+    source = Mock()
+    source.load_audio = _mock_load_audio
+    source.has_video = False
+
+    recording = Recording(
+        id="irrelevant",
+        sources=[source],
+        sampling_rate=16000,
+        num_samples=16000,
+        duration=1.0,
+        channel_ids=[0],
+    )
+
+    with pytest.raises(ConnectionResetError):
+        recording.load_audio()  # does raise
+
+    with suppress_audio_loading_errors(True):
+        recording.load_audio()  # is silently caught

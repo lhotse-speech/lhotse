@@ -53,7 +53,7 @@ def test_dynamic_bucketing_drop_last_false():
     rng = random.Random(0)
 
     sampler = DynamicBucketer(
-        cuts, duration_bins=[2], max_duration=5, rng=rng, world_size=1
+        cuts, duration_bins=[1.5], max_duration=5, rng=rng, world_size=1
     )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
@@ -90,7 +90,7 @@ def test_dynamic_bucketing_drop_last_true():
     rng = random.Random(0)
 
     sampler = DynamicBucketer(
-        cuts, duration_bins=[2], max_duration=5, rng=rng, drop_last=True, world_size=1
+        cuts, duration_bins=[1.5], max_duration=5, rng=rng, drop_last=True, world_size=1
     )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
@@ -115,7 +115,8 @@ def test_dynamic_bucketing_drop_last_true():
     assert sum(c.duration for c in batches[2]) == 5
 
 
-def test_dynamic_bucketing_sampler():
+@pytest.mark.parametrize("concurrent", [False, True])
+def test_dynamic_bucketing_sampler(concurrent):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     for i, c in enumerate(cuts):
         if i < 5:
@@ -123,7 +124,9 @@ def test_dynamic_bucketing_sampler():
         else:
             c.duration = 2
 
-    sampler = DynamicBucketingSampler(cuts, max_duration=5, num_buckets=2, seed=0)
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=5, duration_bins=[1.5], seed=0, concurrent=concurrent
+    )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
 
@@ -228,7 +231,9 @@ def test_dynamic_bucketing_sampler_too_small_data_can_be_sampled():
             c.duration = 2
 
     # 10 cuts with 30s total are not enough to satisfy max_duration of 100 with 2 buckets
-    sampler = DynamicBucketingSampler(cuts, max_duration=100, num_buckets=2, seed=0)
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=100, duration_bins=[1.5], seed=0
+    )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
 
@@ -244,6 +249,35 @@ def test_dynamic_bucketing_sampler_too_small_data_can_be_sampled():
     # Each batch has five cuts
     for b in batches:
         assert len(b) == 5
+
+
+def test_dynamic_bucketing_sampler_much_less_data_than_ddp_ranks():
+    world_size = 128
+    orig_cut = dummy_cut(0)
+    cuts = CutSet([orig_cut])
+    samplers = [
+        DynamicBucketingSampler(
+            cuts,
+            max_duration=2000.0,
+            duration_bins=[1.5, 3.7, 15.2, 27.9, 40.0],
+            drop_last=False,
+            concurrent=False,
+            world_size=world_size,
+            rank=i,
+        )
+        for i in range(world_size)
+    ]
+    # None of the ranks drops anything, all of them return the one cut we have.
+    for sampler in samplers:
+        (batch,) = [b for b in sampler]
+        assert len(batch) == 1
+        (sampled_cut,) = batch
+        assert (
+            sampled_cut.id[: len(orig_cut.id)] == orig_cut.id
+        )  # same stem, possibly added '_dupX' suffix
+        # otherwise the cuts are identical
+        sampled_cut.id = orig_cut.id
+        assert sampled_cut == orig_cut
 
 
 def test_dynamic_bucketing_sampler_too_small_data_drop_last_true_results_in_no_batches():
@@ -334,7 +368,9 @@ def test_dynamic_bucketing_sampler_cut_pairs():
         else:
             c.duration = 2
 
-    sampler = DynamicBucketingSampler(cuts, cuts, max_duration=5, num_buckets=2, seed=0)
+    sampler = DynamicBucketingSampler(
+        cuts, cuts, max_duration=5, duration_bins=[1.5], seed=0
+    )
     batches = [b for b in sampler]
     sampled_cut_pairs = [cut_pair for b in batches for cut_pair in zip(*b)]
     source_cuts = [sc for sc, tc in sampled_cut_pairs]
@@ -470,7 +506,7 @@ def test_dynamic_bucketing_sampler_cut_triplets():
             c.duration = 2
 
     sampler = DynamicBucketingSampler(
-        cuts, cuts, cuts, max_duration=5, num_buckets=2, seed=0
+        cuts, cuts, cuts, max_duration=5, duration_bins=[1.5], seed=0
     )
     batches = [b for b in sampler]
     sampled_cut_triplets = [cut_triplet for b in batches for cut_triplet in zip(*b)]
@@ -539,7 +575,7 @@ def test_dynamic_bucketing_quadratic_duration():
 
     # quadratic_duration=30
     sampler = DynamicBucketingSampler(
-        cuts, max_duration=61, num_buckets=2, seed=0, quadratic_duration=30
+        cuts, max_duration=61, duration_bins=[10.0], seed=0, quadratic_duration=30
     )
     batches = [b for b in sampler]
     assert len(batches) == 6
@@ -553,7 +589,7 @@ def test_dynamic_bucketing_quadratic_duration():
 
     # quadratic_duration=None (disabled)
     sampler = DynamicBucketingSampler(
-        cuts, max_duration=61, num_buckets=2, seed=0, quadratic_duration=None
+        cuts, max_duration=61, duration_bins=[10.0], seed=0, quadratic_duration=None
     )
     batches = [b for b in sampler]
     assert len(batches) == 4
@@ -728,3 +764,31 @@ def test_dynamic_bucketing_sampler_fixed_batch_constraint():
 
     assert len(batches[7]) == 1
     assert sum(c.duration for c in batches[7]) == 1
+
+
+def test_select_bucket_includes_upper_bound_in_bin():
+    constraint = FixedBucketBatchSizeConstraint(
+        max_seq_len_buckets=[2.0, 4.0], batch_sizes=[2, 1]
+    )
+
+    # within bounds
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=1.0) == 0
+    )
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=2.0) == 0
+    )
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=3.0) == 1
+    )
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=4.0) == 1
+    )
+    constraint.add(dummy_cut(0, duration=4.0))  # can add max duration without exception
+
+    # out of bounds
+    assert (
+        constraint.select_bucket(constraint.max_seq_len_buckets, example_len=5.0) == 2
+    )
+    with pytest.raises(AssertionError):
+        constraint.add(dummy_cut(0, duration=5.0))

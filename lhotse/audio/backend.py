@@ -808,7 +808,8 @@ def torchaudio_info(
 
     if torchaudio_ffmpeg_backend_available():
         # Torchaudio 2.1 with official "ffmpeg" backend should solve all the special cases below.
-        info = torchaudio.info(path_or_fileobj, backend="ffmpeg")
+        backend = "ffmpeg" if "ffmpeg" in torchaudio.list_audio_backends() else None
+        info = torchaudio.info(path_or_fileobj, backend=backend)
         return LibsndfileCompatibleAudioInfo(
             channels=info.num_channels,
             frames=info.num_frames,

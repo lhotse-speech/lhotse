@@ -1,6 +1,7 @@
 import os
 import random
 import secrets
+import sys
 from functools import partial
 from typing import Callable, Literal, Optional, Union
 
@@ -68,7 +69,7 @@ def worker_init_fn(
     os.environ["WORLD_SIZE"] = str(world_size)
 
 
-def resolve_seed(seed: Union[int, Literal["trng", "randomized"]]) -> int:
+def resolve_seed(seed: Union[int, Literal["trng", "randomized"], None]) -> int:
     """
     Resolves the special values of random seed supported in Lhotse.
 
@@ -83,16 +84,25 @@ def resolve_seed(seed: Union[int, Literal["trng", "randomized"]]) -> int:
     If we are not in a dataloading worker (or ``num_workers`` was set to ``0``), we'll return Python's ``random``
     module global seed.
     """
+
+    # Specific number provided: use it.
     if isinstance(seed, int):
         return seed
 
+    # No request for a specific type of random seed resolution: return Python's global random seed.
+    if seed is None:
+        return random.getstate()[1][0]
+
+    # Deterministic randomized random seed resolution:
+    # Each dataloading worker and DDP rank gets a separate random seed.
+    # If we're not in a dataloading worker, use global RNG's current seed.
     if seed == "randomized":
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
-            # not in a dataloader sub-process: get python global random seed
+            # Not in a dataloader sub-process: get Python's global random seed.
             return random.getstate()[1][0]
         else:
-            # in a dataloader sub-process: read out the seed we assigned to it
+            # In a dataloader sub-process: read out the seed we assigned to it.
             assert LHOTSE_PROCESS_SEED in os.environ, (
                 "Requested seed='randomized' for shuffling shards differently "
                 "on each DataLoader node and worker, "
@@ -100,12 +110,16 @@ def resolve_seed(seed: Union[int, Literal["trng", "randomized"]]) -> int:
             )
             return int(os.environ[LHOTSE_PROCESS_SEED])
 
+    # True-random number generator requested for seed generation ("complete randomness").
     if seed == "trng":
-        return secrets.randbelow(2**32)
+        # 2**32 may trigger the following exception if you add anything:
+        # File "_mt19937.pyx", line 180, in numpy.random._mt19937.MT19937._legacy_seeding
+        # ValueError: Seed must be between 0 and 2**32 - 1
+        return secrets.randbelow(2**31)
 
     raise ValueError(
         f"Unexpected type or value of seed: {type(seed)=} {seed=}. "
-        f"Supported values are: int, 'trng', and 'randomized'."
+        f"Supported values are: None, int, 'trng', and 'randomized'."
     )
 
 

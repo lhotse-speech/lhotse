@@ -121,7 +121,6 @@ def prepare_spgispeech(
 
         def audio_read_worker(p: Path) -> Recording:
             r = Recording.from_file(p, recording_id=f"{p.parent.stem}_{p.stem}")
-            durations[r.id] = r.duration
             return r
 
         with RecordingSet.open_writer(
@@ -135,6 +134,7 @@ def prepare_spgispeech(
                 ),
                 desc="Processing SPGISpeech recordings",
             ):
+                durations[recording.id] = recording.duration
                 rec_writer.write(recording)
 
         # Read supervisions and write them to manifest

@@ -45,7 +45,6 @@ from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
 from lhotse.lazy import (
     AlgorithmMixin,
     Dillable,
-    LazyFilter,
     LazyFlattener,
     LazyIteratorChain,
     LazyManifestIterator,
@@ -63,7 +62,6 @@ from lhotse.utils import (
     Seconds,
     compute_num_frames,
     compute_num_samples,
-    deprecated,
     exactly_one_not_null,
     fastcopy,
     ifnone,
@@ -2033,7 +2031,6 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         from concurrent.futures import ThreadPoolExecutor
 
-        import torch
         from torch.utils.data import DataLoader
 
         from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
@@ -2523,6 +2520,118 @@ class CutSet(Serializable, AlgorithmMixin):
             partial(_transform_text, transform_fn=transform_fn)
         )
 
+    def prefetch(self, buffer_size: int = 10) -> "CutSet":
+        """
+        Pre-fetches the CutSet elements in a background process.
+        Useful for enabling concurrent reading/processing/writing in ETL-style tasks.
+
+        .. caution:: This method internally uses a PyTorch DataLoader with a single worker.
+            It is not suitable for use in typical PyTorch training scripts.
+
+        .. caution:: If you run into pickling issues when using this method, you're also likely
+            using .filter/.map methods with a lambda function.
+            Please set ``lhotse.set_dill_enabled(True)`` to resolve these issues, or convert lambdas
+            to regular functions + ``functools.partial``
+
+        """
+        from torch.utils.data import DataLoader
+
+        from lhotse.dataset import DynamicCutSampler, IterableDatasetWrapper
+
+        return CutSet(
+            DataLoader(
+                dataset=IterableDatasetWrapper(
+                    _BackgroundCutFetcher(),
+                    DynamicCutSampler(self, max_cuts=1, rank=0, world_size=1),
+                ),
+                batch_size=None,
+                num_workers=1,
+                prefetch_factor=buffer_size,
+            )
+        )
+
+    def to_huggingface_dataset(self):
+        """
+        Converts a CutSet to a HuggingFace Dataset. Currently, only MonoCut with one recording source is supported.
+        Other cut types will be supported in the future.
+
+        Currently, two formats are supported:
+            1. If each cut has one supervision (e.g. LibriSpeech), each cut is represented as a single row (entry)
+               in the HuggingFace dataset with all the supervision information stored along the cut information.
+               The final HuggingFace dataset format is:
+                   ╔═══════════════════╦═══════════════════════════════╗
+                   ║      Feature      ║            Type               ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        id         ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      audio        ║ Audio()                       ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║     duration      ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║   num_channels    ║ Value(dtype='uint16')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║       text        ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║     speaker       ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║     language      ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║   {x}_alignment   ║ Sequence(Alignment)           ║
+                   ╚═══════════════════╩═══════════════════════════════╝
+               where x stands for the alignment type (commonly used: "word", "phoneme").
+
+               Alignment is represented as:
+                   ╔═══════════════════╦═══════════════════════════════╗
+                   ║      Feature      ║            Type               ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      symbol       ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║       start       ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        end        ║ Value(dtype='float32')        ║
+                   ╚═══════════════════╩═══════════════════════════════╝
+
+
+            2. If each cut has multiple supervisions (e.g. AMI), each cut is represented as a single row (entry)
+               while all the supervisions are stored in a separate list of dictionaries under the 'segments' key.
+               The final HuggingFace dataset format is:
+                   ╔══════════════╦════════════════════════════════════╗
+                   ║   Feature    ║                 Type               ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║      id      ║ Value(dtype='string')              ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║    audio     ║ Audio()                            ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║   duration   ║ Value(dtype='float32')             ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║ num_channels ║ Value(dtype='uint16')              ║
+                   ╠══════════════╬════════════════════════════════════╣
+                   ║   segments   ║ Sequence(Segment)                  ║
+                   ╚══════════════╩════════════════════════════════════╝
+               where one Segment is represented as:
+                   ╔═══════════════════╦═══════════════════════════════╗
+                   ║      Feature      ║            Type               ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        text       ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║       start       ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║        end        ║ Value(dtype='float32')        ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      channel      ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      speaker      ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║      language     ║ Value(dtype='string')         ║
+                   ╠═══════════════════╬═══════════════════════════════╣
+                   ║   {x}_alignment   ║ Sequence(Alignment)           ║
+                   ╚═══════════════════╩═══════════════════════════════╝
+        :return: A HuggingFace Dataset.
+        """
+        from lhotse.hf import export_cuts_to_hf
+
+        return export_cuts_to_hf(self)
+
     def __repr__(self) -> str:
         try:
             len_val = len(self)
@@ -2552,6 +2661,12 @@ class CutSet(Serializable, AlgorithmMixin):
 
     def __iter__(self) -> Iterable[Cut]:
         yield from self.cuts
+
+
+class _BackgroundCutFetcher(torch.utils.data.Dataset):
+    def __getitem__(self, cuts: CutSet):
+        assert len(cuts) == 1
+        return cuts[0]
 
 
 def mix(

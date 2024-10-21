@@ -290,6 +290,14 @@ class MixedCut(Cut):
                 f"when a MixedCut consists of more than one MonoCut with that attribute)."
             )
 
+    def has_custom(self, name: str) -> bool:
+        (
+            non_padding_idx,
+            mono_cut,
+        ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
+
+        return hasattr(mono_cut, name)
+
     def load_custom(self, name: str) -> np.ndarray:
         """
         Load custom data as numpy array. The custom data is expected to have

@@ -26,6 +26,7 @@ from .dihard3 import prepare_dihard3
 from .dipco import download_dipco, prepare_dipco
 from .earnings21 import download_earnings21, prepare_earnings21
 from .earnings22 import download_earnings22, prepare_earnings22
+from .ears import download_ears, prepare_ears
 from .edacc import download_edacc, prepare_edacc
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
@@ -68,7 +69,12 @@ from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech
 from .rir_noise import download_rir_noise, prepare_rir_noise
+from .sbcsae import download_sbcsae, prepare_sbcsae
 from .slu import prepare_slu
+from .spatial_librispeech import (
+    download_spatial_librispeech,
+    prepare_spatial_librispeech,
+)
 from .speechcommands import download_speechcommands, prepare_speechcommands
 from .speechio import prepare_speechio
 from .spgispeech import download_spgispeech, prepare_spgispeech
@@ -85,6 +91,7 @@ from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .voxconverse import download_voxconverse, prepare_voxconverse
 from .voxpopuli import download_voxpopuli, prepare_voxpopuli
 from .wenet_speech import prepare_wenet_speech
+from .wenetspeech4tts import prepare_wenetspeech4tts
 from .xbmu_amdo31 import download_xbmu_amdo31, prepare_xbmu_amdo31
 from .yesno import download_yesno, prepare_yesno
 
@@ -132,6 +139,8 @@ __all__ = [
     "prepare_earnings21",
     "download_earnings22",
     "prepare_earnings22",
+    "download_ears",
+    "prepare_ears",
     "download_edacc",
     "prepare_edacc",
     "prepare_eval2000",
