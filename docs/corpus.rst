@@ -209,6 +209,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_wenetspeech4tts`
   * - YesNo
     - :func:`lhotse.recipes.prepare_yesno`
+  * - Emilia
+    - :func:`lhotse.recipes.prepare_emilia`
   * - Eval2000
     - :func:`lhotse.recipes.prepare_eval2000`
   * - MGB2
