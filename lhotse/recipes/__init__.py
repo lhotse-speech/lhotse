@@ -31,6 +31,7 @@ from .edacc import download_edacc, prepare_edacc
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
 from .fisher_spanish import prepare_fisher_spanish
+from .fleurs import download_fleurs, prepare_fleurs
 from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
@@ -66,6 +67,7 @@ from .mtedx import download_mtedx, prepare_mtedx
 from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
+from .radio import prepare_radio
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .sbcsae import download_sbcsae, prepare_sbcsae
@@ -145,6 +147,8 @@ __all__ = [
     "prepare_eval2000",
     "prepare_fisher_english",
     "prepare_fisher_spanish",
+    "download_fleurs",
+    "prepare_fleurs",
     "prepare_gale_arabic",
     "prepare_gale_mandarin",
     "prepare_gigaspeech",
@@ -194,6 +198,7 @@ __all__ = [
     "prepare_peoples_speech",
     "download_reazonspeech",
     "prepare_reazonspeech",
+    "prepare_radio",
     "download_rir_noise",
     "prepare_rir_noise",
     "prepare_slu",
