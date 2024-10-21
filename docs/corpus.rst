@@ -109,6 +109,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_fisher_english`
   * - Fisher Spanish
     - :func:`lhotse.recipes.prepare_fisher_spanish`
+  * - FLEURS
+    - :func:`lhotse.recipes.prepare_fleurs`
   * - Fluent Speech Commands
     - :func:`lhotse.recipes.slu`
   * - GALE Arabic Broadcast Speech
