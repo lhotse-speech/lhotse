@@ -31,11 +31,11 @@ from typing import Optional, Tuple
 
 from tqdm.auto import tqdm
 
+from lhotse import CutSet, MonoCut
 from lhotse.audio import Recording
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Pathlike
-from lhotse import MonoCut, CutSet
 
 
 def _parse_utterance(
