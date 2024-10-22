@@ -599,7 +599,7 @@ def activity_detection(
 )
 @click.option(
     "-p",
-    "--is_personalized_MOS",
+    "--is-personalized-mos",
     default="False",
     help="Flag to indicate if personalized MOS score is needed or regular.",
 )
@@ -610,7 +610,7 @@ def annotate_dnsmos(
     recordings_dir: Optional[str],
     cuts_manifest: Optional[str],
     extension: str,
-    is_personalized_MOS: str,
+    is_personalized_mos: str,
     jobs: int,
 ):
     """
@@ -642,9 +642,9 @@ def annotate_dnsmos(
         for cut in tqdm(
             annotate_dnsmos_(
                 manifest,
-                is_personalized_MOS=is_personalized_MOS,
+                is_personalized_mos=is_personalized_mos,
             ),
             total=len(manifest),
-            desc="Annotating with Whisper",
+            desc="Annotating with DNSMOS P.835 prediction model",
         ):
             writer.write(cut, flush=True)
