@@ -600,7 +600,7 @@ def activity_detection(
 @click.option(
     "-p",
     "--is-personalized-mos",
-    default="False",
+    default=False,
     help="Flag to indicate if personalized MOS score is needed or regular.",
 )
 @click.option("-j", "--jobs", default=1, help="Number of jobs for audio scanning.")
