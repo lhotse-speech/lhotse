@@ -31,9 +31,11 @@ from .earnings21 import *
 from .earnings22 import *
 from .ears import *
 from .edacc import *
+from .emilia import *
 from .eval2000 import *
 from .fisher_english import *
 from .fisher_spanish import *
+from .fleurs import *
 from .gale_arabic import *
 from .gale_mandarin import *
 from .gigaspeech import *
@@ -66,6 +68,7 @@ from .must_c import *
 from .nsc import *
 from .peoples_speech import *
 from .primewords import *
+from .radio import *
 from .reazonspeech import *
 from .rir_noise import *
 from .sbcsae import *
