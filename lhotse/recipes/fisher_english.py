@@ -148,19 +148,13 @@ def prepare_fisher_english(
     for audio_dir in audio_dirs:
         audio_dir_path = corpus_dir / audio_dir
         for audio_partition_dir in audio_dir_path.iterdir():
-            audio_partition_dir_path = audio_dir_path / audio_partition_dir / "audio"
-            audio_subdir_paths += [
-                audio_partition_dir_path / audio_subdir
-                for audio_subdir in audio_partition_dir_path.iterdir()
-            ]
+            audio_partition_dir_path = audio_partition_dir / "audio"
+            audio_subdir_paths += audio_partition_dir_path.iterdir()
 
     transcript_subdir_paths = []
     for transcript_dir in transcript_dirs:
         transcript_dir_path = corpus_dir / transcript_dir / "data" / "trans"
-        transcript_subdir_paths += [
-            transcript_dir_path / transcript_subdir
-            for transcript_subdir in transcript_dir_path.iterdir()
-        ]
+        transcript_subdir_paths += transcript_dir_path.iterdir()
 
     audio_paths = walk_dirs_parallel(
         audio_subdir_paths, "*.sph", "Parsing audio sub-dirs"
