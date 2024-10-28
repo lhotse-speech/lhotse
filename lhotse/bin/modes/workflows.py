@@ -569,3 +569,82 @@ def activity_detection(
     supervisions.to_file(str(sups_path))
 
     print("Results saved to:", str(sups_path), sep="\n")
+
+
+@workflows.command()
+@click.argument("out_cuts", type=click.Path(allow_dash=True))
+@click.option(
+    "-m",
+    "--recordings-manifest",
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    help="Path to an existing recording manifest.",
+)
+@click.option(
+    "-r",
+    "--recordings-dir",
+    type=click.Path(exists=True, file_okay=False),
+    help="Directory with recordings. We will create a RecordingSet for it automatically.",
+)
+@click.option(
+    "-c",
+    "--cuts-manifest",
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    help="Path to an existing cuts manifest.",
+)
+@click.option(
+    "-e",
+    "--extension",
+    default="wav",
+    help="Audio file extension to search for. Used with RECORDINGS_DIR.",
+)
+@click.option(
+    "-p",
+    "--is-personalized-mos",
+    default=False,
+    help="Flag to indicate if personalized MOS score is needed or regular.",
+)
+@click.option("-j", "--jobs", default=1, help="Number of jobs for audio scanning.")
+def annotate_dnsmos(
+    out_cuts: str,
+    recordings_manifest: Optional[str],
+    recordings_dir: Optional[str],
+    cuts_manifest: Optional[str],
+    extension: str,
+    is_personalized_mos: str,
+    jobs: int,
+):
+    """
+    Use Microsoft DNSMOS P.835 prediction model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
+    It will predict DNSMOS P.835 score including SIG, NAK, and OVRL.
+
+    See the original repo for more details: https://github.com/microsoft/DNS-Challenge/tree/master/DNSMOS
+
+    RECORDINGS_MANIFEST, RECORDINGS_DIR, and CUTS_MANIFEST are mutually exclusive. If CUTS_MANIFEST
+    is provided, its supervisions will be overwritten with the results of the inference.
+    """
+    from lhotse import annotate_dnsmos as annotate_dnsmos_
+
+    assert exactly_one_not_null(recordings_manifest, recordings_dir, cuts_manifest), (
+        "Options RECORDINGS_MANIFEST, RECORDINGS_DIR, and CUTS_MANIFEST are mutually exclusive "
+        "and at least one is required."
+    )
+
+    if recordings_manifest is not None:
+        manifest = RecordingSet.from_file(recordings_manifest)
+    elif recordings_dir is not None:
+        manifest = RecordingSet.from_dir(
+            recordings_dir, pattern=f"*.{extension}", num_jobs=jobs
+        )
+    else:
+        manifest = CutSet.from_file(cuts_manifest).to_eager()
+
+    with CutSet.open_writer(out_cuts) as writer:
+        for cut in tqdm(
+            annotate_dnsmos_(
+                manifest,
+                is_personalized_mos=is_personalized_mos,
+            ),
+            total=len(manifest),
+            desc="Annotating with DNSMOS P.835 prediction model",
+        ):
+            writer.write(cut, flush=True)
