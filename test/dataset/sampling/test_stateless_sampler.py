@@ -189,7 +189,11 @@ def test_stateless_sampler_in_dataloader_with_iterable_dataset(
 def test_stateless_sampler_bucketing(cuts_files: Tuple[Path]):
     index_path = cuts_files[0].parent / "cuts.idx"
     sampler = StatelessSampler(
-        cuts_files, index_path=index_path, num_buckets=2, max_duration=4, base_seed=0
+        cuts_files,
+        index_path=index_path,
+        duration_bins=[1.5],
+        max_duration=4,
+        base_seed=0,
     )
 
     for idx, batch in enumerate(sampler):
