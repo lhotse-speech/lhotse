@@ -39,6 +39,7 @@ def ksponspeech(
     output_dir: Pathlike,
     dataset_parts: Sequence[str],
     num_jobs: int,
+    normalize_text: str,
 ):
     """KsponSpeech ASR data preparation."""
     if len(dataset_parts) == 1:
@@ -48,4 +49,5 @@ def ksponspeech(
         output_dir=output_dir,
         num_jobs=num_jobs,
         dataset_parts=dataset_parts,
+        normalize_text=normalize_text,
     )
