@@ -88,7 +88,7 @@ class ParallelExecutor:
 
         >>> class MyRunner:
         ...     def __init__(self):
-        ...         self.name = name
+        ...         pass
         ...     def __call__(self, x):
         ...         return f'processed: {x}'
         ...
