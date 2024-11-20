@@ -30,7 +30,7 @@ class BucketingSampler(CutSampler):
         ...    # BucketingSampler specific args
         ...    sampler_type=SimpleCutSampler, num_buckets=20,
         ...    # Args passed into SimpleCutSampler
-        ...    max_frames=20000
+        ...    max_duration=200
         ... )
 
     Bucketing sampler with 20 buckets, sampling pairs of source-target cuts::
@@ -40,7 +40,7 @@ class BucketingSampler(CutSampler):
         ...    # BucketingSampler specific args
         ...    sampler_type=CutPairsSampler, num_buckets=20,
         ...    # Args passed into CutPairsSampler
-        ...    max_source_frames=20000, max_target_frames=15000
+        ...    max_source_duration=200, max_target_duration=150
         ... )
     """
 
