@@ -35,7 +35,7 @@ def open_best(path: Pathlike, mode: str = "r"):
     if isinstance(path, (BytesIO, StringIO, StreamWriter, StreamReader)):
         return path
     assert isinstance(
-        path, Pathlike
+        path, (str, Path)
     ), f"Unexpected identifier type {type(path)} for object {path}. Expected str or pathlib.Path."
     try:
         return get_current_io_backend().open(path, mode)
