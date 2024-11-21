@@ -768,6 +768,7 @@ class SmartOpenIOBackend(IOBackend):
     def open(self, identifier: Pathlike, mode: str):
         return SmartOpen.open(identifier, mode)
 
+    @classmethod
     def is_available(cls) -> bool:
         return is_module_available("smart_open")
 
@@ -930,8 +931,9 @@ def get_default_io_backend() -> "IOBackend":
         # Try AIStore before other generalist backends,
         # but only if it's installed and enabled via AIS_ENDPOINT env var.
         backends.append(AIStoreIOBackend())
+    if SmartOpenIOBackend.is_available():
+        backends.append(SmartOpenIOBackend())
     backends += [
-        SmartOpenIOBackend(),
         GzipIOBackend(),
         BuiltinIOBackend(),
     ]
