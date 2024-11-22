@@ -67,56 +67,6 @@ def test_tar_writer_pipe(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    "format",
-    [
-        "wav",
-        pytest.param(
-            "flac",
-            marks=pytest.mark.skipif(
-                not check_torchaudio_version_gt("0.12.1"),
-                reason="Torchaudio v0.12.1 or greater is required.",
-            ),
-        ),
-        # "mp3",  # apparently doesn't work in CI, mp3 encoder is missing
-        pytest.param(
-            "opus",
-            marks=pytest.mark.skipif(
-                not check_torchaudio_version_gt("2.1.0"),
-                reason="Torchaudio v2.1.0 or greater is required.",
-            ),
-        ),
-    ],
-)
-# TODO: check if this should be removed?
-def test_audio_tar_writer(tmp_path: Path, format: str):
-    from lhotse.testing.dummies import dummy_recording
-
-    recording = dummy_recording(0, with_data=True)
-    audio = recording.load_audio()
-
-    with AudioTarWriter(
-        str(tmp_path / "test.tar"), shard_size=None, format=format
-    ) as writer:
-        writer.write(
-            key="my-recording",
-            value=audio,
-            sampling_rate=recording.sampling_rate,
-            manifest=recording,
-        )
-
-    (path,) = writer.output_paths
-
-    ((deserialized_recording, inner_path),) = list(TarIterator(path))
-
-    deserialized_audio = deserialized_recording.resample(
-        recording.sampling_rate
-    ).load_audio()
-
-    rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
-    assert rmse < 0.5
-
-
-@pytest.mark.parametrize(
     ["format", "backend"],
     [
         ("flac", "default"),

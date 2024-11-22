@@ -102,7 +102,7 @@ def dummy_audio_source(
         f_sine = 1000
         assert (
             f_sine < sampling_rate / 2
-        ), "Sine wave frequency exceeds Nyquist frequency"
+        ), f"Sine wave frequency {f_sine} exceeds Nyquist frequency {sampling_rate/2} for sampling rate {sampling_rate}"
         data = torch.sin(2 * np.pi * f_sine / sampling_rate * torch.arange(num_samples))
 
         # prepare multichannel data
