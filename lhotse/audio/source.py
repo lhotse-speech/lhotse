@@ -1,3 +1,5 @@
+import io
+import os
 import warnings
 from dataclasses import dataclass
 from io import BytesIO, FileIO
@@ -6,6 +8,7 @@ from subprocess import PIPE, run
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
+import soundfile as sf
 import torch
 
 from lhotse.audio.backend import read_audio
@@ -63,6 +66,10 @@ class AudioSource:
     @property
     def has_video(self) -> bool:
         return self.video is not None
+
+    @property
+    def format(self) -> str:
+        return self._get_format()
 
     def load_audio(
         self,
@@ -316,3 +323,24 @@ class AudioSource:
             )
 
         return source
+
+    def _get_format(self) -> str:
+        """Get format for the audio source.
+        If using 'file' or 'url' types, the format is inferred from the file extension, as in soundfile.
+        If using 'memory' type, the format is inferred from the binary data.
+        """
+        if self.type in ("file", "url"):
+            # Resolve audio format based on the filename
+            format = os.path.splitext(self.source)[-1][1:]
+            return format.lower()
+        elif self.type == "memory":
+            sf_info = sf.info(io.BytesIO(self.source))
+            if sf_info.format == "OGG" and sf_info.subtype == "OPUS":
+                # soundfile describes opus as ogg container with opus coding
+                return "opus"
+            else:
+                return sf_info.format.lower()
+        else:
+            raise NotImplementedError(
+                f"Getting format not implemented for source type {self.type}"
+            )

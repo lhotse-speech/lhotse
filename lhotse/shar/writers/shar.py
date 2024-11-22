@@ -135,7 +135,11 @@ class SharWriter:
                     recording.sources[0].channels = cut_channels
                     recording.channel_ids = cut_channels
                 self.writers["recording"].write(
-                    cut.id, data, cut.sampling_rate, manifest=recording
+                    cut.id,
+                    data,
+                    cut.sampling_rate,
+                    manifest=recording,
+                    original_format=cut.recording.source_format,
                 )
                 cut = fastcopy(cut, recording=recording)
             else:
@@ -224,6 +228,7 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
         "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
         "mp3": (partial(AudioTarWriter, format="mp3"), ".tar"),
         "opus": (partial(AudioTarWriter, format="opus"), ".tar"),
+        "original": (partial(AudioTarWriter, format="original"), ".tar"),
         "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
         "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
         "jsonl": (JsonlShardWriter, ".jsonl.gz"),

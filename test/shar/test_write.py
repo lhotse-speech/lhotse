@@ -87,6 +87,7 @@ def test_tar_writer_pipe(tmp_path: Path):
         ),
     ],
 )
+# TODO: check if this should be removed?
 def test_audio_tar_writer(tmp_path: Path, format: str):
     from lhotse.testing.dummies import dummy_recording
 
@@ -173,6 +174,59 @@ def test_audio_tar_writer(tmp_path: Path, format: str, backend: str):
 
     rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
     assert rmse < 0.5
+
+
+@pytest.mark.parametrize(
+    ["original_format", "rmse_threshold"],
+    [("wav", 0.0), ("flac", 0.0), ("mp3", 0.003), ("opus", 0.3)],
+)
+def test_audio_tar_writer_original_format(
+    tmp_path: Path, original_format: str, rmse_threshold: float
+):
+    """Test using AudioTarWritter to write the audio signal in the exact same format
+    as it was loaded from the source.
+    """
+    from lhotse.testing.dummies import dummy_recording
+
+    backend = "default"  # use the default backend for reading the audio
+    writer_format = "original"  # write the audio in the same format as it was loaded
+
+    recording = dummy_recording(0, with_data=True, source_format=original_format)
+    audio = recording.load_audio()
+
+    assert (
+        recording.source_format == original_format
+    ), f"Recording source format ({recording.source_format}) not matching the expected original format ({original_format})"
+
+    with audio_backend(backend):
+        with AudioTarWriter(
+            str(tmp_path / "test.tar"), shard_size=None, format=writer_format
+        ) as writer:
+            writer.write(
+                key="my-recording",
+                value=audio,
+                sampling_rate=recording.sampling_rate,
+                manifest=recording,
+                original_format=recording.source_format,
+            )
+        (path,) = writer.output_paths
+        ((deserialized_recording, inner_path),) = list(TarIterator(path))
+
+        # make sure the deserialized audio is in the same format as the original
+        assert (
+            deserialized_recording.source_format == original_format
+        ), f"Deserialized recording source format ({deserialized_recording.source_format}) not matching the expected original format ({original_format})"
+
+        # load audio
+        deserialized_audio = deserialized_recording.resample(
+            recording.sampling_rate
+        ).load_audio()
+
+    # check difference between original and deserialized audio
+    rmse = np.sqrt(np.mean((audio - deserialized_audio) ** 2))
+    assert (
+        rmse <= rmse_threshold
+    ), f"RMSE between original and deserialized audio is {rmse}, which is above the threshold of {rmse_threshold}"
 
 
 def test_shar_writer(tmp_path: Path):

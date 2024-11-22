@@ -168,6 +168,23 @@ class Recording:
     def num_channels(self) -> int:
         return len(self.channel_ids)
 
+    @property
+    def source_format(self) -> str:
+        """Infer format of the audio sources.
+        If all sources have the same format, return it.
+        If sources have different formats, raise an error.
+        """
+        source_formats = list(set([s.format for s in self.sources]))
+
+        if len(source_formats) == 1:
+            # if all sources have the same format, return it
+            return source_formats[0]
+        else:
+            # at the moment, we don't resolve different formats
+            raise NotImplementedError(
+                "Sources have different formats. Resolving to a single format not implemented."
+            )
+
     @staticmethod
     def from_file(
         path: Pathlike,
