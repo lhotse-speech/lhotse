@@ -11,10 +11,10 @@ class SimpleCutSampler(CutSampler):
     Samples cuts from a CutSet to satisfy the input constraints.
     It behaves like an iterable that yields lists of strings (cut IDs).
 
-    When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
+    When one of :attr:`max_duration`, or :attr:`max_cuts` is specified,
     the batch size is dynamic.
     Exactly zero or one of those constraints can be specified.
-    Padding required to collate the batch does not contribute to max frames/samples/duration.
+    Padding required to collate the batch does not contribute to max duration.
 
     Example usage::
 
@@ -197,10 +197,10 @@ class SimpleCutSampler(CutSampler):
                 self.diagnostics.discard_single(next_cut)
                 continue
 
-            # Track the duration/frames/etc. constraints.
+            # Track the duration/etc. constraints.
             self.time_constraint.add(next_cut)
 
-            # Did we exceed the max_frames and max_cuts constraints?
+            # Did we exceed the max_duration and max_cuts constraints?
             if not self.time_constraint.exceeded():
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut)
@@ -215,9 +215,9 @@ class SimpleCutSampler(CutSampler):
                     # and return the cut anyway.
                     warnings.warn(
                         "The first cut drawn in batch collection violates "
-                        "the max_frames, max_cuts, or max_duration constraints - "
+                        "the max_duration, or max_cuts constraints - "
                         "we'll return it anyway. "
-                        "Consider increasing max_frames/max_cuts/max_duration."
+                        "Consider increasing max_duration/max_cuts."
                     )
                     cuts.append(next_cut)
 

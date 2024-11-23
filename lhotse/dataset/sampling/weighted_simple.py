@@ -15,7 +15,7 @@ class WeightedSimpleCutSampler(SimpleCutSampler):
     When performing sampling, it avoids having duplicated cuts in the same batch.
     The sampler terminates if the number of sampled cuts reach :attr:`num_samples`
 
-    When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
+    When one of :attr:`max_duration`, or :attr:`max_cuts` is specified,
     the batch size is dynamic.
 
     Example usage:

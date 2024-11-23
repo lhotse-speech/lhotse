@@ -78,7 +78,7 @@ class AudioTaggingDataset(torch.utils.data.Dataset):
     def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
         Return a new batch, with the batch size automatically determined using the constraints
-        of max_frames and max_cuts.
+        of max_duration and max_cuts.
         """
         self.hdf5_fix.update()
 
