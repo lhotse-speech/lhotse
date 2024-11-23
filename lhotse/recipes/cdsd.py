@@ -60,25 +60,22 @@ def prepare_cdsd(
 
     manifests = defaultdict(dict)
     dataset_parts = ["1h", "10h"]
-    for part in tqdm(
-        dataset_parts,
-        desc="Process CDSD audio",
-    ):
+    for part in dataset_parts:
         logging.info(f"Processing CDSD subset: {part}")
         recordings = []
         supervisions = []
 
-        txt_path = corpus_dir / f"{part}" / "Text"
+        txt_path = corpus_dir / "after_catting" / f"{part}" / "Text"
         transcript_dict = {}
         for text_path in txt_path.rglob("**/*.txt"):
             with open(text_path, "r", encoding="utf-8") as f:
                 for line in f.readlines():
-                    idx_transcript, content = line.strip().split()
+                    idx_transcript, content = line.strip().split(maxsplit=1)
                     content = text_normalize(content)
-                    transcript_dict[idx_transcript[0]] = content
+                    transcript_dict[idx_transcript] = content
 
-        wav_path = corpus_dir / f"{part}" / "Audio"
-        for audio_path in wav_path.rglob("**/*.wav"):
+        wav_path = corpus_dir / "after_catting" / f"{part}" / "Audio"
+        for audio_path in tqdm(wav_path.rglob("**/*.wav"), desc="Processing audio"):
             idx = audio_path.stem
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
