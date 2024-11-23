@@ -17,6 +17,7 @@ from .but_reverb_db import *
 from .bvcc import *
 from .callhome_egyptian import *
 from .callhome_english import *
+from .cdsd import *
 from .chime6 import *
 from .cmu_arctic import *
 from .cmu_indic import *
