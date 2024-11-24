@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from _decimal import ROUND_HALF_UP
 
-from lhotse.audio.backend import info, save_audio, torchaudio_info
+from lhotse.audio.backend import get_current_audio_backend, info, save_audio
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
     AudioLoadingError,
@@ -168,6 +168,23 @@ class Recording:
     def num_channels(self) -> int:
         return len(self.channel_ids)
 
+    @property
+    def source_format(self) -> str:
+        """Infer format of the audio sources.
+        If all sources have the same format, return it.
+        If sources have different formats, raise an error.
+        """
+        source_formats = list(set([s.format for s in self.sources]))
+
+        if len(source_formats) == 1:
+            # if all sources have the same format, return it
+            return source_formats[0]
+        else:
+            # at the moment, we don't resolve different formats
+            raise NotImplementedError(
+                "Sources have different formats. Resolving to a single format not implemented."
+            )
+
     @staticmethod
     def from_file(
         path: Pathlike,
@@ -260,7 +277,7 @@ class Recording:
         :return: a new ``Recording`` instance that owns the byte string data.
         """
         stream = BytesIO(data)
-        audio_info = torchaudio_info(stream)
+        audio_info = get_current_audio_backend().info(stream)
         return Recording(
             id=recording_id,
             sampling_rate=audio_info.samplerate,

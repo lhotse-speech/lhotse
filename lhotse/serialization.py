@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import yaml
+from packaging.version import parse as parse_version
 
 from lhotse.utils import Pathlike, SmartOpen, is_module_available, is_valid_url
 from lhotse.workarounds import gzip_open_robust
@@ -105,17 +106,23 @@ def get_aistore_client():
         raise ValueError(
             "Set a valid URL as AIS_ENDPOINT environment variable's value to read data from AIStore."
         )
-    from aistore import Client
+    import aistore
 
     endpoint_url = os.environ["AIS_ENDPOINT"]
-    return Client(endpoint_url)
+    version = parse_version(aistore.__version__)
+    return aistore.Client(endpoint_url), version
 
 
 def open_aistore(uri: str, mode: str):
     assert "r" in mode, "We only support reading from AIStore at this time."
-    client = get_aistore_client()
+    client, version = get_aistore_client()
     object = client.fetch_object_by_url(uri)
-    return object.get().raw()
+    request = object.get()
+    if version >= parse_version("1.9.1"):
+        # AIStore SDK 1.9.1 supports ObjectFile for improved read fault resiliency
+        return request.as_file()
+    else:
+        return request.raw()
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:

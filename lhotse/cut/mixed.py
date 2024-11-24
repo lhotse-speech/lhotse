@@ -622,7 +622,7 @@ class MixedCut(Cut):
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
-        The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+        The user can choose to pad either to a specific `duration`; a specific number of frames `num_frames`;
         or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
         :param duration: The cut's minimal duration after padding.

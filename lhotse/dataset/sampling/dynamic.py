@@ -335,7 +335,7 @@ class DurationBatcher:
                 else next_cut_or_tpl
             )
 
-            # Did we exceed the max_frames and max_cuts constraints?
+            # Did we exceed the max_duration and max_cuts constraints?
             if self.constraint.close_to_exceeding():
                 # Yes. Finish sampling this batch.
                 if self.constraint.exceeded() and len(cuts) == 1:

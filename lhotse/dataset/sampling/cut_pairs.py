@@ -12,10 +12,10 @@ class CutPairsSampler(CutSampler):
     It expects that both CutSet's strictly consist of Cuts with corresponding IDs.
     It behaves like an iterable that yields lists of strings (cut IDs).
 
-    When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
+    When one of :attr:`max_source_duration`, :attr:`max_target_duration`, or :attr:`max_cuts` is specified,
     the batch size is dynamic.
     Exactly zero or one of those constraints can be specified.
-    Padding required to collate the batch does not contribute to max frames/samples/duration.
+    Padding required to collate the batch does not contribute to max source_duration/target_duration.
     """
 
     def __init__(
@@ -229,7 +229,7 @@ class CutPairsSampler(CutSampler):
             self.source_constraints.add(next_source_cut)
             self.target_constraints.add(next_target_cut)
 
-            # Did we exceed the max_source_frames and max_cuts constraints?
+            # Did we exceed the max_source_duration and max_cuts constraints?
             if (
                 not self.source_constraints.exceeded()
                 and not self.target_constraints.exceeded()
@@ -249,7 +249,7 @@ class CutPairsSampler(CutSampler):
                     # and return the cut anyway.
                     warnings.warn(
                         "The first cut drawn in batch collection violates one of the max_... constraints"
-                        "we'll return it anyway. Consider increasing max_source_frames/max_cuts/etc."
+                        "we'll return it anyway. Consider increasing max_source_duration/max_cuts/etc."
                     )
                     source_cuts.append(next_source_cut)
                     target_cuts.append(next_target_cut)

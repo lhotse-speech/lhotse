@@ -27,8 +27,8 @@ def shar():
     "-a",
     "--audio",
     default="none",
-    type=click.Choice(["none", "wav", "flac", "mp3", "opus"]),
-    help="Format in which to export audio (disabled by default, enabling will make a copy of the data)",
+    type=click.Choice(["none", "wav", "flac", "mp3", "opus", "original"]),
+    help="Format in which to export audio. Original will save in the same format as the original audio (disabled by default, enabling will make a copy of the data)",
 )
 @click.option(
     "-f",
