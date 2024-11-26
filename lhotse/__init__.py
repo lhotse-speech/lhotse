@@ -19,7 +19,16 @@ from .kaldi import load_kaldi_data_dir
 from .lazy import dill_enabled, is_dill_enabled, set_dill_enabled
 from .manipulation import combine, split_parallelize_combine, to_manifest
 from .qa import fix_manifests, validate, validate_recordings_and_supervisions
-from .serialization import load_manifest, load_manifest_lazy, store_manifest
+from .serialization import (
+    available_io_backends,
+    get_current_io_backend,
+    get_default_io_backend,
+    io_backend,
+    load_manifest,
+    load_manifest_lazy,
+    set_current_io_backend,
+    store_manifest,
+)
 from .supervision import SupervisionSegment, SupervisionSet
 from .tools.env import add_tools_to_path as _add_tools_to_path
 from .utils import (
