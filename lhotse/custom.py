@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from functools import partial
 from typing import Any, Dict, Optional
 
@@ -80,6 +81,9 @@ class CustomFieldMixin:
         if self.custom is None or key not in self.custom:
             raise AttributeError(f"No such member: '{key}'")
         del self.custom[key]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
     def with_custom(self, name: str, value: Any):
         """Return a copy of this object with an extra custom field assigned to it."""
