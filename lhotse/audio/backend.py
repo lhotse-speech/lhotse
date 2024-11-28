@@ -574,6 +574,9 @@ class AudioreadBackend(AudioBackend):
             offset=offset,
             duration=duration,
         )
+        
+    def supports_info(self):
+        return True
 
     def info(
         self,
