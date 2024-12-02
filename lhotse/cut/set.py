@@ -3570,7 +3570,7 @@ def _export_to_shar_single(
             except Exception as e:
                 if fault_tolerant:
                     logging.warning(
-                        "Skipping: failed to load cut '{cut.id}'. Error message: {e}."
+                        f"Skipping: failed to load cut '{cut.id}'. Error message: {e}."
                     )
                 else:
                     raise
