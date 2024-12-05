@@ -516,6 +516,10 @@ class LibsndfileBackend(AudioBackend):
         return False
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        if isinstance(path_or_fd, (Path, str)) and any(
+            str(path_or_fd).endswith(ext) for ext in [".mp4", ".m4a", ".m4b"]
+        ):
+            return False
         return True
 
     def supports_save(self) -> bool:
@@ -570,6 +574,9 @@ class AudioreadBackend(AudioBackend):
             offset=offset,
             duration=duration,
         )
+
+    def supports_info(self):
+        return True
 
     def info(
         self,
