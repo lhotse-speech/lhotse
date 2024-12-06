@@ -1,11 +1,10 @@
-from dataclasses import asdict
 from functools import partial
 from typing import Any, Dict, Optional
 
 import numpy as np
 
 from lhotse import Recording
-from lhotse.utils import fastcopy, ifnone
+from lhotse.utils import asdict_nonull, fastcopy, ifnone
 
 
 class CustomFieldMixin:
@@ -83,7 +82,7 @@ class CustomFieldMixin:
         del self.custom[key]
 
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return asdict_nonull(self)
 
     def with_custom(self, name: str, value: Any):
         """Return a copy of this object with an extra custom field assigned to it."""
