@@ -62,6 +62,7 @@ class RoundRobinSampler(CutSampler):
 
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
+        self._num_dl_workers = 1
 
         if isinstance(randomize, list):
             assert len(randomize) == len(self.samplers)
@@ -125,6 +126,7 @@ class RoundRobinSampler(CutSampler):
                 "stop_early": self.stop_early,
                 "randomize": self.randomize,
                 "_cur_sampler_idx": self._cur_sampler_idx,
+                "_num_dl_workers": self._num_dl_workers,
                 # Explicit list copy below allows to restore within the same process.
                 "_nondepleted_samplers_indices": list(
                     self._nondepleted_samplers_indices
@@ -154,6 +156,7 @@ class RoundRobinSampler(CutSampler):
         self.stop_early = state_dict.pop("stop_early")
         self.randomize = state_dict.pop("randomize")
         self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
+        self._num_dl_workers = state_dict.pop("_num_dl_workers")
         self._nondepleted_samplers_indices = state_dict.pop(
             "_nondepleted_samplers_indices"
         )
