@@ -1,4 +1,3 @@
-import math
 import random
 import re
 from collections import Counter
@@ -854,6 +853,27 @@ def test_round_robin_sampler(randomize):
         assert len(batches[8]) == 2
         assert len(batches[9]) == 2
     # ... and so on
+
+
+@pytest.mark.parametrize("num_workers", [0, 1, 2, 3])
+def test_nonrandomized_round_robin_sampler_keeps_round_robin_property_in_iterable_dataset(
+    num_workers,
+):
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=100)
+    cuts2 = DummyManifest(CutSet, begin_id=500, end_id=600)
+    cuts3 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    sampler = RoundRobinSampler(
+        SimpleCutSampler(cuts1, max_cuts=1, shuffle=False),
+        SimpleCutSampler(cuts2, max_cuts=2, shuffle=False),
+        SimpleCutSampler(cuts3, max_cuts=3, shuffle=False),
+    )
+    dloader = DataLoader(
+        dataset=IterableDatasetWrapper(IdentityDataset(), sampler),
+        batch_size=None,
+        num_workers=num_workers,
+    )
+    lens = [len(b) for idx, b in zip(range(15), dloader)]
+    assert lens == [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]
 
 
 @pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
