@@ -2670,7 +2670,12 @@ class CutSet(Serializable, AlgorithmMixin):
 
         return CutSet(
             LazyHFDatasetIterator(
-                *dataset_args, audio_key=audio_key, text_key=text_key, **dataset_kwargs
+                *dataset_args,
+                audio_key=audio_key,
+                text_key=text_key,
+                lang_key=lang_key,
+                gender_key=gender_key,
+                **dataset_kwargs,
             )
         )
 
