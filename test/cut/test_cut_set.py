@@ -46,7 +46,10 @@ def mini_librispeeh2_cut_set():
 def cut_set_with_mixed_cut(cut1, cut2):
     mixed_cut = MixedCut(
         id="mixed-cut-id",
-        tracks=[MixTrack(cut=cut1), MixTrack(cut=cut2, offset=1.0, snr=10)],
+        tracks=[
+            MixTrack(cut=cut1.copy()),
+            MixTrack(cut=cut2.copy(), offset=1.0, snr=10),
+        ],
     )
     return CutSet([cut1, cut2, mixed_cut])
 
