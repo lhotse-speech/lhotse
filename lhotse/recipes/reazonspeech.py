@@ -72,18 +72,21 @@ def write_to_json(data, filename):
 def download_reazonspeech(
     target_dir: Pathlike = ".",
     dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
+    num_jobs: int = 1,
 ) -> Path:
     """
     Download the ReazonSpeech dataset.
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param dataset_parts: the parts of the dataset to download (e.g. small, medium, or large).
+    :param num_jobs: the number of processes to download and format.
     :return: the path to downloaded data and the JSON file.
     """
     if is_module_available("datasets"):
-        from datasets import load_dataset
+        import soundfile as sf
+        from datasets import Audio, load_dataset
     else:
         raise ImportError(
-            "To process the ReazonSpeech corpus, please install optional dependency: pip install datasets"
+            "To process the ReazonSpeech corpus, please install optional dependencies: pip install datasets soundfile"
         )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -101,31 +104,34 @@ def download_reazonspeech(
             part,
             trust_remote_code=True,
             cache_dir=corpus_dir,
+            num_proc=num_jobs,
         )["train"]
 
     # Prepare data for JSON export
-    data_for_json = []
-    idx = 0
-    for item in ds:
-        # Calculate the duration of the audio file
-        audio_array = item["audio"]["array"]
-        sampling_rate = item["audio"]["sampling_rate"]
-        duration = len(audio_array) / float(sampling_rate)
+    def format_example(example: dict, idx: int) -> dict:
+        example["id"] = str(idx)
+        example["audio_filepath"] = example["audio"]["path"]
+        example["text"] = normalize(example["transcription"])
+        example["duration"] = sf.info(example["audio"]["path"]).duration
+        return example
 
-        # Create a dictionary for the current record
-        record = {
-            "id": str(idx),
-            "audio_filepath": item["audio"]["path"],
-            "text": normalize(item["transcription"]),
-            "duration": duration,
-        }
-
-        # Append the record to the list
-        data_for_json.append(record)
-        idx += 1
+    ds = ds.cast_column("audio", Audio(decode=True))  # Hack: don't decode to speedup
+    ds = ds.map(
+        format_example,
+        with_indices=True,
+        remove_columns=ds.column_names,
+        num_proc=num_jobs,
+    )
 
     # Write data to a JSON file
-    write_to_json(data_for_json, corpus_dir / "dataset.json")
+    ds.to_json(
+        corpus_dir / "dataset.json",
+        num_proc=num_jobs,
+        force_ascii=False,
+        indent=4,
+        lines=False,
+        batch_size=ds.num_rows,
+    )
 
     return corpus_dir
 
