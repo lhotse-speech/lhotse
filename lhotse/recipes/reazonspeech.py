@@ -82,8 +82,8 @@ def download_reazonspeech(
     :return: the path to downloaded data and the JSON file.
     """
     if is_module_available("datasets"):
-        from datasets import load_dataset, Audio
         import soundfile as sf
+        from datasets import Audio, load_dataset
     else:
         raise ImportError(
             "To process the ReazonSpeech corpus, please install optional dependencies: pip install datasets soundfile"
@@ -106,21 +106,19 @@ def download_reazonspeech(
             cache_dir=corpus_dir,
             num_proc=num_jobs,
         )["train"]
-        
+
     # Prepare data for JSON export
     def format_example(example: dict, idx: int) -> dict:
         example["id"] = str(idx)
         example["audio_filepath"] = example["audio"]["path"]
         example["text"] = normalize(example["transcription"])
-        example["duration"] = sf.info(
-            example["audio"]["path"]
-        ).duration
+        example["duration"] = sf.info(example["audio"]["path"]).duration
         return example
 
     ds = ds.cast_column("audio", Audio(decode=True))  # Hack: don't decode to speedup
     ds = ds.map(
         format_example,
-        with_indices=True, 
+        with_indices=True,
         remove_columns=ds.column_names,
         num_proc=num_jobs,
     )
