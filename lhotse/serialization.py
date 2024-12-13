@@ -780,15 +780,26 @@ class AIStoreIOBackend(IOBackend):
     """
 
     def open(self, identifier: str, mode: str):
-        assert "r" in mode, "We only support reading from AIStore at this time."
         client, version = get_aistore_client()
         object = client.fetch_object_by_url(identifier)
-        request = object.get()
-        if version >= parse_version("1.9.1"):
-            # AIStore SDK 1.9.1 supports ObjectFile for improved read fault resiliency
-            return request.as_file()
-        else:
-            return request.raw()
+        if "r" in mode:
+            try:
+                # AIStore >= 1.10.0
+                request = object.get_reader()
+            except AttributeError:
+                # AIStore < 1.10.0 deprecated method
+                request = object.get()
+            if version >= parse_version("1.9.1"):
+                # AIStore SDK 1.9.1 supports ObjectFile for improved read fault resiliency
+                return request.as_file()
+            else:
+                return request.raw()
+        if "w" in mode:
+            assert version >= parse_version("1.10.0"), (
+                f"Writing to AIStore requires at least version 1.10.0 of AIStore Python SDK, "
+                f"but your version is {version}"
+            )
+            return object.get_writer().as_file()
 
     @classmethod
     def is_available(cls) -> bool:
