@@ -14,6 +14,7 @@ from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
 from .bvcc import download_bvcc, prepare_bvcc
 from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
+from .cdsd import prepare_cdsd
 from .chime6 import download_chime6, prepare_chime6
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
 from .cmu_indic import download_cmu_indic, prepare_cmu_indic
@@ -67,6 +68,7 @@ from .mtedx import download_mtedx, prepare_mtedx
 from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
+from .radio import prepare_radio
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .sbcsae import download_sbcsae, prepare_sbcsae
@@ -197,6 +199,7 @@ __all__ = [
     "prepare_peoples_speech",
     "download_reazonspeech",
     "prepare_reazonspeech",
+    "prepare_radio",
     "download_rir_noise",
     "prepare_rir_noise",
     "prepare_slu",

@@ -243,6 +243,21 @@ class MixedCut(Cut):
         """
         return self._first_non_padding_cut.iter_data()
 
+    def __setattr__(self, key: str, value: Any) -> None:
+        """
+        This magic function is called when the user tries to set an attribute.
+        We use it as syntactic sugar to store custom attributes in ``self._first_non_padding_cut.custom``
+        field, so that they can be (de)serialized later.
+        Setting a ``None`` value will remove the attribute from ``custom``.
+
+        .. note:: MixedCut doesn't have its own ``custom`` field, and by convention
+            always refers to the ``custom`` field on its first non padding cut.
+        """
+        if key in self.__dataclass_fields__:
+            super().__setattr__(key, value)
+        else:
+            setattr(self._first_non_padding_cut, key, value)
+
     def __getattr__(self, name: str) -> Any:
         """
         This magic function is called when the user tries to access an attribute
@@ -622,7 +637,7 @@ class MixedCut(Cut):
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
-        The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+        The user can choose to pad either to a specific `duration`; a specific number of frames `num_frames`;
         or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
         :param duration: The cut's minimal duration after padding.

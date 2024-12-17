@@ -4,11 +4,12 @@ import numpy as np
 import pytest
 from pytest import approx
 
+from lhotse import MultiCut
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.cut import CutSet, MonoCut
+from lhotse.cut import CutSet, MixedCut, MonoCut, PaddingCut
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.testing.dummies import dummy_cut, dummy_supervision
+from lhotse.testing.dummies import dummy_cut, dummy_multi_cut, dummy_supervision
 
 
 @pytest.fixture()
@@ -753,3 +754,39 @@ def test_cut_has_overlapping_supervisions_true(start):
         ],
     )
     assert cut.has_overlapping_supervisions
+
+
+def test_mono_cut_copy():
+    cut = dummy_cut(0)
+    cut.id = "old-id"
+    cut2 = cut.copy(id="new-id")
+    assert cut.id == "old-id"
+    assert cut2.id == "new-id"
+    assert isinstance(cut2, MonoCut)
+
+
+def test_multi_cut_copy():
+    cut = dummy_multi_cut(0)
+    cut.id = "old-id"
+    cut2 = cut.copy(id="new-id")
+    assert cut.id == "old-id"
+    assert cut2.id == "new-id"
+    assert isinstance(cut2, MultiCut)
+
+
+def test_padding_cut_copy():
+    cut = PaddingCut(id="old-id", duration=1.0, sampling_rate=16000, feat_value=0)
+    cut2 = cut.copy(id="new-id")
+    assert cut.id == "old-id"
+    assert cut2.id == "new-id"
+    assert isinstance(cut2, PaddingCut)
+
+
+def test_mixed_cut_copy():
+    cut = dummy_cut(0)
+    cut = cut.mix(cut)
+    cut.id = "old-id"
+    cut2 = cut.copy(id="new-id")
+    assert cut.id == "old-id"
+    assert cut2.id == "new-id"
+    assert isinstance(cut2, MixedCut)

@@ -66,6 +66,14 @@ class AudioTarWriter:
     def output_paths(self) -> List[str]:
         return self.tar_writer.output_paths
 
+    def resolve_format(self, original_format: str):
+        if self.format == "original":
+            # save using the original format of the input audio
+            return original_format
+        else:
+            # save using the format specified at initialization
+            return self.format
+
     def write_placeholder(self, key: str) -> None:
         self.tar_writer.write(f"{key}.nodata", BytesIO())
         self.tar_writer.write(f"{key}.nometa", BytesIO(), count=False)
@@ -76,15 +84,18 @@ class AudioTarWriter:
         value: np.ndarray,
         sampling_rate: int,
         manifest: Recording,
+        original_format: Optional[str] = None,
     ) -> None:
+        save_format = self.resolve_format(original_format)
+
         value, manifest, sampling_rate = self._maybe_resample(
-            value, manifest, sampling_rate
+            value, manifest, sampling_rate, format=save_format
         )
 
         # Write binary data
         stream = BytesIO()
         save_audio(
-            dest=stream, src=value, sampling_rate=sampling_rate, format=self.format
+            dest=stream, src=value, sampling_rate=sampling_rate, format=save_format
         )
         self.tar_writer.write(f"{key}.{self.format}", stream)
 
@@ -103,13 +114,14 @@ class AudioTarWriter:
         audio: Union[torch.Tensor, np.ndarray],
         manifest: Recording,
         sampling_rate: int,
+        format: str,
     ) -> Tuple[Union[np.ndarray, torch.Tensor], Recording, int]:
         # Resampling is required for some versions of OPUS encoders.
         # First resample the manifest which only adjusts the metadata;
         # then resample the audio array to 48kHz.
         OPUS_DEFAULT_SAMPLING_RATE = 48000
         if (
-            self.format == "opus"
+            format == "opus"
             and is_torchaudio_available()
             and not isinstance(get_current_audio_backend(), LibsndfileBackend)
             and sampling_rate != OPUS_DEFAULT_SAMPLING_RATE

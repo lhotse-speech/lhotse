@@ -134,3 +134,4 @@ Also, by default, we turn off dithering for deterministic feature extraction.
 .. _power quantity: https://en.wikipedia.org/wiki/Power,_root-power,_and_field_quantities
 .. _Torchaudio CMVN: https://pytorch.org/audio/stable/transforms.html#slidingwindowcmn
 .. _kaldifeat: https://github.com/csukuangfj/kaldifeat
+.. _opensmile: https://github.com/audeering/opensmile

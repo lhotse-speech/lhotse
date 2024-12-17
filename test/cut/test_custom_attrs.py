@@ -13,6 +13,7 @@ from lhotse import (
     NumpyFilesWriter,
     Recording,
     compute_num_samples,
+    fastcopy,
     validate,
 )
 from lhotse.serialization import deserialize_item
@@ -470,3 +471,11 @@ def test_padded_cut_custom_recording():
 
     # check the padded component is zero
     assert np.all(padded_target_recording[:, cut.num_samples :] == 0)
+
+
+def test_copy_mixed_cut_with_custom_attr():
+    cut = dummy_cut(0)
+    cut = cut.mix(cut, offset_other_by=0.5)
+    cut.some_attribute = "dummy"
+    cpy = fastcopy(cut)
+    assert cpy == cut

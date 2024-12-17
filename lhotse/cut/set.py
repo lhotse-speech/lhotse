@@ -2632,6 +2632,53 @@ class CutSet(Serializable, AlgorithmMixin):
 
         return export_cuts_to_hf(self)
 
+    @staticmethod
+    def from_huggingface_dataset(
+        *dataset_args,
+        audio_key: str = "audio",
+        text_key: str = "sentence",
+        lang_key: str = "language",
+        gender_key: str = "gender",
+        **dataset_kwargs,
+    ):
+        """
+        Initializes a Lhotse CutSet from an existing HF dataset,
+        or args/kwargs passed on to ``datasets.load_dataset()``.
+
+        Use ``audio_key``, ``text_key``, ``lang_key`` and ``gender_key`` options to indicate which keys in dict examples
+        returned from HF Dataset should be looked up for audio, transcript, language, and gender respectively.
+        The remaining keys in HF dataset examples will be stored inside ``cut.custom`` dictionary.
+
+        Example with existing HF dataset::
+
+            >>> import datasets
+            ... dataset = datasets.load_dataset("mozilla-foundation/common_voice_11_0", "hi", split="test")
+            ... dataset = dataset.map(some_transform)
+            ... cuts = CutSet.from_huggingface_dataset(dataset)
+            ... for cut in cuts:
+            ...     pass
+
+        Example providing HF dataset init args/kwargs::
+
+            >>> import datasets
+            ... cuts = CutSet.from_huggingface_dataset("mozilla-foundation/common_voice_11_0", "hi", split="test")
+            ... for cut in cuts:
+            ...     pass
+
+        """
+        from lhotse.hf import LazyHFDatasetIterator
+
+        return CutSet(
+            LazyHFDatasetIterator(
+                *dataset_args,
+                audio_key=audio_key,
+                text_key=text_key,
+                lang_key=lang_key,
+                gender_key=gender_key,
+                **dataset_kwargs,
+            )
+        )
+
     def __repr__(self) -> str:
         try:
             len_val = len(self)
@@ -2821,7 +2868,7 @@ def pad(
     """
     Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
-    The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+    The user can choose to pad either to a specific `duration`; a specific number of frames `num_frames`;
     or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
     :param cut: DataCut to be padded.
@@ -3570,7 +3617,7 @@ def _export_to_shar_single(
             except Exception as e:
                 if fault_tolerant:
                     logging.warning(
-                        "Skipping: failed to load cut '{cut.id}'. Error message: {e}."
+                        f"Skipping: failed to load cut '{cut.id}'. Error message: {e}."
                     )
                 else:
                     raise

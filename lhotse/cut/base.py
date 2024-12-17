@@ -206,6 +206,18 @@ class Cut:
         d = asdict_nonull(self)
         return {**d, "type": type(self).__name__}
 
+    def copy(self, **replace_attrs):
+        """
+        Returns a shallow copy of self, with specified attributes overwritten.
+
+        Example:
+            >>> cut = MonoCut(id="old-id", ...)
+            ... cut2 = cut.copy(id="new-id")
+            ... assert cut.id == "old-id"
+            ... assert cut2.id == "new-id"
+        """
+        return type(self)(**{**self.__dict__, **replace_attrs})
+
     @property
     def has_overlapping_supervisions(self) -> bool:
         if len(self.supervisions) < 2:
