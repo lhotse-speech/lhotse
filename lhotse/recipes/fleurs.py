@@ -236,7 +236,7 @@ def download_single_fleurs_language(
         fleurs = load_dataset(
             "google/fleurs",
             language,
-            cache_dir="/expscratch/mwiesner/geolocation/test",
+            cache_dir=target_dir,
             streaming=True,
             split=split,
         )
