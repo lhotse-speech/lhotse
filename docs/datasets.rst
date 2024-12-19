@@ -41,7 +41,7 @@ A typical Lhotse's dataset API usage might look like this:
     from lhotse.dataset import K2SpeechRecognitionDataset, SimpleCutSampler
 
     cuts = CutSet(...)
-    dset = K2SpeechRecognitionDataset(cuts)
+    dset = K2SpeechRecognitionDataset()
     sampler = SimpleCutSampler(cuts, max_duration=500)
     # Dataset performs batching by itself, so we have to indicate that
     # to the DataLoader with batch_size=None

@@ -65,6 +65,8 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         self.collate = collate
 
     def __getitem__(self, cuts: CutSet) -> Dict[str, Any]:
+        self._validate(cuts)
+
         if self.collate:
             audio, audio_lens = collate_audio(cuts)
             return {
