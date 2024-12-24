@@ -609,11 +609,6 @@ class CompositeAudioBackend(AudioBackend):
             if b.handles_special_case(path_or_fd):
                 candidates.append(b)
 
-        assert len(candidates) < 2, (
-            f"CompositeAudioBackend has more than one sub-backend that "
-            f"handles a given special case for input '{path_or_fd}'"
-        )
-
         if len(candidates) == 1:
             try:
                 return candidates[0].read_audio(
@@ -717,11 +712,6 @@ class CompositeAudioBackend(AudioBackend):
         for b in backends:
             if b.handles_special_case(path_or_fd):
                 candidates.append(b)
-
-        assert len(candidates) < 2, (
-            f"CompositeAudioBackend has more than one sub-backend that "
-            f"handles a given special case for input '{path_or_fd}'"
-        )
 
         if len(candidates) == 1:
             try:
