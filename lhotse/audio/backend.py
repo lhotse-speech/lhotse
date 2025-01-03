@@ -511,8 +511,6 @@ class LibsndfileBackend(AudioBackend):
             and not torchaudio_ffmpeg_backend_available()
         ):
             return True  # prefer this to old torchaudio for file IO
-        if isinstance(path_or_fd, (Path, str)) and str(path_or_fd).endswith(".opus"):
-            return True  # use libnsdfile for OPUS
         return False
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
