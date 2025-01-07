@@ -3,6 +3,7 @@ from operator import add
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -61,6 +62,7 @@ class RoundRobinSampler(CutSampler):
 
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
+        self._num_dl_workers = 1
 
         if isinstance(randomize, list):
             assert len(randomize) == len(self.samplers)
@@ -124,6 +126,7 @@ class RoundRobinSampler(CutSampler):
                 "stop_early": self.stop_early,
                 "randomize": self.randomize,
                 "_cur_sampler_idx": self._cur_sampler_idx,
+                "_num_dl_workers": self._num_dl_workers,
                 # Explicit list copy below allows to restore within the same process.
                 "_nondepleted_samplers_indices": list(
                     self._nondepleted_samplers_indices
@@ -153,6 +156,7 @@ class RoundRobinSampler(CutSampler):
         self.stop_early = state_dict.pop("stop_early")
         self.randomize = state_dict.pop("randomize")
         self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
+        self._num_dl_workers = state_dict.pop("_num_dl_workers")
         self._nondepleted_samplers_indices = state_dict.pop(
             "_nondepleted_samplers_indices"
         )
@@ -171,7 +175,18 @@ class RoundRobinSampler(CutSampler):
         if self._just_restored_state:
             return self
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
+        # In case this sampler lives in the dataloading worker subprocess,
+        # set the starting index to a different value on each dataloading worker.
+        # This helps avoid situations where the round robin sampler chooses
+        # the same underlying sampler for N consecutive mini-batches, where N = num_workers (>1).
         self._cur_sampler_idx = 0
+        self._num_dl_workers = 1
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None:
+            self._cur_sampler_idx = worker_info.id % len(
+                self._nondepleted_samplers_indices
+            )
+            self._num_dl_workers = worker_info.num_workers
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
@@ -202,9 +217,9 @@ class RoundRobinSampler(CutSampler):
             p = [x / sum(p) for x in p]
             self._cur_sampler_idx = self.rng.choice(N, size=1, replace=False, p=p)[0]
         else:
-            self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
-                self._nondepleted_samplers_indices
-            )
+            self._cur_sampler_idx = (
+                self._cur_sampler_idx + self._num_dl_workers
+            ) % len(self._nondepleted_samplers_indices)
 
     def set_epoch(self, epoch: int) -> None:
         """

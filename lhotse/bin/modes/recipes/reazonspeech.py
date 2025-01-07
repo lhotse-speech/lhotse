@@ -44,9 +44,16 @@ def reazonspeech(
     help="List of dataset parts to prepare (default: small-v1). To prepare multiple parts, pass each with `--subset` "
     "Example: `--subset all",
 )
-def reazonspeech(target_dir: Pathlike, subset: List[str]):
+@click.option(
+    "-j",
+    "--num-jobs",
+    type=int,
+    default=1,
+    help="How many threads to use (can give good speed-ups with slow disks).",
+)
+def reazonspeech(target_dir: Pathlike, subset: List[str], num_jobs: int):
     """ReazonSpeech download."""
     logging.basicConfig(level=logging.INFO)
     if "auto" in subset:
         subset = "auto"
-    download_reazonspeech(target_dir, dataset_parts=subset)
+    download_reazonspeech(target_dir, dataset_parts=subset, num_jobs=num_jobs)

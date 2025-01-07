@@ -75,6 +75,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_callhome_egyptian`
   * - CallHome English
     - :func:`lhotse.recipes.prepare_callhome_english`
+  * - Chinese Dysarthric Speech Database
+    - :func:`lhotse.recipes.prepare_cdsd`
   * - CHiME-6
     - :func:`lhotse.recipes.prepare_chime6`
   * - CMU Arctic

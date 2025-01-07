@@ -6,6 +6,7 @@ import pytest
 
 
 def is_torchaudio_available():
+    return False
     return importlib.util.find_spec("torchaudio") is not None
 
 
