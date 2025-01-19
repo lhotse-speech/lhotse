@@ -189,7 +189,7 @@ def collate_audio(
 
     cuts = maybe_pad(
         cuts,
-        duration=max(cut.duration for cut in cuts),
+        num_samples=max(cut_id2num_samples.values()),
         direction=pad_direction,
         preserve_id=True,
     )
