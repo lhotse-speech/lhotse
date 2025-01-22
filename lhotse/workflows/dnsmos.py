@@ -209,5 +209,8 @@ def _annotate_cuts(
 
         for future in tqdm(futures, desc="Processing"):
             cut, result = future.result()
-            new_cut = fastcopy(cut, custom=result)
-            yield new_cut
+            if cut.custom is not None:
+                cut.custom.update(result)
+            else:
+                cut.custom = result
+            yield cut
