@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from math import ceil, isclose
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -18,6 +18,7 @@ from lhotse.audio.utils import (
 )
 from lhotse.augmentation import (
     AudioTransform,
+    Compress,
     DereverbWPE,
     LoudnessNormalization,
     Narrowband,
@@ -920,6 +921,13 @@ class Recording:
             sampling_rate=sampling_rate,
             transforms=transforms,
         )
+
+    def compress(
+        self, codec: Literal["opus", "mp3", "vorbis"], compression_level: float = 0.99
+    ) -> "Recording":
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(Compress(codec, compression_level))
+        return fastcopy(self, transforms=transforms)
 
     @staticmethod
     def from_dict(data: dict) -> "Recording":

@@ -1,3 +1,4 @@
+from .codec import Compress
 from .common import AugmentFn
 from .loudness import LoudnessNormalization
 from .rir import ReverbWithImpulseResponse

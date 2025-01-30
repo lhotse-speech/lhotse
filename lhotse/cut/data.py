@@ -10,6 +10,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -1050,6 +1051,33 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         source_rng_seed: Optional[int] = None,
     ) -> "DataCut":
         ...
+
+    def compress(
+        self, codec: Literal["opus", "mp3", "vorbis"], compression_level: float = 0.99
+    ) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily compress and decode audio with a lossy codec.
+
+        :param codec: The new sampling rate.
+        :return: a modified copy of the current ``DataCut``.
+        """
+        assert self.has_recording, "Cannot compress a DataCut without a Recording."
+        custom = self.custom
+        if isinstance(custom, dict) and any(
+            isinstance(v, Recording) for v in custom.values()
+        ):
+            custom = {
+                k: v.compress(codec, compression_level)
+                if isinstance(v, Recording)
+                else v
+                for k, v in custom.items()
+            }
+
+        return fastcopy(
+            self,
+            recording=self.recording.compress(codec, compression_level),
+            custom=custom,
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
