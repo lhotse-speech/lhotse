@@ -20,7 +20,7 @@ class Compress:
     codec_weights: Optional[List[float]] = None
     compress_custom_fields: bool = False
     p: float = 0.5
-    random = None
+    randgen: random.Random = None
 
     def __post_init__(self) -> None:
         assert sorted(self.codecs) == sorted(list(set(self.codecs))), "duplicate codecs"
@@ -37,23 +37,23 @@ class Compress:
             self.codec_weights = [1.0 for _ in self.codecs]
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        if self.random is None:
-            self.random = random.Random()
+        if self.randgen is None:
+            self.randgen = random.Random()
 
         compressed_cuts = []
         for cut in cuts:
-            codec, *_ = random.choices(self.codecs, weights=self.codec_weights)
+            codec, *_ = self.randgen.choices(self.codecs, weights=self.codec_weights)
 
             if isinstance(self.compression_level, (Tuple, List)):
                 min_compression, max_compression = self.compression_level
                 compression_level = (
-                    random.random() * (max_compression - min_compression)
+                    self.randgen.random() * (max_compression - min_compression)
                     + min_compression
                 )
             else:
                 compression_level = self.compression_level
 
-            if self.random.random() <= self.p:
+            if self.randgen.random() <= self.p:
                 new_cut = cut.compress(
                     codec=codec,
                     compression_level=compression_level,
