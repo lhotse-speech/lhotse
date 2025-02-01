@@ -11,6 +11,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -682,6 +683,27 @@ class MixedCut(Cut):
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,
             tracks=[
                 fastcopy(t, cut=t.cut.resample(sampling_rate)) for t in self.tracks
+            ],
+        )
+
+    def compress(
+        self,
+        codec: Literal["opus", "mp3", "vorbis"],
+        compression_level: float = 0.99,
+        compress_custom_fields: bool = False,
+    ):
+        assert self.has_recording, "Cannot compress a DataCut without a Recording."
+
+        return MixedCut(
+            id=self.id,
+            tracks=[
+                fastcopy(
+                    t,
+                    cut=t.cut.compress(
+                        codec, compression_level, compress_custom_fields
+                    ),
+                )
+                for t in self.tracks
             ],
         )
 
