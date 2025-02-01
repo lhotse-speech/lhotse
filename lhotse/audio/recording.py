@@ -972,6 +972,14 @@ class Recording:
     ) -> "Recording":
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(Compress(codec, compression_level))
+
+        if codec == "opus" and self.sampling_rate != 48000:
+            transforms.append(
+                Resample(
+                    source_sampling_rate=48000, target_sampling_rate=self.sampling_rate
+                )
+            )
+
         return fastcopy(self, transforms=transforms)
 
     @staticmethod
