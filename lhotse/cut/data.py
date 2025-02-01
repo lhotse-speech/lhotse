@@ -1053,7 +1053,10 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         ...
 
     def compress(
-        self, codec: Literal["opus", "mp3", "vorbis"], compression_level: float = 0.99
+        self,
+        codec: Literal["opus", "mp3", "vorbis"],
+        compression_level: float = 0.99,
+        compress_custom_fields: bool = False,
     ) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily compress and decode audio with a lossy codec.
@@ -1062,16 +1065,18 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         :return: a modified copy of the current ``DataCut``.
         """
         assert self.has_recording, "Cannot compress a DataCut without a Recording."
+
         custom = self.custom
-        if isinstance(custom, dict) and any(
-            isinstance(v, Recording) for v in custom.values()
-        ):
-            custom = {
-                k: v.compress(codec, compression_level)
-                if isinstance(v, Recording)
-                else v
-                for k, v in custom.items()
-            }
+        if compress_custom_fields:
+            if isinstance(custom, dict) and any(
+                isinstance(v, Recording) for v in custom.values()
+            ):
+                custom = {
+                    k: v.compress(codec, compression_level)
+                    if isinstance(v, Recording)
+                    else v
+                    for k, v in custom.items()
+                }
 
         return fastcopy(
             self,
