@@ -21,6 +21,7 @@ from lhotse.augmentation import (
     Compress,
     DereverbWPE,
     LoudnessNormalization,
+    Lowpass,
     Narrowband,
     Resample,
     ReverbWithImpulseResponse,
@@ -934,6 +935,14 @@ class Recording:
                     source_sampling_rate=48000, target_sampling_rate=self.sampling_rate
                 )
             )
+
+        return fastcopy(self, transforms=transforms)
+
+    def lowpass(self, frequency: float):
+        assert frequency <= 2 * self.sampling_rate
+
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(Lowpass(frequency))
 
         return fastcopy(self, transforms=transforms)
 

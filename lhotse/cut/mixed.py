@@ -707,6 +707,17 @@ class MixedCut(Cut):
             ],
         )
 
+    def lowpass(self, frequency: float) -> "MixedCut":
+        return MixedCut(
+            tracks=[
+                fastcopy(
+                    t,
+                    cut=t.cut.lowpass(frequency),
+                )
+                for t in self.tracks
+            ],
+        )
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will lazily perturb the speed while loading audio.
