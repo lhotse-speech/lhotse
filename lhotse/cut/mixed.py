@@ -692,7 +692,16 @@ class MixedCut(Cut):
         compression_level: float = 0.99,
         compress_custom_fields: bool = False,
     ):
-        assert self.has_recording, "Cannot compress a DataCut without a Recording."
+        """
+        Return a copy of this Cut that has Recordings in its sub-Cuts processed by a lossy encoding.
+
+        :param codec: The codec to use for compression.
+        :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
+        :param compress_custom_fields: Whether to also compress any custom recording fields in sub-Cuts.
+
+        :return: A modified :class:`~lhotse.MixedCut` containing audio processed by a codec
+        """
+        assert self.has_recording, "Cannot compress a MixedCut without a Recording."
 
         return MixedCut(
             id=self.id,
@@ -708,6 +717,14 @@ class MixedCut(Cut):
         )
 
     def lowpass(self, frequency: float) -> "MixedCut":
+        """
+        Return a copy of this Cut that has its sub-Cut lowpassed.
+
+        :param frequency: Corner frequency for the lowpass filter.
+
+        :return: A modified :class:`~lhotse.MixedCut` containing lowpassed audio in its sub-Cuts
+        """
+        assert self.has_recording, "Cannot lowpass a MixedCut without a Recording."
         return MixedCut(
             tracks=[
                 fastcopy(

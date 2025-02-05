@@ -1059,10 +1059,13 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         compress_custom_fields: bool = False,
     ) -> "DataCut":
         """
-        Return a new ``DataCut`` that will lazily compress and decode audio with a lossy codec.
+        Return a copy of this Cut that has its Recordings processed by a lossy audio encoder.
 
-        :param codec: The new sampling rate.
-        :return: a modified copy of the current ``DataCut``.
+        :param codec: The codec to use for compression. Supported codecs are Opus, MP3, Vorbis.
+        :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
+        :param compress_custom_fields: Whether to also compress any custom recording fields in the Cut.
+
+        :return: A modified :class:`~lhotse.DataCut` containing audio processed by a codec
         """
         assert self.has_recording, "Cannot compress a DataCut without a Recording."
 
@@ -1085,6 +1088,14 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         )
 
     def lowpass(self, frequency: float) -> "DataCut":
+        """
+        Return a copy of this Cut that has its Recordings lowpassed.
+
+        :param frequency: Corner frequency for the lowpass filter.
+
+        :return: A modified :class:`~lhotse.DataCut` containing lowpassed audio
+        """
+        assert self.has_recording, "Cannot lowpass a DataCut without a Recording."
         return fastcopy(
             self,
             recording=self.recording.lowpass(frequency),

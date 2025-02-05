@@ -10,6 +10,12 @@ from lhotse.augmentation.transform import AudioTransform
 
 @dataclass
 class Lowpass(AudioTransform):
+    """
+    Apply a low-pass filter to signal.
+
+    :param frequency: The cutoff frequency of the low-pass filter.
+    """
+
     frequency: float
 
     def __call__(

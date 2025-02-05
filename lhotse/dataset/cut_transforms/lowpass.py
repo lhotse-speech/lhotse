@@ -8,9 +8,16 @@ from lhotse import CutSet
 @dataclass
 class Lowpass:
     """
-    For every Cut,
-    1) randomly choose a corner frequency from provided list
-    2) apply the lowpass filter with chosen frequency with probability p
+    Applies a low-pass filter to each Cut in a CutSet.
+
+    The filter is applied with a probability of ``p``. When applied, the filter
+    randomly selects a cutoff frequency from the list of provided frequencies,
+    with optional weights controlling the selection.
+
+    :param frequencies: A list of cutoff frequencies.
+    :param weights: Optional weights for each frequency (default: equal weights).
+    :param p: The probability of applying the low-pass filter (default: 0.5).
+    :param randgen: An optional random number generator (default: a new instance).
     """
 
     frequencies: List[float]
