@@ -10,6 +10,14 @@ from lhotse.augmentation.transform import AudioTransform
 
 @dataclass
 class Compress(AudioTransform):
+    """
+    Modifies audio by running it through a lossy codec.
+
+    :param codec: Used lossy audio codec. One of ``"opus"``, ``"mp3"``, or ``"vorbis"``.
+    :param compression_level: The level of compression to apply. 0.0 is for the lowest amount of compression, 1.0 is for highest.
+    :return: The modified audio samples.
+    """
+
     codec: Literal["opus", "mp3", "vorbis"]
     compression_level: float
 

@@ -8,11 +8,19 @@ from lhotse import CutSet
 @dataclass
 class Compress:
     """
-    For every Cut,
-    1) randomly choose a codec from the codec list,
-    2) take compression level (uniformly sampled from interval if specified),
-    3) then apply the codec with chosen compression level with probability :attr:`p`
-    4) decode back to raw waveform
+    Applies a lossy compression algorithm filter to each Cut in a CutSet. The audio is decompressed back to raw waveforms.
+
+    The compression is applied with a probability of ``p``. The codec is
+    randomly selected the list of provided codecs,
+    with optional weights controlling the selection.
+    If compression level is provided as an interval,
+    then the actual value is sampled uniformly from the provided interval.
+
+    :param codecs: A list of codecs (supported: opus, mp3, vorbis)
+    :param compression_level: A single value or an interval. 0.0 = lowest compression (highest bitrate), 1.0 = highest compression (lowest bitrate)
+    :param codec_weights: Optional weights for each codec (default: equal weights).
+    :param p: The probability of applying the low-pass filter (default: 0.5).
+    :param randgen: An optional random number generator (default: a new instance).
     """
 
     codecs: List[Literal["opus", "mp3", "vorbis"]]
