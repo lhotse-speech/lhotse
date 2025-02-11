@@ -29,6 +29,7 @@ class Compress(AudioTransform):
         # lhotse: (samples, channels)
         # soundfile: (channels, samples)
         samples = samples.transpose(1, 0)
+
         with io.BytesIO() as f:
             sf.write(
                 f,
@@ -39,9 +40,15 @@ class Compress(AudioTransform):
                 **self.prepare_sf_arguments(),
             )
             f.seek(0)
-            samples_compressed, rate_compressed = sf.read(
-                f, always_2d=True
-            )  # TODO: handle possible sample rate change with the opus codec?
+            samples_compressed, sampling_rate_compressed = sf.read(f, always_2d=True)
+
+        # when one writes Opus files with soundfile,
+        # it adds extra information in the file header about the original sampling rate,
+        # so that when we load this file with soundfile later,
+        # it's resampled from 48k to original sampling rate
+        # before returning the audio array (unlike most other tools)
+        assert sampling_rate_compressed == sampling_rate
+
         samples_compressed = samples_compressed.transpose(1, 0)
 
         return samples_compressed
