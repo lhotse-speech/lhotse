@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-import soundfile as sf
 
 from lhotse.augmentation.transform import AudioTransform
 
@@ -26,8 +25,11 @@ class Compress(AudioTransform):
         samples: np.ndarray,
         sampling_rate: int,
     ):
+        import soundfile as sf
+
         # lhotse: (samples, channels)
         # soundfile: (channels, samples)
+
         samples = samples.transpose(1, 0)
 
         with io.BytesIO() as f:
@@ -54,6 +56,8 @@ class Compress(AudioTransform):
         return samples_compressed
 
     def prepare_sf_arguments(self) -> dict:
+        import soundfile as sf
+
         if self.codec == "mp3":
             return {"format": "MP3", "subtype": sf.default_subtype("MP3")}
         elif self.codec == "opus":
