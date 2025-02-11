@@ -23,14 +23,14 @@ jobs:
             torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: ""
           - python-version: "3.10"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: kaldifeat
+            torch-install-cmd: "pip install torch==2.4 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: ""
           - python-version: "3.11"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: ""
           - python-version: "3.12"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: ""
+            torch-install-cmd: "pip install torch==2.6 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: kaldifeat
 
       fail-fast: false
 
