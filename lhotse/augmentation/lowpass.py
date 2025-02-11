@@ -1,8 +1,6 @@
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
-import soundfile as sf
 
 from lhotse.augmentation.transform import AudioTransform
 from lhotse.utils import is_module_available
