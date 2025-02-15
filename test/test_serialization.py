@@ -1,5 +1,7 @@
 import os
 from tempfile import NamedTemporaryFile
+import sys
+import types
 
 import pytest
 
@@ -516,3 +518,96 @@ def test_open_pipe_iter(tmp_path):
             lines_read.append(l.strip())
 
     assert lines_read == lines
+
+
+@pytest.fixture
+def clear_msc_env_caches():
+    # Clear caches before each test
+    from lhotse.serialization import get_lhotse_msc_profile, get_lhotse_msc_override_protocols
+    get_lhotse_msc_profile.cache_clear()
+    get_lhotse_msc_override_protocols.cache_clear()
+    yield
+
+@pytest.mark.parametrize(
+    "identifier,expected_output,lhotse_msc_profile",
+    [
+        ("msc://profile/path/to/object", "msc://profile/path/to/object", "profile"),  # No change for msc:// prefix
+        ("s3://bucket/path/to/object", "msc://bucket/path/to/object", ""),  # Override only protocol
+        ("s3://bucket/path", "msc://profile/path", "profile"),  # Override protocol and bucket
+    ],
+)
+def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identifier, expected_output, lhotse_msc_profile):
+    pytest.importorskip("multistorageclient")
+    
+    from lhotse.serialization import MSCIOBackend
+    
+    # Mock environment variables
+    monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", "s3")
+    if lhotse_msc_profile:
+        monkeypatch.setenv("LHOTSE_MSC_PROFILE", lhotse_msc_profile)
+    
+    # Mock multistorageclient.open to capture the transformed URL
+    class MockMSC:
+        def open(self, url, mode):
+            assert url == expected_output
+            return None
+            
+    import sys
+    sys.modules["multistorageclient"] = MockMSC()
+    sys.modules["multistorageclient"].__spec__ = None
+    
+    # Create backend and test URL transformation
+    backend = MSCIOBackend()
+    backend.open(identifier, mode="r")
+
+
+@pytest.mark.parametrize(
+    "protocols",
+    [
+        "s3",  # Single protocol
+        "s3,gs",  # Multiple protocols
+    ],
+)
+def test_msc_io_backend_multiple_protocols(monkeypatch, clear_msc_env_caches, protocols):
+    pytest.importorskip("multistorageclient")
+    
+    from lhotse.serialization import MSCIOBackend
+    
+    # Mock environment variables
+    monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", protocols)
+    
+    # Mock multistorageclient.open to capture the transformed URL
+    class MockMSC:
+        def open(self, url, mode):
+            assert url.startswith("msc://")
+            return None
+            
+    import sys
+    sys.modules["multistorageclient"] = MockMSC()
+    sys.modules["multistorageclient"].__spec__ = None
+    
+    # Create backend and test URL transformation
+    backend = MSCIOBackend()
+    
+    # Test with first protocol
+    backend.open("s3://bucket/path", mode="r")
+    
+    if "," in protocols:
+        # Test with second protocol if multiple
+        backend.open("gs://bucket/path", mode="r")
+
+
+def test_msc_io_backend_availability(monkeypatch):
+    from lhotse.serialization import MSCIOBackend
+    
+    # Test when multistorageclient is not available
+    monkeypatch.setitem(sys.modules, "multistorageclient", None)
+    assert not MSCIOBackend.is_available()
+    
+    # Test when multistorageclient is available
+    class MockMSC:
+        pass
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    monkeypatch.setitem(sys.modules, "multistorageclient", mock_module)
+    assert MSCIOBackend.is_available()
