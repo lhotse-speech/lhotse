@@ -20,7 +20,12 @@ from lhotse import (
     store_manifest,
 )
 from lhotse.lazy import LazyJsonlIterator
-from lhotse.serialization import SequentialJsonlWriter, load_manifest_lazy, open_best
+from lhotse.serialization import (
+    MSCIOBackend,
+    SequentialJsonlWriter,
+    load_manifest_lazy,
+    open_best,
+)
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy
@@ -537,10 +542,6 @@ def clear_msc_env_caches():
     ],
 )
 def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identifier, expected_output, lhotse_msc_profile):
-    pytest.importorskip("multistorageclient")
-    
-    from lhotse.serialization import MSCIOBackend
-    
     # Mock environment variables
     monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", "s3")
     if lhotse_msc_profile:
@@ -552,7 +553,6 @@ def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identi
             assert url == expected_output
             return None
             
-    import sys
     sys.modules["multistorageclient"] = MockMSC()
     sys.modules["multistorageclient"].__spec__ = None
     
@@ -569,9 +569,6 @@ def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identi
     ],
 )
 def test_msc_io_backend_multiple_protocols(monkeypatch, clear_msc_env_caches, protocols):
-    pytest.importorskip("multistorageclient")
-    
-    from lhotse.serialization import MSCIOBackend
     
     # Mock environment variables
     monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", protocols)
@@ -582,7 +579,6 @@ def test_msc_io_backend_multiple_protocols(monkeypatch, clear_msc_env_caches, pr
             assert url.startswith("msc://")
             return None
             
-    import sys
     sys.modules["multistorageclient"] = MockMSC()
     sys.modules["multistorageclient"].__spec__ = None
     
