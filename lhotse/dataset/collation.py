@@ -115,6 +115,7 @@ def collate_features(
     cuts: CutSet,
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
+    features_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
@@ -133,7 +134,7 @@ def collate_features(
         cuts, num_frames=max(features_lens).item(), direction=pad_direction
     )
     first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
+    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features, dtype=features_dtype)
     if executor is None:
         for idx, cut in enumerate(cuts):
             features[idx] = _read_features(cut)
