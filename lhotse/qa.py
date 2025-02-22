@@ -502,3 +502,8 @@ def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
             f"got {f.type} in Features at index {idx})"
         )
 
+
+@register_validator
+def validate_cut_set(cuts: CutSet, read_data: bool = False) -> None:
+    for c in cuts:
+        validate_cut(c, read_data=read_data)
