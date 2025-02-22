@@ -502,11 +502,3 @@ def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
             f"got {f.type} in Features at index {idx})"
         )
 
-
-@register_validator
-def validate_cut_set(cuts: CutSet, read_data: bool = False) -> None:
-    ids = Counter()
-    for c in cuts:
-        validate_cut(c, read_data=read_data)
-        ids[c.id] += 1
-    assert ids.most_common(1)[0][1] <= 1, "CutSet has cuts with duplicated IDs."
