@@ -74,7 +74,11 @@ def get_aistore_client():
 
     endpoint_url = os.environ["AIS_ENDPOINT"]
     version = parse_version(aistore.__version__)
-    return aistore.Client(endpoint_url), version
+    try:
+        client = aistore.Client(endpoint_url, max_pool_size=50)
+    except:  # older AIStore SDK version doesn't support setting the pool size
+        client = aistore.Client(endpoint_url)
+    return client, version
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
