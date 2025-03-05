@@ -134,7 +134,9 @@ def collate_features(
         cuts, num_frames=max(features_lens).item(), direction=pad_direction
     )
     first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features, dtype=features_dtype)
+    features = torch.empty(
+        len(cuts), first_cut.num_frames, first_cut.num_features, dtype=features_dtype
+    )
     if executor is None:
         for idx, cut in enumerate(cuts):
             features[idx] = _read_features(cut)
