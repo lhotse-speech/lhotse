@@ -525,14 +525,6 @@ def test_open_pipe_iter(tmp_path):
     assert lines_read == lines
 
 
-@pytest.fixture
-def clear_msc_env_caches():
-    # Clear caches before each test
-    from lhotse.serialization import get_lhotse_msc_profile, get_lhotse_msc_override_protocols
-    get_lhotse_msc_profile.cache_clear()
-    get_lhotse_msc_override_protocols.cache_clear()
-    yield
-
 @pytest.mark.parametrize(
     "identifier,expected_output,lhotse_msc_profile",
     [
@@ -541,7 +533,7 @@ def clear_msc_env_caches():
         ("s3://bucket/path", "msc://profile/path", "profile"),  # Override protocol and bucket
     ],
 )
-def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identifier, expected_output, lhotse_msc_profile):
+def test_msc_io_backend_url_conversion(monkeypatch, identifier, expected_output, lhotse_msc_profile):
     # Mock environment variables
     monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", "s3")
     if lhotse_msc_profile:
@@ -552,9 +544,11 @@ def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identi
         def open(self, url, mode):
             assert url == expected_output
             return None
-            
-    sys.modules["multistorageclient"] = MockMSC()
-    sys.modules["multistorageclient"].__spec__ = None
+
+    # Create a proper mock module with __spec__ attribute
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    sys.modules["multistorageclient"] = mock_module
     
     # Create backend and test URL transformation
     backend = MSCIOBackend()
@@ -568,7 +562,7 @@ def test_msc_io_backend_url_conversion(monkeypatch, clear_msc_env_caches, identi
         "s3,gs",  # Multiple protocols
     ],
 )
-def test_msc_io_backend_multiple_protocols(monkeypatch, clear_msc_env_caches, protocols):
+def test_msc_io_backend_multiple_protocols(monkeypatch, protocols):
     
     # Mock environment variables
     monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", protocols)
@@ -578,9 +572,11 @@ def test_msc_io_backend_multiple_protocols(monkeypatch, clear_msc_env_caches, pr
         def open(self, url, mode):
             assert url.startswith("msc://")
             return None
-            
-    sys.modules["multistorageclient"] = MockMSC()
-    sys.modules["multistorageclient"].__spec__ = None
+
+    # Create a proper mock module with __spec__ attribute
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    sys.modules["multistorageclient"] = mock_module
     
     # Create backend and test URL transformation
     backend = MSCIOBackend()

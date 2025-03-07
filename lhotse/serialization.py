@@ -815,27 +815,28 @@ class AIStoreIOBackend(IOBackend):
     def is_applicable(self, identifier: Pathlike) -> bool:
         return is_valid_url(identifier)
 
-    
-@lru_cache(1)
+
 def get_lhotse_msc_override_protocols() -> Any:
     return os.getenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", None)
 
 
-@lru_cache(1)
 def get_lhotse_msc_profile() -> Any:
     return os.getenv("LHOTSE_MSC_PROFILE", None)
-
-
-@lru_cache(1)
-def get_lhotse_io_backend() -> Any:
-    return os.getenv("LHOTSE_IO_BACKEND", None)
 
 
 MSC_PREFIX = "msc"
 
 class MSCIOBackend(IOBackend):
     """
-    Uses multi-storage client to download data from object store
+    Uses Multi-Storage Client to download data from object store.
+
+    Multi-Storage Client (MSC) is a Python library aims at providing a unified interface to object and file
+    storage backends, including S3, GCS, AIStore, and more.  With no code change, user can seamlessly switch
+    between different storage backends with corresponding MSC urls.  To use MSCIOBackend, user will need a
+    MSC config file that specifies the storage backend information.  Please refer to the MSC documentation
+    for more details: https://nvidia.github.io/multi-storage-client/user_guide/quickstart.html#configuration
+
+    To learn more about MSC, please check out the GitHub repo: https://github.com/NVIDIA/multi-storage-client
     """
 
     def open(self, identifier: str, mode: str):
@@ -848,6 +849,8 @@ class MSCIOBackend(IOBackend):
         2. override the profile/bucket name by env LHOTSE_MSC_PROFILE if provided: msc://profile/path/to/my/object2,
         if bucket name is not provided, then we expect the msc profile name to match with bucket name
         """
+        if not is_module_available("multistorageclient"):
+            raise RuntimeError("Please run 'pip install multistorageclient' in order to use MSCIOBackend.")
 
         import multistorageclient as msc
 

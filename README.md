@@ -113,6 +113,8 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `AIS_ENDPOINT` is read by AIStore client to determine AIStore endpoint URL. Required for AIStore dataloading.
 - `RANK`, `WORLD_SIZE`, `WORKER`, and `NUM_WORKERS` are internally used to inform Lhotse Shar dataloading subprocesses.
 - `READTHEDOCS` is internally used for documentation builds.
+- `LHOTSE_MSC_OVERRIDE_PROTOCOLS` - when set, it will override your input protocols before feeding to MSCIOBackend.  Useful when you don't want to change your existing url format but want to use MSCIOBackend.  For example, if you have `s3://s3-bucket/path/to/my/object` and `gs://gs-bucket/path/to/my/object`, you can set `LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3,gs` to override the urls to `msc://s3-bucket/path/to/my/object` and `msc://gs-bucket/path/to/my/object`.
+- `LHOTSE_MSC_PROFILE` - when set, it will override the your bucket name before feeding to MSCIOBackend.  Useful when your msc profile is not the same as your bucket name.  For example, if you have `s3://s3-bucket/path/to/my/object`, you can set `LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3` and `LHOTSE_MSC_PROFILE=msc-s3-profile` to override the url to `msc://msc-s3-profile/path/to/my/object`.
 
 ### Optional dependencies
 
@@ -126,6 +128,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `pip install aistore` to read manifests, tar fles, and other data from AIStore using AIStore-supported URLs (set `AIS_ENDPOINT` environment variable to activate it). See [AIStore documentation](https://aiatscale.org) for more details.
 - `pip install smart_open` to read and write manifests and data in any location supported by `smart_open` (e.g. cloud, http).
 - `pip install opensmile` for feature extraction using the OpenSmile toolkit's Python wrapper.
+- `pip install multi-storage-client` for read and write manifests and data in different storage backends. See [multi-storage-client](https://github.com/NVIDIA/multi-storage-client) for more details.
 
 **sph2pipe.** For reading older LDC SPHERE (.sph) audio files that are compressed with codecs unsupported by ffmpeg and sox, please run:
 
