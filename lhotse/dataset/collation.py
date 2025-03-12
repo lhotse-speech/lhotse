@@ -129,9 +129,7 @@ def collate_features(
     """
     assert all(cut.has_features for cut in cuts)
     features_lens = torch.tensor([cut.num_frames for cut in cuts], dtype=torch.int)
-    cuts = maybe_pad(
-        cuts, num_frames=max(features_lens).item(), direction=pad_direction
-    )
+    cuts = cuts.pad(num_frames=max(features_lens).item(), direction=pad_direction)
     first_cut = next(iter(cuts))
     features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
     if executor is None:
@@ -187,9 +185,8 @@ def collate_audio(
             )
         cut_id2num_samples[cut.id] = num_samples
 
-    cuts = maybe_pad(
-        cuts,
-        num_samples=max(cut_id2num_samples.values()),
+    cuts = cuts.pad(
+        duration=max(cut.duration for cut in cuts),
         direction=pad_direction,
         preserve_id=True,
     )
@@ -199,7 +196,12 @@ def collate_audio(
         cuts, executor, suppress_errors=fault_tolerant, recording_field=recording_field
     )
 
-    audios = torch.stack(audios)
+    if len(audios[0].shape) == 1:
+        audios = collate_vectors(audios, padding_value=0.0)
+    else:
+        audios = collate_matrices(
+            [a.transpose(0, 1) for a in audios], padding_value=0.0
+        ).transpose(1, 2)
     audio_lens = torch.tensor(
         [cut_id2num_samples[cut.id] for cut in cuts], dtype=torch.int32
     )
@@ -245,8 +247,7 @@ def collate_video(
     for cut in cuts:
         id2lens[cut.id] = (cut.num_samples, cut.video.num_frames)
 
-    cuts = maybe_pad(
-        cuts,
+    cuts = cuts.pad(
         duration=max(c.duration for c in cuts),
         direction=pad_direction,
         preserve_id=True,
@@ -383,7 +384,7 @@ def collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:
     """
     assert all(cut.has_features for cut in cuts)
     assert all(isinstance(cut, MixedCut) for cut in cuts)
-    cuts = maybe_pad(cuts)
+    cuts = cuts.pad(cuts)
     # Output tensor shape: (B, C, T, F) -> (batch_size, num_channels, num_frames, num_features)
     first_cut = next(iter(cuts))
     # TODO: make MixedCut more friendly to use with multi channel audio;
@@ -454,28 +455,6 @@ def collate_matrices(
     for i, t in enumerate(tensors):
         result[i, : t.shape[0]] = t
     return result
-
-
-def maybe_pad(
-    cuts: CutSet,
-    duration: Seconds = None,
-    num_frames: int = None,
-    num_samples: int = None,
-    direction: str = "right",
-    preserve_id: bool = False,
-) -> CutSet:
-    """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
-    if len(set(c.duration for c in cuts)) == 1:
-        # All cuts are of equal duration: nothing to do
-        return cuts
-    # Non-equal durations: silence padding
-    return cuts.pad(
-        duration=duration,
-        num_frames=num_frames,
-        num_samples=num_samples,
-        direction=direction,
-        preserve_id=preserve_id,
-    )
 
 
 """
