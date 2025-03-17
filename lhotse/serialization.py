@@ -850,7 +850,7 @@ class MSCIOBackend(IOBackend):
         if bucket name is not provided, then we expect the msc profile name to match with bucket name
         """
         if not is_module_available("multistorageclient"):
-            raise RuntimeError("Please run 'pip install multistorageclient' in order to use MSCIOBackend.")
+            raise RuntimeError("Please run 'pip install multi-storage-client' in order to use MSCIOBackend.")
 
         import multistorageclient as msc
 
