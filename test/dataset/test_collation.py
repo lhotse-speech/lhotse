@@ -404,3 +404,41 @@ def test_collate_cut_multi_channel_recording_and_custom_recording_diff_num_chann
     )
     assert target_audio.shape == (2, 2, 32000)  # batch x channel x time
     torch.testing.assert_close(audio_lens, expected_lens)
+
+
+def test_collate_audio_works_despite_non_unique_ids():
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=2.0, with_data=True),
+            dummy_cut(0, duration=1.0, with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts)
+    assert audio_lens.tolist() == [32000, 16000]
+    assert audio.shape == (2, 32000)
+
+
+def test_collate_audio_mixed_cuts_works_despite_non_unique_ids():
+    cut2s = dummy_cut(0, duration=2.0, with_data=True)
+    cut1s = dummy_cut(0, duration=1.0, with_data=True)
+    cuts = CutSet(
+        [
+            cut2s.mix(cut2s, snr=10),
+            cut1s.mix(cut1s, snr=10),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts)
+    assert audio_lens.tolist() == [32000, 16000]
+    assert audio.shape == (2, 32000)
+
+
+def test_collate_custom_audio_works_despite_non_unique_ids():
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=2.0, with_data=True),
+            dummy_cut(0, duration=1.0, with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, recording_field="custom_recording")
+    assert audio_lens.tolist() == [32000, 16000]
+    assert audio.shape == (2, 32000)
