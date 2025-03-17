@@ -1,6 +1,7 @@
 import warnings
 from concurrent.futures import Executor
 from functools import partial
+from itertools import repeat
 from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -175,7 +176,7 @@ def collate_audio(
             ), f"Missing custom recording field {recording_field} in cut {cut.id}"
 
     # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
-    cut_id2num_samples = {}
+    sample_counts = []
     for cut in cuts:
         if recording_field is None:
             num_samples = cut.num_samples
@@ -183,7 +184,7 @@ def collate_audio(
             num_samples = compute_num_samples(
                 cut.duration, sampling_rate=getattr(cut, recording_field).sampling_rate
             )
-        cut_id2num_samples[cut.id] = num_samples
+        sample_counts.append(num_samples)
 
     cuts = cuts.pad(
         duration=max(cut.duration for cut in cuts),
@@ -192,8 +193,12 @@ def collate_audio(
     )
 
     # Note: returned "cuts" may be a subset of the original "cuts" if fault_tolerant=True.
-    audios, cuts = read_audio_from_cuts(
-        cuts, executor, suppress_errors=fault_tolerant, recording_field=recording_field
+    audios, cuts, sample_counts = read_audio_from_cuts(
+        cuts,
+        executor,
+        suppress_errors=fault_tolerant,
+        recording_field=recording_field,
+        filter_aux_iter=sample_counts,
     )
 
     if len(audios[0].shape) == 1:
@@ -202,9 +207,7 @@ def collate_audio(
         audios = collate_matrices(
             [a.transpose(0, 1) for a in audios], padding_value=0.0
         ).transpose(1, 2)
-    audio_lens = torch.tensor(
-        [cut_id2num_samples[cut.id] for cut in cuts], dtype=torch.int32
-    )
+    audio_lens = torch.tensor(sample_counts, dtype=torch.int32)
 
     if fault_tolerant:
         return audios, audio_lens, cuts
@@ -467,7 +470,8 @@ def read_audio_from_cuts(
     executor: Optional[Executor] = None,
     suppress_errors: bool = False,
     recording_field: Optional[str] = None,
-) -> Tuple[List[torch.Tensor], CutSet]:
+    filter_aux_iter: Optional[Iterable] = None,
+) -> Union[Tuple[List[torch.Tensor], CutSet], Tuple[List[torch.Tensor], CutSet, List]]:
     """
     Loads audio data from an iterable of cuts.
 
@@ -479,13 +483,23 @@ def read_audio_from_cuts(
         When ``False`` (default), the errors will not be suppressed.
     :param recording_field: when specified, we will try to load recordings from a custom field with this name
         (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
+    :param filter_aux_iter: when specified, we will iterate over this iterator and discard the elements
+        for which a corresponding cut failed to load audio, if ``suppress_errors`` is set to ``True``.
+        This iterator is expected to be of the same length as ``cuts``.
     :return: a tuple of two items: a list of audio tensors (with different shapes),
         and a list of cuts for which we read the data successfully.
+        If ``filter_aux_iter`` is specified, it returns a 3-tuple where the third element is
+        the filtered auxiliary iterator.
     """
+    aux_requested = True
+    if filter_aux_iter is None:
+        filter_aux_iter = repeat([None])
+        aux_requested = False
     map_fn = map if executor is None else executor.map
     audios = []
     ok_cuts = []
-    for idx, (cut, maybe_audio) in enumerate(
+    aux_iter_out = []
+    for idx, (cut, maybe_audio, aux_item) in enumerate(
         zip(
             cuts,
             map_fn(
@@ -496,6 +510,7 @@ def read_audio_from_cuts(
                 ),
                 cuts,
             ),
+            filter_aux_iter,
         )
     ):
         if maybe_audio is None:
@@ -503,7 +518,11 @@ def read_audio_from_cuts(
         else:
             audios.append(maybe_audio)
             ok_cuts.append(cut)
-    return audios, CutSet.from_cuts(ok_cuts)
+            aux_iter_out.append(aux_item)
+    ans = (audios, CutSet.from_cuts(ok_cuts))
+    if aux_requested:
+        ans = ans + (aux_iter_out,)
+    return ans
 
 
 def read_video_from_cuts(
