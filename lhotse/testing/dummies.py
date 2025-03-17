@@ -352,7 +352,7 @@ def dummy_cut(
         recording=recording
         if recording
         else dummy_recording(
-            unique_id, duration=recording_duration, with_data=with_data
+            unique_id, duration=max(recording_duration, duration), with_data=with_data
         ),
         features=features
         if features
