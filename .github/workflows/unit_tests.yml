@@ -21,16 +21,16 @@ jobs:
             extra_deps: ""
           - python-version: "3.9"
             torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: ""
+            extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.10"  # note: no torchaudio
             torch-install-cmd: "pip install torch==2.4 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: ""
+            extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.11"  # note: no torchaudio
             torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: ""
+            extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.12"  # note: no torchaudio
             torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: ""  # kaldifeat
+            extra_deps: "multi-storage-client==0.16.0"  # kaldifeat
 
       fail-fast: false
 

@@ -13,7 +13,14 @@ from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
 import yaml
 from packaging.version import parse as parse_version
 
-from lhotse.utils import Pathlike, Pipe, SmartOpen, is_module_available, is_valid_url
+from lhotse.utils import (
+    Pathlike,
+    Pipe,
+    SmartOpen,
+    is_module_available,
+    is_valid_url,
+    replace_bucket_with_profile_name,
+)
 from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
@@ -816,6 +823,89 @@ class AIStoreIOBackend(IOBackend):
         return is_valid_url(identifier)
 
 
+def get_lhotse_msc_override_protocols() -> Any:
+    return os.getenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", None)
+
+
+def get_lhotse_msc_profile() -> Any:
+    return os.getenv("LHOTSE_MSC_PROFILE", None)
+
+
+MSC_PREFIX = "msc"
+
+
+class MSCIOBackend(IOBackend):
+    """
+    Uses Multi-Storage Client to download data from object store.
+
+    Multi-Storage Client (MSC) is a Python library aims at providing a unified interface to object and file
+    storage backends, including S3, GCS, AIStore, and more.  With no code change, user can seamlessly switch
+    between different storage backends with corresponding MSC urls.  To use MSCIOBackend, user will need a
+    MSC config file that specifies the storage backend information.  Please refer to the MSC documentation
+    for more details: https://nvidia.github.io/multi-storage-client/user_guide/quickstart.html#configuration
+
+    To learn more about MSC, please check out the GitHub repo: https://github.com/NVIDIA/multi-storage-client
+    """
+
+    def open(self, identifier: str, mode: str):
+        """
+        Convert identifier if is not prefixed with msc, and use msc.open to access the file
+        For paths that are prefixed with msc, e.g. msc://profile/path/to/my/object1
+
+        For paths are yet to migrate to msc-compatible url, e.g. protocol://bucket/path/to/my/object2
+        1. override protocols provided by env LHOTSE_MSC_OVERRIDE_PROTOCOLS to msc: msc://bucket/path/to/my/object2
+        2. override the profile/bucket name by env LHOTSE_MSC_PROFILE if provided: msc://profile/path/to/my/object2,
+        if bucket name is not provided, then we expect the msc profile name to match with bucket name
+        """
+        if not is_module_available("multistorageclient"):
+            raise RuntimeError(
+                "Please run 'pip install multistorageclient' in order to use MSCIOBackend."
+            )
+
+        import multistorageclient as msc
+
+        # if url prefixed with msc, then return early
+        if identifier.startswith(f"{MSC_PREFIX}://"):
+            return msc.open(identifier, mode)
+
+        # override protocol if provided
+        lhotse_msc_override_protocols = get_lhotse_msc_override_protocols()
+        if lhotse_msc_override_protocols:
+            if "," in lhotse_msc_override_protocols:
+                override_protocol_list = lhotse_msc_override_protocols.split(",")
+            else:
+                override_protocol_list = [lhotse_msc_override_protocols]
+            for override_protocol in override_protocol_list:
+                if identifier.startswith(override_protocol):
+                    identifier = identifier.replace(override_protocol, MSC_PREFIX)
+                    break
+
+        # override bucket if provided
+        lhotse_msc_profile = get_lhotse_msc_profile()
+        if lhotse_msc_profile:
+            identifier = replace_bucket_with_profile_name(
+                identifier, lhotse_msc_profile
+            )
+
+        try:
+            file = msc.open(identifier, mode)
+        except Exception as e:
+            print(f"exception: {e}, identifier: {identifier}")
+            raise e
+
+        return file
+
+    @classmethod
+    def is_available(cls) -> bool:
+        return is_module_available("multistorageclient")
+
+    def handles_special_case(self, identifier: Pathlike) -> bool:
+        return str(identifier).startswith(f"{MSC_PREFIX}://")
+
+    def is_applicable(self, identifier: Pathlike) -> bool:
+        return is_valid_url(identifier)
+
+
 class CompositeIOBackend(IOBackend):
     """
     Composes multiple IO backends together.
@@ -938,6 +1028,8 @@ def get_default_io_backend() -> "IOBackend":
         RedirectIOBackend(),
         PipeIOBackend(),
     ]
+    if MSCIOBackend.is_available():
+        backends.append(MSCIOBackend())
     if AIStoreIOBackend.is_available():
         # Try AIStore before other generalist backends,
         # but only if it's installed and enabled via AIS_ENDPOINT env var.
