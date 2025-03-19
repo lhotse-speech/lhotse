@@ -13,7 +13,14 @@ from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
 import yaml
 from packaging.version import parse as parse_version
 
-from lhotse.utils import Pathlike, Pipe, SmartOpen, is_module_available, is_valid_url, replace_bucket_with_profile_name
+from lhotse.utils import (
+    Pathlike,
+    Pipe,
+    SmartOpen,
+    is_module_available,
+    is_valid_url,
+    replace_bucket_with_profile_name,
+)
 from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
@@ -826,6 +833,7 @@ def get_lhotse_msc_profile() -> Any:
 
 MSC_PREFIX = "msc"
 
+
 class MSCIOBackend(IOBackend):
     """
     Uses Multi-Storage Client to download data from object store.
@@ -850,7 +858,9 @@ class MSCIOBackend(IOBackend):
         if bucket name is not provided, then we expect the msc profile name to match with bucket name
         """
         if not is_module_available("multistorageclient"):
-            raise RuntimeError("Please run 'pip install multi-storage-client' in order to use MSCIOBackend.")
+            raise RuntimeError(
+                "Please run 'pip install multistorageclient' in order to use MSCIOBackend."
+            )
 
         import multistorageclient as msc
 
@@ -873,7 +883,9 @@ class MSCIOBackend(IOBackend):
         # override bucket if provided
         lhotse_msc_profile = get_lhotse_msc_profile()
         if lhotse_msc_profile:
-            identifier = replace_bucket_with_profile_name(identifier, lhotse_msc_profile)
+            identifier = replace_bucket_with_profile_name(
+                identifier, lhotse_msc_profile
+            )
 
         try:
             file = msc.open(identifier, mode)
@@ -882,7 +894,6 @@ class MSCIOBackend(IOBackend):
             raise e
 
         return file
-
 
     @classmethod
     def is_available(cls) -> bool:
