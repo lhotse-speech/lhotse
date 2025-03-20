@@ -10,6 +10,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -1050,6 +1051,55 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         source_rng_seed: Optional[int] = None,
     ) -> "DataCut":
         ...
+
+    def compress(
+        self,
+        codec: Literal["opus", "mp3", "vorbis"],
+        compression_level: float = 0.99,
+        compress_custom_fields: bool = False,
+    ) -> "DataCut":
+        """
+        Return a copy of this Cut that has its Recordings processed by a lossy audio encoder.
+
+        :param codec: The codec to use for compression. Supported codecs are Opus, MP3, Vorbis.
+        :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
+        :param compress_custom_fields: Whether to also compress any custom recording fields in the Cut.
+
+        :return: A modified :class:`~lhotse.DataCut` containing audio processed by a codec
+        """
+        assert self.has_recording, "Cannot compress a DataCut without a Recording."
+
+        custom = self.custom
+        if compress_custom_fields:
+            if isinstance(custom, dict) and any(
+                isinstance(v, Recording) for v in custom.values()
+            ):
+                custom = {
+                    k: v.compress(codec, compression_level)
+                    if isinstance(v, Recording)
+                    else v
+                    for k, v in custom.items()
+                }
+
+        return fastcopy(
+            self,
+            recording=self.recording.compress(codec, compression_level),
+            custom=custom,
+        )
+
+    def lowpass(self, frequency: float) -> "DataCut":
+        """
+        Return a copy of this Cut that has its Recordings lowpassed.
+
+        :param frequency: Corner frequency for the lowpass filter.
+
+        :return: A modified :class:`~lhotse.DataCut` containing lowpassed audio
+        """
+        assert self.has_recording, "Cannot lowpass a DataCut without a Recording."
+        return fastcopy(
+            self,
+            recording=self.recording.lowpass(frequency),
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
