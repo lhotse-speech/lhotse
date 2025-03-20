@@ -81,7 +81,7 @@ def get_aistore_client():
 
     endpoint_url = os.environ["AIS_ENDPOINT"]
     version = parse_version(aistore.__version__)
-    return aistore.Client(endpoint_url), version
+    return aistore.Client(endpoint_url, timeout=(1, 20)), version
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
