@@ -677,10 +677,10 @@ class CutSet(Serializable, AlgorithmMixin):
             for f in progbar(as_completed(futures)):
                 partial_paths = f.result()
                 for k, v in partial_paths.items():
-                    output_paths[k].append(v)
+                    output_paths[k].extend(v)
         for k in output_paths:
             output_paths[k] = sorted(output_paths[k])
-        return output_paths
+        return dict(output_paths)
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
