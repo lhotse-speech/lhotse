@@ -926,6 +926,13 @@ class Recording:
     def compress(
         self, codec: Literal["opus", "mp3", "vorbis"], compression_level: float = 0.99
     ) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply audio compression while loading audio.
+
+        :param codec: The codec to use for compression (one of: opus, mp3, vorbis).
+        :param compression_level: The compression level between 0.0 and 1.0 (higher means more compression).
+        :return: a modified copy of the current ``Recording``.
+        """
         if codec not in ["opus", "mp3", "vorbis"]:
             raise ValueError(
                 f"Invalid codec: {codec}. Must be one of: opus, mp3, vorbis"
@@ -939,6 +946,12 @@ class Recording:
         return fastcopy(self, transforms=transforms)
 
     def lowpass(self, frequency: float):
+        """
+        Return a new ``Recording`` that will lazily apply a lowpass filter while loading audio.
+
+        :param frequency: The cutoff frequency in Hz (must be less than Nyquist frequency).
+        :return: a modified copy of the current ``Recording``.
+        """
         nyquist = self.sampling_rate / 2
         if frequency >= nyquist:
             raise ValueError(
