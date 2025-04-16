@@ -926,12 +926,24 @@ class Recording:
     def compress(
         self, codec: Literal["opus", "mp3", "vorbis"], compression_level: float = 0.99
     ) -> "Recording":
+        if codec not in ["opus", "mp3", "vorbis"]:
+            raise ValueError(
+                f"Invalid codec: {codec}. Must be one of: opus, mp3, vorbis"
+            )
+        if not 0.0 <= compression_level <= 1.0:
+            raise ValueError(
+                f"Compression level must be between 0.0 and 1.0, got {compression_level}"
+            )
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(Compress(codec, compression_level))
         return fastcopy(self, transforms=transforms)
 
     def lowpass(self, frequency: float):
-        assert frequency <= 2 * self.sampling_rate
+        nyquist = self.sampling_rate / 2
+        if frequency >= nyquist:
+            raise ValueError(
+                f"Cutoff frequency ({frequency}Hz) must be less than Nyquist frequency ({nyquist}Hz)"
+            )
 
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(Lowpass(frequency))
