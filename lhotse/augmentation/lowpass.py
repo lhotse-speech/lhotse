@@ -28,11 +28,12 @@ class Lowpass(AudioTransform):
 
         import scipy.signal
 
-        N, _ = scipy.signal.kaiserord(ripple=100, width=0.05)
+        width = 0.02
+        N, _ = scipy.signal.kaiserord(ripple=200, width=width)
         taps = scipy.signal.firwin(
             numtaps=N,
             cutoff=self.frequency,
-            width=0.05,
+            width=width,
             fs=sampling_rate,
             pass_zero="lowpass",
         )
