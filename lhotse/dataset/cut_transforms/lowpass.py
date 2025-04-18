@@ -38,9 +38,11 @@ class Lowpass:
 
         lowpassed_cuts = []
         for cut in cuts:
-            frequency, *_ = self.randgen.choices(self.frequencies, weights=self.weights)
-
             if self.randgen.random() <= self.p:
+                frequency, *_ = self.randgen.choices(
+                    self.frequencies, weights=self.weights
+                )
+
                 new_cut = cut.lowpass(frequency)
                 new_cut.id = f"{cut.id}_lowpassed{frequency:.0f}"
                 lowpassed_cuts.append(new_cut)
