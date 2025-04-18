@@ -5,6 +5,7 @@ from scipy import signal
 
 from lhotse import AudioSource, Recording
 from lhotse.augmentation import Compress
+from lhotse.dataset.cut_transforms import Compress as CompressTransform
 
 
 @pytest.fixture
@@ -152,3 +153,37 @@ def test_compress_preserves_duration(mono_square_wave_recording, codec):
 
     compressed_recording = mono_square_wave_recording.compress(codec, compression_level)
     assert compressed_recording.duration == mono_square_wave_recording.duration
+
+
+def test_compress_transform_raises_on_duplicate_codecs():
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3", "mp3"])
+
+
+def test_compress_transform_raises_on_invalid_compression_level_interval():
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3"], compression_level=(0.1, 0.2, 0.3))
+
+
+def test_compress_transform_raises_on_invalid_compression_level_interval_values():
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3"], compression_level=(0.5, 0.5))
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3"], compression_level=(0.6, 0.5))
+
+
+def test_compress_transform_raises_on_invalid_probability():
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3"], p=-0.1)
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3"], p=1.1)
+
+
+def test_compress_transform_raises_on_invalid_codec_weights_length():
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3", "opus"], codec_weights=[0.5])
+
+
+def test_compress_transform_raises_on_negative_codec_weights():
+    with pytest.raises(AssertionError):
+        CompressTransform(codecs=["mp3", "opus"], codec_weights=[0.5, -0.5])
