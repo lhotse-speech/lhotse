@@ -603,7 +603,7 @@ def test_msc_io_backend_multiple_protocols(monkeypatch, protocols):
         backend.open("gs://bucket/path", mode="r")
 
 
-def test_msc_io_backend_availability(monkeypatch):
+def test_msc_io_backend_is_available(monkeypatch):
     from lhotse.serialization import MSCIOBackend
 
     # Test when multistorageclient is not available
@@ -618,3 +618,36 @@ def test_msc_io_backend_availability(monkeypatch):
     mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
     monkeypatch.setitem(sys.modules, "multistorageclient", mock_module)
     assert MSCIOBackend.is_available()
+
+
+def test_msc_io_backend_is_applicable(monkeypatch):
+    from lhotse.serialization import MSCIOBackend
+
+    # Create a proper mock module with __spec__ attribute
+    class MockMSC:
+        pass
+
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    
+    # Test 1: When multistorageclient is not available
+    monkeypatch.setitem(sys.modules, "multistorageclient", None)
+    backend = MSCIOBackend()
+    assert not backend.is_applicable("msc://profile/path/to/object")
+    assert not backend.is_applicable("s3://bucket/path")
+    
+    # Test 2: When multistorageclient is available
+    monkeypatch.setitem(sys.modules, "multistorageclient", mock_module)
+    backend = MSCIOBackend()
+    
+    # Test 2.1: MSC URL is always applicable
+    assert backend.is_applicable("msc://profile/path/to/object")
+    
+    # Test 2.2: Non-MSC URL with forced backend
+    monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "true")
+    assert backend.is_applicable("s3://bucket/path")
+    
+    # Test 2.3: Non-MSC URL without forced backend
+    monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "")
+    assert not backend.is_applicable("s3://bucket/path")
+    assert not backend.is_applicable("/path/to/local/file")
