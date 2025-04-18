@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple, Union
 
 from lhotse import CutSet
+from lhotse.augmentation.compress import Codec
 
 
 @dataclass
@@ -23,7 +24,7 @@ class Compress:
     :param randgen: An optional random number generator (default: a new instance).
     """
 
-    codecs: List[Literal["opus", "mp3", "vorbis"]]
+    codecs: List[Codec]
     compression_level: Union[float, Tuple[float, float]] = 0.9
     codec_weights: Optional[List[float]] = None
     compress_custom_fields: bool = False

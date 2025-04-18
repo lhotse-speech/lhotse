@@ -23,6 +23,7 @@ from intervaltree import IntervalTree
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
+from lhotse.augmentation.compress import Codec
 from lhotse.custom import CustomFieldMixin
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
@@ -1054,7 +1055,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
     def compress(
         self,
-        codec: Literal["opus", "mp3", "vorbis"],
+        codec: Codec,
         compression_level: float = 0.99,
         compress_custom_fields: bool = False,
     ) -> "DataCut":
