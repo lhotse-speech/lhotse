@@ -53,7 +53,9 @@ class Compress(AudioTransform):
         # so that when we load this file with soundfile later,
         # it's resampled from 48k to original sampling rate
         # before returning the audio array (unlike most other tools)
-        assert sampling_rate_compressed == sampling_rate
+        assert (
+            sampling_rate_compressed == sampling_rate
+        ), f"Sampling rate not preserved after compression: {sampling_rate_compressed} != {sampling_rate}"
 
         samples_compressed = samples_compressed.transpose(1, 0)
 
