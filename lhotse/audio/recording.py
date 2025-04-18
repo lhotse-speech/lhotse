@@ -953,9 +953,9 @@ class Recording:
         :return: a modified copy of the current ``Recording``.
         """
         nyquist = self.sampling_rate / 2
-        if frequency >= nyquist:
+        if frequency >= nyquist or frequency <= 0:
             raise ValueError(
-                f"Cutoff frequency ({frequency}Hz) must be less than Nyquist frequency ({nyquist}Hz)"
+                f"Cutoff frequency ({frequency}Hz) must be greater than 0 and less than Nyquist frequency ({nyquist}Hz)"
             )
 
         transforms = self.transforms.copy() if self.transforms is not None else []
