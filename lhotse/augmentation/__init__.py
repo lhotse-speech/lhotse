@@ -1,5 +1,7 @@
 from .common import AugmentFn
+from .compress import Compress
 from .loudness import LoudnessNormalization
+from .lowpass import Lowpass
 from .rir import ReverbWithImpulseResponse
 from .torchaudio import *
 from .transform import AudioTransform
