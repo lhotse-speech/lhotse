@@ -826,8 +826,10 @@ class AIStoreIOBackend(IOBackend):
 def get_lhotse_msc_override_protocols() -> Any:
     return os.getenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", None)
 
+
 def get_lhotse_msc_profile() -> Any:
     return os.getenv("LHOTSE_MSC_PROFILE", None)
+
 
 def get_lhotse_msc_backend_forced() -> Any:
     """
@@ -835,6 +837,7 @@ def get_lhotse_msc_backend_forced() -> Any:
     """
     val = os.getenv("LHOTSE_MSC_BACKEND_FORCED", "False")
     return val.lower() == "true"
+
 
 MSC_PREFIX = "msc"
 
@@ -845,15 +848,15 @@ class MSCIOBackend(IOBackend):
 
     Multi-Storage Client (MSC) is a Python library aims at providing a unified interface to object and file
     storage backends, including S3, GCS, AIStore, and more.  With no code change, user can seamlessly switch
-    between different storage backends with corresponding MSC urls.  
-    
+    between different storage backends with corresponding MSC urls.
+
     To use MSCIOBackend, user will need
-    
-    1) 
-    MSC config file that specifies the storage backend information. Please refer to the MSC documentation 
+
+    1)
+    MSC config file that specifies the storage backend information. Please refer to the MSC documentation
     for more details: https://nvidia.github.io/multi-storage-client/user_guide/quickstart.html#configuration
 
-    2) 
+    2)
     Provide MSC URLs, OR
     Set env `LHOTSE_MSC_BACKEND_FORCED` to True to force the use of MSC backend for regular URLs.
 
@@ -918,13 +921,13 @@ class MSCIOBackend(IOBackend):
     def is_applicable(self, identifier: Pathlike) -> bool:
         return is_module_available("multistorageclient") and (
             MSCIOBackend.is_msc_url(identifier)
-            or 
-            (get_lhotse_msc_backend_forced() and is_valid_url(identifier))
+            or (get_lhotse_msc_backend_forced() and is_valid_url(identifier))
         )
 
     @staticmethod
     def is_msc_url(identifier: Any) -> bool:
         return str(identifier).startswith(f"{MSC_PREFIX}://")
+
 
 class CompositeIOBackend(IOBackend):
     """

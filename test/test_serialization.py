@@ -629,24 +629,24 @@ def test_msc_io_backend_is_applicable(monkeypatch):
 
     mock_module = MockMSC()
     mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
-    
+
     # Test 1: When multistorageclient is not available
     monkeypatch.setitem(sys.modules, "multistorageclient", None)
     backend = MSCIOBackend()
     assert not backend.is_applicable("msc://profile/path/to/object")
     assert not backend.is_applicable("s3://bucket/path")
-    
+
     # Test 2: When multistorageclient is available
     monkeypatch.setitem(sys.modules, "multistorageclient", mock_module)
     backend = MSCIOBackend()
-    
+
     # Test 2.1: MSC URL is always applicable
     assert backend.is_applicable("msc://profile/path/to/object")
-    
+
     # Test 2.2: Non-MSC URL with forced backend
     monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "true")
     assert backend.is_applicable("s3://bucket/path")
-    
+
     # Test 2.3: Non-MSC URL without forced backend
     monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "")
     assert not backend.is_applicable("s3://bucket/path")
