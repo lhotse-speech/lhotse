@@ -31,6 +31,7 @@ from lhotse.augmentation import (
     LoudnessNormalization,
     ReverbWithImpulseResponse,
 )
+from lhotse.augmentation.compress import Codec
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.padding import PaddingCut
@@ -696,7 +697,7 @@ class MixedCut(Cut):
 
     def compress(
         self,
-        codec: Literal["opus", "mp3", "vorbis"],
+        codec: Codec,
         compression_level: float = 0.99,
         compress_custom_fields: bool = False,
     ):

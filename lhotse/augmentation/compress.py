@@ -1,10 +1,13 @@
 import io
+import typing
 from dataclasses import dataclass
-from typing import Literal
+from typing import ClassVar, List, Literal
 
 import numpy as np
 
 from lhotse.augmentation.transform import AudioTransform
+
+Codec = Literal["opus", "mp3", "vorbis"]
 
 
 @dataclass
@@ -17,7 +20,8 @@ class Compress(AudioTransform):
     :return: The modified audio samples.
     """
 
-    codec: Literal["opus", "mp3", "vorbis"]
+    supported_codecs: ClassVar[tuple[Codec]] = tuple(typing.get_args(Codec))
+    codec: Codec
     compression_level: float
 
     def __call__(

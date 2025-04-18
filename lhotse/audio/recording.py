@@ -29,6 +29,7 @@ from lhotse.augmentation import (
     Tempo,
     Volume,
 )
+from lhotse.augmentation.compress import Codec
 from lhotse.utils import (
     Pathlike,
     Seconds,
@@ -967,9 +968,7 @@ class Recording:
             transforms=transforms,
         )
 
-    def compress(
-        self, codec: Literal["opus", "mp3", "vorbis"], compression_level: float = 0.99
-    ) -> "Recording":
+    def compress(self, codec: Codec, compression_level: float = 0.99) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply audio compression while loading audio.
 
@@ -977,9 +976,9 @@ class Recording:
         :param compression_level: The compression level between 0.0 and 1.0 (higher means more compression).
         :return: a modified copy of the current ``Recording``.
         """
-        if codec not in ["opus", "mp3", "vorbis"]:
+        if codec not in Compress.supported_codecs:
             raise ValueError(
-                f"Invalid codec: {codec}. Must be one of: opus, mp3, vorbis"
+                f"Invalid codec: {codec}. Must be one of: {', '.join(Compress.supported_codecs)}"
             )
         if not 0.0 <= compression_level <= 1.0:
             raise ValueError(
