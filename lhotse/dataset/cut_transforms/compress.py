@@ -35,12 +35,23 @@ class Compress:
         assert sorted(self.codecs) == sorted(list(set(self.codecs))), "duplicate codecs"
 
         if isinstance(self.compression_level, (Tuple, List)):
-            assert len(self.compression_level) == 2
+            assert (
+                len(self.compression_level) == 2
+            ), f"Expected compression_level to be a tuple or a list with two values, got {self.compression_level}"
             min_compression, max_compression = self.compression_level
-            assert min_compression < max_compression
+            assert (
+                min_compression < max_compression
+            ), f"Expected min_compression < max_compression, got {min_compression} >= {max_compression}"
+
+        assert 0 <= self.p <= 1, f"Probability p must be between 0 and 1, got {self.p}"
 
         if self.codec_weights:
-            assert len(self.codec_weights) == len(self.codecs)
+            assert len(self.codec_weights) == len(
+                self.codecs
+            ), f"Expected codec_weights to be a list with the same length as codecs, got len({self.codec_weights}) != len({self.codecs})"
+            assert all(
+                w >= 0 for w in self.codec_weights
+            ), "All codec weights must be non-negative"
         else:
             # all codecs have equal weights by default
             self.codec_weights = [1.0 for _ in self.codecs]
