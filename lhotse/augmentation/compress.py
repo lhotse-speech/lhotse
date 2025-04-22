@@ -24,6 +24,12 @@ class Compress(AudioTransform):
     codec: Codec
     compression_level: float
 
+    def __post_init__(self):
+        if self.codec not in self.supported_codecs:
+            raise ValueError(f"Unsupported augmentation codec {self.codec}")
+        if not 0 <= self.compression_level <= 1:
+            raise ValueError("Compression level must be between 0 and 1")
+
     def __call__(
         self,
         samples: np.ndarray,
