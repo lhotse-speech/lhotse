@@ -944,11 +944,22 @@ class Recording:
         transforms.append(Compress(codec, compression_level))
         return fastcopy(self, transforms=transforms)
 
-    def lowpass(self, frequency: float):
+    def lowpass(
+        self,
+        frequency: float,
+        filter_type: str = "butter",
+        order: int = 4,
+        ripple_db: Optional[float] = 0.1,
+        stopband_attenuation_db: Optional[float] = 40,
+    ):
         """
         Return a new ``Recording`` that will lazily apply a lowpass filter while loading audio.
 
         :param frequency: The cutoff frequency in Hz (must be less than Nyquist frequency).
+        :param filter_type: Type of filter to use. One of ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
+        :param order: The order of the filter (default: 4)
+        :param ripple_db: Maximum ripple in passband (dB) for Chebyshev and elliptic filters
+        :param stopband_attenuation_db: Minimum attenuation in stopband (dB) for Chebyshev and elliptic filters
         :return: a modified copy of the current ``Recording``.
         """
         nyquist = self.sampling_rate / 2
@@ -958,7 +969,15 @@ class Recording:
             )
 
         transforms = self.transforms.copy() if self.transforms is not None else []
-        transforms.append(Lowpass(frequency))
+        transforms.append(
+            Lowpass(
+                frequency,
+                filter_type=filter_type,
+                order=order,
+                ripple_db=ripple_db,
+                stopband_attenuation_db=stopband_attenuation_db,
+            )
+        )
 
         return fastcopy(self, transforms=transforms)
 
