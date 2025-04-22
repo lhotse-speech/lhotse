@@ -5,10 +5,12 @@ from typing import Literal, Optional
 import numpy as np
 import pytest
 
+import lhotse.augmentation
 from lhotse import CutSet
 from lhotse.cut import MixedCut
 from lhotse.dataset import (
     ClippingTransform,
+    Compress,
     CutMix,
     ExtraPadding,
     PerturbSpeed,
@@ -248,3 +250,33 @@ def test_extra_padding_seconds(randomized):
     if randomized:
         durations = [c.duration for c in padded_cuts]
         assert len(set(durations)) > 1
+
+
+@pytest.mark.parametrize("preserve_id", [False, True])
+def test_compress(preserve_id: bool):
+    tfnm = Compress(
+        codecs=["opus", "mp3"],
+        codec_weights=[2, 2],
+        compression_level=0.8,
+        p=0.5,
+        randgen=random.Random(0),
+        preserve_id=preserve_id,
+    )
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
+    cuts_comp = tfnm(cuts)
+
+    assert all(
+        cut.duration == cut_comp.duration for cut, cut_comp in zip(cuts, cuts_comp)
+    )
+
+    if preserve_id:
+        assert all(cut.id == cut_comp.id for cut, cut_comp in zip(cuts, cuts_comp))
+    else:
+        # Note: not using all() because Compress has p=0.5
+        assert any(cut.id != cut_comp.id for cut, cut_comp in zip(cuts, cuts_comp))
+
+    last_transforms = [
+        cut.recording.transforms[-1] for cut in cuts_comp if cut.recording.transforms
+    ]
+    assert all(isinstance(t, lhotse.augmentation.Compress) for t in last_transforms)
+    assert not any(t.codec == "vorbis" for t in last_transforms)

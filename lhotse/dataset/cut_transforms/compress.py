@@ -22,6 +22,7 @@ class Compress:
     :param codec_weights: Optional weights for each codec (default: equal weights).
     :param p: The probability of applying the low-pass filter (default: 0.5).
     :param randgen: An optional random number generator (default: a new instance).
+    :param preserve_id: Whether to preserve the original cut ID (default: False).
     """
 
     codecs: List[Codec]
@@ -30,6 +31,7 @@ class Compress:
     compress_custom_fields: bool = False
     p: float = 0.5
     randgen: random.Random = None
+    preserve_id: bool = False
 
     def __post_init__(self) -> None:
         assert sorted(self.codecs) == sorted(list(set(self.codecs))), "duplicate codecs"
@@ -80,7 +82,8 @@ class Compress:
                     compression_level=compression_level,
                     compress_custom_fields=self.compress_custom_fields,
                 )
-                new_cut.id = f"{new_cut.id}_{codec}_{compression_level:.2f}"
+                if not self.preserve_id:
+                    new_cut.id = f"{new_cut.id}_{codec}_{compression_level:.2f}"
                 compressed_cuts.append(new_cut)
             else:
                 compressed_cuts.append(cut)
