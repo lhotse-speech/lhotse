@@ -62,16 +62,16 @@ class Compress:
 
         compressed_cuts = []
         for cut in cuts:
-            if isinstance(self.compression_level, (Tuple, List)):
-                min_compression, max_compression = self.compression_level
-                compression_level = (
-                    self.randgen.random() * (max_compression - min_compression)
-                    + min_compression
-                )
-            else:
-                compression_level = self.compression_level
-
             if self.randgen.random() <= self.p:
+                if isinstance(self.compression_level, (Tuple, List)):
+                    min_compression, max_compression = self.compression_level
+                    compression_level = (
+                        self.randgen.random() * (max_compression - min_compression)
+                        + min_compression
+                    )
+                else:
+                    compression_level = self.compression_level
+
                 codec, *_ = self.randgen.choices(
                     self.codecs, weights=self.codec_weights
                 )
