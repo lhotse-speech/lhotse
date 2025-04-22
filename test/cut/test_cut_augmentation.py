@@ -901,3 +901,73 @@ def test_cut_set_reverb_rir(libri_cut_set, rir, affix_id):
         assert original.sampling_rate == perturbed_rvb.sampling_rate
         assert original.num_samples == perturbed_rvb.num_samples
         assert original.load_audio().shape == perturbed_rvb.load_audio().shape
+
+
+@pytest.fixture
+def mixed_cut_with_supervision(cut_with_supervision):
+    return cut_with_supervision.append(cut_with_supervision)
+
+
+@pytest.mark.parametrize(
+    "filter_type", ["butter", "cheby1", "cheby2", "ellip", "bessel"]
+)
+@pytest.mark.parametrize("cut_type", ["mono", "mixed"])
+def test_cut_lowpass(
+    cut_with_supervision, mixed_cut_with_supervision, filter_type, cut_type
+):
+    frequency = 1000  # 1kHz cutoff
+    cut = mixed_cut_with_supervision if cut_type == "mixed" else cut_with_supervision
+    cut_lp = cut.lowpass(frequency=frequency, filter_type=filter_type)
+
+    assert cut.id == cut_lp.id
+    assert cut.sampling_rate == cut_lp.sampling_rate
+    assert cut.num_samples == cut_lp.num_samples
+    assert cut.load_audio().shape == cut_lp.load_audio().shape
+
+
+@pytest.mark.parametrize("codec", ["opus", "mp3", "vorbis"])
+@pytest.mark.parametrize("compression_level", [0.01, 0.5, 0.99])
+@pytest.mark.parametrize("cut_type", ["mono", "mixed"])
+def test_cut_compress(
+    cut_with_supervision, mixed_cut_with_supervision, codec, compression_level, cut_type
+):
+    cut = mixed_cut_with_supervision if cut_type == "mixed" else cut_with_supervision
+    cut_cp = cut.compress(codec=codec, compression_level=compression_level)
+
+    assert cut.id == cut_cp.id
+    assert cut.sampling_rate == cut_cp.sampling_rate
+    assert cut.num_samples == cut_cp.num_samples
+    assert cut.load_audio().shape == cut_cp.load_audio().shape
+
+
+@pytest.mark.parametrize("cut_type", ["mono", "mixed"])
+def test_lowpass_invalid_params(
+    cut_with_supervision, mixed_cut_with_supervision, cut_type
+):
+    cut = mixed_cut_with_supervision if cut_type == "mixed" else cut_with_supervision
+    with pytest.raises(ValueError):
+        cut.lowpass(frequency=1000, filter_type="invalid")
+
+    with pytest.raises(ValueError):
+        cut.lowpass(frequency=-1000)
+
+    with pytest.raises(ValueError):
+        cut.lowpass(frequency=1000, order=-1)
+
+    with pytest.raises(ValueError):
+        cut.lowpass(frequency=1000, filter_type="cheby1", ripple_db=-1)
+
+    with pytest.raises(ValueError):
+        cut.lowpass(frequency=1000, filter_type="cheby2", stopband_attenuation_db=-1)
+
+
+@pytest.mark.parametrize("cut_type", ["mono", "mixed"])
+def test_compress_invalid_params(
+    cut_with_supervision, mixed_cut_with_supervision, cut_type
+):
+    cut = mixed_cut_with_supervision if cut_type == "mixed" else cut_with_supervision
+    with pytest.raises(ValueError):
+        cut.compress(codec="invalid", compression_level=0.5)
+
+    with pytest.raises(ValueError):
+        cut.compress(codec="mp3", compression_level=1.5)
