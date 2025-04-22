@@ -29,6 +29,7 @@ class Lowpass:
     :param stopband_attenuation_db: Stopband attenuation in dB. Used for Chebyshev II and Elliptical filters. Can be a single value or an interval. If an interval is provided, the value is sampled uniformly.
     :param ripple_db: Passband ripple in dB. Used for Chebyshev I and Elliptical filters. Can be a single value or an interval. If an interval is provided, the value is sampled uniformly.
     :param randgen: An optional random number generator (default: a new instance).
+    :param preserve_id: Whether to preserve the original cut ID (default: False).
     """
 
     p: float = 0.5
@@ -42,6 +43,7 @@ class Lowpass:
     stopband_attenuation_db: Union[float, Tuple[float, float]] = 40.0
     ripple_db: Union[float, Tuple[float, float]] = 0.1
     randgen: random.Random = None
+    preserve_id: bool = False
 
     def __post_init__(self) -> None:
         assert self.frequencies, "Cutoff frequencies must be provided, at least one"
@@ -166,7 +168,10 @@ class Lowpass:
                     order=order,
                     filter_type=filter_type,
                 )
-                new_cut.id = f"{cut.id}_lowpassed{frequency:.0f}_{filter_type}_{order}"
+                if not self.preserve_id:
+                    new_cut.id = (
+                        f"{cut.id}_lowpassed{frequency:.0f}_{filter_type}_{order}"
+                    )
                 lowpassed_cuts.append(new_cut)
             else:
                 lowpassed_cuts.append(cut)
