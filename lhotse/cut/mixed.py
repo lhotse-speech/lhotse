@@ -717,20 +717,38 @@ class MixedCut(Cut):
             ],
         )
 
-    def lowpass(self, frequency: float) -> "MixedCut":
+    def lowpass(
+        self,
+        frequency: float,
+        filter_type: str = "butter",
+        order: int = 4,
+        ripple_db: Optional[float] = 0.1,
+        stopband_attenuation_db: Optional[float] = 40,
+    ) -> "MixedCut":
         """
         Return a copy of this Cut that has its sub-Cut lowpassed.
 
-        :param frequency: Corner frequency for the lowpass filter.
+        :param frequency: The cutoff frequency in Hz (must be less than Nyquist frequency).
+        :param filter_type: Type of filter to use. One of ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
+        :param order: The order of the filter (default: 4)
+        :param ripple_db: Maximum ripple in passband (dB) for Chebyshev and elliptic filters
+        :param stopband_attenuation_db: Minimum attenuation in stopband (dB) for Chebyshev and elliptic filters
 
         :return: A modified :class:`~lhotse.MixedCut` containing lowpassed audio in its sub-Cuts
         """
         assert self.has_recording, "Cannot lowpass a MixedCut without a Recording."
         return MixedCut(
+            id=self.id,
             tracks=[
                 fastcopy(
                     t,
-                    cut=t.cut.lowpass(frequency),
+                    cut=t.cut.lowpass(
+                        frequency=frequency,
+                        filter_type=filter_type,
+                        order=order,
+                        ripple_db=ripple_db,
+                        stopband_attenuation_db=stopband_attenuation_db,
+                    ),
                 )
                 for t in self.tracks
             ],

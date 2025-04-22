@@ -1088,18 +1088,35 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             custom=custom,
         )
 
-    def lowpass(self, frequency: float) -> "DataCut":
+    def lowpass(
+        self,
+        frequency: float,
+        filter_type: str = "butter",
+        order: int = 4,
+        ripple_db: Optional[float] = 0.1,
+        stopband_attenuation_db: Optional[float] = 40,
+    ) -> "DataCut":
         """
         Return a copy of this Cut that has its Recordings lowpassed.
 
-        :param frequency: Corner frequency for the lowpass filter.
+        :param frequency: The cutoff frequency in Hz (must be less than Nyquist frequency).
+        :param filter_type: Type of filter to use. One of ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
+        :param order: The order of the filter (default: 4)
+        :param ripple_db: Maximum ripple in passband (dB) for Chebyshev and elliptic filters
+        :param stopband_attenuation_db: Minimum attenuation in stopband (dB) for Chebyshev and elliptic filters
 
         :return: A modified :class:`~lhotse.DataCut` containing lowpassed audio
         """
         assert self.has_recording, "Cannot lowpass a DataCut without a Recording."
         return fastcopy(
             self,
-            recording=self.recording.lowpass(frequency),
+            recording=self.recording.lowpass(
+                frequency=frequency,
+                filter_type=filter_type,
+                order=order,
+                ripple_db=ripple_db,
+                stopband_attenuation_db=stopband_attenuation_db,
+            ),
         )
 
     def map_supervisions(
