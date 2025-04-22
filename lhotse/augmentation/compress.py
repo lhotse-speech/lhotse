@@ -1,7 +1,7 @@
 import io
 import typing
 from dataclasses import dataclass
-from typing import ClassVar, List, Literal
+from typing import ClassVar, List, Literal, Tuple
 
 import numpy as np
 
@@ -20,7 +20,7 @@ class Compress(AudioTransform):
     :return: The modified audio samples.
     """
 
-    supported_codecs: ClassVar[tuple[Codec]] = tuple(typing.get_args(Codec))
+    supported_codecs: ClassVar[Tuple[Codec]] = tuple(typing.get_args(Codec))
     codec: Codec
     compression_level: float
 
