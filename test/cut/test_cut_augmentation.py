@@ -908,6 +908,10 @@ def mixed_cut_with_supervision(cut_with_supervision):
     return cut_with_supervision.append(cut_with_supervision)
 
 
+@pytest.mark.skipif(
+    not is_module_available("scipy"),
+    reason="This test requires scipy to be installed.",
+)
 @pytest.mark.parametrize(
     "filter_type", ["butter", "cheby1", "cheby2", "ellip", "bessel"]
 )
@@ -940,6 +944,10 @@ def test_cut_compress(
     assert cut.load_audio().shape == cut_cp.load_audio().shape
 
 
+@pytest.mark.skipif(
+    not is_module_available("scipy"),
+    reason="This test requires scipy to be installed.",
+)
 @pytest.mark.parametrize("cut_type", ["mono", "mixed"])
 def test_lowpass_invalid_params(
     cut_with_supervision, mixed_cut_with_supervision, cut_type
