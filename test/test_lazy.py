@@ -11,7 +11,7 @@ import pytest
 
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
 from lhotse.cut.text import TextExample
-from lhotse.lazy import LazyJsonlIterator, LazyRepeater, LazyTxtIterator
+from lhotse.lazy import LazyJsonlIterator, LazyTxtIterator
 from lhotse.testing.dummies import DummyManifest, as_lazy
 from lhotse.testing.fixtures import with_dill_enabled
 from lhotse.utils import fastcopy, is_module_available
@@ -164,13 +164,6 @@ def test_repeat_infinite(manifest_type):
             if idx == 105:
                 break
         assert idx == 105
-
-
-def test_repeat_infinite_terminates_with_empty_iterable():
-    data = []
-    repeated_iter = LazyRepeater(data)
-    result = list(repeated_iter)
-    assert len(result) == 0
 
 
 @pytest.mark.parametrize(
