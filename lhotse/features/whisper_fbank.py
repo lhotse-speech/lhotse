@@ -16,9 +16,10 @@ from lhotse.utils import (
 
 def log_mel_spectrogram(
     audio: Union[np.ndarray, torch.Tensor],
-    # large-v3 using 128 filters, others use 80
+    filters: torch.Tensor,
     n_mels: int = 80,
     n_fft: int = 400,
+    window: torch.Tensor = None,
     hop_length: int = 160,
     sampling_rate: int = 16000,
     device: Optional[Union[str, torch.device]] = None,
@@ -44,12 +45,6 @@ def log_mel_spectrogram(
     torch.Tensor, shape = (n_frames, 80)
         A Tensor that contains the Mel spectrogram
     """
-    if is_module_available("librosa"):
-        import librosa
-    else:
-        raise ImportError(
-            "Librosa is not installed. Please install librosa before using LibrosaFbank extractor."
-        )
     if not torch.is_tensor(audio):
         audio = torch.from_numpy(audio)
 
@@ -65,12 +60,9 @@ def log_mel_spectrogram(
         len(audio.shape) == 1
     ), f"Whisper Fbank works only with single-channel recordings (shape: {audio.shape})"
 
-    window = torch.hann_window(n_fft).to(audio.device)
     stft = torch.stft(audio, n_fft, hop_length, window=window, return_complex=True)
     magnitudes = stft[..., :-1].abs() ** 2
 
-    filters = librosa.filters.mel(sr=sampling_rate, n_fft=n_fft, n_mels=n_mels)
-    filters = torch.from_numpy(filters).to(device)
     mel_spec = filters @ magnitudes
 
     log_spec = torch.clamp(mel_spec, min=1e-10).log10()
@@ -114,7 +106,20 @@ class WhisperFbank(FeatureExtractor):
         super().__init__(config=config)
         self.sampling_rate = 16000
         self.hop_length = 160
+        self.n_fft = 400
         self.num_filters = self.config.num_filters
+        if is_module_available("librosa"):
+            import librosa
+        else:
+            raise ImportError(
+                "Librosa is not installed. Please install librosa before using LibrosaFbank extractor."
+            )
+        window = torch.hann_window(self.n_fft).to(self.config.device)
+        filters = librosa.filters.mel(
+            sr=self.sampling_rate, n_fft=self.n_fft, n_mels=self.num_filters
+        )
+        self.filters = torch.from_numpy(filters).to(self.config.device)
+        self.window = torch.hann_window(self.n_fft).to(self.config.device)
 
     @property
     def device(self) -> Union[str, torch.device]:
@@ -147,6 +152,9 @@ class WhisperFbank(FeatureExtractor):
 
         feats = log_mel_spectrogram(
             samples,
+            filters=self.filters,
+            n_fft=self.n_fft,
+            window=self.window,
             n_mels=self.num_filters,
             device=self.device,
         )

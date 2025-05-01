@@ -350,15 +350,22 @@ class LazyHFDatasetIterator:
         self.dataset_kwargs = dataset_kwargs
 
     def __iter__(self):
-        from datasets import Audio, Dataset, IterableDataset, load_dataset
+        from datasets import (
+            Audio,
+            Dataset,
+            DatasetDict,
+            IterableDataset,
+            IterableDatasetDict,
+            load_dataset,
+        )
 
         if len(self.dataset_args) == 1 and isinstance(
-            self.dataset_args[0], (Dataset, IterableDataset)
+            self.dataset_args[0],
+            (Dataset, IterableDataset, DatasetDict, IterableDatasetDict),
         ):
             dataset = self.dataset_args[0]
         else:
             dataset = load_dataset(*self.dataset_args, **self.dataset_kwargs)
-
         dataset = dataset.cast_column(self.audio_key, Audio(decode=False))
         for item in dataset:
             audio_data = item.pop(self.audio_key)
