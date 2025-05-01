@@ -23,6 +23,7 @@ class TarWriter:
         ...     w.write("blob2", binary_blob2)  # etc.
 
     It would create files such as ``some_dir/data.000000.tar``, ``some_dir/data.000001.tar``, etc.
+    The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     It's also possible to use ``TarWriter`` with automatic sharding disabled::
 
@@ -34,7 +35,9 @@ class TarWriter:
     https://github.com/webdataset/webdataset
     """
 
-    def __init__(self, pattern: str, shard_size: Optional[int] = 1000):
+    def __init__(
+        self, pattern: str, shard_size: Optional[int] = 1000, shard_offset: int = 0
+    ):
         self.pattern = str(pattern)
         if self.sharding_enabled and shard_size is None:
             raise RuntimeError(
@@ -46,6 +49,7 @@ class TarWriter:
                 "but shard_size is not None - ignoring shard_size."
             )
         self.shard_size = shard_size
+        self.initial_shard_offset = shard_offset
         self.gzip = self.pattern.endswith(".gz")
         self.reset()
 
@@ -57,7 +61,7 @@ class TarWriter:
         self.fname = None
         self.stream = None
         self.tarstream = None
-        self.num_shards = 0
+        self.num_shards = self.initial_shard_offset
         self.num_items = 0
         self.num_items_total = 0
 
@@ -93,7 +97,10 @@ class TarWriter:
     @property
     def output_paths(self) -> List[str]:
         if self.sharding_enabled:
-            return [self.pattern % i for i in range(self.num_shards)]
+            return [
+                self.pattern % i
+                for i in range(self.initial_shard_offset, self.num_shards)
+            ]
         return [self.pattern]
 
     def write(self, key: str, data: BytesIO, count: bool = True):

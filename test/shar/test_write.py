@@ -23,6 +23,19 @@ def test_tar_writer(tmp_path: Path):
         assert f2.read() == b"test"
 
 
+def test_tar_writer_with_offset(tmp_path: Path):
+    with TarWriter(
+        str(tmp_path / "test.%06d.tar"), shard_size=10, shard_offset=17
+    ) as writer:
+        writer.write("test.txt", BytesIO(b"test"))
+
+    assert writer.output_paths == [str(tmp_path / "test.000017.tar")]
+
+    with tarfile.open(tmp_path / "test.000017.tar") as f:
+        f2 = f.extractfile(f.getmember("test.txt"))
+        assert f2.read() == b"test"
+
+
 def test_tar_writer_not_sharded(tmp_path: Path, caplog):
     with TarWriter(str(tmp_path / "test.tar"), shard_size=None) as writer:
         writer.write("test.txt", BytesIO(b"test"))
@@ -179,7 +192,8 @@ def test_audio_tar_writer_original_format(
     ), f"RMSE between original and deserialized audio is {rmse}, which is above the threshold of {rmse_threshold}"
 
 
-def test_shar_writer(tmp_path: Path):
+@pytest.mark.parametrize("shard_offset", [0, 319])
+def test_shar_writer(tmp_path: Path, shard_offset: int):
     # Prepare data
     cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
 
@@ -195,6 +209,7 @@ def test_shar_writer(tmp_path: Path):
             "custom_recording": "wav",
         },
         shard_size=10,
+        shard_offset=shard_offset,
     )
 
     # Actual test
@@ -203,63 +218,65 @@ def test_shar_writer(tmp_path: Path):
             writer.write(c)
 
     # Post-conditions
-
+    sid0 = f"{shard_offset:06d}"
+    sid1 = f"{shard_offset+1:06d}"
+    sid2 = f"{shard_offset+2:06d}"
     assert writer.output_paths == {
         "cuts": [
-            str(tmp_path / "cuts.000000.jsonl.gz"),
-            str(tmp_path / "cuts.000001.jsonl.gz"),
+            str(tmp_path / f"cuts.{sid0}.jsonl.gz"),
+            str(tmp_path / f"cuts.{sid1}.jsonl.gz"),
         ],
         "recording": [
-            str(tmp_path / "recording.000000.tar"),
-            str(tmp_path / "recording.000001.tar"),
+            str(tmp_path / f"recording.{sid0}.tar"),
+            str(tmp_path / f"recording.{sid1}.tar"),
         ],
         "features": [
-            str(tmp_path / "features.000000.tar"),
-            str(tmp_path / "features.000001.tar"),
+            str(tmp_path / f"features.{sid0}.tar"),
+            str(tmp_path / f"features.{sid1}.tar"),
         ],
         "custom_embedding": [
-            str(tmp_path / "custom_embedding.000000.tar"),
-            str(tmp_path / "custom_embedding.000001.tar"),
+            str(tmp_path / f"custom_embedding.{sid0}.tar"),
+            str(tmp_path / f"custom_embedding.{sid1}.tar"),
         ],
         "custom_features": [
-            str(tmp_path / "custom_features.000000.tar"),
-            str(tmp_path / "custom_features.000001.tar"),
+            str(tmp_path / f"custom_features.{sid0}.tar"),
+            str(tmp_path / f"custom_features.{sid1}.tar"),
         ],
         "custom_indexes": [
-            str(tmp_path / "custom_indexes.000000.tar"),
-            str(tmp_path / "custom_indexes.000001.tar"),
+            str(tmp_path / f"custom_indexes.{sid0}.tar"),
+            str(tmp_path / f"custom_indexes.{sid1}.tar"),
         ],
         "custom_recording": [
-            str(tmp_path / "custom_recording.000000.tar"),
-            str(tmp_path / "custom_recording.000001.tar"),
+            str(tmp_path / f"custom_recording.{sid0}.tar"),
+            str(tmp_path / f"custom_recording.{sid1}.tar"),
         ],
     }
 
     # - we created 2 shards with cutsets and a separate file for each data field
     for fname in (
-        "cuts.000000.jsonl.gz",
-        "cuts.000001.jsonl.gz",
-        "recording.000000.tar",
-        "recording.000001.tar",
-        "features.000000.tar",
-        "features.000001.tar",
-        "custom_embedding.000000.tar",
-        "custom_embedding.000001.tar",
-        "custom_features.000000.tar",
-        "custom_features.000001.tar",
-        "custom_indexes.000000.tar",
-        "custom_indexes.000001.tar",
-        "custom_recording.000000.tar",
-        "custom_recording.000001.tar",
+        f"cuts.{sid0}.jsonl.gz",
+        f"cuts.{sid1}.jsonl.gz",
+        f"recording.{sid0}.tar",
+        f"recording.{sid1}.tar",
+        f"features.{sid0}.tar",
+        f"features.{sid1}.tar",
+        f"custom_embedding.{sid0}.tar",
+        f"custom_embedding.{sid1}.tar",
+        f"custom_features.{sid0}.tar",
+        f"custom_features.{sid1}.tar",
+        f"custom_indexes.{sid0}.tar",
+        f"custom_indexes.{sid1}.tar",
+        f"custom_recording.{sid0}.tar",
+        f"custom_recording.{sid1}.tar",
     ):
         assert (tmp_path / fname).is_file()
 
     # - we didn't create a third shard
-    assert not (tmp_path / "cuts.000002.jsonl.gz").exists()
+    assert not (tmp_path / f"cuts.{sid2}.jsonl.gz").exists()
 
     # - the cuts do not have any data actually attached to them,
     #   so it's impossible to load it if we open it as a normal CutSet
-    for cut in CutSet.from_file(tmp_path / "cuts.000000.jsonl.gz"):
+    for cut in CutSet.from_file(tmp_path / f"cuts.{sid0}.jsonl.gz"):
         assert cut.recording.sources[0].type == "shar"
         with pytest.raises(RuntimeError):
             cut.load_audio()

@@ -33,6 +33,7 @@ class AudioTarWriter:
         ...     w.write("audio2", audio2_array)  # etc.
 
     It would create files such as ``some_dir/audio.000000.tar``, ``some_dir/audio.000001.tar``, etc.
+    The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     It's also possible to use ``AudioTarWriter`` with automatic sharding disabled::
 
@@ -48,9 +49,10 @@ class AudioTarWriter:
         pattern: str,
         shard_size: Optional[int] = 1000,
         format: Literal["wav", "flac", "mp3", "opus"] = "flac",
+        shard_offset: int = 0,
     ):
         self.format = format
-        self.tar_writer = TarWriter(pattern, shard_size)
+        self.tar_writer = TarWriter(pattern, shard_size, shard_offset=shard_offset)
 
     def __enter__(self):
         self.tar_writer.__enter__()
