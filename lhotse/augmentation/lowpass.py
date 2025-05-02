@@ -83,7 +83,9 @@ class Lowpass(AudioTransform):
         else:
             raise Exception(f"The lowpass filter {self.filter_type} is not supported!")
 
-        return scipy.signal.sosfiltfilt(sos, samples)
+        return scipy.signal.sosfiltfilt(
+            sos, samples
+        ).copy()  # copy because torch.from_numpy complains
 
     def reverse_timestamps(self, offset, duration, sampling_rate):
         return offset, duration

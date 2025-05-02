@@ -928,6 +928,11 @@ def test_cut_lowpass(
     assert cut.num_samples == cut_lp.num_samples
     assert cut.load_audio().shape == cut_lp.load_audio().shape
 
+    assert (
+        torch.from_numpy(cut.load_audio()).shape
+        == torch.from_numpy(cut_lp.load_audio()).shape
+    )
+
 
 @pytest.mark.parametrize("codec", ["opus", "mp3", "vorbis"])
 @pytest.mark.parametrize("compression_level", [0.01, 0.5, 0.99])
