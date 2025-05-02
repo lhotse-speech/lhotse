@@ -51,6 +51,7 @@ class SharWriter:
     It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
     ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
     and then the same names but numbered with ``000001``, etc.
+    The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
     shard number suffix will be omitted from the file names.
@@ -74,6 +75,7 @@ class SharWriter:
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
         shard_suffix: Optional[str] = None,
+        shard_offset: int = 0,
     ) -> None:
         self.output_dir = str(output_dir)
         self.shard_size = shard_size
@@ -87,18 +89,21 @@ class SharWriter:
             self.shard_suffix = ".%06d"
         else:
             self.shard_suffix = ifnone(shard_suffix, "")
+        self.initial_shard_offset = shard_offset
 
         self.writers = {}
         if include_cuts:
             self.writers["cuts"] = JsonlShardWriter(
                 pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
                 shard_size=self.shard_size,
+                shard_offset=self.initial_shard_offset,
             )
         for field, writer_type in self.fields.items():
             make_writer_fn, ext = resolve_writer(writer_type)
             self.writers[field] = make_writer_fn(
                 pattern=f"{self.output_dir}/{field}{self.shard_suffix}{ext}",
                 shard_size=self.shard_size,
+                shard_offset=self.initial_shard_offset,
             )
 
     @property

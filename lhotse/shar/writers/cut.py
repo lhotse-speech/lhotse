@@ -17,11 +17,14 @@ class JsonlShardWriter:
         ...         w.write(cut)
 
     It would create files such as ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/cuts.000001.jsonl.gz``, etc.
+    The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`
     """
 
-    def __init__(self, pattern: str, shard_size: Optional[int] = 1000):
+    def __init__(
+        self, pattern: str, shard_size: Optional[int] = 1000, shard_offset: int = 0
+    ):
         self.pattern = pattern
         if not self.sharding_enabled and shard_size is not None:
             logging.warning(
@@ -29,6 +32,7 @@ class JsonlShardWriter:
                 "but shard_size is not None - ignoring shard_size."
             )
         self.shard_size = shard_size
+        self.initial_shard_offset = shard_offset
         self.reset()
 
     @property
@@ -38,7 +42,7 @@ class JsonlShardWriter:
     def reset(self):
         self.fname = None
         self.stream = None
-        self.num_shards = 0
+        self.num_shards = self.initial_shard_offset
         self.num_items = 0
         self.num_items_total = 0
 
@@ -69,7 +73,10 @@ class JsonlShardWriter:
     @property
     def output_paths(self) -> List[str]:
         if self.sharding_enabled:
-            return [self.pattern % i for i in range(self.num_shards)]
+            return [
+                self.pattern % i
+                for i in range(self.initial_shard_offset, self.num_shards)
+            ]
         return [self.pattern]
 
     def write(self, data: Union[Cut, dict], flush: bool = False) -> None:

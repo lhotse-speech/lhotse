@@ -573,6 +573,7 @@ class CutSet(Serializable, AlgorithmMixin):
         output_dir: Pathlike,
         fields: Dict[str, str],
         shard_size: Optional[int] = 1000,
+        shard_offset: int = 0,
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
         num_jobs: int = 1,
@@ -608,6 +609,7 @@ class CutSet(Serializable, AlgorithmMixin):
         It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
         ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
         and then the same names but numbered with ``000001``, etc.
+        The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
         The function returns a dict that maps field names to lists of saved shard paths.
 
         When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
@@ -643,6 +645,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 cuts=self,
                 output_dir=output_dir,
                 shard_size=shard_size,
+                shard_offset=shard_offset,
                 fields=fields,
                 warn_unused_fields=warn_unused_fields,
                 include_cuts=include_cuts,
@@ -653,7 +656,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         progbar = partial(tqdm, desc="Shard progress") if verbose else lambda x: x
         shards = self.split_lazy(
-            output_dir=output_dir, chunk_size=shard_size, prefix="cuts", num_digits=6
+            output_dir=output_dir,
+            chunk_size=shard_size,
+            prefix="cuts",
+            num_digits=6,
+            start_idx=shard_offset,
         )
         with ProcessPoolExecutor(num_jobs) as ex:
             futures = []
@@ -665,6 +672,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         cuts=shard,
                         output_dir=output_dir,
                         shard_size=None,  # already sharded
+                        shard_offset=shard_offset,
                         fields=fields,
                         warn_unused_fields=warn_unused_fields,
                         include_cuts=True,
@@ -3586,6 +3594,7 @@ def _export_to_shar_single(
     cuts: CutSet,
     output_dir: Pathlike,
     shard_size: Optional[int],
+    shard_offset: int,
     fields: Dict[str, str],
     warn_unused_fields: bool,
     include_cuts: bool,
@@ -3607,6 +3616,7 @@ def _export_to_shar_single(
         output_dir=output_dir,
         fields=fields,
         shard_size=shard_size,
+        shard_offset=shard_offset,
         warn_unused_fields=warn_unused_fields,
         include_cuts=include_cuts,
         shard_suffix=shard_suffix,
