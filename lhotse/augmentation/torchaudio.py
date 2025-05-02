@@ -1,13 +1,14 @@
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from typing import Dict, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
+from lhotse.tools.sox_resample import sox_context, sox_rate
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
@@ -87,6 +88,7 @@ class Resample(AudioTransform):
 
     source_sampling_rate: int
     target_sampling_rate: int
+    backend: Literal["default", "sox"] = "default"
 
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
@@ -98,6 +100,19 @@ class Resample(AudioTransform):
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
+
+        if self.backend == "sox":
+            channels, _ = samples.shape
+            resampled_by_channel = []
+            for channel in range(channels):
+                with sox_context():
+                    resampled_samples, _ = sox_rate(
+                        samples[channel, :],
+                        self.source_sampling_rate,
+                        self.target_sampling_rate,
+                    )
+                    resampled_by_channel.append(resampled_samples)
+            return np.stack(resampled_by_channel, axis=0)
 
         if is_torchaudio_available():
             if isinstance(samples, np.ndarray):
