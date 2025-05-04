@@ -511,8 +511,6 @@ class LibsndfileBackend(AudioBackend):
             and not torchaudio_ffmpeg_backend_available()
         ):
             return True  # prefer this to old torchaudio for file IO
-        if isinstance(path_or_fd, (Path, str)) and str(path_or_fd).endswith(".opus"):
-            return True  # use libnsdfile for OPUS
         return False
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -608,11 +606,6 @@ class CompositeAudioBackend(AudioBackend):
         for b in self.backends:
             if b.handles_special_case(path_or_fd):
                 candidates.append(b)
-
-        assert len(candidates) < 2, (
-            f"CompositeAudioBackend has more than one sub-backend that "
-            f"handles a given special case for input '{path_or_fd}'"
-        )
 
         if len(candidates) == 1:
             try:
@@ -717,11 +710,6 @@ class CompositeAudioBackend(AudioBackend):
         for b in backends:
             if b.handles_special_case(path_or_fd):
                 candidates.append(b)
-
-        assert len(candidates) < 2, (
-            f"CompositeAudioBackend has more than one sub-backend that "
-            f"handles a given special case for input '{path_or_fd}'"
-        )
 
         if len(candidates) == 1:
             try:
