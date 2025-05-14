@@ -57,7 +57,7 @@ jobs:
         # the torchaudio env var does nothing when torchaudio is installed, but doesn't require it's presence when it's not
         pip install lilcom '.[tests]'
         # Enable some optional tests
-        pip install h5py dill smart_open[http] kaldi_native_io webdataset==0.2.5 s3prl scipy nara_wpe pyloudnorm ${{ matrix.extra_deps }}
+        pip install h5py dill smart_open[http] kaldi_native_io webdataset==0.2.5 scipy nara_wpe pyloudnorm ${{ matrix.extra_deps }}
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.
