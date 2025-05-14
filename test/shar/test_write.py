@@ -10,6 +10,7 @@ from lhotse.audio.backend import audio_backend, check_torchaudio_version_gt
 from lhotse.lazy import LazyJsonlIterator
 from lhotse.shar import AudioTarWriter, SharWriter, TarIterator, TarWriter
 from lhotse.testing.dummies import DummyManifest, dummy_cut
+from lhotse.utils import is_torchaudio_available
 
 
 def test_tar_writer(tmp_path: Path):
@@ -84,7 +85,14 @@ def test_tar_writer_pipe(tmp_path: Path):
     [
         ("flac", "default"),
         ("flac", "LibsndfileBackend"),
-        ("flac", "TorchaudioDefaultBackend"),
+        pytest.param(
+            "flac",
+            "TorchaudioDefaultBackend",
+            marks=pytest.mark.skipif(
+                not is_torchaudio_available(),
+                reason="Requires torchaudio",
+            ),
+        ),
         pytest.param(
             "flac",
             "TorchaudioFFMPEGBackend",

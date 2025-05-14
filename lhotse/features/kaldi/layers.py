@@ -543,20 +543,12 @@ class Wav2LogFilterBank(Wav2FFT):
             self._to_spec = _pow_spectrogram
 
         if torchaudio_compatible_mel_scale:
-            from torchaudio.compliance.kaldi import get_mel_banks
-
-            # see torchaudio.compliance.kaldi.fbank, lines #581-587 for the original usage
             fb, _ = get_mel_banks(
                 num_bins=num_filters,
                 window_length_padded=self.fft_length,
                 sample_freq=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
-                # VTLN args are hardcoded to torchaudio default values;
-                # they are not used anyway with wapr_factor == 1.0
-                vtln_warp_factor=1.0,
-                vtln_low=100.0,
-                vtln_high=-500.0,
             )
             fb = torch.nn.functional.pad(fb, (0, 1), mode="constant", value=0).T
         else:
@@ -660,20 +652,12 @@ class Wav2MFCC(Wav2FFT):
             self._to_spec = _pow_spectrogram
 
         if torchaudio_compatible_mel_scale:
-            from torchaudio.compliance.kaldi import get_mel_banks
-
-            # see torchaudio.compliance.kaldi.fbank, lines #581-587 for the original usage
             fb, _ = get_mel_banks(
                 num_bins=num_filters,
                 window_length_padded=self.fft_length,
                 sample_freq=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
-                # VTLN args are hardcoded to torchaudio default values;
-                # they are not used anyway with wapr_factor == 1.0
-                vtln_warp_factor=1.0,
-                vtln_low=100.0,
-                vtln_high=-500.0,
             )
             fb = torch.nn.functional.pad(fb, (0, 1), mode="constant", value=0).T
         else:
@@ -971,3 +955,63 @@ def next_power_of_2(x: int) -> int:
     Original source: TorchAudio (torchaudio/compliance/kaldi.py)
     """
     return 1 if x == 0 else 2 ** (x - 1).bit_length()
+
+
+def get_mel_banks(
+    num_bins: int,
+    window_length_padded: int,
+    sample_freq: float,
+    low_freq: float,
+    high_freq: float,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Ported from:
+    https://github.com/pytorch/audio/blob/ea5de17755d657508c84c4dce8970b614008adcf/src/torchaudio/compliance/kaldi.py#L436-L511
+
+    Returns:
+        (Tensor, Tensor): The tuple consists of ``bins`` (which is
+        melbank of size (``num_bins``, ``num_fft_bins``)) and ``center_freqs`` (which is
+        center frequencies of bins of size (``num_bins``)).
+    """
+    assert num_bins > 3, "Must have at least 3 mel bins"
+    assert window_length_padded % 2 == 0
+    num_fft_bins = window_length_padded / 2
+    nyquist = 0.5 * sample_freq
+
+    if high_freq <= 0.0:
+        high_freq += nyquist
+
+    assert (
+        (0.0 <= low_freq < nyquist)
+        and (0.0 < high_freq <= nyquist)
+        and (low_freq < high_freq)
+    ), "Bad values in options: low-freq {} and high-freq {} vs. nyquist {}".format(
+        low_freq, high_freq, nyquist
+    )
+
+    # fft-bin width [think of it as Nyquist-freq / half-window-length]
+    fft_bin_width = sample_freq / window_length_padded
+    mel_low_freq = lin2mel(low_freq)
+    mel_high_freq = lin2mel(high_freq)
+
+    # divide by num_bins+1 in next line because of end-effects where the bins
+    # spread out to the sides.
+    mel_freq_delta = (mel_high_freq - mel_low_freq) / (num_bins + 1)
+
+    bin = torch.arange(num_bins).unsqueeze(1)
+    left_mel = mel_low_freq + bin * mel_freq_delta  # size(num_bins, 1)
+    center_mel = mel_low_freq + (bin + 1.0) * mel_freq_delta  # size(num_bins, 1)
+    right_mel = mel_low_freq + (bin + 2.0) * mel_freq_delta  # size(num_bins, 1)
+
+    center_freqs = mel2lin(center_mel)  # size (num_bins)
+    # size(1, num_fft_bins)
+    mel = lin2mel(fft_bin_width * torch.arange(num_fft_bins)).unsqueeze(0)
+
+    # size (num_bins, num_fft_bins)
+    up_slope = (mel - left_mel) / (center_mel - left_mel)
+    down_slope = (right_mel - mel) / (right_mel - center_mel)
+
+    # left_mel < center_mel < right_mel so we can min the two slopes and clamp negative values
+    bins = torch.max(torch.zeros(1), torch.min(up_slope, down_slope))
+
+    return bins, center_freqs

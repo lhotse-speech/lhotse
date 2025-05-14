@@ -84,8 +84,6 @@ class ReverbWithImpulseResponse(AudioTransform):
         :param samples: The audio samples to reverberate.
         :param sampling_rate: The sampling rate of the audio samples.
         """
-        sampling_rate = int(sampling_rate)  # paranoia mode
-
         D_in, N_in = samples.shape
         input_is_mono = D_in == 1
 

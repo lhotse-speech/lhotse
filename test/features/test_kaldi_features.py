@@ -18,6 +18,7 @@ from lhotse.features.kaldi.extractors import (
 )
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
 from lhotse.testing.random import deterministic_rng
+from lhotse.utils import is_torchaudio_available
 
 
 @pytest.fixture()
@@ -94,6 +95,7 @@ def test_kaldi_fbank_extractor(recording):
     assert feats.shape == (1604, 80)
 
 
+@pytest.mark.skipif(not is_torchaudio_available(), reason="torchaudio not available")
 def test_kaldi_fbank_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
     fbank = Fbank()
@@ -109,6 +111,7 @@ def test_kaldi_mfcc_extractor(recording):
     assert feats.shape == (1604, 13)
 
 
+@pytest.mark.skipif(not is_torchaudio_available(), reason="torchaudio not available")
 @pytest.mark.seed(1337)
 def test_kaldi_mfcc_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
@@ -125,6 +128,7 @@ def test_kaldi_spectrogram_extractor(recording):
     assert feats.shape == (1604, 257)
 
 
+@pytest.mark.skipif(not is_torchaudio_available(), reason="torchaudio not available")
 def test_kaldi_spectrogram_extractor_vs_torchaudio(deterministic_rng, recording):
     audio = recording.load_audio()
     spec = Spectrogram(SpectrogramConfig(use_energy=True))

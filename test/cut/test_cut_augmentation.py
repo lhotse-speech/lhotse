@@ -9,7 +9,12 @@ from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
 from lhotse.cut import Cut, MixedCut, PaddingCut
 from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
-from lhotse.utils import fastcopy, is_module_available, nullcontext
+from lhotse.utils import (
+    fastcopy,
+    is_module_available,
+    is_torchaudio_available,
+    nullcontext,
+)
 
 
 @pytest.fixture
@@ -773,6 +778,7 @@ def test_cut_reverb_rir_assert_sampling_rate(libri_cut_with_supervision, rir):
         _ = cut.load_audio()
 
 
+@pytest.mark.skipif(not is_torchaudio_available(), reason="Requires torchaudio")
 def test_cut_reverb_fast_rir(libri_cut_with_supervision):
     cut = libri_cut_with_supervision
     cut_rvb = cut.reverb_rir(rir_recording=None)
