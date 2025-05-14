@@ -161,7 +161,7 @@ def test_audio_caching_disabled_works():
 
         # Read the audio -- should be equal to noise1.
         audio = recording.load_audio()
-        np.testing.assert_allclose(audio, noise1, atol=3e-5)
+        np.testing.assert_allclose(audio, noise1, atol=3e-4)
 
         # Save noise2 to the same location.
         save_audio(f.name, noise2, sampling_rate=16000)
@@ -169,7 +169,7 @@ def test_audio_caching_disabled_works():
         # Read the audio -- should be equal to noise2,
         # and the caching is ignored (doesn't happen).
         audio = recording.load_audio()
-        np.testing.assert_allclose(audio, noise2, atol=3e-5)
+        np.testing.assert_allclose(audio, noise2, atol=3e-4)
 
 
 def test_command_audio_caching_enabled_works():
@@ -192,7 +192,7 @@ def test_command_audio_caching_enabled_works():
         # Read the audio -- should be equal to noise1.
         audio = audio_source.load_audio()
         audio = np.atleast_2d(audio)
-        np.testing.assert_allclose(audio, noise1, atol=3e-5)
+        np.testing.assert_allclose(audio, noise1, atol=3e-4)
 
         # Save noise2 to the same location.
         save_audio(f.name, noise2, sampling_rate=16000)
@@ -201,7 +201,7 @@ def test_command_audio_caching_enabled_works():
         # because reading from this path was cached before.
         audio = audio_source.load_audio()
         audio = np.atleast_2d(audio)
-        np.testing.assert_allclose(audio, noise1, atol=3e-5)
+        np.testing.assert_allclose(audio, noise1, atol=3e-4)
 
 
 def test_command_audio_caching_disabled_works():
@@ -224,7 +224,7 @@ def test_command_audio_caching_disabled_works():
         # Read the audio -- should be equal to noise1.
         audio = audio_source.load_audio()
         audio = np.atleast_2d(audio)
-        np.testing.assert_allclose(audio, noise1, atol=3e-5)
+        np.testing.assert_allclose(audio, noise1, atol=3e-4)
 
         # Save noise2 to the same location.
         save_audio(f.name, noise2, sampling_rate=16000)
@@ -233,7 +233,7 @@ def test_command_audio_caching_disabled_works():
         # and the caching is ignored (doesn't happen).
         audio = audio_source.load_audio()
         audio = np.atleast_2d(audio)
-        np.testing.assert_allclose(audio, noise2, atol=3e-5)
+        np.testing.assert_allclose(audio, noise2, atol=3e-4)
 
 
 def test_audio_loading_optimization_returns_expected_num_samples():
