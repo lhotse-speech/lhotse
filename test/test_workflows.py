@@ -12,6 +12,9 @@ from lhotse.workflows.meeting_simulation import (
 )
 
 scipy = pytest.importorskip("scipy", reason="These tests require scipy package to run.")
+torchaudio = pytest.importorskip(
+    "torchaudio", reason="These tests require torchaudio package to run."
+)
 
 
 @pytest.fixture(scope="module")

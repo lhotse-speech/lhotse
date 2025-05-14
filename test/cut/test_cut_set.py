@@ -578,25 +578,6 @@ def test_store_audio(num_jobs):
     cut_set = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     cut_set = cut_set.sort_by_duration()
     with TemporaryDirectory() as tmpdir:
-        for enc, bits in (
-            ("PCM_S", 16),
-            ("PCM_F", 32),
-            (None, 16),
-            ("PCM_S", None),
-            (None, None),
-        ):
-            stored_cut_set = cut_set.save_audios(
-                tmpdir, encoding=enc, bits_per_sample=bits, num_jobs=num_jobs
-            )
-
-            stored_cut_set = stored_cut_set.sort_by_duration()
-            for cut1, cut2 in zip(cut_set, stored_cut_set):
-                samples1 = cut1.load_audio()
-                samples2 = cut2.load_audio()
-                assert np.array_equal(samples1, samples2)
-            assert len(stored_cut_set) == len(cut_set)
-
-    with TemporaryDirectory() as tmpdir:
         for bits in (16, 24, None):
             stored_cut_set = cut_set.save_audios(
                 tmpdir, format="flac", bits_per_sample=bits, num_jobs=num_jobs

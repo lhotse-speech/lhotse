@@ -794,10 +794,13 @@ def torchaudio_soundfile_supports_format() -> bool:
     Returns ``True`` when torchaudio version is at least 0.9.0, which
     has support for ``format`` keyword arg in ``torchaudio.save()``.
     """
-    return check_torchaudio_version_gt("0.9.0")
+    return is_torchaudio_available() and check_torchaudio_version_gt("0.9.0")
 
 
 def check_torchaudio_version_gt(version: str) -> bool:
+    if not is_torchaudio_available():
+        return False
+
     import torchaudio
     from packaging import version as _version
 
