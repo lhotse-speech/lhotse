@@ -29,7 +29,7 @@ jobs:
             torch-install-cmd: "pip install torch==2.6 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.12"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.7 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.7 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
 
       fail-fast: false
