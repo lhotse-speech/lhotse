@@ -20,17 +20,17 @@ jobs:
             torch-install-cmd: "pip install torch==1.12.1 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: ""
           - python-version: "3.9"
-            torch-install-cmd: "pip install torch==2.3 torchaudio==2.3 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.4 torchaudio==2.4 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.10"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.4 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.11"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.6 --extra-index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.12"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: "multi-storage-client==0.16.0 kaldifeat==1.25.5.dev20250130+cpu.torch2.6.0 -f https://csukuangfj.github.io/kaldifeat/cpu.html"
+            torch-install-cmd: "pip install torch==2.7 --extra-index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: "multi-storage-client==0.16.0"
 
       fail-fast: false
 
