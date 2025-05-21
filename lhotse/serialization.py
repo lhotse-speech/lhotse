@@ -550,10 +550,12 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
-    from lhotse import Features, MonoCut, MultiCut, Recording, SupervisionSegment
+    from lhotse import Features, Image, MonoCut, MultiCut, Recording, SupervisionSegment
     from lhotse.array import deserialize_array
     from lhotse.cut import MixedCut
 
+    if "width" in data:
+        return Image.from_dict(data)
     if "shape" in data or "array" in data:
         return deserialize_array(data)
     if "sources" in data:
@@ -593,6 +595,7 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
     if data is None:
         return None
 
+    from lhotse import Image
     from lhotse.array import deserialize_array
     from lhotse.audio import Recording
 
@@ -605,6 +608,8 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
             if all(k in value for k in ("id", "sources", "sampling_rate")):
                 data[key] = Recording.from_dict(value)
                 continue
+            if "width" in value:
+                data[key] = Image.from_dict(value)
             try:
                 data[key] = deserialize_array(value)
             except:

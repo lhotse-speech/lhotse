@@ -201,3 +201,49 @@ def test_monocut_load_custom_with_image(sample_image_array):
     loaded_img2 = cut1.load_test_img()
     assert loaded_img2.shape == (100, 100, 3)
     np.testing.assert_array_equal(loaded_img2, sample_image_array)
+
+
+def test_save_and_load_cut_with_image(sample_image_array):
+    """Test loading an image from a MonoCut using load_custom."""
+    cut = MonoCut(id="cut1", start=0, duration=10, channel=0)
+    cut = cut.attach_image("test_img", sample_image_array)
+
+    cut1 = MonoCut.from_dict(cut.to_dict())
+
+    # Test using load_* property
+    loaded_img1 = cut1.load_test_img()
+    assert loaded_img1.shape == (100, 100, 3)
+    np.testing.assert_array_equal(loaded_img1, sample_image_array)
+
+
+def test_image_plot(sample_image_array):
+    """Test Image.plot() method."""
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+
+    # Test with in-memory image
+    writer = PillowInMemoryWriter()
+    image_mem = writer.store_image("img_mem_plot", sample_image_array)
+
+    fig, ax = plt.subplots()
+    returned_ax = image_mem.plot(ax=ax)
+    assert ax is returned_ax, "The returned Axes should be the one passed as argument."
+    # Basic check if something was plotted - check if it has an image
+    assert len(ax.images) > 0, "Axes should contain an image after plotting."
+    plt.close(fig)  # Close the figure to free memory
+
+    # Test with file-based image and no ax provided
+    with tempfile.TemporaryDirectory() as tmpdir:
+        writer_file = PillowWriter(tmpdir)
+        image = writer_file.store_image("img_file_plot", sample_image_array)
+
+        returned_ax_no_arg = image.plot()
+        assert isinstance(
+            returned_ax_no_arg, plt.Axes
+        ), "Plot should return an Axes object."
+        assert (
+            len(returned_ax_no_arg.images) > 0
+        ), "Axes should contain an image after plotting."
+        plt.close(
+            returned_ax_no_arg.figure
+        )  # Close the figure associated with the returned Axes

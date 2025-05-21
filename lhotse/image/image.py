@@ -1,10 +1,10 @@
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
-from lhotse.utils import Pathlike, fastcopy
+from lhotse.utils import Pathlike, fastcopy, is_module_available
 
 
 @dataclass
@@ -118,3 +118,27 @@ class Image:
             f"height={self.height}"
             f")"
         )
+
+    def plot(self, ax=None, **kwargs):
+        """
+        Display the image using matplotlib.
+
+        :param ax: Optional matplotlib Axes to plot on. If None, a new figure and axes will be created.
+        :param kwargs: Additional keyword arguments passed to `ax.imshow()`.
+        :return: The matplotlib Axes object with the plotted image.
+        """
+        if not is_module_available("matplotlib"):
+            raise ImportError(
+                "To use Image.plot(), please 'pip install matplotlib' first."
+            )
+        import matplotlib.pyplot as plt
+
+        img_data = self.load()
+
+        if ax is None:
+            fig, ax = plt.subplots()
+            fig.suptitle(f"Image ({self.storage_path})")
+
+        ax.imshow(img_data, **kwargs)
+        ax.axis("off")  # Typically, we don't want axis ticks for images
+        return ax
