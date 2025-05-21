@@ -150,7 +150,6 @@ class Image:
 
         if ax is None:
             fig, ax = plt.subplots()
-            fig.suptitle(f"Image ({self.storage_path})")
 
         ax.imshow(img_data, **kwargs)
         ax.axis("off")  # Typically, we don't want axis ticks for images

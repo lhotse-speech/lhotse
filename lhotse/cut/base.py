@@ -319,14 +319,15 @@ class Cut:
             samples = augment_fn(samples, self.sampling_rate)
         return extractor.extract(samples, self.sampling_rate)
 
-    def plot_audio(self):
+    def plot_audio(self, ax=None, **kwargs):
         """
         Display a plot of the waveform. Requires matplotlib to be installed.
         """
         import matplotlib.pyplot as plt
 
-        samples = self.load_audio().squeeze()
-        fig, ax = plt.subplots()
+        samples = self.load_audio().sum(axis=0)  # downmix all channels for the plot
+        if ax is None:
+            fig, ax = plt.subplots()
         ax.plot(np.linspace(0, self.duration, len(samples)), samples)
         for supervision in self.supervisions:
             supervision = supervision.trim(self.duration)
