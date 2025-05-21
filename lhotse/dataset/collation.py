@@ -12,7 +12,7 @@ from lhotse import CutSet, Recording
 from lhotse.audio import suppress_audio_loading_errors
 from lhotse.audio.utils import suppress_video_loading_errors
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import DEFAULT_PADDING_VALUE, Seconds, compute_num_samples
+from lhotse.utils import DEFAULT_PADDING_VALUE, compute_num_samples
 
 
 class TokenCollater:
@@ -313,6 +313,7 @@ def collate_custom_field(
     :return: a collated data tensor, or a tuple of tensors ``(collated_data, sequence_lens)``.
     """
     from lhotse.array import Array, TemporalArray
+    from lhotse.image import Image
 
     first_manifest = getattr(cuts[0], field)
     if isinstance(first_manifest, Array):
@@ -375,6 +376,10 @@ def collate_custom_field(
             tensors[indices] = a
 
         return tensors, arr_lens
+    elif isinstance(first_manifest, Image):
+        return collate_images(cuts, field)
+    elif isinstance(first_manifest, Recording):
+        return collate_audio(cuts, recording_field=field, pad_direction=pad_direction)
     else:
         # Expected data type: int, float, string, etc.
         # Get a list of them and convert to a tensor.
@@ -612,3 +617,19 @@ def _read_video(
     """
     with suppress_video_loading_errors(enabled=suppress_errors):
         return cut.load_video()
+
+
+def collate_images(
+    cuts: CutSet,
+    image_field: str = "image",
+) -> torch.Tensor:
+    """
+    Load images for all cuts and return them as a batch in a torch tensor.
+    The output image shape is ``(batch, height, width, channel)``.
+
+    :param cuts: a :class:`CutSet` used to load the images.
+    :param image_field: the field in the cut to load the images from.
+    :return: tensor of collated images"""
+    images = [torch.as_tensor(cut.load_custom(image_field)) for cut in cuts]
+    images = torch.stack(images)
+    return images

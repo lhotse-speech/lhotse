@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pytest
+import torch
 
 from lhotse import MonoCut
 from lhotse.custom import CustomFieldMixin
@@ -36,6 +37,14 @@ def sample_image_path(sample_image_array):
     # Clean up the temporary file
     if os.path.exists(f.name):
         os.unlink(f.name)
+
+
+@pytest.fixture
+def sample_cut_with_image(sample_image_array):
+    """Create a MonoCut with a sample image attached to 'custom_image' field."""
+    cut = MonoCut(id="cut_with_img", start=0, duration=1, channel=0)
+    cut = cut.attach_image("custom_image", sample_image_array)
+    return cut
 
 
 def test_image_from_writer_file(sample_image_array):
@@ -247,3 +256,48 @@ def test_image_plot(sample_image_array):
         plt.close(
             returned_ax_no_arg.figure
         )  # Close the figure associated with the returned Axes
+
+
+def test_collate_images(sample_cut_with_image, sample_image_array):
+    """Test collate_images function."""
+    from lhotse import CutSet
+    from lhotse.dataset.collation import collate_images
+
+    # Create a CutSet with multiple identical cuts for testing collation
+    cuts = CutSet.from_cuts([sample_cut_with_image, sample_cut_with_image])
+
+    # Collate images using the default 'image' field (which is not what we have)
+    # We need to ensure collate_images is called in a way that it can find the image
+    # The refactored collate_images takes an image_field argument.
+    # However, the top-level collate_images in CutSet.collate_images does not expose it.
+    # Let's test the direct collate_images from lhotse.dataset.collation
+
+    collated_imgs_tensor = collate_images(cuts, image_field="custom_image")
+
+    assert collated_imgs_tensor.ndim == 4  # (batch, height, width, channel)
+    assert collated_imgs_tensor.shape[0] == 2  # Batch size
+    assert collated_imgs_tensor.shape[1:] == sample_image_array.shape  # H, W, C
+    np.testing.assert_array_equal(
+        collated_imgs_tensor[0].cpu().numpy(), sample_image_array
+    )
+    np.testing.assert_array_equal(
+        collated_imgs_tensor[1].cpu().numpy(), sample_image_array
+    )
+
+
+def test_collate_custom_field_with_image(sample_cut_with_image, sample_image_array):
+    """Test collate_custom_field for a field containing an Image object."""
+    from lhotse import CutSet
+    from lhotse.dataset.collation import collate_custom_field
+
+    cuts = CutSet.from_cuts([sample_cut_with_image, sample_cut_with_image])
+
+    # Collate the 'custom_image' field which holds an Image object
+    collated_data = collate_custom_field(cuts, field="custom_image")
+
+    assert isinstance(collated_data, torch.Tensor)
+    assert collated_data.ndim == 4  # (batch, height, width, channel)
+    assert collated_data.shape[0] == 2  # Batch size
+    assert collated_data.shape[1:] == sample_image_array.shape  # H, W, C
+    np.testing.assert_array_equal(collated_data[0].cpu().numpy(), sample_image_array)
+    np.testing.assert_array_equal(collated_data[1].cpu().numpy(), sample_image_array)
