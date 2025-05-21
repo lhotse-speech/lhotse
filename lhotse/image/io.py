@@ -7,7 +7,7 @@ from typing import Dict, List, Type, Union
 import numpy as np
 
 from lhotse.image.image import Image
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, is_module_available
 
 
 class ImageReader(metaclass=ABCMeta):
@@ -77,7 +77,7 @@ class ImageWriter(metaclass=ABCMeta):
         self,
         key: str,
         value: Union[str, np.ndarray, bytes],
-    ) -> "Image":
+    ) -> Image:
         """
         Store an image in the underlying storage and return a manifest
         describing how to retrieve it.
@@ -89,9 +89,9 @@ class ImageWriter(metaclass=ABCMeta):
             - Raw bytes of an image file
         :return: A manifest of type :class:`~lhotse.image.Image`
         """
-        # Import Image here to avoid circular imports
-        from lhotse.image.image import Image
-
+        assert is_module_available(
+            "PIL"
+        ), "In order to store images, please run 'pip install pillow'"
         # Handle different types of input values
         if isinstance(value, str):
             # It's a path, load the image first
@@ -209,17 +209,19 @@ class PillowReader(ImageReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
-    def read(self, key: str) -> np.ndarray:
+    def read(self, key: str, as_pil_image: bool = False):
         """Read the image file and return it as a numpy array."""
-        try:
-            import PIL.Image
-        except ImportError:
-            raise ImportError("To use PillowReader, please 'pip install pillow' first.")
+        assert is_module_available(
+            "PIL"
+        ), "In order to load images, please run 'pip install pillow'"
+        import PIL.Image
 
         img_path = self.storage_path / key
-        with PIL.Image.open(img_path) as img:
-            # Convert to numpy array (height, width, channels)
-            return np.array(img)
+        img = PIL.Image.open(img_path)
+        # Convert to numpy array (height, width, channels)
+        if as_pil_image:
+            return img
+        return np.array(img)
 
 
 @register_writer
@@ -243,10 +245,10 @@ class PillowWriter(ImageWriter):
 
     def write(self, key: str, value: np.ndarray) -> str:
         """Write a numpy array as an image file."""
-        try:
-            import PIL.Image
-        except ImportError:
-            raise ImportError("To use PillowWriter, please 'pip install pillow' first.")
+        assert is_module_available(
+            "PIL"
+        ), "In order to store images, please run 'pip install pillow'"
+        import PIL.Image
 
         # Introduce a sub-directory that starts with the first 3 characters of the key
         subdir = self.storage_path_ / key[:3]
@@ -276,14 +278,12 @@ class PillowInMemoryReader(ImageReader):
     def __init__(self, *args, **kwargs):
         pass
 
-    def read(self, raw_data: bytes) -> np.ndarray:
+    def read(self, raw_data: bytes, as_pil_image: bool = False) -> np.ndarray:
         """Read the image from the bytes in memory."""
-        try:
-            import PIL.Image
-        except ImportError:
-            raise ImportError(
-                "To use PillowInMemoryReader, please 'pip install pillow' first."
-            )
+        assert is_module_available(
+            "PIL"
+        ), "In order to load images, please run 'pip install pillow'"
+        import PIL.Image
 
         # Decode from pickle, which contains either bytes or numpy array
         data = pickle.loads(raw_data)
@@ -291,9 +291,13 @@ class PillowInMemoryReader(ImageReader):
         # If it's bytes, load with PIL
         if isinstance(data, bytes):
             img = PIL.Image.open(io.BytesIO(data))
+            if as_pil_image:
+                return img
             return np.array(img)
         # If it's already a numpy array, return it directly
         elif isinstance(data, np.ndarray):
+            if as_pil_image:
+                return PIL.Image.fromarray(data)
             return data
         else:
             raise ValueError(f"Unsupported data type: {type(data)}")

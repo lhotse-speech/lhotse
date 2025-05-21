@@ -77,22 +77,40 @@ def test_image_from_writer_memory(sample_image_array):
 
 def test_image_load(sample_image_array):
     """Test loading an image from disk and memory."""
+    import PIL.Image
+
     # Test file-based image
     with tempfile.TemporaryDirectory() as tmpdir:
         writer = PillowWriter(tmpdir)
         image = writer.store_image("img1", sample_image_array)
-        loaded_image = image.load()
 
-        assert loaded_image.shape == (100, 100, 3)
-        np.testing.assert_array_equal(loaded_image, sample_image_array)
+        # Test loading as numpy array (as_pil_image=False, default)
+        loaded_image_np = image.load(as_pil_image=False)
+        assert isinstance(loaded_image_np, np.ndarray)
+        assert loaded_image_np.shape == (100, 100, 3)
+        np.testing.assert_array_equal(loaded_image_np, sample_image_array)
+
+        # Test loading as PIL Image (as_pil_image=True)
+        loaded_image_pil = image.load(as_pil_image=True)
+        assert isinstance(loaded_image_pil, PIL.Image.Image)
+        assert loaded_image_pil.size == (100, 100)
+        np.testing.assert_array_equal(np.array(loaded_image_pil), sample_image_array)
 
     # Test in-memory image
     writer = PillowInMemoryWriter()
     image = writer.store_image("img1", sample_image_array)
-    loaded_image = image.load()
 
-    assert loaded_image.shape == (100, 100, 3)
-    np.testing.assert_array_equal(loaded_image, sample_image_array)
+    # Test loading as numpy array (as_pil_image=False, default)
+    loaded_image_np_mem = image.load(as_pil_image=False)
+    assert isinstance(loaded_image_np_mem, np.ndarray)
+    assert loaded_image_np_mem.shape == (100, 100, 3)
+    np.testing.assert_array_equal(loaded_image_np_mem, sample_image_array)
+
+    # Test loading as PIL Image (as_pil_image=True)
+    loaded_image_pil_mem = image.load(as_pil_image=True)
+    assert isinstance(loaded_image_pil_mem, PIL.Image.Image)
+    assert loaded_image_pil_mem.size == (100, 100)
+    np.testing.assert_array_equal(np.array(loaded_image_pil_mem), sample_image_array)
 
 
 def test_image_serialization(sample_image_array):
@@ -113,6 +131,8 @@ def test_image_serialization(sample_image_array):
 
 def test_image_move_to_memory(sample_image_array):
     """Test moving an Image from file storage to memory."""
+    import PIL.Image  # Ensure PIL is imported for the isinstance check
+
     with tempfile.TemporaryDirectory() as tmpdir:
         writer = PillowWriter(tmpdir)
         image = writer.store_image("img1", sample_image_array)
@@ -124,9 +144,15 @@ def test_image_move_to_memory(sample_image_array):
         assert image_mem.width == image.width
         assert image_mem.height == image.height
 
-        # Load and verify content
-        loaded_image = image_mem.load()
-        np.testing.assert_array_equal(loaded_image, sample_image_array)
+        # Load and verify content (as numpy array by default)
+        loaded_image_np = image_mem.load()
+        assert isinstance(loaded_image_np, np.ndarray)
+        np.testing.assert_array_equal(loaded_image_np, sample_image_array)
+
+        # Load and verify content (as PIL image)
+        loaded_image_pil = image_mem.load(as_pil_image=True)
+        assert isinstance(loaded_image_pil, PIL.Image.Image)
+        np.testing.assert_array_equal(np.array(loaded_image_pil), sample_image_array)
 
 
 def test_monocut_attach_image(sample_image_array, sample_image_path):

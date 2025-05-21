@@ -67,18 +67,25 @@ class Image:
             data["storage_path"] = None
         return cls(**data)
 
-    def load(self) -> np.ndarray:
+    def load(self, as_pil_image: bool = False):
         """
         Load the image from the underlying storage.
-        Returns a numpy array with shape (height, width, channels).
+
+        :param as_numpy: If True (default), returns a numpy array with shape (height, width, channels).
+                         If False, returns a PIL Image object.
+        :return: Loaded image as numpy array or PIL Image object.
         """
+        assert is_module_available(
+            "PIL"
+        ), "In order to load images, please run 'pip install pillow'"
         # Import locally to avoid circular dependencies
         from lhotse.image.io import get_reader
 
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)
-        # Load and return the image from the storage
-        return storage.read(self.storage_key)
+        # Load the image from the storage
+        img_data = storage.read(self.storage_key, as_pil_image=as_pil_image)
+        return img_data
 
     def with_path_prefix(self, path: Pathlike) -> "Image":
         """
