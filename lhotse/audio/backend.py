@@ -25,6 +25,17 @@ from lhotse.utils import Pathlike, Seconds, compute_num_samples, is_torchaudio_a
 _FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = is_torchaudio_available()
 CURRENT_AUDIO_BACKEND: Optional["AudioBackend"] = None
 
+SUPPORTED_VIDEO_EXTENSIONS = (
+    ".avi",
+    ".mov",
+    ".mp4",
+    ".m4a",
+    ".wmv",
+    ".mkv",
+    ".webm",
+    ".flv",
+)
+
 
 def available_audio_backends() -> List[str]:
     """
@@ -436,6 +447,13 @@ class TorchaudioFFMPEGBackend(AudioBackend):
             offset=offset,
             duration=duration,
             resample_rate=force_opus_sampling_rate,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # The only backend to support video.
+        is_fileobj = not isinstance(path_or_fd, Path)
+        return not is_fileobj and any(
+            str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -885,7 +903,8 @@ def torchaudio_ffmpeg_streamer_info(
 
     is_fileobj = not isinstance(path_or_fileobj, Path)
     is_mpeg = not is_fileobj and any(
-        str(path_or_fileobj).endswith(ext) for ext in (".mp3", ".mp4", ".m4a")
+        str(path_or_fileobj).endswith(ext)
+        for ext in (".mp3",) + SUPPORTED_VIDEO_EXTENSIONS
     )
     if not is_fileobj:
         path_or_fileobj = str(path_or_fileobj)
