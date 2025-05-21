@@ -15,6 +15,7 @@ from .audio import (
 from .caching import is_caching_enabled, set_caching_enabled
 from .cut import CutSet, MonoCut, MultiCut, create_cut_set_eager, create_cut_set_lazy
 from .features import *
+from .image import Image
 from .kaldi import load_kaldi_data_dir
 from .lazy import dill_enabled, is_dill_enabled, set_dill_enabled
 from .manipulation import combine, split_parallelize_combine, to_manifest
