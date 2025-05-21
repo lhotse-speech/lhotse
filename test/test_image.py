@@ -266,12 +266,6 @@ def test_collate_images(sample_cut_with_image, sample_image_array):
     # Create a CutSet with multiple identical cuts for testing collation
     cuts = CutSet.from_cuts([sample_cut_with_image, sample_cut_with_image])
 
-    # Collate images using the default 'image' field (which is not what we have)
-    # We need to ensure collate_images is called in a way that it can find the image
-    # The refactored collate_images takes an image_field argument.
-    # However, the top-level collate_images in CutSet.collate_images does not expose it.
-    # Let's test the direct collate_images from lhotse.dataset.collation
-
     collated_imgs_tensor = collate_images(cuts, image_field="custom_image")
 
     assert collated_imgs_tensor.ndim == 4  # (batch, height, width, channel)
