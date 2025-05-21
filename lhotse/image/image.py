@@ -67,6 +67,12 @@ class Image:
             data["storage_path"] = None
         return cls(**data)
 
+    @classmethod
+    def from_pillow(cls, data) -> "Image":
+        from lhotse.image.io import PillowInMemoryWriter
+
+        return PillowInMemoryWriter().store_image("", data)
+
     def load(self, as_pil_image: bool = False):
         """
         Load the image from the underlying storage.

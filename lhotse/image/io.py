@@ -92,27 +92,25 @@ class ImageWriter(metaclass=ABCMeta):
         assert is_module_available(
             "PIL"
         ), "In order to store images, please run 'pip install pillow'"
-        # Handle different types of input values
-        if isinstance(value, str):
-            # It's a path, load the image first
-            import PIL.Image
+        import PIL.Image
 
+        # Handle different types of input values
+        if isinstance(value, PIL.Image.Image):
+            img = np.array(value)
+        elif isinstance(value, str):
+            # It's a path, load the image first
             img = np.array(PIL.Image.open(value))
-            height, width = img.shape[:2]
-            storage_key = self.write(key, img)
         elif isinstance(value, np.ndarray):
             # It's a numpy array
-            height, width = value.shape[:2]
-            storage_key = self.write(key, value)
+            img = value
         elif isinstance(value, bytes):
             # It's raw bytes, load it into PIL first to get dimensions
-            import PIL.Image
-
             img = np.array(PIL.Image.open(io.BytesIO(value)))
-            height, width = img.shape[:2]
-            storage_key = self.write(key, img)
         else:
             raise ValueError(f"Unsupported image value type: {type(value)}")
+
+        height, width = img.shape[:2]
+        storage_key = self.write(key, img)
 
         return Image(
             storage_type=self.name,
@@ -299,6 +297,10 @@ class PillowInMemoryReader(ImageReader):
             if as_pil_image:
                 return PIL.Image.fromarray(data)
             return data
+        elif isinstance(data, PIL.Image.Image):
+            if as_pil_image:
+                return data
+            return np.array(data)
         else:
             raise ValueError(f"Unsupported data type: {type(data)}")
 
