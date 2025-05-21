@@ -438,6 +438,13 @@ class TorchaudioFFMPEGBackend(AudioBackend):
             resample_rate=force_opus_sampling_rate,
         )
 
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # The only backend to support video.
+        is_fileobj = not isinstance(path_or_fd, Path)
+        return not is_fileobj and any(
+            str(path_or_fd).endswith(ext) for ext in (".mp3", ".mp4", ".m4a")
+        )
+
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         """
         FFMPEG backend requires at least Torchaudio 2.0.
