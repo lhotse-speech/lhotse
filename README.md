@@ -16,7 +16,8 @@
 
 # Lhotse
 
-Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside [k2](https://github.com/k2-fsa/k2), it is a part of the next generation [Kaldi](https://github.com/kaldi-asr/kaldi) speech processing library.
+Lhotse is a Python library aiming to make multimodal (speech, audio, video, image, text) data preparation flexible and accessible to a wider community.
+Alongside [k2](https://github.com/k2-fsa/k2), it is a part of the next generation [Kaldi](https://github.com/kaldi-asr/kaldi) speech processing library.
 
 ## Tutorial presentations and materials
 
@@ -26,23 +27,25 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 
 ## About
 
-### Main goals
+### Main goals (updated for 2025)
 
-- Attract a wider community to speech processing tasks with a **Python-centric design**.
-- Accommodate experienced Kaldi users with an **expressive command-line interface**.
+- Scale to multimodal data pipelines including audio, text, image, and video modalities.
+- Provide state-of-the-art dataloading algorithms such as dataset blending and efficient on-the-fly bucketing.
+- Handle data randomization (or de-duplication) for distributed multi-node training.
+- Attract a wider community to multimodal processing tasks with a **Python-centric design**.
 - Provide **standard data preparation recipes** for commonly used corpora.
-- Provide **PyTorch Dataset classes** for speech and audio related tasks.
-- Flexible data preparation for model training with the notion of **audio cuts**.
-- **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
+- Flexible data preparation for model training with the notion of **audio/video cuts**.
+- Support for efficient sequential I/O data formats such as Lhotse Shar (similar to webdataset).
 
 ### Tutorials
 
-We currently have the following tutorials available in `examples` directory:
+We offer the following tutorials available in `examples` directory:
 - Basic complete Lhotse workflow [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb)
 - Transforming data with Cuts [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb)
 - WebDataset integration [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb)
 - How to combine multiple datasets [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb)
 - Lhotse Shar: storage format optimized for sequential I/O and modularity [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb)
+- Image and Video Support in Lhotse [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb)
 
 ### Examples of use
 
