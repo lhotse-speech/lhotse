@@ -95,16 +95,17 @@ class CustomFieldMixin:
     def load_custom(self, name: str) -> np.ndarray:
         """
         Load custom data as numpy array. The custom data is expected to have
-        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
-        :class:`~lhotse.array.TemporalArray` manifest.
+        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array`,
+        :class:`~lhotse.array.TemporalArray`, or :class:`~lhotse.image.image.Image` manifest.
 
-        .. note:: It works with Array manifests stored via attribute assignments,
-            e.g.: ``cut.my_custom_data = Array(...)``.
+        .. note:: It works with Array/Image manifests stored via attribute assignments,
+            e.g.: ``cut.my_custom_data = Array(...)`` or ``cut = cut.attach_image('img', ...)``.
 
         :param name: name of the custom attribute.
         :return: a numpy array with the data.
         """
         from lhotse.array import Array, TemporalArray
+        from lhotse.image.image import Image
 
         value = self.custom.get(name)
         if isinstance(value, Array):
@@ -122,10 +123,12 @@ class CustomFieldMixin:
             return value.load_audio(
                 channels=channels, offset=self.start, duration=self.duration
             )
+        elif isinstance(value, Image):
+            return value.load()
         else:
             raise ValueError(
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
-                f"defined, and its value has to be a manifest of type Array or TemporalArray."
+                f"defined, and its value has to be a manifest of type Array, TemporalArray, or Image."
             )
 
     def has_custom(self, name: str) -> bool:

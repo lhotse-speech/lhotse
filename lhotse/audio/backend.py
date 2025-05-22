@@ -988,6 +988,14 @@ def torchaudio_ffmpeg_streamer_info(
             samplerate=int(audio_stream.sample_rate),
             duration=tot_samples / audio_stream.sample_rate,
         )
+    else:
+        # No audio stream in the video
+        meta.update(
+            channels=0,
+            frames=0,
+            samplerate=0,
+            duration=meta["video"].duration,
+        )
 
     return LibsndfileCompatibleAudioInfo(**meta)
 

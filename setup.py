@@ -187,6 +187,7 @@ dill_requires = ["dill"]
 h5py_requires = ["h5py"]
 kaldi_requires = ["kaldi_native_io", "kaldifeat"]
 workflow_requires = ["scipy"]
+pillow_requires = ["pillow"]
 dev_requires = sorted(
     docs_require
     + tests_require
@@ -194,6 +195,7 @@ dev_requires = sorted(
     + webdataset_requires
     + dill_requires
     + workflow_requires
+    + pillow_requires
     + ["jupyterlab", "matplotlib"]
 )
 all_requires = sorted(dev_requires)
@@ -229,6 +231,7 @@ setup(
         "webdataset": webdataset_requires,
         "h5py": h5py_requires,
         "kaldi": kaldi_requires,
+        "pillow": pillow_requires,
         "docs": docs_require,
         "tests": tests_require,
         "dev": dev_requires,

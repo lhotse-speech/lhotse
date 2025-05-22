@@ -3,6 +3,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
 from decimal import ROUND_DOWN
 from math import isclose
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -37,6 +38,7 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     fastcopy,
+    is_module_available,
     measure_overlap,
     overlaps,
     overspans,
@@ -1108,3 +1110,69 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         if not self.has_recording:
             return self
         return fastcopy(self, recording=self.recording.with_path_prefix(path))
+
+    def attach_image(
+        self, key: str, path_or_object: Union[str, np.ndarray, bytes]
+    ) -> "DataCut":
+        """
+        Attach an image to this cut, wrapped in an Image class and stored
+        under `key` in the `custom` dict.
+
+        The image can be specified as:
+        - A path to an image file
+        - A numpy array with shape (height, width, channels)
+        - Raw bytes of an image file
+
+        Example::
+
+            >>> cut = cut.attach_image('thumbnail', 'path/to/image.jpg')
+            >>> # Access the image later
+            >>> img_array = cut.load_thumbnail()  # Returns numpy array
+
+        :param key: The key to store the image under in the custom dict.
+        :param path_or_object: The image as a path, numpy array, or bytes.
+        :return: A new DataCut with the image attached.
+        """
+        assert is_module_available(
+            "PIL"
+        ), "In order to use images, please run 'pip install pillow'"
+
+        from lhotse.image.image import Image
+        from lhotse.image.io import PillowInMemoryWriter
+
+        # Make a copy of the cut with the image stored in custom dict
+        cpy = fastcopy(
+            self, custom=self.custom.copy() if self.custom is not None else {}
+        )
+
+        # Handle different types of input
+        if isinstance(path_or_object, (str, Path)):
+            # It's a path, directly reference the file without writing anything
+            # Get the dimensions by opening the image
+            import PIL.Image as PILImage
+
+            with PILImage.open(path_or_object) as img:
+                width, height = img.size
+
+            # Create an Image manifest pointing to the original file
+            # We'll use the original file extension to determine the file name in storage_key
+            path = Path(path_or_object)
+            storage_key = str(path.name)
+            # Use the parent directory as storage_path
+            storage_path = str(path.parent)
+
+            image_manifest = Image(
+                storage_type="pillow_files",
+                storage_path=storage_path,
+                storage_key=storage_key,
+                width=width,
+                height=height,
+            )
+        else:
+            # For numpy arrays or bytes, use in-memory writer
+            writer = PillowInMemoryWriter()
+            with writer:
+                image_manifest = writer.store_image(key, path_or_object)
+
+        cpy.custom[key] = image_manifest
+        return cpy
