@@ -11,6 +11,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -23,6 +24,7 @@ from intervaltree import IntervalTree
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
+from lhotse.augmentation.compress import Codec
 from lhotse.custom import CustomFieldMixin
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
@@ -1052,6 +1054,72 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         source_rng_seed: Optional[int] = None,
     ) -> "DataCut":
         ...
+
+    def compress(
+        self,
+        codec: Codec,
+        compression_level: float = 0.99,
+        compress_custom_fields: bool = False,
+    ) -> "DataCut":
+        """
+        Return a copy of this Cut that has its Recordings processed by a lossy audio encoder.
+
+        :param codec: The codec to use for compression. Supported codecs are Opus, MP3, Vorbis.
+        :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
+        :param compress_custom_fields: Whether to also compress any custom recording fields in the Cut.
+
+        :return: A modified :class:`~lhotse.DataCut` containing audio processed by a codec
+        """
+        assert self.has_recording, "Cannot compress a DataCut without a Recording."
+
+        custom = self.custom
+        if compress_custom_fields:
+            if isinstance(custom, dict) and any(
+                isinstance(v, Recording) for v in custom.values()
+            ):
+                custom = {
+                    k: v.compress(codec, compression_level)
+                    if isinstance(v, Recording)
+                    else v
+                    for k, v in custom.items()
+                }
+
+        return fastcopy(
+            self,
+            recording=self.recording.compress(codec, compression_level),
+            custom=custom,
+        )
+
+    def lowpass(
+        self,
+        frequency: float,
+        filter_type: str = "butter",
+        order: int = 4,
+        ripple_db: Optional[float] = 0.1,
+        stopband_attenuation_db: Optional[float] = 40,
+    ) -> "DataCut":
+        """
+        Return a copy of this Cut that has its Recordings lowpassed.
+
+        :param frequency: The cutoff frequency in Hz (must be less than Nyquist frequency).
+        :param filter_type: Type of filter to use. One of ['butter', 'cheby1', 'cheby2', 'ellip', 'bessel']
+        :param order: The order of the filter (default: 4)
+        :param ripple_db: Maximum ripple in passband (dB) for Chebyshev and elliptic filters
+        :param stopband_attenuation_db: Minimum attenuation in stopband (dB) for Chebyshev and elliptic filters
+
+        :return: A modified :class:`~lhotse.DataCut` containing lowpassed audio
+        """
+        assert self.has_recording, "Cannot lowpass a DataCut without a Recording."
+        return fastcopy(
+            self,
+            recording=self.recording.lowpass(
+                frequency=frequency,
+                filter_type=filter_type,
+                order=order,
+                ripple_db=ripple_db,
+                stopband_attenuation_db=stopband_attenuation_db,
+            ),
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
