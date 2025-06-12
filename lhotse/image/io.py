@@ -6,6 +6,7 @@ from typing import Dict, List, Type, Union
 
 import numpy as np
 
+from lhotse.features.io import FileIO
 from lhotse.image.image import Image
 from lhotse.utils import Pathlike, is_module_available
 
@@ -205,7 +206,11 @@ class PillowReader(ImageReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.storage_path = Path(storage_path)
+        self.io = FileIO(storage_path)
+
+    @property
+    def storage_path(self) -> str:
+        return self.io.storage_path
 
     def read(self, key: str, as_pil_image: bool = False):
         """Read the image file and return it as a numpy array."""
@@ -214,11 +219,12 @@ class PillowReader(ImageReader):
         ), "In order to load images, please run 'pip install pillow'"
         import PIL.Image
 
-        img_path = self.storage_path / key
-        img = PIL.Image.open(img_path)
-        # Convert to numpy array (height, width, channels)
+        with self.io.open_fileobj(key, "r") as (f, input_path):
+            img = PIL.Image.open(f)
+            img.load()  # trigger read, pillow has lazy loading
         if as_pil_image:
             return img
+        # Convert to numpy array (height, width, channels)
         return np.array(img)
 
 
@@ -234,12 +240,11 @@ class PillowWriter(ImageWriter):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.storage_path_ = Path(storage_path)
-        self.storage_path_.mkdir(parents=True, exist_ok=True)
+        self.io = FileIO(storage_path)
 
     @property
     def storage_path(self) -> str:
-        return str(self.storage_path_)
+        return self.io.storage_path
 
     def write(self, key: str, value: np.ndarray) -> str:
         """Write a numpy array as an image file."""
@@ -248,21 +253,20 @@ class PillowWriter(ImageWriter):
         ), "In order to store images, please run 'pip install pillow'"
         import PIL.Image
 
-        # Introduce a sub-directory that starts with the first 3 characters of the key
-        subdir = self.storage_path_ / key[:3]
-        subdir.mkdir(exist_ok=True)
-
-        p = subdir / key
         # Use PNG as the default format if no extension is provided
-        if not p.suffix:
-            p = p.with_suffix(".png")
+        if not Path(key).suffix:
+            key = key + ".png"
 
         # Convert numpy array to PIL Image and save
         img = PIL.Image.fromarray(value)
-        img.save(p)
+        with self.io.open_fileobj(key, "w", add_subdir=True) as (f, output_path):
+            img.save(f)
 
         # Include sub-directory in the key, e.g. "abc/abcdef.png"
-        return "/".join(p.parts[-2:])
+        if not self.io.is_url:
+            return "/".join(Path(output_path).parts[-2:])
+        else:
+            return key
 
 
 @register_reader
