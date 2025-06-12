@@ -350,7 +350,8 @@ class LilcomFilesWriter(FeaturesWriter):
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
         with self.io.open_fileobj(key, "w", add_subdir=True) as (f, output_path):
             f.write(serialized_feats)
-            key = "/".join(Path(output_path).parts[-2:])
+            if not self.io.is_url:
+                key = "/".join(Path(output_path).parts[-2:])
         return key
 
 
@@ -410,7 +411,8 @@ class NumpyFilesWriter(FeaturesWriter):
             key = key + ".npy"
         with self.io.open_fileobj(key, "w", add_subdir=True) as (f, output_path):
             np.save(f, value, allow_pickle=False)
-            key = "/".join(Path(output_path).parts[-2:])
+            if not self.io.is_url:
+                key = "/".join(Path(output_path).parts[-2:])
         return key
 
 

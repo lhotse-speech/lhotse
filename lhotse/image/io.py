@@ -263,7 +263,10 @@ class PillowWriter(ImageWriter):
             img.save(f)
 
         # Include sub-directory in the key, e.g. "abc/abcdef.png"
-        return "/".join(Path(output_path).parts[-2:])
+        if not self.io.is_url:
+            return "/".join(Path(output_path).parts[-2:])
+        else:
+            return key
 
 
 @register_reader
