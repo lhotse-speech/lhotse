@@ -278,13 +278,13 @@ class FileIO:
                     key = key[1:]
                 output_path = f"{self.storage_path}/{key}"
             else:
+                p = Path(self.storage_path)
+                p.mkdir(exist_ok=True, parents=True)
                 if add_subdir:
-                    subdir = Path(self.storage_path) / key[:3]
+                    subdir = p / key[:3]
                     subdir.mkdir(exist_ok=True)
                     output_path = subdir / key
                 else:
-                    p = Path(self.storage_path)
-                    p.mkdir(exist_ok=True, parents=True)
                     output_path = p / key
             with open_best(output_path, "wb") as f:
                 yield f, output_path
