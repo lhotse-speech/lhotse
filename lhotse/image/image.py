@@ -107,7 +107,7 @@ class Image:
         # Import locally to avoid circular dependencies
         from lhotse.image.io import get_memory_writer
 
-        if self.storage_type in ("pillow_memory"):
+        if self.storage_type == "pillow_memory":
             return self  # nothing to do
 
         img = self.load()

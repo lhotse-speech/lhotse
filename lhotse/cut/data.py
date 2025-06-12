@@ -20,6 +20,7 @@ import numpy as np
 import torch
 from intervaltree import IntervalTree
 
+from lhotse import Image
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
@@ -97,7 +98,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
     def iter_data(
         self,
     ) -> Generator[
-        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+        Tuple[str, Union[Recording, Features, Array, TemporalArray, Image]], None, None
     ]:
         """
         Iterate over each data piece attached to this cut.
@@ -113,7 +114,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         if self.has_features:
             yield "features", self.features
         for k, v in (self.custom or {}).items():
-            if isinstance(v, (Recording, Features, Array, TemporalArray)):
+            if isinstance(v, (Recording, Features, Array, TemporalArray, Image)):
                 yield k, v
 
     @property
@@ -262,7 +263,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
             custom = {
                 # Case 1: Array
-                k: v.move_to_memory() if isinstance(v, Array)
+                k: v.move_to_memory() if isinstance(v, (Array, Features, Image))
                 # Case 2: TemporalArray
                 else v.move_to_memory(start=self.start, duration=self.duration)
                 if isinstance(v, TemporalArray)
@@ -380,7 +381,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             for k in custom:
                 v = custom[k]
                 if (
-                    isinstance(v, (Recording, Features, Array, TemporalArray))
+                    isinstance(v, (Recording, Features, Array, TemporalArray, Image))
                     and v.is_in_memory
                 ):
                     custom[k] = to_shar_placeholder(v)
