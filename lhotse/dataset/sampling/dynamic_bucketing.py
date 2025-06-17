@@ -639,9 +639,16 @@ class DynamicBucketer:
                     self._collect_cuts_in_buckets(batch_size)
         except StopIteration:
             pass
+        finally:
+            # check whether producer thread is still alive and join it before iter ends
+            # in case StopIteration is raised somewhere outside the producer
+            if self.concurrent and self._producer_thread.is_alive():
+                self._source_exhausted = True
+                self._producer_thread.join()
+                self._producer_thread = None
 
-        # Cleanup.
-        self.cuts_iter = None
+            # Cleanup.
+            self.cuts_iter = None
 
     def _select_bucket(self, state: BucketSelectionState) -> Queue:
         if self.bucket_rng is None:
