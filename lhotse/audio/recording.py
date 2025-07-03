@@ -985,7 +985,21 @@ class Recording:
                 f"Compression level must be between 0.0 and 1.0, got {compression_level}"
             )
         transforms = self.transforms.copy() if self.transforms is not None else []
-        transforms.append(Compress(codec, compression_level))
+        # TODO: handle other codecs?
+        if codec == "gsm" and self.sampling_rate != 8000:
+            transforms.append(
+                Resample(
+                    source_sampling_rate=self.sampling_rate, target_sampling_rate=8000
+                )
+            )
+            transforms.append(Compress(codec, compression_level))
+            transforms.append(
+                Resample(
+                    source_sampling_rate=8000, target_sampling_rate=self.sampling_rate
+                )
+            )
+        else:
+            transforms.append(Compress(codec, compression_level))
         return fastcopy(self, transforms=transforms)
 
     @staticmethod

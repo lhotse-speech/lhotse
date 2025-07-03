@@ -4,6 +4,7 @@ from typing import List, Literal, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.augmentation.compress import Codec
+from lhotse.dataset.dataloading import resolve_seed
 
 
 @dataclass
@@ -30,7 +31,8 @@ class Compress:
     codec_weights: Optional[List[float]] = None
     compress_custom_fields: bool = False
     p: float = 0.5
-    randgen: random.Random = None
+    seed: Union[int, Literal["trng", "randomized"]] = 42
+    rng: Optional[random.Random] = None
     preserve_id: bool = False
 
     def __post_init__(self) -> None:
@@ -58,25 +60,25 @@ class Compress:
             # all codecs have equal weights by default
             self.codec_weights = [1.0 for _ in self.codecs]
 
-    def __call__(self, cuts: CutSet) -> CutSet:
-        if self.randgen is None:
-            self.randgen = random.Random()
+        if self.rng is not None and self.seed is not None:
+            raise ValueError("Either rng or seed must be provided, not both")
+        if self.rng is None:
+            self.rng = random.Random(resolve_seed(self.seed))
 
+    def __call__(self, cuts: CutSet) -> CutSet:
         compressed_cuts = []
         for cut in cuts:
-            if self.randgen.random() <= self.p:
+            if self.rng.random() <= self.p:
                 if isinstance(self.compression_level, (Tuple, List)):
                     min_compression, max_compression = self.compression_level
                     compression_level = (
-                        self.randgen.random() * (max_compression - min_compression)
+                        self.rng.random() * (max_compression - min_compression)
                         + min_compression
                     )
                 else:
                     compression_level = self.compression_level
 
-                codec, *_ = self.randgen.choices(
-                    self.codecs, weights=self.codec_weights
-                )
+                codec, *_ = self.rng.choices(self.codecs, weights=self.codec_weights)
                 new_cut = cut.compress(
                     codec=codec,
                     compression_level=compression_level,

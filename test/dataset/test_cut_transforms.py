@@ -259,7 +259,7 @@ def test_compress(preserve_id: bool):
         codec_weights=[2, 2],
         compression_level=0.8,
         p=0.5,
-        randgen=random.Random(0),
+        seed=0,
         preserve_id=preserve_id,
     )
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)

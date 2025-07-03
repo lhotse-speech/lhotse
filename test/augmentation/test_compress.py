@@ -5,21 +5,25 @@ from scipy import signal
 
 from lhotse import AudioSource, Recording
 from lhotse.augmentation import Compress
+from lhotse.augmentation.compress import (
+    MP3_SUPPORTED_SAMPLING_RATES,
+    OPUS_SUPPORTED_SAMPLING_RATES,
+)
 from lhotse.dataset.cut_transforms import Compress as CompressTransform
 
 
-@pytest.fixture
-def mono_square_wave() -> np.array:
+def mono_square_wave(sampling_rate: int = 48000) -> np.array:
     """
-    Generate a 100Hz square wave at 48kHz sampling rate.
+    Generate a 100Hz square wave.
     """
     duration = 1.0  # seconds
-    sample_rate = 48000
-    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    t = np.linspace(0, duration, int(sampling_rate * duration), endpoint=False)
     return 0.1 * signal.square(2 * np.pi * 100 * t)  # 100Hz square wave at -20dB
 
 
-def create_recording_from_audio(audio: np.array, recording_id: str) -> Recording:
+def create_recording_from_audio(
+    audio: np.array, recording_id: str, sampling_rate: int = 48000
+) -> Recording:
     """
     Create a Recording object from an audio signal.
     """
@@ -31,7 +35,7 @@ def create_recording_from_audio(audio: np.array, recording_id: str) -> Recording
     buffer = io.BytesIO()
 
     # Write the audio data using soundfile
-    sf.write(buffer, audio, 48000, format="WAV", subtype="FLOAT")
+    sf.write(buffer, audio, sampling_rate, format="WAV", subtype="FLOAT")
     # Get the bytes from the buffer
     audio_bytes = buffer.getvalue()
 
@@ -44,15 +48,18 @@ def create_recording_from_audio(audio: np.array, recording_id: str) -> Recording
                 source=audio_bytes,
             )
         ],
-        sampling_rate=48000,
+        sampling_rate=sampling_rate,
         num_samples=len(audio),
-        duration=len(audio) / 48000,
+        duration=len(audio) / sampling_rate,
     )
 
 
-@pytest.fixture
-def mono_square_wave_recording(mono_square_wave) -> Recording:
-    return create_recording_from_audio(mono_square_wave, "test_square")
+@pytest.fixture(params=[8000, 12345, 16000, 22050, 48000])
+def mono_square_wave_recording(request) -> Recording:
+    sampling_rate = request.param
+    return create_recording_from_audio(
+        mono_square_wave(sampling_rate), "test_square", sampling_rate
+    )
 
 
 def test_compress_raises_on_invalid_codec(mono_square_wave_recording):
@@ -69,12 +76,36 @@ def test_compress_raises_on_invalid_compression_level(mono_square_wave_recording
         mono_square_wave_recording.compress("mp3", 1.1)  # Above 1.0
 
 
-@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis"])
+def unsupported_compression(codec, sampling_rate) -> bool:
+    if codec == "gsm" and sampling_rate != 8000:
+        return True
+    if codec == "opus" and sampling_rate not in OPUS_SUPPORTED_SAMPLING_RATES:
+        return True
+    if codec == "mp3" and sampling_rate not in MP3_SUPPORTED_SAMPLING_RATES:
+        return True
+    return False
+
+
+@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis", "gsm"])
+def test_compress_raises_on_invalid_combination_of_codec_and_sampling_rate(
+    mono_square_wave_recording, codec
+):
+    if unsupported_compression(codec, mono_square_wave_recording.sampling_rate):
+        with pytest.raises(ValueError):
+            mono_square_wave_recording.compress(codec, 0.9).load_audio()
+
+
+@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis", "gsm"])
 @pytest.mark.parametrize("compression_level", [0.1, 0.5, 0.9])
 def test_compress_alters_audio(mono_square_wave_recording, codec, compression_level):
     """
     Test that compression actually modifies the audio signal.
     """
+    if unsupported_compression(codec, mono_square_wave_recording.sampling_rate):
+        pytest.skip(
+            f"Skipping compression test for unsupported combination of {codec} codec and sampling rate {mono_square_wave_recording.sampling_rate}Hz"
+        )
+
     compressed_square = mono_square_wave_recording.compress(codec, compression_level)
     original_square_audio = mono_square_wave_recording.load_audio()[0]
     compressed_square_audio = compressed_square.load_audio()[0]
@@ -82,12 +113,17 @@ def test_compress_alters_audio(mono_square_wave_recording, codec, compression_le
     assert not np.array_equal(original_square_audio, compressed_square_audio)
 
 
-@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis"])
+@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis", "gsm"])
 @pytest.mark.parametrize("compression_level", [0.1, 0.5, 0.9])
 def test_compress_preserves_rms(mono_square_wave_recording, codec, compression_level):
     """
     Test that compression preserves the RMS values within 5% in the frequency range of 100Hz to 12kHz.
     """
+    if unsupported_compression(codec, mono_square_wave_recording.sampling_rate):
+        pytest.skip(
+            f"Skipping compression test for unsupported combination of {codec} codec and sampling rate {mono_square_wave_recording.sampling_rate}Hz"
+        )
+
     compressed_square = mono_square_wave_recording.compress(codec, compression_level)
     original_square_audio = mono_square_wave_recording.load_audio()[0]
     compressed_square_audio = compressed_square.load_audio()[0]
@@ -135,7 +171,7 @@ def test_compress_transforms_are_added(mono_square_wave_recording):
     assert transform.compression_level == compression_level
 
 
-@pytest.mark.parametrize("codec", ["mp3", "vorbis", "opus"])
+@pytest.mark.parametrize("codec", ["mp3", "vorbis", "opus", "gsm"])
 def test_compress_preserves_sampling_rate(mono_square_wave_recording, codec):
     # Test that compression preserves the sampling rate
     compression_level = 0.9
@@ -146,7 +182,7 @@ def test_compress_preserves_sampling_rate(mono_square_wave_recording, codec):
     )
 
 
-@pytest.mark.parametrize("codec", ["mp3", "vorbis", "opus"])
+@pytest.mark.parametrize("codec", ["mp3", "vorbis", "opus", "gsm"])
 def test_compress_preserves_duration(mono_square_wave_recording, codec):
     # Test that compression preserves the duration
     compression_level = 0.9
