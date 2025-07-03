@@ -79,10 +79,11 @@ class Compress(AudioTransform):
                     channels=channels,
                     format="RAW",
                     subtype="GSM610",
+                    dtype=np.float32,
                 )
             else:
                 samples_compressed, sampling_rate_compressed = sf.read(
-                    f, always_2d=True
+                    f, always_2d=True, dtype=np.float32
                 )
 
         # when one writes Opus files with soundfile,

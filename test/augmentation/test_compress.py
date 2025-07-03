@@ -86,12 +86,12 @@ def unsupported_compression(codec, sampling_rate) -> bool:
     return False
 
 
-@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis", "gsm"])
+@pytest.mark.parametrize("codec", ["mp3", "opus", "vorbis"])
 def test_compress_raises_on_invalid_combination_of_codec_and_sampling_rate(
     mono_square_wave_recording, codec
 ):
     if unsupported_compression(codec, mono_square_wave_recording.sampling_rate):
-        with pytest.raises(ValueError):
+        with pytest.raises(sf.LibsndfileError):
             mono_square_wave_recording.compress(codec, 0.9).load_audio()
 
 

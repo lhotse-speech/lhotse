@@ -303,7 +303,6 @@ def test_compress_gsm():
         cut.recording.transforms[-1] for cut in cuts_comp if cut.recording.transforms
     ]
     assert all(isinstance(t, lhotse.augmentation.Resample) for t in last_transforms)
-    # assert not any(t.codec == "vorbis" for t in last_transforms)
 
     for cut in cuts_comp:
         cut.load_audio()
