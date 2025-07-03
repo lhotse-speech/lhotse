@@ -280,3 +280,30 @@ def test_compress(preserve_id: bool):
     ]
     assert all(isinstance(t, lhotse.augmentation.Compress) for t in last_transforms)
     assert not any(t.codec == "vorbis" for t in last_transforms)
+    for cut in cuts_comp:
+        cut.load_audio()
+
+
+def test_compress_gsm():
+    tfnm = Compress(
+        codecs=["gsm"],
+        p=1.0,
+        seed=0,
+    )
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
+    cuts_comp = tfnm(cuts)
+
+    assert all(
+        cut.duration == cut_comp.duration for cut, cut_comp in zip(cuts, cuts_comp)
+    )
+
+    assert all(cut.id != cut_comp.id for cut, cut_comp in zip(cuts, cuts_comp))
+
+    last_transforms = [
+        cut.recording.transforms[-1] for cut in cuts_comp if cut.recording.transforms
+    ]
+    assert all(isinstance(t, lhotse.augmentation.Resample) for t in last_transforms)
+    # assert not any(t.codec == "vorbis" for t in last_transforms)
+
+    for cut in cuts_comp:
+        cut.load_audio()

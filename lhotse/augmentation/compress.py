@@ -49,42 +49,33 @@ class Compress(AudioTransform):
         samples: np.ndarray,
         sampling_rate: int,
     ):
-        if self.codec == "gsm" and sampling_rate != 8000:
-            raise ValueError(
-                f"GSM codec only supports 8000Hz sampling rate, got {sampling_rate}"
-            )
-        if self.codec == "opus" and sampling_rate not in OPUS_SUPPORTED_SAMPLING_RATES:
-            raise ValueError(
-                f"Opus codec only supports {','.join(map(str, OPUS_SUPPORTED_SAMPLING_RATES))}, got {sampling_rate}"
-            )
-        if self.codec == "mp3" and sampling_rate not in MP3_SUPPORTED_SAMPLING_RATES:
-            raise ValueError(
-                f"MP3 codec only supports {','.join(map(str, MP3_SUPPORTED_SAMPLING_RATES))}, got {sampling_rate}"
-            )
+        # argument `sample_rate` is the original sampling rate of the `Recording` before any transforms are applied
+        # even if we Resample prior to Compress, it is useless to check for it here
+        # we just assume 8 kHz for GSM and original sampling rate for other codecs
 
         import soundfile as sf
 
-        # lhotse: (samples, channels)
-        _, channels = samples.shape
+        # lhotse: (channels, samples)
+        # soundfile: (samples, channels)
 
-        # soundfile: (channels, samples)
+        channels, _ = samples.shape
         samples = samples.transpose(1, 0)
 
-        with io.BytesIO() as f:
+        with io.BytesIO() as buffer:
             sf.write(
-                f,
+                buffer,
                 samples,
-                sampling_rate,
+                samplerate=sampling_rate if self.codec != "gsm" else 8000,
                 closefd=False,
-                compression_level=self.compression_level,
                 **self.prepare_sf_arguments(),
             )
-            f.seek(0)
+            data = buffer.getvalue()
+        with io.BytesIO(data) as f:
             if self.codec == "gsm":
                 samples_compressed, sampling_rate_compressed = sf.read(
                     f,
                     always_2d=True,
-                    samplerate=sampling_rate,
+                    samplerate=sampling_rate if self.codec != "gsm" else 8000,
                     channels=channels,
                     format="RAW",
                     subtype="GSM610",
@@ -97,11 +88,8 @@ class Compress(AudioTransform):
         # when one writes Opus files with soundfile,
         # it adds extra information in the file header about the original sampling rate,
         # so that when we load this file with soundfile later,
-        # it's resampled from 48k to original sampling rate
+        # it's resampled to original sampling rate
         # before returning the audio array (unlike most other tools)
-        assert (
-            sampling_rate_compressed == sampling_rate
-        ), f"Sampling rate not preserved after compression: compressed {sampling_rate_compressed} != original {sampling_rate}"
 
         samples_compressed = samples_compressed.transpose(1, 0)
 
@@ -111,11 +99,23 @@ class Compress(AudioTransform):
         import soundfile as sf
 
         if self.codec == "mp3":
-            return {"format": "MP3", "subtype": sf.default_subtype("MP3")}
+            return {
+                "compression_level": self.compression_level,
+                "format": "MP3",
+                "subtype": sf.default_subtype("MP3"),
+            }
         elif self.codec == "opus":
-            return {"format": "OGG", "subtype": "OPUS"}
+            return {
+                "compression_level": self.compression_level,
+                "format": "OGG",
+                "subtype": "OPUS",
+            }
         elif self.codec == "vorbis":
-            return {"format": "OGG", "subtype": "VORBIS"}
+            return {
+                "compression_level": self.compression_level,
+                "format": "OGG",
+                "subtype": "VORBIS",
+            }
         elif self.codec == "gsm":
             return {"format": "RAW", "subtype": "GSM610"}
         else:
