@@ -754,9 +754,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             pad_value_dict=pad_value_dict,
         )
 
-    def resample(
-        self, sampling_rate: int, affix_id: bool = False, backend: str = "default"
-    ) -> "DataCut":
+    def resample(self, sampling_rate: int, affix_id: bool = False) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily resample the audio while reading it.
         This operation will drop the feature manifest, if attached.
@@ -780,7 +778,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         return fastcopy(
             self,
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,
-            recording=self.recording.resample(sampling_rate, backend=backend),
+            recording=self.recording.resample(sampling_rate),
             features=None,
             custom=custom,
         )

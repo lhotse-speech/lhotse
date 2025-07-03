@@ -18,6 +18,17 @@ from lhotse.utils import (
     perturb_num_samples,
 )
 
+RESAMPLE_BACKEND: Literal["default", "sox"] = "default"  # TODO: torchaudio/scipy/sox
+
+
+def set_resample_backend(backend: Literal["default", "sox"]) -> None:
+    global RESAMPLE_BACKEND
+    RESAMPLE_BACKEND = backend
+
+
+def get_resample_backend() -> Literal["default", "sox"]:
+    return RESAMPLE_BACKEND
+
 
 @dataclass
 class Speed(AudioTransform):
@@ -88,7 +99,6 @@ class Resample(AudioTransform):
 
     source_sampling_rate: int
     target_sampling_rate: int
-    backend: Literal["default", "sox"] = "default"
 
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
@@ -101,7 +111,7 @@ class Resample(AudioTransform):
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
 
-        if self.backend == "sox":
+        if get_resample_backend() == "sox":
             channels, _ = samples.shape
             resampled_by_channel = []
             for channel in range(channels):
