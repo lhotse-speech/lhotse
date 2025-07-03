@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple, Union
 
 from lhotse import CutSet
+from lhotse.augmentation.torchaudio import get_resample_backend, set_resample_backend
 from lhotse.dataset.dataloading import resolve_seed
 
 
@@ -27,8 +28,8 @@ class LowpassUsingResampling:
             self.rng = random.Random(resolve_seed(self.seed))
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        original_backend = lhotse.augmentation.torchaudio.get_resample_backend()
-        lhotse.augmentation.torchaudio.set_resample_backend(self.backend)
+        original_backend = get_resample_backend()
+        set_resample_backend(self.backend)
 
         lowpassed_cuts = []
         for cut in cuts:
@@ -52,6 +53,6 @@ class LowpassUsingResampling:
             else:
                 lowpassed_cuts.append(cut)
 
-        lhotse.augmentation.torchaudio.set_resample_backend(original_backend)
+        set_resample_backend(original_backend)
 
         return CutSet(lowpassed_cuts)
