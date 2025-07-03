@@ -29,8 +29,8 @@ class Compress(AudioTransform):
     """
     Modifies audio by running it through a lossy codec.
 
-    :param codec: Used lossy audio codec. One of ``"opus"``, ``"mp3"``, or ``"vorbis"``.
-    :param compression_level: The level of compression to apply. 0.0 is for the lowest amount of compression, 1.0 is for highest.
+    :param codec: Used lossy audio codec. One of ``"opus"``, ``"mp3"``, ``"vorbis"``, or ``"gsm"``.
+    :param compression_level: The level of compression to apply. 0.0 is for the lowest amount of compression, 1.0 is for highest. Ignored for ``"gsm"``.
     :return: The modified audio samples.
     """
 
@@ -43,11 +43,6 @@ class Compress(AudioTransform):
             raise ValueError(f"Unsupported augmentation codec {self.codec}")
         if not 0 <= self.compression_level <= 1:
             raise ValueError("Compression level must be between 0 and 1")
-        if self.codec == "gsm" and self.compression_level is not None:
-            logging.warning(
-                "Compression level is not supported for GSM codec, setting to None"
-            )
-            self.compression_level = None
 
     def __call__(
         self,
@@ -70,8 +65,9 @@ class Compress(AudioTransform):
         import soundfile as sf
 
         # lhotse: (samples, channels)
-        # soundfile: (channels, samples)
+        _, channels = samples.shape
 
+        # soundfile: (channels, samples)
         samples = samples.transpose(1, 0)
 
         with io.BytesIO() as f:
@@ -89,7 +85,7 @@ class Compress(AudioTransform):
                     f,
                     always_2d=True,
                     samplerate=sampling_rate,
-                    channels=samples.shape[1],
+                    channels=channels,
                     format="RAW",
                     subtype="GSM610",
                 )
