@@ -103,6 +103,9 @@ class Resample(AudioTransform):
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
+        if get_resample_backend() == "sox":
+            return
+
         self.resampler = get_or_create_resampler(
             self.source_sampling_rate, self.target_sampling_rate
         )
