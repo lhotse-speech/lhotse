@@ -35,9 +35,9 @@ class LowpassUsingResampling:
         for cut in cuts:
             if self.rng.random() <= self.p:
                 low, high = self.frequencies_interval
-                if high > cut.sampling_rate:
+                if high > cut.sampling_rate // 2:
                     raise ValueError(
-                        f"Upper frequency limit {high} is greater than sampling rate {cut.sampling_rate}"
+                        f"Upper frequency limit {high} is greater than sampling rate / 2 ({cut.sampling_rate // 2})"
                     )
 
                 # sampling from log-uniform[low, high] distribution
