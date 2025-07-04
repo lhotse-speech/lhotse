@@ -194,12 +194,7 @@ def sox_rate(
         max_output_samples = round(
             len(audio) * float(target_rate) / float(sample_rate) * 1.05
         )
-        import sys
 
-        print(f"max_output_samples: {max_output_samples}", file=sys.stderr)
-        print(f"len(audio): {len(audio)}", file=sys.stderr)
-        print(f"target_rate: {target_rate}", file=sys.stderr)
-        print(f"sample_rate: {sample_rate}", file=sys.stderr)
         max_output_size = max_output_samples * 4
         output_buffer = (ctypes.c_char * max_output_size)()
 
