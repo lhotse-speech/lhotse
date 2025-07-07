@@ -173,6 +173,12 @@ def trim_to_supervisions(
     help="""If ``True``, the output cut will have the same channels as the input cut. By default,
             the trimmed cut will have the same channels as the supervision.""",
 )
+@click.option(
+    "--get-all-segments",
+    type=bool,
+    default=True,
+    help="If ``True``, all segments will be returned. If ``False``, only the first segment will be returned.",
+)
 def trim_to_alignments(
     cuts: Pathlike,
     output_cuts: Pathlike,
@@ -180,6 +186,7 @@ def trim_to_alignments(
     max_pause: float,
     delimiter: str,
     keep_all_channels: bool,
+    get_all_segments: bool,
 ):
     """
     Return a new CutSet with Cuts that have identical spans as the alignments of
@@ -199,6 +206,7 @@ def trim_to_alignments(
             max_pause=max_pause,
             delimiter=delimiter,
             keep_all_channels=keep_all_channels,
+            get_all_segments=get_all_segments,
         ):
             writer.write(cut)
 

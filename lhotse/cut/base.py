@@ -319,15 +319,14 @@ class Cut:
             samples = augment_fn(samples, self.sampling_rate)
         return extractor.extract(samples, self.sampling_rate)
 
-    def plot_audio(self, ax=None, **kwargs):
+    def plot_audio(self):
         """
         Display a plot of the waveform. Requires matplotlib to be installed.
         """
         import matplotlib.pyplot as plt
 
-        samples = self.load_audio().sum(axis=0)  # downmix all channels for the plot
-        if ax is None:
-            fig, ax = plt.subplots()
+        samples = self.load_audio().squeeze()
+        fig, ax = plt.subplots()
         ax.plot(np.linspace(0, self.duration, len(samples)), samples)
         for supervision in self.supervisions:
             supervision = supervision.trim(self.duration)
@@ -489,6 +488,7 @@ class Cut:
                     new_duration=min_duration,
                     direction=context_direction,
                 )
+
             trimmed = self.truncate(
                 offset=new_start,
                 duration=new_duration,
@@ -505,6 +505,9 @@ class Cut:
                 # number of channels in underlying tracks.
 
                 # Ensure that all supervisions have the same channel.
+                if len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 0:
+                    print(f"Trimmed cut has no supervisions with channels. Skipping {trimmed.id}")
+                    continue
                 assert (
                     len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 1
                 ), (
@@ -532,6 +535,7 @@ class Cut:
         max_segment_duration: Optional[Seconds] = None,
         delimiter: str = " ",
         keep_all_channels: bool = False,
+        get_all_segments: bool = True,
     ) -> "CutSet":  # noqa: F821
         """
         Splits the current :class:`.Cut` into its constituent alignment items (:class:`.AlignmentItem`).
@@ -585,7 +589,8 @@ class Cut:
         if max_segment_duration is None:
             # Set to the cut duration so that resulting segments are always smaller.
             max_segment_duration = self.duration
-
+        else:
+            max_segment_duration = min(max_segment_duration, self.duration)
         # For the implementation, we first create new supervisions for the cut, and then
         # use the `trim_to_supervisions` method to do the actual trimming.
         new_supervisions = []
@@ -605,6 +610,7 @@ class Cut:
             # alignments are not actual alignment items, but rather just a way to keep
             # track of merged segments.
             merged_alignments = [(alignments[0], [0])]
+            
             for i, item in enumerate(alignments[1:]):
                 # If alignment item is blank, skip it. Sometimes, blank alignment items
                 # are used to denote pauses in the utterance.
@@ -623,12 +629,14 @@ class Cut:
                     merged_alignments[-1] = (new_item, prev_indices + [i + 1])
                 else:
                     merged_alignments.append((item, [i + 1]))
+            if not get_all_segments:
+                merged_alignments = [merged_alignments[0]]
 
             # Create new supervisions for the merged alignments.
             for i, (item, indices) in enumerate(merged_alignments):
                 new_supervisions.append(
                     SupervisionSegment(
-                        id=f"{segment.id}-{i}",
+                        id=f"{segment.id}-{i}" if get_all_segments else segment.id,
                         recording_id=segment.recording_id,
                         start=item.start - self.start,  # relative to the cut
                         duration=item.duration,
