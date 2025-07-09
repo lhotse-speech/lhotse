@@ -578,6 +578,7 @@ class Cut:
         :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
             the trimmed cut will have the same channels as the supervision.
         :param num_jobs: Number of parallel workers to process the cuts.
+        :param get_all_segments: If ``True``, all segments will be returned. If ``False``, only the segment with the longest duration will be returned.
         :return: a CutSet object.
         """
         from lhotse.supervision import AlignmentItem
@@ -630,6 +631,7 @@ class Cut:
                 else:
                     merged_alignments.append((item, [i + 1]))
             if not get_all_segments:
+                merged_alignments.sort(key=lambda x: x[0].duration, reverse=True)
                 merged_alignments = [merged_alignments[0]]
 
             # Create new supervisions for the merged alignments.
