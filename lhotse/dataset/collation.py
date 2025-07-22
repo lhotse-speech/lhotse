@@ -418,6 +418,7 @@ def collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:
 def collate_vectors(
     tensors: Iterable[Union[torch.Tensor, np.ndarray]],
     padding_value: Union[int, float] = CrossEntropyLoss().ignore_index,
+    pad_direction: str = "right",
     matching_shapes: bool = False,
 ) -> torch.Tensor:
     """
@@ -426,6 +427,7 @@ def collate_vectors(
 
     :param tensors: an iterable of 1-D tensors.
     :param padding_value: the padding value inserted to make all tensors have the same length.
+    :param pad_direction: where to apply the padding (``right`` or ``left``).
     :param matching_shapes: when ``True``, will fail when input tensors have different shapes.
     :return: a tensor with shape ``(B, L)`` where ``B`` is the number of input tensors and
         ``L`` is the number of items in the longest tensor.
@@ -434,6 +436,10 @@ def collate_vectors(
         t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors
     ]
     assert all(len(t.shape) == 1 for t in tensors), "Expected only 1-D input tensors."
+    if pad_direction not in ("left", "right"):
+        raise ValueError(
+            f"pad_direction must be 'left' or 'right', got {pad_direction}"
+        )
     longest = max(tensors, key=lambda t: t.shape[0])
     if matching_shapes:
         assert all(
@@ -441,7 +447,10 @@ def collate_vectors(
         ), "All tensors must have the same shape when matching_shapes is set to True."
     result = longest.new_ones(len(tensors), longest.shape[0]) * padding_value
     for i, t in enumerate(tensors):
-        result[i, : t.shape[0]] = t
+        if pad_direction == "right":
+            result[i, : t.shape[0]] = t
+        else:
+            result[i, -t.shape[0] :] = t
     return result
 
 
