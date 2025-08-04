@@ -16,6 +16,7 @@ from lhotse import (
     validate,
 )
 from lhotse.audio import save_audio
+from lhotse.cut import MixedCut
 from lhotse.serialization import deserialize_item
 from lhotse.testing.dummies import (
     dummy_cut,
@@ -479,3 +480,13 @@ def test_copy_mixed_cut_with_custom_attr():
     cut.some_attribute = "dummy"
     cpy = fastcopy(cut)
     assert cpy == cut
+
+
+def test_mixed_cut_can_access_custom_directly():
+    cut = dummy_cut(0, with_data=True)
+    orig_custom = cut.custom
+    cut = cut.pad(duration=cut.duration * 2)
+    assert isinstance(cut, MixedCut)
+    mixed_custom = cut.custom
+    assert orig_custom.keys() == mixed_custom.keys()
+    assert orig_custom == mixed_custom

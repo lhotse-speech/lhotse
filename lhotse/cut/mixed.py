@@ -291,6 +291,14 @@ class MixedCut(Cut):
             attr_name = name[5:]
             return partial(self.load_custom, attr_name)
 
+        if name == "custom":
+            # Merge custom dicts of underlying data.
+            ans = {}
+            for t in self.tracks:
+                if cstm := t.cut.custom:
+                    ans.update(cstm)
+            return ans
+
         # Returning the contents of "mono_cut.custom[name]",
         # or raising AttributeError.
         try:
