@@ -25,6 +25,8 @@ from lhotse.supervision import AlignmentItem, SupervisionSegment
 from lhotse.utils import Pathlike, is_module_available
 import os
 import shutil
+import tempfile
+
 
 GRID_ZENODO_ID = "10.5281/zenodo.3625687"
 
@@ -170,10 +172,42 @@ def prepare_grid(
         ans.update(supervisions=supervisions)
     return ans
 
+def convert_to_mono_audio(video_path):
+    
+    original_mode = os.stat(video_path).st_mode
+    # Create a temporary output file in the same directory
+    with tempfile.NamedTemporaryFile(suffix=video_path.suffix, delete=False, dir=video_path.parent) as tmp:
+        temp_output = Path(tmp.name)
+
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y", 
+            "-i", str(video_path),
+            "-ac", "1",         # Mono audio
+            "-ar", "16000",     
+            "-c:v", "copy",     # Copy video stream
+            str(temp_output)
+        ]
+
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg error: {result.stderr}")
+
+        # Overwrite original file
+        shutil.move(str(temp_output), str(video_path))
+        os.chmod(video_path, original_mode)
+
+    finally:
+        if temp_output.exists():
+            temp_output.unlink(missing_ok=True)
 
 def process_single(
     video_path: Path, speaker: str, ali_dir: Path, with_supervisions: bool
 ):
+    #stereo data causes error for some video files
+    convert_to_mono_audio(video_path)
     video_id = video_path.stem
     recording = Recording.from_file(video_path, recording_id=f"{speaker}_{video_id}")
 
