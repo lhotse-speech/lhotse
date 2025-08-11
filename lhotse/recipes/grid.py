@@ -6,7 +6,10 @@ for a total of 34000 sentences. Sentences are of the form "put red at G9 now".
 
 Source: https://zenodo.org/record/3625687
 """
+import os
+import shutil
 import subprocess
+import tempfile
 import zipfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -23,13 +26,8 @@ from lhotse import (
 )
 from lhotse.supervision import AlignmentItem, SupervisionSegment
 from lhotse.utils import Pathlike, is_module_available
-import os
-import shutil
-import tempfile
-
 
 GRID_ZENODO_ID = "10.5281/zenodo.3625687"
-
 
 
 def download_grid(
@@ -53,7 +51,7 @@ def download_grid(
         raise RuntimeError(
             "To download Grid Audio-Visual Speech Corpus please 'pip install zenodo_get'."
         )
-        
+
     corpus_dir = Path(target_dir)
     corpus_dir.mkdir(parents=True, exist_ok=True)
 
@@ -67,43 +65,58 @@ def download_grid(
     for p in tqdm(corpus_dir.glob("*.zip"), desc="Unzipping files"):
         with zipfile.ZipFile(p) as f:
             f.extractall(corpus_dir)
-        
+
     # Speaker mapping to fix mis-assigned alignment data
     speaker_fix_map = {
-        's1': 's1', 's2': 's2', 's3': 's3', 's4': 's4',
-        's5': 's6', 's6': 's5', 's7': 's7', 's8': 's8',
-        's9': 's9', 's10': 's13', 's11': 's10', 's12': 's11',
-        's13': 's12', 's14': 's15', 's15': 's14', 's16': 's16',
-        's17': 's17', 's18': 's19', 's19': 's18', 's20': 's21',
-        's22': 's23', 's23': 's22', 's24': 's24', 's25': 's25',
-        's26': 's27', 's27': 's26', 's28': 's29', 's29': 's28',
-        's30': 's30', 's31': 's31', 's32': 's33', 's33': 's32',
-        's34': 's34',        
+        "s1": "s1",
+        "s2": "s2",
+        "s3": "s3",
+        "s4": "s4",
+        "s5": "s6",
+        "s6": "s5",
+        "s7": "s7",
+        "s8": "s8",
+        "s9": "s9",
+        "s10": "s13",
+        "s11": "s10",
+        "s12": "s11",
+        "s13": "s12",
+        "s14": "s15",
+        "s15": "s14",
+        "s16": "s16",
+        "s17": "s17",
+        "s18": "s19",
+        "s19": "s18",
+        "s20": "s21",
+        "s22": "s23",
+        "s23": "s22",
+        "s24": "s24",
+        "s25": "s25",
+        "s26": "s27",
+        "s27": "s26",
+        "s28": "s29",
+        "s29": "s28",
+        "s30": "s30",
+        "s31": "s31",
+        "s32": "s33",
+        "s33": "s32",
+        "s34": "s34",
     }
-    
-    #Downloaded alignment folder 
+
+    # Downloaded alignment folder has mis-assigned speaker folders, we fix it here
     input_dir = corpus_dir / "alignments"
-    #temporary folder to contain the corrected alignments
-    temp_dir = corpus_dir / "tmp_alignments"
+    tempfile.tempdir = os.path.abspath(corpus_dir)
+    temp_alignment_dir = tempfile.mkdtemp()
 
-    os.makedirs(temp_dir, exist_ok=True)
-
-    for source_folder, target_speaker in speaker_fix_map.items():
-        src_path = os.path.join(input_dir, source_folder)
-        tgt_path = os.path.join(temp_dir, target_speaker)
-        
-        if not os.path.exists(src_path):
-            print(f"Source folder does not exist: {src_path}")
-            continue
-        
-        if os.path.exists(tgt_path):
-            shutil.rmtree(tgt_path)
-        
+    for tgt_folder, src_folder in speaker_fix_map.items():
+        src_path = os.path.join(input_dir, src_folder)
+        tgt_path = os.path.join(temp_alignment_dir, tgt_folder)
         shutil.copytree(src_path, tgt_path)
-        print(f"Copied entire folder from {source_folder} to {target_speaker}")
+        print(f"Copied entire folder from {src_folder} to {tgt_folder}")
+
     shutil.rmtree(input_dir)
-    os.rename(temp_dir, input_dir)
- 
+    os.rename(temp_alignment_dir, input_dir)
+
     return corpus_dir
 
 
@@ -135,22 +148,32 @@ def prepare_grid(
     recordings = []
     supervisions = []
 
-    video_dirs = [p for p in corpus_dir.glob("s*") if not p.suffix == ".zip"]
     futures = []
+    # gather all .mpg files in the corpus directory
+    all_mpg_files = list(Path(corpus_dir).rglob("*.mpg"))
+    all_mpg_files = [f for f in all_mpg_files if "MACOSX" not in str(f)]
+
     with ProcessPoolExecutor(num_jobs) as ex:
-        for speaker_dir in video_dirs:
-            speaker = speaker_dir.name
-            for video_path in speaker_dir.glob("*.mpg"):
-                futures.append(
-                    ex.submit(
-                        process_single, video_path, speaker, ali_dir, with_supervisions
-                    )
+
+        for video_path in all_mpg_files:
+            speaker = video_path.parent.name
+            futures.append(
+                ex.submit(
+                    process_single, video_path, speaker, ali_dir, with_supervisions
                 )
+            )
 
         for f in tqdm(
             as_completed(futures), total=len(futures), desc="Scanning videos"
         ):
-            recording, maybe_supervision = f.result()
+            try:
+                result = f.result()
+                if result is None:
+                    continue
+            except Exception as e:
+                continue
+
+            recording, maybe_supervision = result
             recordings.append(recording)
             if maybe_supervision is not None:
                 supervisions.append(maybe_supervision)
@@ -170,46 +193,21 @@ def prepare_grid(
     ans = {"recordings": recordings}
     if with_supervisions:
         ans.update(supervisions=supervisions)
+
     return ans
 
-def convert_to_mono_audio(video_path):
-    
-    original_mode = os.stat(video_path).st_mode
-    # Create a temporary output file in the same directory
-    with tempfile.NamedTemporaryFile(suffix=video_path.suffix, delete=False, dir=video_path.parent) as tmp:
-        temp_output = Path(tmp.name)
-
-    try:
-        cmd = [
-            "ffmpeg",
-            "-y", 
-            "-i", str(video_path),
-            "-ac", "1",         # Mono audio
-            "-ar", "16000",     
-            "-c:v", "copy",     # Copy video stream
-            str(temp_output)
-        ]
-
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(f"FFmpeg error: {result.stderr}")
-
-        # Overwrite original file
-        shutil.move(str(temp_output), str(video_path))
-        os.chmod(video_path, original_mode)
-
-    finally:
-        if temp_output.exists():
-            temp_output.unlink(missing_ok=True)
 
 def process_single(
     video_path: Path, speaker: str, ali_dir: Path, with_supervisions: bool
 ):
-    #stereo data causes error for some video files
-    convert_to_mono_audio(video_path)
     video_id = video_path.stem
-    recording = Recording.from_file(video_path, recording_id=f"{speaker}_{video_id}")
+    try:
+        recording = Recording.from_file(
+            video_path, recording_id=f"{speaker}_{video_id}"
+        )
+    except Exception as e:
+        print(f"Unexpected error for {video_path}: {e}")
+        return None
 
     supervision = None
     ali_path = (ali_dir / speaker / video_id).with_suffix(".align")
