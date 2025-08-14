@@ -1,4 +1,5 @@
 import tarfile
+import os
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -31,10 +32,14 @@ from lhotse.utils import (
 
 @pytest.fixture
 def safe_tar_file():
-    with NamedTemporaryFile() as f:
-        with tarfile.open(f.name, "w:gz") as tar:
+    with NamedTemporaryFile(delete=False) as f:
+        temp_name = f.name  # pega o caminho
+    try:
+        with tarfile.open(temp_name, "w:gz") as tar:
             tar.add("test/fixtures/audio.json")
-        yield f.name
+        yield temp_name
+    finally:
+        os.remove(temp_name)
 
 
 @pytest.fixture
@@ -43,10 +48,14 @@ def unsafe_tar_file():
         tarinfo.name = "../" + tarinfo.name
         return tarinfo
 
-    with NamedTemporaryFile() as f:
-        with tarfile.open(f.name, "w:gz") as tar:
+    with NamedTemporaryFile(delete=False) as f:
+        tar_path = f.name
+    try:
+        with tarfile.open(tar_path, "w:gz") as tar:
             tar.add("test/fixtures/audio.json", filter=_change_name)
-        yield f.name
+        yield tar_path
+    finally:
+        os.remove(tar_path)
 
 
 @pytest.mark.parametrize(
