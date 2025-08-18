@@ -158,9 +158,9 @@ def load_kaldi_data_dir(
                 AudioSource(
                     type="command" if path_or_cmd.endswith("|") else "file",
                     channels=[0],
-                    source=path_or_cmd[:-1]
-                    if path_or_cmd.endswith("|")
-                    else path_or_cmd,
+                    source=(
+                        path_or_cmd[:-1] if path_or_cmd.endswith("|") else path_or_cmd
+                    ),
                 )
             ],
             sampling_rate=sampling_rate,
@@ -187,7 +187,7 @@ def load_kaldi_data_dir(
         with segments.open() as f:
             supervision_segments = [sup_string.strip().split() for sup_string in f]
 
-        texts = load_kaldi_text_mapping(path / "text")
+        texts = load_kaldi_text_file(path / "text", allow_empty_ref=True)
         speakers = load_kaldi_text_mapping(path / "utt2spk")
         genders = load_kaldi_text_mapping(path / "spk2gender")
         languages = load_kaldi_text_mapping(path / "utt2lang")
@@ -275,9 +275,11 @@ def load_kaldi_data_dir(
                             storage_type=KaldiReader.name,
                             storage_path=ark,
                             storage_key=utt_id,
-                            recording_id=supervision_set[fix_id(utt_id)].recording_id
-                            if supervision_set is not None
-                            else utt_id,
+                            recording_id=(
+                                supervision_set[fix_id(utt_id)].recording_id
+                                if supervision_set is not None
+                                else utt_id
+                            ),
                             channels=0,
                         )
                     )
@@ -519,10 +521,34 @@ def load_start_and_duration(
     return utt_id_to_start_and_duration
 
 
+def load_kaldi_text_file(path: Path, allow_empty_ref: bool = True):
+    """
+    Load Kaldi file `text` as a dict.
+    Allow entry with empty ref. text (default).
+    """
+    if not path.is_file():
+        raise ValueError(f"No such file: {path}")
+
+    mapping = dict()
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if " " in line:
+                key, value = line.split(maxsplit=1)
+                mapping[key] = value
+            elif allow_empty_ref:
+                key = line
+                mapping[key] = ""
+            else:
+                raise ValueError(f"Empty ref. text in: {line} ({path})")
+
+    return mapping
+
+
 def load_kaldi_text_mapping(
     path: Path, must_exist: bool = False, float_vals: bool = False
 ) -> Dict[str, Optional[str]]:
-    """Load Kaldi files such as utt2spk, spk2gender, text, etc. as a dict."""
+    """Load Kaldi files such as utt2spk, spk2gender, etc. as a dict."""
     mapping = defaultdict(lambda: None)
     if path.is_file():
         with path.open() as f:
