@@ -1,5 +1,6 @@
 import random
 from math import isclose
+from typing import Literal, Optional
 
 import numpy as np
 import pytest
@@ -12,6 +13,7 @@ from lhotse.dataset import (
     PerturbSpeed,
     PerturbTempo,
     PerturbVolume,
+    SaturationTransform,
 )
 from lhotse.testing.dummies import DummyManifest
 
@@ -88,6 +90,37 @@ def test_perturb_volume(preserve_id: bool):
     else:
         # Note: not using all() because PerturbVolume has p=0.5
         assert any(cut.id != cut_vp.id for cut, cut_vp in zip(cuts, cuts_vp))
+
+
+@pytest.mark.parametrize("oversampling", [None, 2, 4])
+@pytest.mark.parametrize("preserve_id", [False, True])
+def test_saturation_transform(preserve_id: bool, oversampling: Optional[int]):
+    tfnm = SaturationTransform(
+        gain_db=(-10.0, 10.0),
+        hard=False,
+        normalize=True,
+        p=0.5,
+        preserve_id=preserve_id,
+        oversampling=oversampling,
+    )
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    cuts_sat = tfnm(cuts)
+
+    # Basic properties should be preserved
+    assert all(
+        cut.duration == 1.0
+        and cut.start == 0.0
+        and cut.recording.sampling_rate == 16000
+        and cut.recording.num_samples == 16000
+        and cut.recording.duration == 1.0
+        for cut in cuts_sat
+    )
+
+    if preserve_id:
+        assert all(cut.id == cut_sat.id for cut, cut_sat in zip(cuts, cuts_sat))
+    else:
+        # Note: not using all() because SaturationTransform has p=0.5
+        assert any(cut.id != cut_sat.id for cut, cut_sat in zip(cuts, cuts_sat))
 
 
 @pytest.mark.parametrize("preserve_id", [False, True])

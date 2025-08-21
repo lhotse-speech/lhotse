@@ -5,6 +5,7 @@ from .perturb_speed import PerturbSpeed
 from .perturb_tempo import PerturbTempo
 from .perturb_volume import PerturbVolume
 from .reverberate import ReverbWithImpulseResponse
+from .saturation import SaturationTransform
 
 __all__ = [
     "CutConcatenate",
@@ -14,4 +15,5 @@ __all__ = [
     "PerturbTempo",
     "PerturbVolume",
     "ReverbWithImpulseResponse",
+    "SaturationTransform",
 ]
