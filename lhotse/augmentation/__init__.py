@@ -1,3 +1,4 @@
+from .saturation import Saturation
 from .common import AugmentFn
 from .loudness import LoudnessNormalization
 from .rir import ReverbWithImpulseResponse

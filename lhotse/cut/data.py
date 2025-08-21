@@ -1053,6 +1053,45 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
     ) -> "DataCut":
         ...
 
+    def perturb_saturation(
+        self,
+        hard: bool = False,
+        gain_db: float = 0.0,
+        normalize: bool = True,
+        oversampling: Optional[int] = 2,
+        affix_id: bool = True,
+    ) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply saturation while loading audio.
+
+        :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft saturation.
+        :param gain_db: The amount of gain in decibels to apply before saturation.
+        :param normalize: If True, normalize the input signal to 0 dBFS before applying saturation.
+        :param oversampling: If provided, we will oversample the input signal by the given integer factor before applying saturation and then downsample back to the original sampling rate.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_sat{gain_db}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        assert (
+            self.has_recording
+        ), "Cannot apply saturation on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to apply saturation on a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "saturation."
+            )
+        
+        recording_saturated = self.recording.perturb_saturation(
+            hard=hard, gain_db=gain_db, normalize=normalize, oversampling=oversampling, affix_id=affix_id
+        )
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_sat{gain_db}" if affix_id else self.id,
+            recording=recording_saturated,
+        )
+
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
     ) -> "DataCut":
