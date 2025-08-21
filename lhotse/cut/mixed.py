@@ -844,7 +844,11 @@ class MixedCut(Cut):
                 fastcopy(
                     track,
                     cut=track.cut.perturb_saturation(
-                        hard=hard, gain_db=gain_db, normalize=normalize, oversampling=oversampling, affix_id=affix_id
+                        hard=hard,
+                        gain_db=gain_db,
+                        normalize=normalize,
+                        oversampling=oversampling,
+                        affix_id=affix_id,
                     ),
                 )
                 for track in self.tracks

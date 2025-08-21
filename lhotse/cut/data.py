@@ -1081,9 +1081,13 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
                 "The feature manifest will be detached, as we do not support feature-domain "
                 "saturation."
             )
-        
+
         recording_saturated = self.recording.perturb_saturation(
-            hard=hard, gain_db=gain_db, normalize=normalize, oversampling=oversampling, affix_id=affix_id
+            hard=hard,
+            gain_db=gain_db,
+            normalize=normalize,
+            oversampling=oversampling,
+            affix_id=affix_id,
         )
 
         return fastcopy(

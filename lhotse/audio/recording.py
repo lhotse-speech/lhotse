@@ -922,7 +922,14 @@ class Recording:
             transforms=transforms,
         )
 
-    def perturb_saturation(self, hard: bool = False, gain_db: float = 0.0, normalize: bool = True, oversampling: Optional[int] = 4, affix_id: bool = False) -> "Recording":
+    def perturb_saturation(
+        self,
+        hard: bool = False,
+        gain_db: float = 0.0,
+        normalize: bool = True,
+        oversampling: Optional[int] = 4,
+        affix_id: bool = False,
+    ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply a saturation effect while loading audio.
         Saturates input signal in [-1, 1] range.
@@ -936,13 +943,23 @@ class Recording:
         :return: a modified copy of the current ``Recording`` with the saturation transform applied.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
-        
+
         if oversampling is not None:
-            transforms.append(Resample(source_sampling_rate=self.sampling_rate, target_sampling_rate=self.sampling_rate * oversampling))
+            transforms.append(
+                Resample(
+                    source_sampling_rate=self.sampling_rate,
+                    target_sampling_rate=self.sampling_rate * oversampling,
+                )
+            )
         transforms.append(Saturation(hard, gain_db, normalize))
         if oversampling is not None:
-            transforms.append(Resample(source_sampling_rate=self.sampling_rate * oversampling, target_sampling_rate=self.sampling_rate))
-        
+            transforms.append(
+                Resample(
+                    source_sampling_rate=self.sampling_rate * oversampling,
+                    target_sampling_rate=self.sampling_rate,
+                )
+            )
+
         return fastcopy(
             self,
             id=f"{self.id}_sat{gain_db:.1f}" if affix_id else self.id,
