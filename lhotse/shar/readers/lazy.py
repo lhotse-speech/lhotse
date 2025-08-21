@@ -152,9 +152,9 @@ class LazySharIterator(Dillable):
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
         if split_for_dataloading:
-            assert seed != "randomized", (
-                "Error: seed='randomized' and split_for_dataloading=True are mutually exclusive options "
-                "as they would result in data loss."
+            assert seed not in ("randomized", "trng"), (
+                "Error: setting seed to 'randomized' or 'trng' and using split_for_dataloading=True "
+                "are mutually exclusive options as they would result in data loss."
             )
 
         self.split_for_dataloading = split_for_dataloading
