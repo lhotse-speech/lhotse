@@ -13,21 +13,21 @@ def mono_sine_wave() -> np.array:
     return signal
 
 
-def test_saturation_initialization_valid_params():
-    saturation = Saturation(hard=False, gain_db=0.0, normalize=True)
-    assert saturation.hard is False
-    assert saturation.gain_db == 0.0
-    assert saturation.normalize is True
+@pytest.mark.parametrize("hard", [True, False])
+@pytest.mark.parametrize("gain_db", [0.0, 3.0, 6.0, 12.0])
+@pytest.mark.parametrize("normalize", [True, False])
+def test_saturation_initialization_valid_params(hard, gain_db, normalize):
+    saturation = Saturation(hard=hard, gain_db=gain_db, normalize=normalize)
+    assert saturation.hard is hard
+    assert saturation.gain_db == gain_db
+    assert saturation.normalize is normalize
 
 
 @pytest.mark.parametrize("gain_db", [0.0, 3.0, 6.0, 12.0])
 def test_saturation_hard_clipping(mono_sine_wave, gain_db):
     saturation = Saturation(hard=True, gain_db=gain_db, normalize=True)
 
-    # Apply saturation
     saturated_signal = saturation(mono_sine_wave, 16000)
-
-    # Check that output has correct shape
     assert saturated_signal.shape == mono_sine_wave.shape
 
     # For hard clipping, the output should be under -gain_db dBFS
@@ -35,10 +35,14 @@ def test_saturation_hard_clipping(mono_sine_wave, gain_db):
     assert np.max(np.abs(saturated_signal)) <= max_expected_amplitude + 1e-6
 
 
-import pytest
+@pytest.mark.parametrize("gain_db", [-3.0, -6.0, -12.0])
+def test_saturation_hard_clipping_negative_gain_db(mono_sine_wave, gain_db):
+    saturation = Saturation(hard=True, gain_db=gain_db, normalize=True)
+    saturated_signal = saturation(mono_sine_wave, 16000)
+    assert np.allclose(saturated_signal, mono_sine_wave)
 
 
-@pytest.mark.parametrize("gain_db", [0.0, 3.0, 6.0, 12.0])
+@pytest.mark.parametrize("gain_db", [3.0, 6.0, 12.0])
 def test_saturation_soft_tanh(mono_sine_wave, gain_db):
     saturation = Saturation(hard=False, gain_db=gain_db, normalize=True)
 
@@ -57,9 +61,12 @@ def test_saturation_soft_tanh(mono_sine_wave, gain_db):
     assert not np.allclose(saturated_signal, mono_sine_wave, rtol=1e-2)
 
 
-def test_saturation_silence():
+@pytest.mark.parametrize("hard", [True, False])
+@pytest.mark.parametrize("gain_db", [0.0, 3.0, 6.0, 12.0])
+@pytest.mark.parametrize("normalize", [True, False])
+def test_saturation_silence(hard, gain_db, normalize):
     silence = np.zeros(16000, dtype=np.float32)
-    saturation = Saturation(hard=False, gain_db=0.0, normalize=True)
+    saturation = Saturation(hard=hard, gain_db=gain_db, normalize=normalize)
 
     saturated_signal = saturation(silence, 16000)
 
@@ -102,24 +109,23 @@ def test_saturation_reverse_timestamps():
     assert reversed_duration == duration
 
 
-def test_saturation_serialization():
-    saturation = Saturation(hard=True, gain_db=3.0, normalize=False)
+@pytest.mark.parametrize("hard", [True, False])
+@pytest.mark.parametrize("gain_db", [0.0, 3.0, 6.0, 12.0])
+@pytest.mark.parametrize("normalize", [True, False])
+def test_saturation_serialization(hard, gain_db, normalize):
+    saturation = Saturation(hard=hard, gain_db=gain_db, normalize=normalize)
 
-    # Serialize to dict
     saturation_dict = saturation.to_dict()
-
     assert saturation_dict["name"] == "Saturation"
-    assert saturation_dict["kwargs"]["hard"] is True
-    assert saturation_dict["kwargs"]["gain_db"] == 3.0
-    assert saturation_dict["kwargs"]["normalize"] is False
+    assert saturation_dict["kwargs"]["hard"] is hard
+    assert saturation_dict["kwargs"]["gain_db"] == gain_db
+    assert saturation_dict["kwargs"]["normalize"] is normalize
 
-    # Deserialize from dict
     saturation_restored = Saturation.from_dict(saturation_dict)
-
     assert isinstance(saturation_restored, Saturation)
-    assert saturation_restored.hard is True
-    assert saturation_restored.gain_db == 3.0
-    assert saturation_restored.normalize is False
+    assert saturation_restored.hard is hard
+    assert saturation_restored.gain_db == gain_db
+    assert saturation_restored.normalize is normalize
 
 
 @pytest.mark.parametrize("gain_db", [0.0, 3.0, 6.0, 12.0])
