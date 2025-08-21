@@ -97,7 +97,7 @@ def test_perturb_volume(preserve_id: bool):
 def test_saturation_transform(preserve_id: bool, oversampling: Optional[int]):
     tfnm = SaturationTransform(
         gain_db=(-10.0, 10.0),
-        hard=False,
+        p_hard=0.5,
         normalize=True,
         p=0.5,
         preserve_id=preserve_id,

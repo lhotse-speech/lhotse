@@ -28,9 +28,9 @@ class SaturationTransform:
     """
 
     gain_db: Union[float, Tuple[float, float]]
-    hard: bool = False
     normalize: bool = True
     p: float = 0.5
+    p_hard: float = 0.5
     seed: Union[int, Literal["trng", "randomized"]] = 42
     rng: Optional[random.Random] = None
     oversampling: Optional[int] = 2
@@ -57,6 +57,11 @@ class SaturationTransform:
         saturated_cuts = []
         for cut in cuts:
             if self.rng.random() <= self.p:
+                if self.rng.random() <= self.p_hard:
+                    hard = True
+                else:
+                    hard = False
+
                 if isinstance(self.gain_db, (tuple, list)):
                     min_gain, max_gain = self.gain_db
                     gain_db = self.rng.uniform(min_gain, max_gain)
@@ -64,7 +69,7 @@ class SaturationTransform:
                     gain_db = self.gain_db
 
                 new_cut = cut.perturb_saturation(
-                    hard=self.hard,
+                    hard=hard,
                     gain_db=gain_db,
                     normalize=self.normalize,
                     affix_id=not self.preserve_id,
