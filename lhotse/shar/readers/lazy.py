@@ -126,7 +126,7 @@ class LazySharIterator(Dillable):
         ``trng`` mode is mostly useful when the user has limited control over the training loop
         and may not be able to guarantee internal Shar epoch is being incremented, but needs
         randomness on each iteration (e.g. useful with PyTorch Lightning).
-    :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+    :param stateful_shuffle: bool, by default ``True``. When ``True``, every
         time this object is fully iterated, it increments an internal epoch counter
         and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
         Doesn't have any effect when ``shuffle_shards`` is ``False``.
@@ -224,23 +224,23 @@ class LazySharIterator(Dillable):
         else:
             return shards
 
+    def _get_rng(self) -> random.Random:
+        seed = resolve_seed(self.seed)
+        if self.stateful_shuffle:
+            seed += self.epoch
+        return random.Random(seed)
+
     def _maybe_shuffle_shards(self, shards: List) -> List:
         if self.shuffle_shards:
             shards = shards.copy()
-
-            seed = resolve_seed(self.seed)
-
-            if self.stateful_shuffle:
-                seed += self.epoch
-
-            random.Random(seed).shuffle(shards)
+            self._get_rng().shuffle(shards)
         return shards
 
     def __iter__(self):
         shards, map_fns = self.shards, self.cut_map_fns
+        rng = self._get_rng()
         shards = self._maybe_shuffle_shards(shards)
         shards = self._maybe_split_for_dataloading(shards)
-        rng = random.Random(resolve_seed(self.seed))
         if map_fns is not None:
             # The functions also need to be shuffled/split, if present.
             map_fns = self._maybe_shuffle_shards(map_fns)
