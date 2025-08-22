@@ -384,3 +384,21 @@ def test_shar_write_read_recordings_longer_than_cuts(cuts_from_long_recordings, 
         np.testing.assert_equal(
             c_ref.load_custom_indexes(), c_test.load_custom_indexes()
         )
+
+
+def test_shar_slice_length(shar_dir: Path):
+    ref_cuts = list(LazySharIterator(in_dir=shar_dir))
+    assert len(ref_cuts) == 20  # 2 full shards, 10 cuts each
+
+    sliced_cuts = list(LazySharIterator(in_dir=shar_dir, slice_length=3, seed=6))
+    assert len(sliced_cuts) == 6  # 2 sliced shards, 3 cuts each
+    assert sliced_cuts[0].id == "dummy-mono-cut-0001"
+    assert sliced_cuts[1].id == "dummy-mono-cut-0002"
+    assert sliced_cuts[2].id == "dummy-mono-cut-0003"
+    assert sliced_cuts[3].id == "dummy-mono-cut-0017"
+    assert sliced_cuts[4].id == "dummy-mono-cut-0018"
+    assert sliced_cuts[5].id == "dummy-mono-cut-0019"
+
+    # Works via CutSet too
+    sliced_cuts2 = list(CutSet.from_shar(in_dir=shar_dir, slice_length=3, seed=6))
+    assert sliced_cuts == sliced_cuts2

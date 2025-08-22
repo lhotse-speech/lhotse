@@ -10,16 +10,9 @@ from lhotse.serialization import (
     LazyMixin,
     decode_json_line,
     deserialize_item,
-    extension_contains,
     open_best,
 )
-from lhotse.utils import (
-    Pathlike,
-    build_rng,
-    fastcopy,
-    is_module_available,
-    streaming_shuffle,
-)
+from lhotse.utils import Pathlike, fastcopy, is_module_available, streaming_shuffle
 
 T = TypeVar("T")
 
@@ -310,7 +303,6 @@ class LazyManifestIterator(Dillable):
     """
 
     def __init__(self, path: Pathlike) -> None:
-        assert extension_contains(".jsonl", path) or str(path) == "-"
         self.source = LazyJsonlIterator(path)
 
     @property
