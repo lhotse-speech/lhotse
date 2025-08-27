@@ -80,53 +80,6 @@ def _parse_utterance(
     return recording, segment
 
 
-def _prepare_subset(
-    lang: str,
-    part: str,
-    lang_dir: Pathlike,
-    num_jobs: int = 1,
-) -> Tuple[RecordingSet, SupervisionSet]:
-    """
-    Returns the RecodingSet and SupervisionSet given a dataset part.
-
-    :param lang: string language code (e.g., "th").
-    :param part: str, the name of the subset.
-    :param lang_dir: Pathlike, the path of the data dir for a specific language.
-    :return: the RecodingSet and SupervisionSet for train and valid.
-    """
-    lang_dir = Path(lang_dir)
-    part_dir = lang_dir / part.replace("_raw", "").replace("_refined", "")
-    tsv_path = lang_dir / f"{part}.tsv"
-
-    audio_infos = []
-    with open(tsv_path) as f:
-        audio_infos = f.read().splitlines()
-
-    with ProcessPoolExecutor(num_jobs) as ex:
-        futures = []
-        recordings = []
-        supervisions = []
-        for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
-            futures.append(ex.submit(_parse_utterance, lang, part_dir, audio_info))
-
-        for future in tqdm(futures, desc="Processing"):
-            result = future.result()
-            if result is None:
-                continue
-            recording, segment = result
-            recordings.append(recording)
-            supervisions.append(segment)
-
-        recording_set = RecordingSet.from_recordings(recordings)
-        supervision_set = SupervisionSet.from_segments(supervisions)
-
-        # Fix manifests
-        recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
-        validate_recordings_and_supervisions(recording_set, supervision_set)
-
-    return recording_set, supervision_set
-
-
 def prepare_gigaspeech2(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
@@ -174,24 +127,50 @@ def prepare_gigaspeech2(
                 logging.info(f"GigaSpeech 2 {lang} {part} already prepared - skipping.")
                 continue
 
-            recording_set, supervision_set = _prepare_subset(
-                lang=lang,
-                part=part,
-                lang_dir=lang_dir,
-                num_jobs=num_jobs,
-            )
+            with RecordingSet.open_writer(
+                output_dir / f"gigaspeech2-{lang}_recordings_{part}.jsonl.gz"
+            ) as rec_writer, SupervisionSet.open_writer(
+                output_dir / f"gigaspeech2-{lang}_supervisions_{part}.jsonl.gz"
+            ) as sup_writer:
+                part_dir = lang_dir / part.replace("_raw", "").replace("_refined", "")
+                tsv_path = lang_dir / f"{part}.tsv"
 
-            if output_dir is not None:
-                supervision_set.to_file(
-                    output_dir / f"gigaspeech2-{lang}_supervisions_{part}.jsonl.gz"
-                )
-                recording_set.to_file(
-                    output_dir / f"gigaspeech2-{lang}_recordings_{part}.jsonl.gz"
-                )
+                audio_infos = []
+                with open(tsv_path) as f:
+                    audio_infos = f.read().splitlines()
 
-            lang_manifests[part] = {
-                "supervisions": supervision_set,
-                "recordings": recording_set,
-            }
+                with ProcessPoolExecutor(num_jobs) as ex:
+                    futures = []
+                    for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
+                        futures.append(
+                            ex.submit(_parse_utterance, lang, part_dir, audio_info)
+                        )
+
+                    for future in tqdm(futures, desc="Processing"):
+                        result = future.result()
+                        if result is None:
+                            continue
+                        recording, segment = result
+
+                        # Fix and validate the recording + supervisions
+                        recordings, segments = fix_manifests(
+                            recordings=RecordingSet.from_recordings([recording]),
+                            supervisions=SupervisionSet.from_segments(segments),
+                        )
+                        validate_recordings_and_supervisions(
+                            recordings=recordings, supervisions=segments
+                        )
+
+                        # Write the manifests
+                        rec_writer.write(recordings[0])
+                        for s in segments:
+                            sup_writer.write(s)
+
+                lang_manifests[part] = {
+                    "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
+                    "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+                }
 
         manifests[lang] = lang_manifests
+
+    return dict(manifests)
