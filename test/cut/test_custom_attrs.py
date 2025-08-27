@@ -5,7 +5,6 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import pytest
 import torch
-import torchaudio
 
 from lhotse import (
     LilcomFilesWriter,
@@ -16,6 +15,7 @@ from lhotse import (
     fastcopy,
     validate,
 )
+from lhotse.audio import save_audio
 from lhotse.serialization import deserialize_item
 from lhotse.testing.dummies import (
     dummy_cut,
@@ -196,7 +196,7 @@ def test_cut_load_custom_recording(deterministic_rng):
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        save_audio(f.name, audio, sampling_rate=sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -219,13 +219,13 @@ def test_cut_load_custom_recording_truncate(deterministic_rng):
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        save_audio(f.name, audio, sampling_rate=sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
 
-        # Note: MonoCut doesn't normally have an "alignment" attribute,
-        #       and a "load_alignment()" method.
+        # Note: MonoCut doesn't normally have a "my_favorite_song" attribute,
+        #       and a "load_my_favorite_song()" method.
         #       We are dynamically extending it.
         cut = dummy_cut(0, duration=duration)
         cut.my_favorite_song = recording
@@ -235,7 +235,7 @@ def test_cut_load_custom_recording_truncate(deterministic_rng):
         restored_audio = cut_trunc.load_my_favorite_song()
         assert restored_audio.shape == (1, 80000)
 
-        np.testing.assert_allclose(audio[:, :80000], restored_audio, atol=3e-5)
+        np.testing.assert_allclose(audio[:, :80000], restored_audio, atol=3e-4)
 
 
 def test_cut_load_custom_recording_pad_right(deterministic_rng):
@@ -246,7 +246,7 @@ def test_cut_load_custom_recording_pad_right(deterministic_rng):
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        save_audio(f.name, audio, sampling_rate=sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -282,7 +282,7 @@ def test_cut_load_custom_recording_pad_left(deterministic_rng):
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        save_audio(f.name, audio, sampling_rate=sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -318,7 +318,7 @@ def test_cut_load_custom_recording_pad_both(deterministic_rng):
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        save_audio(f.name, audio, sampling_rate=sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)

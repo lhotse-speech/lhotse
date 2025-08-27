@@ -13,12 +13,7 @@ from lhotse.features import Features, FeatureSet
 from lhotse.features.io import MemoryRawWriter
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
-from lhotse.utils import (
-    compute_num_frames,
-    compute_num_samples,
-    fastcopy,
-    is_torchaudio_available,
-)
+from lhotse.utils import compute_num_frames, compute_num_samples, fastcopy
 
 
 @contextlib.contextmanager
@@ -118,7 +113,7 @@ def dummy_audio_source(
             # workaround for OPUS: soundfile supports OPUS as a subtype of OGG format
             soundfile.write(
                 binary_data,
-                data.numpy(),
+                data.cpu().numpy(),
                 sampling_rate,
                 format="OGG",
                 subtype="OPUS",
@@ -127,7 +122,7 @@ def dummy_audio_source(
         else:
             soundfile.write(
                 binary_data,
-                data.numpy(),
+                data.cpu().numpy(),
                 sampling_rate,
                 format=format,
                 closefd=False,
@@ -352,7 +347,7 @@ def dummy_cut(
         recording=recording
         if recording
         else dummy_recording(
-            unique_id, duration=recording_duration, with_data=with_data
+            unique_id, duration=max(recording_duration, duration), with_data=with_data
         ),
         features=features
         if features

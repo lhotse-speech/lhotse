@@ -755,13 +755,19 @@ class LazyRepeater(Dillable):
                 iterator = LazyMapper(
                     self.iterator, partial(attach_repeat_idx_to_id, idx=epoch)
                 )
-
-            yield from iterator
+            at_least_once = False
+            for item in iterator:
+                at_least_once = True
+                yield item
+            if not at_least_once:
+                return  # Detect empty iterables to avoid hanging the program.
             epoch += 1
 
     def __len__(self) -> int:
         if self.times is None:
-            raise AttributeError()
+            raise TypeError(
+                f"object of type '{type(self).__name__}' is an infinite iterator"
+            )
         return len(self.iterator) * self.times
 
     def __add__(self, other) -> "LazyIteratorChain":

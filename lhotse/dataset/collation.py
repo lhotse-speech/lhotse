@@ -1,6 +1,7 @@
 import warnings
 from concurrent.futures import Executor
 from functools import partial
+from itertools import repeat
 from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -11,7 +12,7 @@ from lhotse import CutSet, Recording
 from lhotse.audio import suppress_audio_loading_errors
 from lhotse.audio.utils import suppress_video_loading_errors
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import DEFAULT_PADDING_VALUE, Seconds, compute_num_samples
+from lhotse.utils import DEFAULT_PADDING_VALUE, compute_num_samples
 
 
 class TokenCollater:
@@ -115,6 +116,7 @@ def collate_features(
     cuts: CutSet,
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
+    features_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
@@ -129,11 +131,11 @@ def collate_features(
     """
     assert all(cut.has_features for cut in cuts)
     features_lens = torch.tensor([cut.num_frames for cut in cuts], dtype=torch.int)
-    cuts = maybe_pad(
-        cuts, num_frames=max(features_lens).item(), direction=pad_direction
-    )
+    cuts = cuts.pad(num_frames=max(features_lens).item(), direction=pad_direction)
     first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
+    features = torch.empty(
+        len(cuts), first_cut.num_frames, first_cut.num_features, dtype=features_dtype
+    )
     if executor is None:
         for idx, cut in enumerate(cuts):
             features[idx] = _read_features(cut)
@@ -177,7 +179,7 @@ def collate_audio(
             ), f"Missing custom recording field {recording_field} in cut {cut.id}"
 
     # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
-    cut_id2num_samples = {}
+    sample_counts = []
     for cut in cuts:
         if recording_field is None:
             num_samples = cut.num_samples
@@ -185,24 +187,30 @@ def collate_audio(
             num_samples = compute_num_samples(
                 cut.duration, sampling_rate=getattr(cut, recording_field).sampling_rate
             )
-        cut_id2num_samples[cut.id] = num_samples
+        sample_counts.append(num_samples)
 
-    cuts = maybe_pad(
-        cuts,
+    cuts = cuts.pad(
         duration=max(cut.duration for cut in cuts),
         direction=pad_direction,
         preserve_id=True,
     )
 
     # Note: returned "cuts" may be a subset of the original "cuts" if fault_tolerant=True.
-    audios, cuts = read_audio_from_cuts(
-        cuts, executor, suppress_errors=fault_tolerant, recording_field=recording_field
+    audios, cuts, sample_counts = read_audio_from_cuts(
+        cuts,
+        executor,
+        suppress_errors=fault_tolerant,
+        recording_field=recording_field,
+        filter_aux_iter=sample_counts,
     )
 
-    audios = torch.stack(audios)
-    audio_lens = torch.tensor(
-        [cut_id2num_samples[cut.id] for cut in cuts], dtype=torch.int32
-    )
+    if len(audios[0].shape) == 1:
+        audios = collate_vectors(audios, padding_value=0.0)
+    else:
+        audios = collate_matrices(
+            [a.transpose(0, 1) for a in audios], padding_value=0.0
+        ).transpose(1, 2)
+    audio_lens = torch.tensor(sample_counts, dtype=torch.int32)
 
     if fault_tolerant:
         return audios, audio_lens, cuts
@@ -215,6 +223,7 @@ collate_multi_channel_audio = collate_audio  # alias for backwards compatibility
 
 def collate_video(
     cuts: CutSet,
+    with_audio: bool = True,
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
     fault_tolerant: bool = False,
@@ -229,6 +238,7 @@ def collate_video(
         We may support padding missing channels at a later time.
 
     :param cuts: a :class:`CutSet` used to load the audio samples.
+    :param with_audio: should the audio data be loaded.
     :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
     :param executor: an instance of ThreadPoolExecutor or ProcessPoolExecutor; when provided,
         we will use it to read video concurrently.
@@ -245,8 +255,7 @@ def collate_video(
     for cut in cuts:
         id2lens[cut.id] = (cut.num_samples, cut.video.num_frames)
 
-    cuts = maybe_pad(
-        cuts,
+    cuts = cuts.pad(
         duration=max(c.duration for c in cuts),
         direction=pad_direction,
         preserve_id=True,
@@ -254,13 +263,18 @@ def collate_video(
 
     # Note: returned "cuts" may be a subset of the original "cuts" if fault_tolerant=True.
     videos, audios, cuts = read_video_from_cuts(
-        cuts, executor, suppress_errors=fault_tolerant
+        cuts, with_audio=with_audio, executor=executor, suppress_errors=fault_tolerant
     )
 
     videos = torch.stack(videos)  # B x T x C x H x W
-    audios = torch.stack(audios)  # B x C x T
-    audio_lens = torch.tensor([id2lens[cut.id][0] for cut in cuts], dtype=torch.int32)
     video_lens = torch.tensor([id2lens[cut.id][1] for cut in cuts], dtype=torch.int32)
+    if with_audio:
+        audios = torch.stack(audios)  # B x C x T
+        audio_lens = torch.tensor(
+            [id2lens[cut.id][0] for cut in cuts], dtype=torch.int32
+        )
+    else:
+        audios, audio_lens = None, None
 
     if fault_tolerant:
         return videos, video_lens, audios, audio_lens, cuts
@@ -306,6 +320,7 @@ def collate_custom_field(
     :return: a collated data tensor, or a tuple of tensors ``(collated_data, sequence_lens)``.
     """
     from lhotse.array import Array, TemporalArray
+    from lhotse.image import Image
 
     first_manifest = getattr(cuts[0], field)
     if isinstance(first_manifest, Array):
@@ -368,6 +383,10 @@ def collate_custom_field(
             tensors[indices] = a
 
         return tensors, arr_lens
+    elif isinstance(first_manifest, Image):
+        return collate_images(cuts, field)
+    elif isinstance(first_manifest, Recording):
+        return collate_audio(cuts, recording_field=field, pad_direction=pad_direction)
     else:
         # Expected data type: int, float, string, etc.
         # Get a list of them and convert to a tensor.
@@ -383,7 +402,7 @@ def collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:
     """
     assert all(cut.has_features for cut in cuts)
     assert all(isinstance(cut, MixedCut) for cut in cuts)
-    cuts = maybe_pad(cuts)
+    cuts = cuts.pad(cuts)
     # Output tensor shape: (B, C, T, F) -> (batch_size, num_channels, num_frames, num_features)
     first_cut = next(iter(cuts))
     # TODO: make MixedCut more friendly to use with multi channel audio;
@@ -456,28 +475,6 @@ def collate_matrices(
     return result
 
 
-def maybe_pad(
-    cuts: CutSet,
-    duration: Seconds = None,
-    num_frames: int = None,
-    num_samples: int = None,
-    direction: str = "right",
-    preserve_id: bool = False,
-) -> CutSet:
-    """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
-    if len(set(c.duration for c in cuts)) == 1:
-        # All cuts are of equal duration: nothing to do
-        return cuts
-    # Non-equal durations: silence padding
-    return cuts.pad(
-        duration=duration,
-        num_frames=num_frames,
-        num_samples=num_samples,
-        direction=direction,
-        preserve_id=preserve_id,
-    )
-
-
 """
 Helper functions to dispatch jobs to the concurrent executors.
 """
@@ -488,7 +485,8 @@ def read_audio_from_cuts(
     executor: Optional[Executor] = None,
     suppress_errors: bool = False,
     recording_field: Optional[str] = None,
-) -> Tuple[List[torch.Tensor], CutSet]:
+    filter_aux_iter: Optional[Iterable] = None,
+) -> Union[Tuple[List[torch.Tensor], CutSet], Tuple[List[torch.Tensor], CutSet, List]]:
     """
     Loads audio data from an iterable of cuts.
 
@@ -500,13 +498,23 @@ def read_audio_from_cuts(
         When ``False`` (default), the errors will not be suppressed.
     :param recording_field: when specified, we will try to load recordings from a custom field with this name
         (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
+    :param filter_aux_iter: when specified, we will iterate over this iterator and discard the elements
+        for which a corresponding cut failed to load audio, if ``suppress_errors`` is set to ``True``.
+        This iterator is expected to be of the same length as ``cuts``.
     :return: a tuple of two items: a list of audio tensors (with different shapes),
         and a list of cuts for which we read the data successfully.
+        If ``filter_aux_iter`` is specified, it returns a 3-tuple where the third element is
+        the filtered auxiliary iterator.
     """
+    aux_requested = True
+    if filter_aux_iter is None:
+        filter_aux_iter = repeat([None])
+        aux_requested = False
     map_fn = map if executor is None else executor.map
     audios = []
     ok_cuts = []
-    for idx, (cut, maybe_audio) in enumerate(
+    aux_iter_out = []
+    for idx, (cut, maybe_audio, aux_item) in enumerate(
         zip(
             cuts,
             map_fn(
@@ -517,6 +525,7 @@ def read_audio_from_cuts(
                 ),
                 cuts,
             ),
+            filter_aux_iter,
         )
     ):
         if maybe_audio is None:
@@ -524,11 +533,16 @@ def read_audio_from_cuts(
         else:
             audios.append(maybe_audio)
             ok_cuts.append(cut)
-    return audios, CutSet.from_cuts(ok_cuts)
+            aux_iter_out.append(aux_item)
+    ans = (audios, CutSet.from_cuts(ok_cuts))
+    if aux_requested:
+        ans = ans + (aux_iter_out,)
+    return ans
 
 
 def read_video_from_cuts(
     cuts: Iterable[Cut],
+    with_audio: bool = True,
     executor: Optional[Executor] = None,
     suppress_errors: bool = False,
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor], CutSet]:
@@ -536,6 +550,7 @@ def read_video_from_cuts(
     Loads audio data from an iterable of cuts.
 
     :param cuts: a CutSet or iterable of cuts.
+    :param with_audio: should the audio data be loaded.
     :param executor: optional Executor (e.g., ThreadPoolExecutor or ProcessPoolExecutor)
         to perform the audio reads in parallel.
     :param suppress_errors: when set to ``True``, will enable fault-tolerant data reads;
@@ -555,6 +570,7 @@ def read_video_from_cuts(
                 partial(
                     _read_video,
                     suppress_errors=suppress_errors,
+                    with_audio=with_audio,
                 ),
                 cuts,
             ),
@@ -603,11 +619,27 @@ def _read_features(cut: Cut) -> torch.Tensor:
 
 
 def _read_video(
-    cut: Cut, suppress_errors: bool = False
+    cut: Cut, with_audio: bool = True, suppress_errors: bool = False
 ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
     """
     Loads video + audio data from cut, or returns None if there was an error
     and ``suppress_errors`` was set to ``True``.
     """
     with suppress_video_loading_errors(enabled=suppress_errors):
-        return cut.load_video()
+        return cut.load_video(with_audio=with_audio)
+
+
+def collate_images(
+    cuts: CutSet,
+    image_field: str = "image",
+) -> torch.Tensor:
+    """
+    Load images for all cuts and return them as a batch in a torch tensor.
+    The output image shape is ``(batch, height, width, channel)``.
+
+    :param cuts: a :class:`CutSet` used to load the images.
+    :param image_field: the field in the cut to load the images from.
+    :return: tensor of collated images"""
+    images = [torch.as_tensor(cut.load_custom(image_field)) for cut in cuts]
+    images = torch.stack(images)
+    return images

@@ -16,7 +16,8 @@
 
 # Lhotse
 
-Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside [k2](https://github.com/k2-fsa/k2), it is a part of the next generation [Kaldi](https://github.com/kaldi-asr/kaldi) speech processing library.
+Lhotse is a Python library aiming to make multimodal (speech, audio, video, image, text) data preparation flexible and accessible to a wider community.
+Alongside [k2](https://github.com/k2-fsa/k2), it is a part of the next generation [Kaldi](https://github.com/kaldi-asr/kaldi) speech processing library.
 
 ## Tutorial presentations and materials
 
@@ -26,23 +27,25 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 
 ## About
 
-### Main goals
+### Main goals (updated for 2025)
 
-- Attract a wider community to speech processing tasks with a **Python-centric design**.
-- Accommodate experienced Kaldi users with an **expressive command-line interface**.
+- Scale to multimodal data pipelines including audio, text, image, and video modalities.
+- Provide state-of-the-art dataloading algorithms such as dataset blending and efficient on-the-fly bucketing.
+- Handle data randomization (or de-duplication) for distributed multi-node training.
+- Attract a wider community to multimodal processing tasks with a **Python-centric design**.
 - Provide **standard data preparation recipes** for commonly used corpora.
-- Provide **PyTorch Dataset classes** for speech and audio related tasks.
-- Flexible data preparation for model training with the notion of **audio cuts**.
-- **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
+- Flexible data preparation for model training with the notion of **audio/video cuts**.
+- Support for efficient sequential I/O data formats such as Lhotse Shar (similar to webdataset).
 
 ### Tutorials
 
-We currently have the following tutorials available in `examples` directory:
+We offer the following tutorials available in `examples` directory:
 - Basic complete Lhotse workflow [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb)
 - Transforming data with Cuts [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb)
 - WebDataset integration [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb)
 - How to combine multiple datasets [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb)
 - Lhotse Shar: storage format optimized for sequential I/O and modularity [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb)
+- Image and Video Support in Lhotse [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb)
 
 ### Examples of use
 
@@ -113,6 +116,9 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `AIS_ENDPOINT` is read by AIStore client to determine AIStore endpoint URL. Required for AIStore dataloading.
 - `RANK`, `WORLD_SIZE`, `WORKER`, and `NUM_WORKERS` are internally used to inform Lhotse Shar dataloading subprocesses.
 - `READTHEDOCS` is internally used for documentation builds.
+- `LHOTSE_MSC_OVERRIDE_PROTOCOLS` - when set, it will override your input protocols before feeding to MSCIOBackend.  Useful when you don't want to change your existing url format but want to use MSCIOBackend.  For example, if you have `s3://s3-bucket/path/to/my/object` and `gs://gs-bucket/path/to/my/object`, you can set `LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3,gs` to override the urls to `msc://s3-bucket/path/to/my/object` and `msc://gs-bucket/path/to/my/object`.
+- `LHOTSE_MSC_PROFILE` - when set, it will override the your bucket name before feeding to MSCIOBackend.  Useful when your msc profile is not the same as your bucket name.  For example, if you have `s3://s3-bucket/path/to/my/object`, you can set `LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3` and `LHOTSE_MSC_PROFILE=msc-s3-profile` to override the url to `msc://msc-s3-profile/path/to/my/object`.
+- `LHOTSE_MSC_BACKEND_FORCED` - when set to `True`, forces Lhotse to use MSCIOBackend for all URLs. Use with caution as functionality may break if MSC does not support the provided URL format.
 
 ### Optional dependencies
 
@@ -126,6 +132,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `pip install aistore` to read manifests, tar fles, and other data from AIStore using AIStore-supported URLs (set `AIS_ENDPOINT` environment variable to activate it). See [AIStore documentation](https://aiatscale.org) for more details.
 - `pip install smart_open` to read and write manifests and data in any location supported by `smart_open` (e.g. cloud, http).
 - `pip install opensmile` for feature extraction using the OpenSmile toolkit's Python wrapper.
+- `pip install multi-storage-client` for read and write manifests and data in different storage backends. See [multi-storage-client](https://github.com/NVIDIA/multi-storage-client) for more details.
 
 **sph2pipe.** For reading older LDC SPHERE (.sph) audio files that are compressed with codecs unsupported by ffmpeg and sox, please run:
 

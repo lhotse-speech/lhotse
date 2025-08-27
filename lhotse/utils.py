@@ -32,7 +32,7 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import click
 import numpy as np
@@ -1119,3 +1119,9 @@ _LHOTSE_DILL_ENABLED = False
 
 def is_dill_enabled() -> bool:
     return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]
+
+
+def replace_bucket_with_profile_name(identifier, profile_name):
+    parsed_identifier = urlparse(identifier)
+    updated_identifier = parsed_identifier._replace(netloc=profile_name)
+    return urlunparse(updated_identifier)

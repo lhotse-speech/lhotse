@@ -34,6 +34,13 @@ def test_video_recording_from_video_file(video_path):
     assert video_recording.video.frame_length == 0.04
 
 
+def test_video_recording_serialize_deserialize(video_path):
+    video_recording = Recording.from_file(video_path)
+    d = video_recording.to_dict()
+    restored = Recording.from_dict(d)
+    assert restored == video_recording
+
+
 @pytest.mark.parametrize("with_audio", [True, False])
 def test_video_recording_load_video(video_recording, with_audio):
     video, audio = video_recording.load_video(with_audio=with_audio)

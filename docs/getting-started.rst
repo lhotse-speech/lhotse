@@ -9,20 +9,22 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 About
 -----
 
-Main goals
-**********
+Main goals (updated for 2025)
+*****************************
 
-* Attract a wider community to speech processing tasks with a **Python-centric design**.
+* Scale to multimodal data pipelines including audio, text, image, and video modalities.
 
-* Accommodate experienced Kaldi users with an **expressive command-line interface**.
+* Provide state-of-the-art dataloading algorithms such as dataset blending and efficient on-the-fly bucketing.
+
+* Handle data randomization (or de-duplication) for distributed multi-node training.
+
+* Attract a wider community to multimodal processing tasks with a **Python-centric design**.
 
 * Provide **standard data preparation recipes** for commonly used corpora.
 
-* Provide **PyTorch Dataset classes** for speech and audio related tasks.
+* Flexible data preparation for model training with the notion of **audio/video cuts**.
 
-* Flexible data preparation for model training with the notion of **audio cuts**.
-
-* **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
+* Support for efficient sequential I/O data formats such as Lhotse Shar (similar to webdataset).
 
 Tutorials
 *********
@@ -39,6 +41,8 @@ We currently have the following tutorials available in `examples` directory:
 
 * Lhotse Shar: storage format optimized for sequential I/O and modularity |tutorial04|
 
+* Image and Video Support in Lhotse |tutorial05|
+
 .. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb
 .. |tutorial01| image:: https://colab.research.google.com/assets/colab-badge.svg
@@ -49,6 +53,8 @@ We currently have the following tutorials available in `examples` directory:
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb
 .. |tutorial04| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb
+.. |tutorial05| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb
 
 
 Examples of use

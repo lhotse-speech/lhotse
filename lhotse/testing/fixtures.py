@@ -19,6 +19,7 @@ from lhotse import (
     SupervisionSegment,
 )
 from lhotse.array import seconds_to_frames
+from lhotse.audio import save_audio
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import Seconds, uuid4
 
@@ -67,8 +68,6 @@ class RandomCutTestCase:
     def with_recording(
         self, sampling_rate: int, num_samples: int, use_zeros: bool = False
     ) -> Recording:
-        import torchaudio  # torchaudio does not have issues on M1 macs unlike soundfile
-
         f = NamedTemporaryFile("wb", suffix=".wav")
         self.files.append(f)
         duration = num_samples / sampling_rate
@@ -76,7 +75,7 @@ class RandomCutTestCase:
             samples = torch.zeros((1, num_samples))
         else:
             samples = torch.rand((1, num_samples))
-        torchaudio.save(f.name, samples, sample_rate=sampling_rate)
+        save_audio(f.name, samples, sampling_rate=sampling_rate)
         f.flush()
         os.fsync(f)
         return Recording(

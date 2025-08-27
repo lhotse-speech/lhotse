@@ -49,7 +49,7 @@ def download_edacc(
     :param base_url: str, the url of the website used to fetch the archive from.
     :return: the path to downloaded and extracted directory with data.
     """
-    archive_name = "DS_10283_4836.zip"
+    archive_name = "DS_10283_8983.zip"
 
     target_dir = Path(target_dir)
     corpus_dir = target_dir / "edacc"

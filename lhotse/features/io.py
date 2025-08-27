@@ -1,17 +1,26 @@
 import pickle
 from abc import ABCMeta, abstractmethod
+from contextlib import contextmanager
 from functools import lru_cache
 from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
-from typing import List, Optional, Type, Union
+from typing import Generator, List, Optional, Type, Union
 
 import lilcom
 import numpy as np
 
 from lhotse.array import Array, TemporalArray
 from lhotse.caching import dynamic_lru_cache
-from lhotse.utils import Pathlike, Seconds, SmartOpen, is_module_available, pairwise
+from lhotse.serialization import open_best
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    SmartOpen,
+    is_module_available,
+    is_valid_url,
+    pairwise,
+)
 
 
 class FeaturesWriter(metaclass=ABCMeta):
@@ -223,15 +232,76 @@ def get_writer(name: str) -> Type[FeaturesWriter]:
     return WRITER_BACKENDS.get(name)
 
 
+class FileIO:
+    """
+    Helper util for opening a file object for reading or writing in a directory on the local filesystem,
+    or a URL to supported object store (S3, AIStore, etc.).
+    ``storage_path`` corresponds to the directory path or base URL prefix;
+    ``storage_key`` for each utterance is the name of the file in that directory.
+    """
+
+    def __init__(self, storage_path: Pathlike):
+        super().__init__()
+        self.storage_path = str(storage_path)
+        self.is_url = is_valid_url(storage_path)
+        if self.is_url:
+            if self.storage_path.endswith("/"):
+                self.storage_path = self.storage_path[:-1]
+
+    @contextmanager
+    def open_fileobj(
+        self, key: str, mode: str, add_subdir: bool = False
+    ) -> Generator[tuple, None, None]:
+        """
+        Open a file for reading or writing on local disk or URL to object store.
+        Arg "key" should contain the extension for the file.
+        Mode is either "r" or "w".
+        Arg "add_subdir" can be set to True, in which case on the local filesystem it will create
+            an extra subdirectory of ``self.storage_path`` with the first three letters of ``key``,
+            preventing big datasets from exhausting the filesystem with one big directory.
+            This arg is ignored for URLs.
+
+        Yields a tuple of (open_file_object, path_or_url).
+        """
+        assert not (
+            "r" in mode and "w" in mode
+        ), "Opening for both reading and writing is not supported."
+        if "r" in mode:
+            if key.startswith("/") and len(self.storage_path) > 0:
+                key = key[1:]
+            input_path = f"{self.storage_path}/{key}"
+            with open_best(input_path, "rb") as f:
+                yield f, input_path
+        elif "w" in mode:
+            if self.is_url:
+                if key.startswith("/"):
+                    key = key[1:]
+                output_path = f"{self.storage_path}/{key}"
+            else:
+                p = Path(self.storage_path)
+                p.mkdir(exist_ok=True, parents=True)
+                if add_subdir:
+                    subdir = p / key[:3]
+                    subdir.mkdir(exist_ok=True)
+                    output_path = subdir / key
+                else:
+                    output_path = p / key
+            with open_best(output_path, "wb") as f:
+                yield f, output_path
+        else:
+            raise ValueError(f"Unsupported file mode (missing r or w): '{mode}'")
+
+
 """
-Lilcom-compressed numpy arrays, stored in separate files on the filesystem.
+Lilcom-compressed numpy arrays, stored in separate files on the filesystem / object store.
 """
 
 
 @register_reader
 class LilcomFilesReader(FeaturesReader):
     """
-    Reads Lilcom-compressed files from a directory on the local filesystem.
+    Reads Lilcom-compressed files from a directory on the local filesystem,
+    or a URL to supported object store (S3, AIStore, etc.).
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
@@ -240,7 +310,7 @@ class LilcomFilesReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.storage_path = Path(storage_path)
+        self.io = FileIO(storage_path)
 
     @dynamic_lru_cache
     def read(
@@ -249,7 +319,7 @@ class LilcomFilesReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        with open(self.storage_path / key, "rb") as f:
+        with self.io.open_fileobj(key, mode="r") as (f, input_path):
             arr = lilcom.decompress(f.read())
         return arr[left_offset_frames:right_offset_frames]
 
@@ -257,7 +327,8 @@ class LilcomFilesReader(FeaturesReader):
 @register_writer
 class LilcomFilesWriter(FeaturesWriter):
     """
-    Writes Lilcom-compressed files to a directory on the local filesystem.
+    Writes Lilcom-compressed files to a directory on the local filesystem,
+    or a URL to supported object store (S3, AIStore, etc.).
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
@@ -266,40 +337,34 @@ class LilcomFilesWriter(FeaturesWriter):
 
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
         super().__init__()
-        self.storage_path_ = Path(storage_path)
-        self.storage_path_.mkdir(parents=True, exist_ok=True)
+        self.io = FileIO(storage_path)
         self.tick_power = tick_power
 
     @property
     def storage_path(self) -> str:
-        return str(self.storage_path_)
+        return self.io.storage_path
 
     def write(self, key: str, value: np.ndarray) -> str:
-        # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
-        # an auto-generated hash. This allows to avoid filesystem performance problems related to storing
-        # too many files in a single directory.
-        subdir = self.storage_path_ / key[:3]
-        subdir.mkdir(exist_ok=True)
-        p = subdir / key
-        output_features_path = p.with_suffix(
-            p.suffix + ".llc" if p.suffix != ".llc" else ".llc"
-        )
+        if not key.endswith(".llc"):
+            key = key + ".llc"
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
-        with open(output_features_path, "wb") as f:
+        with self.io.open_fileobj(key, "w", add_subdir=True) as (f, output_path):
             f.write(serialized_feats)
-        # Include sub-directory in the key, e.g. "abc/abcdef.llc"
-        return "/".join(output_features_path.parts[-2:])
+            if not self.io.is_url:
+                key = "/".join(Path(output_path).parts[-2:])
+        return key
 
 
 """
-Non-compressed numpy arrays, stored in separate files on the filesystem.
+Non-compressed numpy arrays, stored in separate files on the filesystem / object store.
 """
 
 
 @register_reader
 class NumpyFilesReader(FeaturesReader):
     """
-    Reads non-compressed numpy arrays from files in a directory on the local filesystem.
+    Reads non-compressed numpy arrays from files in a directory on the local filesystem,
+    or a URL to supported object store (S3, AIStore, etc.).
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
@@ -308,7 +373,7 @@ class NumpyFilesReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.storage_path = Path(storage_path)
+        self.io = FileIO(storage_path)
 
     @dynamic_lru_cache
     def read(
@@ -317,14 +382,16 @@ class NumpyFilesReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        arr = np.load(self.storage_path / key, allow_pickle=False)
+        with self.io.open_fileobj(key, mode="r") as (f, input_path):
+            arr = np.load(f, allow_pickle=False)
         return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
 class NumpyFilesWriter(FeaturesWriter):
     """
-    Writes non-compressed numpy arrays to files in a directory on the local filesystem.
+    Writes non-compressed numpy arrays to files in a directory on the local filesystem,
+    or a URL to supported object store (S3, AIStore, etc.).
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
@@ -333,26 +400,20 @@ class NumpyFilesWriter(FeaturesWriter):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.storage_path_ = Path(storage_path)
-        self.storage_path_.mkdir(parents=True, exist_ok=True)
+        self.io = FileIO(storage_path)
 
     @property
     def storage_path(self) -> str:
-        return str(self.storage_path_)
+        return self.io.storage_path
 
     def write(self, key: str, value: np.ndarray) -> str:
-        # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
-        # an auto-generated hash. This allows to avoid filesystem performance problems related to storing
-        # too many files in a single directory.
-        subdir = self.storage_path_ / key[:3]
-        subdir.mkdir(exist_ok=True)
-        p = subdir / key
-        output_features_path = p.with_suffix(
-            p.suffix + ".npy" if p.suffix != ".npy" else ".npy"
-        )
-        np.save(output_features_path, value, allow_pickle=False)
-        # Include sub-directory in the key, e.g. "abc/abcdef.npy"
-        return "/".join(output_features_path.parts[-2:])
+        if not key.endswith(".npy"):
+            key = key + ".npy"
+        with self.io.open_fileobj(key, "w", add_subdir=True) as (f, output_path):
+            np.save(f, value, allow_pickle=False)
+            if not self.io.is_url:
+                key = "/".join(Path(output_path).parts[-2:])
+        return key
 
 
 """
@@ -899,12 +960,9 @@ class LilcomURLReader(FeaturesReader):
 
     name = "lilcom_url"
 
-    def __init__(self, storage_path: Pathlike, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        self.base_url = str(storage_path)
-        # We are manually adding the slash to join the base URL and the key.
-        if self.base_url.endswith("/"):
-            self.base_url = self.base_url[:-1]
+        self._inner = LilcomFilesReader(*args, **kwargs)
 
     @dynamic_lru_cache
     def read(
@@ -913,12 +971,7 @@ class LilcomURLReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        # We are manually adding the slash to join the base URL and the key.
-        if key.startswith("/"):
-            key = key[1:]
-        with SmartOpen.open(f"{self.base_url}/{key}", "rb") as f:
-            arr = lilcom.decompress(f.read())
-        return arr[left_offset_frames:right_offset_frames]
+        return self._inner.read(key, left_offset_frames, right_offset_frames)
 
 
 @register_writer
@@ -934,30 +987,16 @@ class LilcomURLWriter(FeaturesWriter):
 
     name = "lilcom_url"
 
-    def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        self.base_url = str(storage_path)
-        # We are manually adding the slash to join the base URL and the key.
-        if self.base_url.endswith("/"):
-            self.base_url = self.base_url[:-1]
-        self.tick_power = tick_power
+        self._inner = LilcomFilesWriter(*args, **kwargs)
 
     @property
     def storage_path(self) -> str:
-        return self.base_url
+        return self._inner.storage_path
 
     def write(self, key: str, value: np.ndarray) -> str:
-        # We are manually adding the slash to join the base URL and the key.
-        if key.startswith("/"):
-            key = key[1:]
-        # Add lilcom extension.
-        if not key.endswith(".llc"):
-            key = key + ".llc"
-        output_features_url = f"{self.base_url}/{key}"
-        serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
-        with SmartOpen.open(output_features_url, "wb") as f:
-            f.write(serialized_feats)
-        return key
+        return self._inner.write(key, value)
 
 
 """

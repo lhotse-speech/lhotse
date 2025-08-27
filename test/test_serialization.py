@@ -1,4 +1,6 @@
 import os
+import sys
+import types
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -18,7 +20,12 @@ from lhotse import (
     store_manifest,
 )
 from lhotse.lazy import LazyJsonlIterator
-from lhotse.serialization import SequentialJsonlWriter, load_manifest_lazy, open_best
+from lhotse.serialization import (
+    MSCIOBackend,
+    SequentialJsonlWriter,
+    load_manifest_lazy,
+    open_best,
+)
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy
@@ -516,3 +523,131 @@ def test_open_pipe_iter(tmp_path):
             lines_read.append(l.strip())
 
     assert lines_read == lines
+
+
+@pytest.mark.parametrize(
+    "identifier,expected_output,lhotse_msc_profile",
+    [
+        (
+            "msc://profile/path/to/object",
+            "msc://profile/path/to/object",
+            "profile",
+        ),  # No change for msc:// prefix
+        (
+            "s3://bucket/path/to/object",
+            "msc://bucket/path/to/object",
+            "",
+        ),  # Override only protocol
+        (
+            "s3://bucket/path",
+            "msc://profile/path",
+            "profile",
+        ),  # Override protocol and bucket
+    ],
+)
+def test_msc_io_backend_url_conversion(
+    monkeypatch, identifier, expected_output, lhotse_msc_profile
+):
+    # Mock environment variables
+    monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", "s3")
+    if lhotse_msc_profile:
+        monkeypatch.setenv("LHOTSE_MSC_PROFILE", lhotse_msc_profile)
+
+    # Mock multistorageclient.open to capture the transformed URL
+    class MockMSC:
+        def open(self, url, mode):
+            assert url == expected_output
+            return None
+
+    # Create a proper mock module with __spec__ attribute
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    sys.modules["multistorageclient"] = mock_module
+
+    # Create backend and test URL transformation
+    backend = MSCIOBackend()
+    backend.open(identifier, mode="r")
+
+
+@pytest.mark.parametrize(
+    "protocols",
+    [
+        "s3",  # Single protocol
+        "s3,gs",  # Multiple protocols
+    ],
+)
+def test_msc_io_backend_multiple_protocols(monkeypatch, protocols):
+
+    # Mock environment variables
+    monkeypatch.setenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", protocols)
+
+    # Mock multistorageclient.open to capture the transformed URL
+    class MockMSC:
+        def open(self, url, mode):
+            assert url.startswith("msc://")
+            return None
+
+    # Create a proper mock module with __spec__ attribute
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    sys.modules["multistorageclient"] = mock_module
+
+    # Create backend and test URL transformation
+    backend = MSCIOBackend()
+
+    # Test with first protocol
+    backend.open("s3://bucket/path", mode="r")
+
+    if "," in protocols:
+        # Test with second protocol if multiple
+        backend.open("gs://bucket/path", mode="r")
+
+
+def test_msc_io_backend_is_available(monkeypatch):
+    from lhotse.serialization import MSCIOBackend
+
+    # Test when multistorageclient is not available
+    monkeypatch.setitem(sys.modules, "multistorageclient", None)
+    assert not MSCIOBackend.is_available()
+
+    # Test when multistorageclient is available
+    class MockMSC:
+        pass
+
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+    monkeypatch.setitem(sys.modules, "multistorageclient", mock_module)
+    assert MSCIOBackend.is_available()
+
+
+def test_msc_io_backend_is_applicable(monkeypatch):
+    from lhotse.serialization import MSCIOBackend
+
+    # Create a proper mock module with __spec__ attribute
+    class MockMSC:
+        pass
+
+    mock_module = MockMSC()
+    mock_module.__spec__ = types.SimpleNamespace(name="multistorageclient")
+
+    # Test 1: When multistorageclient is not available
+    monkeypatch.setitem(sys.modules, "multistorageclient", None)
+    backend = MSCIOBackend()
+    assert not backend.is_applicable("msc://profile/path/to/object")
+    assert not backend.is_applicable("s3://bucket/path")
+
+    # Test 2: When multistorageclient is available
+    monkeypatch.setitem(sys.modules, "multistorageclient", mock_module)
+    backend = MSCIOBackend()
+
+    # Test 2.1: MSC URL is always applicable
+    assert backend.is_applicable("msc://profile/path/to/object")
+
+    # Test 2.2: Non-MSC URL with forced backend
+    monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "true")
+    assert backend.is_applicable("s3://bucket/path")
+
+    # Test 2.3: Non-MSC URL without forced backend
+    monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "")
+    assert not backend.is_applicable("s3://bucket/path")
+    assert not backend.is_applicable("/path/to/local/file")

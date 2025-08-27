@@ -3,7 +3,7 @@ import logging
 import os
 import warnings
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Callable, Optional
 
 from lhotse.utils import NonPositiveEnergyError, Seconds, fastcopy, suppress_and_warn
@@ -42,6 +42,13 @@ class VideoInfo:
 
     def copy_with(self, **kwargs) -> "VideoInfo":
         return fastcopy(self, **kwargs)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "VideoInfo":
+        return VideoInfo(**data)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 def get_audio_duration_mismatch_tolerance() -> Seconds:

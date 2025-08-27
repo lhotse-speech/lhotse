@@ -25,6 +25,17 @@ from lhotse.utils import Pathlike, Seconds, compute_num_samples, is_torchaudio_a
 _FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = is_torchaudio_available()
 CURRENT_AUDIO_BACKEND: Optional["AudioBackend"] = None
 
+SUPPORTED_VIDEO_EXTENSIONS = (
+    ".avi",
+    ".mov",
+    ".mp4",
+    ".m4a",
+    ".wmv",
+    ".mkv",
+    ".webm",
+    ".flv",
+)
+
 
 def available_audio_backends() -> List[str]:
     """
@@ -438,6 +449,13 @@ class TorchaudioFFMPEGBackend(AudioBackend):
             resample_rate=force_opus_sampling_rate,
         )
 
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # The only backend to support video.
+        is_fileobj = not isinstance(path_or_fd, Path)
+        return not is_fileobj and any(
+            str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS
+        )
+
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         """
         FFMPEG backend requires at least Torchaudio 2.0.
@@ -794,10 +812,13 @@ def torchaudio_soundfile_supports_format() -> bool:
     Returns ``True`` when torchaudio version is at least 0.9.0, which
     has support for ``format`` keyword arg in ``torchaudio.save()``.
     """
-    return check_torchaudio_version_gt("0.9.0")
+    return is_torchaudio_available() and check_torchaudio_version_gt("0.9.0")
 
 
 def check_torchaudio_version_gt(version: str) -> bool:
+    if not is_torchaudio_available():
+        return False
+
     import torchaudio
     from packaging import version as _version
 
@@ -882,7 +903,8 @@ def torchaudio_ffmpeg_streamer_info(
 
     is_fileobj = not isinstance(path_or_fileobj, Path)
     is_mpeg = not is_fileobj and any(
-        str(path_or_fileobj).endswith(ext) for ext in (".mp3", ".mp4", ".m4a")
+        str(path_or_fileobj).endswith(ext)
+        for ext in (".mp3",) + SUPPORTED_VIDEO_EXTENSIONS
     )
     if not is_fileobj:
         path_or_fileobj = str(path_or_fileobj)
@@ -965,6 +987,14 @@ def torchaudio_ffmpeg_streamer_info(
             frames=tot_samples,
             samplerate=int(audio_stream.sample_rate),
             duration=tot_samples / audio_stream.sample_rate,
+        )
+    else:
+        # No audio stream in the video
+        meta.update(
+            channels=0,
+            frames=0,
+            samplerate=0,
+            duration=meta["video"].duration,
         )
 
     return LibsndfileCompatibleAudioInfo(**meta)

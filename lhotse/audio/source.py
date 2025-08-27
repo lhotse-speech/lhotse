@@ -244,6 +244,8 @@ class AudioSource:
 
     @staticmethod
     def from_dict(data) -> "AudioSource":
+        if "video" in data:
+            data["video"] = VideoInfo.from_dict(data["video"])
         return AudioSource(**data)
 
     def __repr__(self):

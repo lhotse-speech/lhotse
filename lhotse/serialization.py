@@ -13,7 +13,14 @@ from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
 import yaml
 from packaging.version import parse as parse_version
 
-from lhotse.utils import Pathlike, Pipe, SmartOpen, is_module_available, is_valid_url
+from lhotse.utils import (
+    Pathlike,
+    Pipe,
+    SmartOpen,
+    is_module_available,
+    is_valid_url,
+    replace_bucket_with_profile_name,
+)
 from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
@@ -74,7 +81,7 @@ def get_aistore_client():
 
     endpoint_url = os.environ["AIS_ENDPOINT"]
     version = parse_version(aistore.__version__)
-    return aistore.Client(endpoint_url), version
+    return aistore.Client(endpoint_url, timeout=(1, 20)), version
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
@@ -543,10 +550,12 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
-    from lhotse import Features, MonoCut, MultiCut, Recording, SupervisionSegment
+    from lhotse import Features, Image, MonoCut, MultiCut, Recording, SupervisionSegment
     from lhotse.array import deserialize_array
     from lhotse.cut import MixedCut
 
+    if "width" in data:
+        return Image.from_dict(data)
     if "shape" in data or "array" in data:
         return deserialize_array(data)
     if "sources" in data:
@@ -586,6 +595,7 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
     if data is None:
         return None
 
+    from lhotse import Image
     from lhotse.array import deserialize_array
     from lhotse.audio import Recording
 
@@ -598,6 +608,8 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
             if all(k in value for k in ("id", "sources", "sampling_rate")):
                 data[key] = Recording.from_dict(value)
                 continue
+            if "width" in value:
+                data[key] = Image.from_dict(value)
             try:
                 data[key] = deserialize_array(value)
             except:
@@ -816,6 +828,112 @@ class AIStoreIOBackend(IOBackend):
         return is_valid_url(identifier)
 
 
+def get_lhotse_msc_override_protocols() -> Any:
+    return os.getenv("LHOTSE_MSC_OVERRIDE_PROTOCOLS", None)
+
+
+def get_lhotse_msc_profile() -> Any:
+    return os.getenv("LHOTSE_MSC_PROFILE", None)
+
+
+def get_lhotse_msc_backend_forced() -> Any:
+    """
+    If set to True, the MSC backend will be forced to be used for regular URLs.
+    """
+    val = os.getenv("LHOTSE_MSC_BACKEND_FORCED", "False")
+    return val.lower() == "true"
+
+
+MSC_PREFIX = "msc"
+
+
+class MSCIOBackend(IOBackend):
+    """
+    Uses Multi-Storage Client to download data from object store.
+
+    Multi-Storage Client (MSC) is a Python library aims at providing a unified interface to object and file
+    storage backends, including S3, GCS, AIStore, and more.  With no code change, user can seamlessly switch
+    between different storage backends with corresponding MSC urls.
+
+    To use MSCIOBackend, user will need
+
+    1)
+    MSC config file that specifies the storage backend information. Please refer to the MSC documentation
+    for more details: https://nvidia.github.io/multi-storage-client/user_guide/quickstart.html#configuration
+
+    2)
+    Provide MSC URLs, OR
+    Set env `LHOTSE_MSC_BACKEND_FORCED` to True to force the use of MSC backend for regular URLs.
+
+    To learn more about MSC, please check out the GitHub repo: https://github.com/NVIDIA/multi-storage-client
+    """
+
+    def open(self, identifier: str, mode: str):
+        """
+        Convert identifier if is not prefixed with msc, and use msc.open to access the file
+        For paths that are prefixed with msc, e.g. msc://profile/path/to/my/object1
+
+        For paths are yet to migrate to msc-compatible url, e.g. protocol://bucket/path/to/my/object2
+        1. override protocols provided by env LHOTSE_MSC_OVERRIDE_PROTOCOLS to msc: msc://bucket/path/to/my/object2
+        2. override the profile/bucket name by env LHOTSE_MSC_PROFILE if provided: msc://profile/path/to/my/object2,
+        if bucket name is not provided, then we expect the msc profile name to match with bucket name
+        """
+        if not is_module_available("multistorageclient"):
+            raise RuntimeError(
+                "Please run 'pip install multistorageclient' in order to use MSCIOBackend."
+            )
+
+        import multistorageclient as msc
+
+        # if url prefixed with msc, then return early
+        if MSCIOBackend.is_msc_url(identifier):
+            return msc.open(identifier, mode)
+
+        # override protocol if provided
+        lhotse_msc_override_protocols = get_lhotse_msc_override_protocols()
+        if lhotse_msc_override_protocols:
+            if "," in lhotse_msc_override_protocols:
+                override_protocol_list = lhotse_msc_override_protocols.split(",")
+            else:
+                override_protocol_list = [lhotse_msc_override_protocols]
+            for override_protocol in override_protocol_list:
+                if identifier.startswith(override_protocol):
+                    identifier = identifier.replace(override_protocol, MSC_PREFIX)
+                    break
+
+        # override bucket if provided
+        lhotse_msc_profile = get_lhotse_msc_profile()
+        if lhotse_msc_profile:
+            identifier = replace_bucket_with_profile_name(
+                identifier, lhotse_msc_profile
+            )
+
+        try:
+            file = msc.open(identifier, mode)
+        except Exception as e:
+            print(f"exception: {e}, identifier: {identifier}")
+            raise e
+
+        return file
+
+    @classmethod
+    def is_available(cls) -> bool:
+        return is_module_available("multistorageclient")
+
+    def handles_special_case(self, identifier: Pathlike) -> bool:
+        return MSCIOBackend.is_msc_url(identifier)
+
+    def is_applicable(self, identifier: Pathlike) -> bool:
+        return is_module_available("multistorageclient") and (
+            MSCIOBackend.is_msc_url(identifier)
+            or (get_lhotse_msc_backend_forced() and is_valid_url(identifier))
+        )
+
+    @staticmethod
+    def is_msc_url(identifier: Any) -> bool:
+        return str(identifier).startswith(f"{MSC_PREFIX}://")
+
+
 class CompositeIOBackend(IOBackend):
     """
     Composes multiple IO backends together.
@@ -938,6 +1056,8 @@ def get_default_io_backend() -> "IOBackend":
         RedirectIOBackend(),
         PipeIOBackend(),
     ]
+    if MSCIOBackend.is_available():
+        backends.append(MSCIOBackend())
     if AIStoreIOBackend.is_available():
         # Try AIStore before other generalist backends,
         # but only if it's installed and enabled via AIS_ENDPOINT env var.

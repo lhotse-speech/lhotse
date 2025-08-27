@@ -6,6 +6,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import torch
 
+from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
 from lhotse.utils import (
     Seconds,
@@ -29,7 +30,6 @@ class Speed(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        check_for_torchaudio()
         resampler = get_or_create_resampler(
             round(sampling_rate * self.factor), sampling_rate
         )
@@ -69,15 +69,11 @@ _precompiled_resamplers: Dict[Tuple[int, int], torch.nn.Module] = {}
 def get_or_create_resampler(
     source_sampling_rate: int, target_sampling_rate: int
 ) -> torch.nn.Module:
-    check_for_torchaudio()
     global _precompiled_resamplers
 
     tpl = (source_sampling_rate, target_sampling_rate)
     if tpl not in _precompiled_resamplers:
-        check_torchaudio_version()
-        import torchaudio
-
-        _precompiled_resamplers[tpl] = torchaudio.transforms.Resample(
+        _precompiled_resamplers[tpl] = ResampleTensor(
             source_sampling_rate, target_sampling_rate
         )
     return _precompiled_resamplers[tpl]
@@ -95,14 +91,9 @@ class Resample(AudioTransform):
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        if not is_torchaudio_available():
-            assert is_module_available(
-                "scipy"
-            ), "In order to use resampling, either torchaudio or scipy needs to be installed."
-        else:
-            self.resampler = get_or_create_resampler(
-                self.source_sampling_rate, self.target_sampling_rate
-            )
+        self.resampler = get_or_create_resampler(
+            self.source_sampling_rate, self.target_sampling_rate
+        )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         if self.source_sampling_rate == self.target_sampling_rate:
@@ -343,8 +334,6 @@ class Narrowband(AudioTransform):
             raise ValueError(f"unsupported codec: {self.codec}")
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        import torchaudio
-
         orig_size = samples.size
 
         samples = torch.from_numpy(samples)

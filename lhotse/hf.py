@@ -6,7 +6,7 @@
 from hashlib import md5
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from lhotse import Recording, SupervisionSegment
+from lhotse import Image, Recording, SupervisionSegment
 from lhotse.cut import CutSet, MonoCut
 from lhotse.utils import Pathlike, is_module_available
 
@@ -350,15 +350,22 @@ class LazyHFDatasetIterator:
         self.dataset_kwargs = dataset_kwargs
 
     def __iter__(self):
-        from datasets import Audio, Dataset, IterableDataset, load_dataset
+        from datasets import (
+            Audio,
+            Dataset,
+            DatasetDict,
+            IterableDataset,
+            IterableDatasetDict,
+            load_dataset,
+        )
 
         if len(self.dataset_args) == 1 and isinstance(
-            self.dataset_args[0], (Dataset, IterableDataset)
+            self.dataset_args[0],
+            (Dataset, IterableDataset, DatasetDict, IterableDatasetDict),
         ):
             dataset = self.dataset_args[0]
         else:
             dataset = load_dataset(*self.dataset_args, **self.dataset_kwargs)
-
         dataset = dataset.cast_column(self.audio_key, Audio(decode=False))
         for item in dataset:
             audio_data = item.pop(self.audio_key)
@@ -376,5 +383,16 @@ class LazyHFDatasetIterator:
             )
             cut = recording.to_cut()
             cut.supervisions = [supervision]
+            maybe_resolve_images(item)
             cut.custom = item
             yield cut
+
+
+def maybe_resolve_images(item: dict) -> None:
+    if not is_module_available("PIL"):
+        return
+    import PIL.Image
+
+    for k, v in item.items():
+        if isinstance(v, PIL.Image.Image):
+            item[k] = Image.from_pillow(v)
