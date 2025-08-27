@@ -158,7 +158,7 @@ def prepare_gigaspeech2(
                             supervisions=SupervisionSet.from_segments([segment]),
                         )
                         validate_recordings_and_supervisions(
-                            recordings=recordings, supervisions=segment
+                            recordings=recordings, supervisions=segments
                         )
 
                         # Write the manifests
