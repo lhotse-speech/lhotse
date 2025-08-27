@@ -155,16 +155,15 @@ def prepare_gigaspeech2(
                         # Fix and validate the recording + supervisions
                         recordings, segments = fix_manifests(
                             recordings=RecordingSet.from_recordings([recording]),
-                            supervisions=SupervisionSet.from_segments(segments),
+                            supervisions=SupervisionSet.from_segments([segment]),
                         )
                         validate_recordings_and_supervisions(
-                            recordings=recordings, supervisions=segments
+                            recordings=recordings, supervisions=segment
                         )
 
                         # Write the manifests
                         rec_writer.write(recordings[0])
-                        for s in segments:
-                            sup_writer.write(s)
+                        sup_writer.write(segments[0])
 
                 lang_manifests[part] = {
                     "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
