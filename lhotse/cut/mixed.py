@@ -337,7 +337,7 @@ class MixedCut(Cut):
             non_padding_idx,
             mono_cut,
         ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
-
+        
         # Use getattr to propagate AttributeError if "name" is not defined.
         manifest = getattr(mono_cut, name)
 
