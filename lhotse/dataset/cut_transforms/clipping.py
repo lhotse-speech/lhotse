@@ -7,23 +7,23 @@ from lhotse.dataset.dataloading import resolve_seed
 
 
 @dataclass
-class SaturationTransform:
+class ClippingTransform:
     """
-    Applies saturation to each Cut in a CutSet with a given probability.
+    Applies clipping to each Cut in a CutSet with a given probability.
 
-    The saturation is applied with a probability of ``p``. The gain_db is
+    The clipping is applied with a probability of ``p``. The gain_db is
     randomly sampled from the provided range if an interval is given,
     or the fixed value is used if a single float is provided.
 
     :param gain_db: A single value or an interval (tuple/list with two values).
-        The amount of gain in decibels to apply before saturation.
+        The amount of gain in decibels to apply before clipping.
         If an interval is provided, the value is sampled uniformly.
-    :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft saturation.
-    :param normalize: If True, normalize the input signal to 0 dBFS before applying saturation.
-    :param p: The probability of applying saturation (default: 0.5).
+    :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft clipping (saturation).
+    :param normalize: If True, normalize the input signal to 0 dBFS before applying clipping.
+    :param p: The probability of applying clipping (default: 0.5).
     :param seed: Random seed for reproducibility (default: 42).
     :param rng: Optional random number generator (overrides seed if provided).
-    :param oversampling: Optional integer factor for oversampling before saturation.
+    :param oversampling: Optional integer factor for oversampling before clipping.
     :param preserve_id: Whether to preserve the original cut ID (default: False).
     """
 
@@ -68,7 +68,7 @@ class SaturationTransform:
                 else:
                     gain_db = self.gain_db
 
-                new_cut = cut.perturb_saturation(
+                new_cut = cut.clip_amplitude(
                     hard=hard,
                     gain_db=gain_db,
                     normalize=self.normalize,

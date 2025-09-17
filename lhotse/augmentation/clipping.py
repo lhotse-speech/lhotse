@@ -7,18 +7,18 @@ from lhotse.augmentation.transform import AudioTransform
 
 
 @dataclass
-class Saturation(AudioTransform):
+class Clipping(AudioTransform):
     """
-    Apply saturation to audio signal.
+    Apply clipping to audio signal.
 
-    This augmentation simulates the effect of saturation that occurs when audio levels exceed
+    This augmentation simulates the effect of clipping that occurs when audio levels exceed
     the dynamic range of recording equipment or when audio is amplified beyond its limits.
 
-    Saturates input signal to [-1, 1] range.
+    Clips input signal to [-1, 1] range.
 
-    :param gain_db: The amount of gain in decibels to apply before saturation (and to revert back to original level after).
-    :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft saturation.
-    :param normalize: If True, normalize the input signal to 0 dBFS before applying saturation.
+    :param gain_db: The amount of gain in decibels to apply before clipping (and to revert back to original level after).
+    :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft clipping (saturation).
+    :param normalize: If True, normalize the input signal to 0 dBFS before applying clipping.
     """
 
     hard: bool = False
@@ -50,7 +50,7 @@ class Saturation(AudioTransform):
         else:
             saturated_samples = np.tanh(samples)
 
-        # Revert the additional gain applied before saturation
+        # Revert the additional gain applied before clipping
         if abs(self.gain_db) >= 0.1:
             saturated_samples = saturated_samples / gain_linear
 
@@ -62,6 +62,6 @@ class Saturation(AudioTransform):
 
     def reverse_timestamps(self, offset, duration, sampling_rate):
         """
-        Saturation doesn't change the timing of the audio, so timestamps remain unchanged.
+        Clipping doesn't change the timing of the audio, so timestamps remain unchanged.
         """
         return offset, duration

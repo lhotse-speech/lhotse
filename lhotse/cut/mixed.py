@@ -808,7 +808,7 @@ class MixedCut(Cut):
             ],
         )
 
-    def perturb_saturation(
+    def clip_amplitude(
         self,
         hard: bool = False,
         gain_db: float = 0.0,
@@ -817,15 +817,15 @@ class MixedCut(Cut):
         affix_id: bool = True,
     ) -> "MixedCut":
         """
-        Return a new ``MixedCut`` that will lazily apply saturation while loading audio.
-        Recordings of the underlying Cuts are updated to reflect saturation change.
+        Return a new ``MixedCut`` that will lazily apply clipping while loading audio.
+        Recordings of the underlying Cuts are updated to reflect clipping change.
 
-        :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft saturation.
-        :param gain_db: The amount of gain in decibels to apply before saturation.
-        :param normalize: If True, normalize the input signal to 0 dBFS before applying saturation.
+        :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft clipping (saturation).
+        :param gain_db: The amount of gain in decibels to apply before clipping.
+        :param normalize: If True, normalize the input signal to 0 dBFS before applying clipping.
         :param oversampling: If provided, we will oversample the input signal by the given integer factor before applying saturation and then downsample back to the original sampling rate.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
-            by affixing it with "_sat{gain_db}".
+            by affixing it with "_cl{gain_db}".
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -839,11 +839,11 @@ class MixedCut(Cut):
                 "saturation."
             )
         return MixedCut(
-            id=f"{self.id}_sat{gain_db}" if affix_id else self.id,
+            id=f"{self.id}_cl{gain_db}" if affix_id else self.id,
             tracks=[
                 fastcopy(
                     track,
-                    cut=track.cut.perturb_saturation(
+                    cut=track.cut.clip_amplitude(
                         hard=hard,
                         gain_db=gain_db,
                         normalize=normalize,

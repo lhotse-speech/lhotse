@@ -8,12 +8,12 @@ import pytest
 from lhotse import CutSet
 from lhotse.cut import MixedCut
 from lhotse.dataset import (
+    ClippingTransform,
     CutMix,
     ExtraPadding,
     PerturbSpeed,
     PerturbTempo,
     PerturbVolume,
-    SaturationTransform,
 )
 from lhotse.testing.dummies import DummyManifest
 
@@ -94,8 +94,8 @@ def test_perturb_volume(preserve_id: bool):
 
 @pytest.mark.parametrize("oversampling", [None, 2, 4])
 @pytest.mark.parametrize("preserve_id", [False, True])
-def test_saturation_transform(preserve_id: bool, oversampling: Optional[int]):
-    tfnm = SaturationTransform(
+def test_clipping_transform(preserve_id: bool, oversampling: Optional[int]):
+    tfnm = ClippingTransform(
         gain_db=(-10.0, 10.0),
         p_hard=0.5,
         normalize=True,
@@ -119,7 +119,7 @@ def test_saturation_transform(preserve_id: bool, oversampling: Optional[int]):
     if preserve_id:
         assert all(cut.id == cut_sat.id for cut, cut_sat in zip(cuts, cuts_sat))
     else:
-        # Note: not using all() because SaturationTransform has p=0.5
+        # Note: not using all() because ClippingTransform has p=0.5
         assert any(cut.id != cut_sat.id for cut, cut_sat in zip(cuts, cuts_sat))
 
 
