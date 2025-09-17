@@ -1,13 +1,14 @@
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from typing import Dict, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
+from lhotse.tools.sox_resample import sox_context, sox_rate
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
@@ -16,6 +17,17 @@ from lhotse.utils import (
     is_torchaudio_available,
     perturb_num_samples,
 )
+
+RESAMPLE_BACKEND: Literal["default", "sox"] = "default"  # TODO: torchaudio/scipy/sox
+
+
+def set_resample_backend(backend: Literal["default", "sox"]) -> None:
+    global RESAMPLE_BACKEND
+    RESAMPLE_BACKEND = backend
+
+
+def get_resample_backend() -> Literal["default", "sox"]:
+    return RESAMPLE_BACKEND
 
 
 @dataclass
@@ -91,13 +103,31 @@ class Resample(AudioTransform):
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        self.resampler = get_or_create_resampler(
+
+    @property
+    def resampler(self) -> Optional[torch.nn.Module]:
+        if get_resample_backend() == "sox":
+            return None
+        return get_or_create_resampler(
             self.source_sampling_rate, self.target_sampling_rate
         )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
+
+        if get_resample_backend() == "sox":
+            channels, _ = samples.shape
+            resampled_by_channel = []
+            for channel in range(channels):
+                with sox_context():
+                    resampled_samples, _ = sox_rate(
+                        samples[channel, :],
+                        self.source_sampling_rate,
+                        self.target_sampling_rate,
+                    )
+                    resampled_by_channel.append(resampled_samples)
+            return np.stack(resampled_by_channel, axis=0)
 
         if is_torchaudio_available():
             if isinstance(samples, np.ndarray):

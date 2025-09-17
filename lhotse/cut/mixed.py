@@ -666,7 +666,12 @@ class MixedCut(Cut):
             pad_value_dict=pad_value_dict,
         )
 
-    def resample(self, sampling_rate: int, affix_id: bool = False) -> "MixedCut":
+    def resample(
+        self,
+        sampling_rate: int,
+        affix_id: bool = False,
+        resample_custom_fields: bool = True,
+    ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will lazily resample the audio while reading it.
         This operation will drop the feature manifest, if attached.
@@ -675,13 +680,20 @@ class MixedCut(Cut):
         :param sampling_rate: The new sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
+        :param resample_custom_fields: Whether to resample custom fields.
         :return: a modified copy of the current ``MixedCut``.
         """
         assert self.has_recording, "Cannot resample a MixedCut without Recording."
         return MixedCut(
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,
             tracks=[
-                fastcopy(t, cut=t.cut.resample(sampling_rate)) for t in self.tracks
+                fastcopy(
+                    t,
+                    cut=t.cut.resample(
+                        sampling_rate, resample_custom_fields=resample_custom_fields
+                    ),
+                )
+                for t in self.tracks
             ],
         )
 
