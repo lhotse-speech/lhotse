@@ -265,7 +265,12 @@ class PaddingCut(Cut):
             pad_value_dict=pad_value_dict,
         )
 
-    def resample(self, sampling_rate: int, affix_id: bool = False) -> "PaddingCut":
+    def resample(
+        self,
+        sampling_rate: int,
+        affix_id: bool = False,
+        resample_custom_fields: bool = True,
+    ) -> "PaddingCut":
         """
         Return a new ``MonoCut`` that will lazily resample the audio while reading it.
         This operation will drop the feature manifest, if attached.
