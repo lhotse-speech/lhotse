@@ -798,9 +798,12 @@ class AIStoreIOBackend(IOBackend):
                 request = object.get()
             if version >= parse_version("1.9.1"):
                 # AIStore SDK 1.9.1 supports ObjectFile for improved read fault resiliency
-                return request.as_file()
+                fileobj = request.as_file()
             else:
-                return request.raw()
+                fileobj = request.raw()
+            if identifier.endswith(".gz"):
+                fileobj = gzip_open_robust(fileobj)
+            return fileobj
         if "w" in mode:
             assert version >= parse_version("1.10.0"), (
                 f"Writing to AIStore requires at least version 1.10.0 of AIStore Python SDK, "
@@ -1050,6 +1053,7 @@ def get_default_io_backend() -> "IOBackend":
     backends = [
         RedirectIOBackend(),
         PipeIOBackend(),
+        TarAsDirBackend(),
     ]
     if MSCIOBackend.is_available():
         backends.append(MSCIOBackend())
@@ -1064,3 +1068,52 @@ def get_default_io_backend() -> "IOBackend":
         BuiltinIOBackend(),
     ]
     return CompositeIOBackend(backends)
+
+
+class TarAsDirBackend(IOBackend):
+    def open(self, file, mode="r", **kwargs):
+        """
+        Enhanced open() function that supports accessing files inside tar archives
+        using the syntax: /path/to/archive.tar/internal/file.txt
+        """
+        import builtins
+        import tarfile
+
+        file_path = str(file)
+
+        # Check if the path contains a tar file
+        for tar_ext in [".tar", ".tar.gz", ".tar.bz2", ".tar.xz"]:
+            if tar_ext + "/" in file_path:
+                # Split path into tar file and internal path
+                parts = file_path.split(tar_ext + "/", 1)
+                if len(parts) == 2:
+                    tar_path = parts[0] + tar_ext
+                    internal_path = parts[1]
+
+                    # Check if tar file exists
+                    if os.path.exists(tar_path):
+                        try:
+                            # Open tar file and extract the internal file
+                            # with tarfile.open(tar_path, 'r') as tar:
+                            #    return BytesIO(tar.extractfile(internal_path).read())
+                            tar = tarfile.open(tar_path, "r")
+                            return tar.extractfile(internal_path)
+                        except (tarfile.TarError, KeyError) as e:
+                            raise FileNotFoundError(
+                                f"File '{internal_path}' not found in '{tar_path}': {e}"
+                            )
+                    else:
+                        raise FileNotFoundError(f"Tar file '{tar_path}' not found")
+
+        # Fall back to regular open() for non-tar paths
+        return builtins.open(file, mode, **kwargs)
+
+    def handles_special_case(self, identifier: Pathlike) -> bool:
+        identifier = str(identifier)
+        for tar_ext in [".tar", ".tar.gz", ".tar.bz2", ".tar.xz"]:
+            if tar_ext + "/" in identifier:
+                return True
+        return False
+
+    def is_applicable(self, identifier: Pathlike) -> bool:
+        return self.handles_special_case(identifier)
