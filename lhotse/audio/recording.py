@@ -18,6 +18,7 @@ from lhotse.audio.utils import (
 )
 from lhotse.augmentation import (
     AudioTransform,
+    Clipping,
     DereverbWPE,
     LoudnessNormalization,
     Narrowband,
@@ -918,6 +919,50 @@ class Recording:
             duration=new_duration,
             num_samples=new_num_samples,
             sampling_rate=sampling_rate,
+            transforms=transforms,
+        )
+
+    def clip_amplitude(
+        self,
+        hard: bool = False,
+        gain_db: float = 0.0,
+        normalize: bool = True,
+        oversampling: Optional[int] = 4,
+        affix_id: bool = False,
+    ) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply a clipping effect while loading audio.
+        Saturates input signal in [-1, 1] range.
+
+        :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft clipping (saturation).
+        :param gain_db: The amount of gain in decibels to apply before clipping (and to revert back to original level after).
+        :param normalize: If True, normalize the input signal to 0 dBFS before applying clipping.
+        :param oversampling: If provided, we will oversample the input signal by the given integer factor before applying saturation and then downsample back to the original sampling rate.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_cl{gain_db}".
+        :return: a modified copy of the current ``Recording`` with the saturation transform applied.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+
+        if oversampling is not None:
+            transforms.append(
+                Resample(
+                    source_sampling_rate=self.sampling_rate,
+                    target_sampling_rate=self.sampling_rate * oversampling,
+                )
+            )
+        transforms.append(Clipping(hard, gain_db, normalize))
+        if oversampling is not None:
+            transforms.append(
+                Resample(
+                    source_sampling_rate=self.sampling_rate * oversampling,
+                    target_sampling_rate=self.sampling_rate,
+                )
+            )
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_cl{gain_db:.1f}" if affix_id else self.id,
             transforms=transforms,
         )
 
