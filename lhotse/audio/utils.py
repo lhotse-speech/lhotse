@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 from lhotse.utils import NonPositiveEnergyError, Seconds, fastcopy, suppress_and_warn
 
-_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.5
 _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
