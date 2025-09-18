@@ -1,5 +1,5 @@
-import tarfile
 import os
+import tarfile
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -33,7 +33,7 @@ from lhotse.utils import (
 @pytest.fixture
 def safe_tar_file():
     with NamedTemporaryFile(delete=False) as f:
-        temp_name = f.name  # pega o caminho
+        temp_name = f.name
     try:
         with tarfile.open(temp_name, "w:gz") as tar:
             tar.add("test/fixtures/audio.json")
