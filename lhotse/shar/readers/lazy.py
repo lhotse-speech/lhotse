@@ -126,7 +126,7 @@ class LazySharIterator(Dillable):
         ``trng`` mode is mostly useful when the user has limited control over the training loop
         and may not be able to guarantee internal Shar epoch is being incremented, but needs
         randomness on each iteration (e.g. useful with PyTorch Lightning).
-    :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+    :param stateful_shuffle: bool, by default ``True``. When ``True``, every
         time this object is fully iterated, it increments an internal epoch counter
         and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
         Doesn't have any effect when ``shuffle_shards`` is ``False``.
@@ -134,6 +134,10 @@ class LazySharIterator(Dillable):
         It's expected to have the same length as the number of shards, so each function
         corresponds to a specific shard.
         It can be used to attach shard-specific custom attributes to cuts.
+    :param slice_length: optional int, when set enables random slicing of shards that
+        may improve sampling randomness for many-dataset-with-many-large-shards setups
+        at the cost of efficiency. In this mode, we randomly select K to skip first K examples
+        and read only ``slice_length`` examples from each shard, then move to the next one.
 
     See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
@@ -147,20 +151,22 @@ class LazySharIterator(Dillable):
         stateful_shuffle: bool = True,
         seed: Union[int, Literal["randomized"], Literal["trng"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
+        slice_length: Optional[int] = None,
     ) -> None:
         assert exactly_one_not_null(
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
         if split_for_dataloading:
-            assert seed != "randomized", (
-                "Error: seed='randomized' and split_for_dataloading=True are mutually exclusive options "
-                "as they would result in data loss."
+            assert seed not in ("randomized", "trng"), (
+                "Error: setting seed to 'randomized' or 'trng' and using split_for_dataloading=True "
+                "are mutually exclusive options as they would result in data loss."
             )
 
         self.split_for_dataloading = split_for_dataloading
         self.shuffle_shards = shuffle_shards
         self.stateful_shuffle = stateful_shuffle
         self.seed = seed
+        self.slice_length = slice_length
         self.epoch = 0
 
         self._len = None
@@ -218,20 +224,21 @@ class LazySharIterator(Dillable):
         else:
             return shards
 
+    def _get_rng(self) -> random.Random:
+        seed = resolve_seed(self.seed)
+        if self.stateful_shuffle:
+            seed += self.epoch
+        return random.Random(seed)
+
     def _maybe_shuffle_shards(self, shards: List) -> List:
         if self.shuffle_shards:
             shards = shards.copy()
-
-            seed = resolve_seed(self.seed)
-
-            if self.stateful_shuffle:
-                seed += self.epoch
-
-            random.Random(seed).shuffle(shards)
+            self._get_rng().shuffle(shards)
         return shards
 
     def __iter__(self):
         shards, map_fns = self.shards, self.cut_map_fns
+        rng = self._get_rng()
         shards = self._maybe_shuffle_shards(shards)
         shards = self._maybe_split_for_dataloading(shards)
         if map_fns is not None:
@@ -242,6 +249,9 @@ class LazySharIterator(Dillable):
         for shard, cut_map_fn in zip(shards, map_fns):
             # Iterate over cuts for the current shard
             cuts = LazyManifestIterator(shard["cuts"])
+            if self.slice_length is not None:
+                # Sampling a slicing offset requires to know the length
+                cuts = list(cuts)
 
             # Iterate over tarfiles/jsonl containing data for specific fields of each cut
             field_paths = {
@@ -257,7 +267,19 @@ class LazySharIterator(Dillable):
             }
 
             # *field_data contains all fields for a single cut (recording, features, array, etc.)
-            for cut, *field_data in zip(cuts, *field_iters.values()):
+            yielded_cntr = 0
+            slice_offset = (
+                rng.randint(0, len(cuts) - self.slice_length)
+                if self.slice_length is not None and self.slice_length < len(cuts)
+                else -1
+            )
+            for idx, (cut, *field_data) in enumerate(zip(cuts, *field_iters.values())):
+                if idx < slice_offset:
+                    continue
+                elif yielded_cntr == self.slice_length:
+                    break
+
+                # Filling shar placeholders with actual data from tar files etc.
                 for (field, (maybe_manifest, data_path)) in zip(
                     field_iters.keys(),
                     field_data,
@@ -266,7 +288,7 @@ class LazySharIterator(Dillable):
                         continue  # No value available for the current field for this cut.
                     assert (
                         str(data_path.parent / data_path.stem) == cut.id
-                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}' fsor field {field}"
+                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}' for field {field}"
                     setattr(cut, field, maybe_manifest)
 
                 cut.shard_origin = shard["cuts"]
@@ -274,6 +296,7 @@ class LazySharIterator(Dillable):
                 if cut_map_fn is not None:
                     cut = cut_map_fn(cut)
                 yield cut
+                yielded_cntr += 1
 
         self.epoch += 1
 
