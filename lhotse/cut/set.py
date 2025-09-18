@@ -2238,9 +2238,7 @@ class CutSet(Serializable, AlgorithmMixin):
         # Non-parallel execution
         if executor is None and num_jobs == 1:
             if progress_bar:
-                progress = partial(
-                    tqdm, desc="Storing audio recordings", total=len(self)
-                )
+                progress = partial(tqdm, desc="Storing audio recordings")
             return CutSet(
                 progress(
                     cut.save_audio(
