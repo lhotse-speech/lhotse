@@ -81,7 +81,7 @@ def get_aistore_client():
 
     endpoint_url = os.environ["AIS_ENDPOINT"]
     version = parse_version(aistore.__version__)
-    return aistore.Client(endpoint_url, timeout=(1, 20)), version
+    return aistore.Client(endpoint_url, timeout=(5,30)), version
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
@@ -788,6 +788,7 @@ class AIStoreIOBackend(IOBackend):
 
     def open(self, identifier: str, mode: str):
         client, version = get_aistore_client()
+
         object = client.fetch_object_by_url(identifier)
         if "r" in mode:
             try:
@@ -798,7 +799,7 @@ class AIStoreIOBackend(IOBackend):
                 request = object.get()
             if version >= parse_version("1.9.1"):
                 # AIStore SDK 1.9.1 supports ObjectFile for improved read fault resiliency
-                return request.as_file()
+                return request.raw()
             else:
                 return request.raw()
         if "w" in mode:
