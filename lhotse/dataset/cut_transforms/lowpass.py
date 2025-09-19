@@ -19,7 +19,6 @@ class LowpassUsingResampling:
     seed: Union[int, Literal["trng", "randomized"]] = 42
     rng: Optional[random.Random] = None
     preserve_id: bool = False
-    backend: Literal["default", "sox"] = "default"
 
     def __post_init__(self) -> None:
         if self.rng is not None and self.seed is not None:
@@ -28,9 +27,6 @@ class LowpassUsingResampling:
             self.rng = random.Random(resolve_seed(self.seed))
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        original_backend = get_resample_backend()
-        set_resample_backend(self.backend)
-
         lowpassed_cuts = []
         for cut in cuts:
             if self.rng.random() <= self.p:
@@ -54,7 +50,5 @@ class LowpassUsingResampling:
                 lowpassed_cuts.append(new_cut)
             else:
                 lowpassed_cuts.append(cut)
-
-        set_resample_backend(original_backend)
 
         return CutSet(lowpassed_cuts)
