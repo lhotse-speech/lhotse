@@ -18,7 +18,7 @@ from lhotse.dataset import (
     PerturbVolume,
 )
 from lhotse.testing.dummies import DummyManifest
-from lhotse.tools.sox_resample import libsox_available
+from lhotse.tools import libsox_available
 
 
 @pytest.mark.parametrize("preserve_id", [False, True])
