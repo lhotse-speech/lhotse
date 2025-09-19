@@ -972,7 +972,7 @@ class Recording:
         """
         Return a new ``Recording`` that will lazily apply audio compression while loading audio.
 
-        :param codec: The codec to use for compression (one of: opus, mp3, vorbis).
+        :param codec: The codec to use for compression. Supported codecs are "opus", "mp3", "vorbis", "gsm".
         :param compression_level: The compression level between 0.0 and 1.0 (higher means more compression).
         :return: a modified copy of the current ``Recording``.
         """

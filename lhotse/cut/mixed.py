@@ -704,7 +704,7 @@ class MixedCut(Cut):
         """
         Return a copy of this Cut that has Recordings in its sub-Cuts processed by a lossy encoding.
 
-        :param codec: The codec to use for compression.
+        :param codec: The codec to use for compression. Supported codecs are "opus", "mp3", "vorbis", "gsm".
         :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
         :param compress_custom_fields: Whether to also compress any custom recording fields in sub-Cuts.
 

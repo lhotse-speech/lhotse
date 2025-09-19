@@ -18,7 +18,7 @@ class Compress:
     If compression level is provided as an interval,
     then the actual value is sampled uniformly from the provided interval.
 
-    :param codecs: A list of codecs (supported: opus, mp3, vorbis)
+    :param codecs: A list of codecs (supported: "opus", "mp3", "vorbis", "gsm")
     :param compression_level: A single value or an interval. 0.0 = lowest compression (highest bitrate), 1.0 = highest compression (lowest bitrate). If an interval is provided, the value is sampled uniformly.
     :param codec_weights: Optional weights for each codec (default: equal weights).
     :param p: The probability of applying the low-pass filter (default: 0.5).

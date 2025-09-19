@@ -1107,7 +1107,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         """
         Return a copy of this Cut that has its Recordings processed by a lossy audio encoder.
 
-        :param codec: The codec to use for compression. Supported codecs are Opus, MP3, Vorbis.
+        :param codec: The codec to use for compression. Supported codecs are "opus", "mp3", "vorbis", "gsm".
         :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
         :param compress_custom_fields: Whether to also compress any custom recording fields in the Cut.
 
