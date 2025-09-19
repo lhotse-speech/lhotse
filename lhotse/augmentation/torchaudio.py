@@ -9,7 +9,7 @@ import torch
 
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
-from lhotse.tools.sox_resample import sox_context, sox_rate
+from lhotse.tools.sox_resample import sox_rate
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
