@@ -228,12 +228,7 @@ def test_lowpass_using_resampling(backend: Literal["default", "sox"]):
         pytest.skip("libsox not available")
 
     with resample_backend(backend):
-        tfnm = LowpassUsingResampling(
-            frequencies_interval=(2000, 4000),
-            p=1.0,
-            seed=0,
-            backend=backend,
-        )
+        tfnm = LowpassUsingResampling(frequencies_interval=(2000, 4000), p=1.0, seed=0)
 
         cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
         cuts_lp = tfnm(cuts)
