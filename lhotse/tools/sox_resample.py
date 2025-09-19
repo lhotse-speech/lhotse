@@ -160,15 +160,6 @@ def libsox_cleanup() -> None:
 atexit.register(libsox_cleanup)
 
 
-@contextlib.contextmanager
-def sox_context():
-    """Context manager for SoX library initialization and cleanup."""
-    try:
-        yield
-    finally:
-        pass
-
-
 def sox_rate(
     audio: np.ndarray,
     sample_rate: int,

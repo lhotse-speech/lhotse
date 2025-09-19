@@ -129,13 +129,12 @@ class Resample(AudioTransform):
             channels, _ = samples.shape
             resampled_by_channel = []
             for channel in range(channels):
-                with sox_context():
-                    resampled_samples, _ = sox_rate(
-                        samples[channel, :],
-                        self.source_sampling_rate,
-                        self.target_sampling_rate,
-                    )
-                    resampled_by_channel.append(resampled_samples)
+                resampled_samples, _ = sox_rate(
+                    samples[channel, :],
+                    self.source_sampling_rate,
+                    self.target_sampling_rate,
+                )
+                resampled_by_channel.append(resampled_samples)
             return np.stack(resampled_by_channel, axis=0)
 
         if is_torchaudio_available():
