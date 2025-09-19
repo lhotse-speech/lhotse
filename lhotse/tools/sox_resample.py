@@ -1,52 +1,21 @@
+import atexit
 import contextlib
 import ctypes
 import ctypes.util
 import os
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
-try:
-    import soundfile as sf
-except ImportError:
-    sf = None
+__all__ = ["libsox", "sox_rate", "libsox_available"]
 
-try:
-    if os.uname().sysname == "Darwin":  # macOS check
-        os.environ["DYLD_LIBRARY_PATH"] = (
-            os.environ.get("DYLD_LIBRARY_PATH", "")
-            + ":/usr/local/lib:/opt/homebrew/lib"
-        )
-
-    libsox = ctypes.CDLL(ctypes.util.find_library("sox"))
-    libc = ctypes.CDLL(ctypes.util.find_library("c"))
-    sox_free = libc.free
-    sox_free.argtypes = [ctypes.c_void_p]
-    sox_free.restype = None
-except (OSError, AttributeError):
-    raise ImportError(
-        "libsox or libc not found. Please install libsox development libraries and ensure libc is available."
-    )
-
-__all__ = ["sox_rate", "sox_context"]
-
-
-@contextlib.contextmanager
-def sox_context():
-    """Context manager for SoX library initialization and cleanup."""
-    if libsox.sox_init() != SOX_SUCCESS:
-        raise RuntimeError("Failed to initialize SoX.")
-    try:
-        yield
-    finally:
-        libsox.sox_quit()
-
-
-# SoX constants
+libsox = None
+sox_free = None
+LIBSOX_INITIALIZED = False
 SOX_SUCCESS = 0
 SOX_ENCODING_FLOAT = 3
 
-# SoX data types
+
 class sox_signalinfo_t(ctypes.Structure):
     _fields_ = [
         ("rate", ctypes.c_double),
@@ -94,63 +63,110 @@ def libsox_available() -> bool:
     return ctypes.util.find_library("sox") is not None
 
 
-libsox.sox_open_mem_read.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_size_t,
-    ctypes.POINTER(sox_signalinfo_t),
-    ctypes.POINTER(sox_encodinginfo_t),
-    ctypes.c_char_p,
-]
-libsox.sox_open_mem_read.restype = ctypes.POINTER(sox_format_t)
+def libsox_import() -> None:
+    global libsox
+    global sox_free
+    global LIBSOX_INITIALIZED
+    if LIBSOX_INITIALIZED:
+        return
 
-libsox.sox_open_mem_write.argtypes = [
-    ctypes.c_void_p,
-    ctypes.c_size_t,
-    ctypes.POINTER(sox_signalinfo_t),
-    ctypes.POINTER(sox_encodinginfo_t),
-    ctypes.c_char_p,
-    ctypes.c_char_p,
-]
-libsox.sox_open_mem_write.restype = ctypes.POINTER(sox_format_t)
+    if not libsox_available():
+        raise RuntimeError("libsox not available but import requested")
 
-libsox.sox_close.argtypes = [ctypes.POINTER(sox_format_t)]
-libsox.sox_close.restype = ctypes.c_int
+    libsox_ = ctypes.CDLL(ctypes.util.find_library("sox"))
+    libc_ = ctypes.CDLL(ctypes.util.find_library("c"))
 
-libsox.sox_create_effects_chain.argtypes = [
-    ctypes.POINTER(sox_encodinginfo_t),
-    ctypes.POINTER(sox_encodinginfo_t),
-]
-libsox.sox_create_effects_chain.restype = ctypes.POINTER(sox_effects_chain_t)
+    sox_free_ = libc_.free
+    sox_free_.argtypes = [ctypes.c_void_p]
+    sox_free_.restype = None
 
-libsox.sox_delete_effects_chain.argtypes = [ctypes.POINTER(sox_effects_chain_t)]
+    libsox_.sox_init.restype = ctypes.c_int
+    libsox_.sox_quit.restype = ctypes.c_int
 
-libsox.sox_find_effect.argtypes = [ctypes.c_char_p]
-libsox.sox_find_effect.restype = ctypes.POINTER(sox_effect_handler_t)
+    libsox_.sox_open_mem_read.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(sox_signalinfo_t),
+        ctypes.POINTER(sox_encodinginfo_t),
+        ctypes.c_char_p,
+    ]
+    libsox_.sox_open_mem_read.restype = ctypes.POINTER(sox_format_t)
 
-libsox.sox_create_effect.argtypes = [ctypes.POINTER(sox_effect_handler_t)]
-libsox.sox_create_effect.restype = ctypes.POINTER(sox_effect_t)
+    libsox_.sox_open_mem_write.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(sox_signalinfo_t),
+        ctypes.POINTER(sox_encodinginfo_t),
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+    ]
+    libsox_.sox_open_mem_write.restype = ctypes.POINTER(sox_format_t)
 
-libsox.sox_effect_options.argtypes = [
-    ctypes.POINTER(sox_effect_t),
-    ctypes.c_int,
-    ctypes.POINTER(ctypes.c_char_p),
-]
-libsox.sox_effect_options.restype = ctypes.c_int
+    libsox_.sox_close.argtypes = [ctypes.POINTER(sox_format_t)]
+    libsox_.sox_close.restype = ctypes.c_int
 
-libsox.sox_add_effect.argtypes = [
-    ctypes.POINTER(sox_effects_chain_t),
-    ctypes.POINTER(sox_effect_t),
-    ctypes.POINTER(sox_signalinfo_t),
-    ctypes.POINTER(sox_signalinfo_t),
-]
-libsox.sox_add_effect.restype = ctypes.c_int
+    libsox_.sox_create_effects_chain.argtypes = [
+        ctypes.POINTER(sox_encodinginfo_t),
+        ctypes.POINTER(sox_encodinginfo_t),
+    ]
+    libsox_.sox_create_effects_chain.restype = ctypes.POINTER(sox_effects_chain_t)
 
-libsox.sox_flow_effects.argtypes = [
-    ctypes.POINTER(sox_effects_chain_t),
-    ctypes.c_void_p,
-    ctypes.c_void_p,
-]
-libsox.sox_flow_effects.restype = ctypes.c_int
+    libsox_.sox_delete_effects_chain.argtypes = [ctypes.POINTER(sox_effects_chain_t)]
+
+    libsox_.sox_find_effect.argtypes = [ctypes.c_char_p]
+    libsox_.sox_find_effect.restype = ctypes.POINTER(sox_effect_handler_t)
+
+    libsox_.sox_create_effect.argtypes = [ctypes.POINTER(sox_effect_handler_t)]
+    libsox_.sox_create_effect.restype = ctypes.POINTER(sox_effect_t)
+
+    libsox_.sox_effect_options.argtypes = [
+        ctypes.POINTER(sox_effect_t),
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_char_p),
+    ]
+    libsox_.sox_effect_options.restype = ctypes.c_int
+
+    libsox_.sox_add_effect.argtypes = [
+        ctypes.POINTER(sox_effects_chain_t),
+        ctypes.POINTER(sox_effect_t),
+        ctypes.POINTER(sox_signalinfo_t),
+        ctypes.POINTER(sox_signalinfo_t),
+    ]
+    libsox_.sox_add_effect.restype = ctypes.c_int
+
+    libsox_.sox_flow_effects.argtypes = [
+        ctypes.POINTER(sox_effects_chain_t),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    libsox_.sox_flow_effects.restype = ctypes.c_int
+
+    if libsox_.sox_init() != SOX_SUCCESS:
+        raise RuntimeError("Failed to initialize SoX.")
+
+    libsox = libsox_
+    sox_free = sox_free_
+    LIBSOX_INITIALIZED = True
+
+
+def libsox_cleanup() -> None:
+    global LIBSOX_INITIALIZED
+    if not LIBSOX_INITIALIZED:
+        return
+
+    libsox.sox_quit()
+
+
+atexit.register(libsox_cleanup)
+
+
+@contextlib.contextmanager
+def sox_context():
+    """Context manager for SoX library initialization and cleanup."""
+    try:
+        yield
+    finally:
+        pass
 
 
 def sox_rate(
@@ -161,6 +177,9 @@ def sox_rate(
     phase: str = "I",
     bandwidth: float = 99.0,
 ) -> Tuple[np.ndarray, int]:
+    if not LIBSOX_INITIALIZED:
+        libsox_import()
+
     if audio.ndim != 1 or audio.dtype != np.float32:
         raise ValueError("Audio must be a 1D float32 numpy array.")
 
