@@ -1,8 +1,10 @@
 import contextlib
+import os
+import typing
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from typing import Dict, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
@@ -19,20 +21,40 @@ from lhotse.utils import (
     perturb_num_samples,
 )
 
-RESAMPLE_BACKEND: Literal["default", "sox"] = "default"  # TODO: torchaudio/scipy/sox
+ResampleBackend = Literal["default", "sox"]
+
+CURRENT_RESAMPLE_BACKEND: ResampleBackend = "default"
 
 
-def set_resample_backend(backend: Literal["default", "sox"]) -> None:
-    global RESAMPLE_BACKEND
-    RESAMPLE_BACKEND = backend
+def set_resample_backend(backend: ResampleBackend) -> None:
+    global CURRENT_RESAMPLE_BACKEND
+
+    if backend not in available_resampling_backends():
+        raise ValueError(
+            f"Invalid resample backend: {backend}. Available backends: {available_resampling_backends()}"
+        )
+
+    CURRENT_RESAMPLE_BACKEND = backend
 
 
-def get_resample_backend() -> Literal["default", "sox"]:
-    return RESAMPLE_BACKEND
+def get_resample_backend() -> ResampleBackend:
+    if os.environ.get("LHOTSE_RESAMPLING_BACKEND"):
+        return os.environ.get("LHOTSE_RESAMPLING_BACKEND")
+
+    return CURRENT_RESAMPLE_BACKEND
+
+
+def set_resample_backend_from_env():
+    if os.environ.get("LHOTSE_RESAMPLING_BACKEND"):
+        set_resample_backend(os.environ.get("LHOTSE_RESAMPLING_BACKEND"))
+
+
+def available_resampling_backends() -> List[ResampleBackend]:
+    return list(typing.get_args(ResampleBackend))
 
 
 @contextlib.contextmanager
-def resample_backend(backend: RESAMPLE_BACKEND):
+def resample_backend(backend: ResampleBackend | str):
     previous_backend = get_resample_backend()
     set_resample_backend(backend)
     yield
