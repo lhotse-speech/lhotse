@@ -31,6 +31,7 @@ from .serialization import (
     store_manifest,
 )
 from .supervision import SupervisionSegment, SupervisionSet
+from .tools.env import add_macos_homebrew_lib_paths as _add_macos_homebrew_lib_paths
 from .tools.env import add_tools_to_path as _add_tools_to_path
 from .utils import (
     Decibels,
@@ -66,3 +67,4 @@ except:
 from . import augmentation, dataset, features, recipes
 
 _add_tools_to_path()
+_add_macos_homebrew_lib_paths()
