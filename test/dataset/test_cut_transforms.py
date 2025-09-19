@@ -7,6 +7,7 @@ import pytest
 
 import lhotse
 from lhotse import CutSet
+from lhotse.augmentation.torchaudio import resample_backend
 from lhotse.cut import MixedCut
 from lhotse.dataset import (
     CutMix,
@@ -17,6 +18,7 @@ from lhotse.dataset import (
     PerturbVolume,
 )
 from lhotse.testing.dummies import DummyManifest
+from lhotse.tools.sox_resample import libsox_available
 
 
 @pytest.mark.parametrize("preserve_id", [False, True])
@@ -222,23 +224,29 @@ def test_extra_padding_seconds(randomized):
 
 @pytest.mark.parametrize("backend", ["default", "sox"])
 def test_lowpass_using_resampling(backend: Literal["default", "sox"]):
-    tfnm = LowpassUsingResampling(
-        frequencies_interval=(2000, 4000),
-        p=1.0,
-        seed=0,
-        backend=backend,
-    )
+    if backend == "sox" and not libsox_available():
+        pytest.skip("libsox not available")
 
-    cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
-    cuts_lp = tfnm(cuts)
-    assert all(cut.duration == cut_lp.duration for cut, cut_lp in zip(cuts, cuts_lp))
-    assert all(
-        isinstance(cut.recording.transforms[-2], lhotse.augmentation.Resample)
-        for cut in cuts_lp
-    )
-    assert all(
-        isinstance(cut.recording.transforms[-1], lhotse.augmentation.Resample)
-        for cut in cuts_lp
-    )
-    for cut in cuts_lp:
-        cut.load_audio()
+    with resample_backend(backend):
+        tfnm = LowpassUsingResampling(
+            frequencies_interval=(2000, 4000),
+            p=1.0,
+            seed=0,
+            backend=backend,
+        )
+
+        cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
+        cuts_lp = tfnm(cuts)
+        assert all(
+            cut.duration == cut_lp.duration for cut, cut_lp in zip(cuts, cuts_lp)
+        )
+        assert all(
+            isinstance(cut.recording.transforms[-2], lhotse.augmentation.Resample)
+            for cut in cuts_lp
+        )
+        assert all(
+            isinstance(cut.recording.transforms[-1], lhotse.augmentation.Resample)
+            for cut in cuts_lp
+        )
+        for cut in cuts_lp:
+            cut.load_audio()

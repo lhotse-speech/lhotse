@@ -1,3 +1,4 @@
+import contextlib
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
@@ -28,6 +29,14 @@ def set_resample_backend(backend: Literal["default", "sox"]) -> None:
 
 def get_resample_backend() -> Literal["default", "sox"]:
     return RESAMPLE_BACKEND
+
+
+@contextlib.contextmanager
+def resample_backend(backend: RESAMPLE_BACKEND):
+    previous_backend = get_resample_backend()
+    set_resample_backend(backend)
+    yield
+    set_resample_backend(previous_backend)
 
 
 @dataclass

@@ -90,9 +90,9 @@ class sox_effect_t(ctypes.Structure):
     pass
 
 
-# Function signatures for type safety
-libsox.sox_init.restype = ctypes.c_int
-libsox.sox_quit.restype = ctypes.c_int
+def libsox_available() -> bool:
+    return ctypes.util.find_library("sox") is not None
+
 
 libsox.sox_open_mem_read.argtypes = [
     ctypes.c_void_p,
