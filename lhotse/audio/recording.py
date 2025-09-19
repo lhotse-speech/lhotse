@@ -985,7 +985,7 @@ class Recording:
                 f"Compression level must be between 0.0 and 1.0, got {compression_level}"
             )
         transforms = self.transforms.copy() if self.transforms is not None else []
-        # TODO: handle other codecs?
+
         if codec == "gsm" and self.sampling_rate != 8000:
             transforms.append(
                 Resample(
