@@ -38,9 +38,6 @@ def set_resample_backend(backend: ResampleBackend) -> None:
 
 
 def get_resample_backend() -> ResampleBackend:
-    if os.environ.get("LHOTSE_RESAMPLING_BACKEND"):
-        return os.environ.get("LHOTSE_RESAMPLING_BACKEND")
-
     return CURRENT_RESAMPLE_BACKEND
 
 
