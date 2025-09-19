@@ -697,7 +697,7 @@ class MixedCut(Cut):
 
     def compress(
         self,
-        codec: Codec,
+        codec: Codec = "opus",
         compression_level: float = 0.99,
         compress_custom_fields: bool = False,
     ):

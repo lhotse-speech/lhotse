@@ -968,7 +968,9 @@ class Recording:
             transforms=transforms,
         )
 
-    def compress(self, codec: Codec, compression_level: float = 0.99) -> "Recording":
+    def compress(
+        self, codec: Codec = "opus", compression_level: float = 0.99
+    ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply audio compression while loading audio.
 
