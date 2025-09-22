@@ -760,6 +760,14 @@ class DynamicBucketer:
         self._producer_thread = threading.Thread(target=producer)
         self._producer_thread.start()
 
+        # wait until at least one bucket in buffer is ready to form a complete batch
+        # or all datasource is exhausted!
+        while True:
+            time.sleep(1.0)
+            for b in self.buckets:
+                if self._source_exhausted or self._is_ready(b):
+                    return
+
     def _maybe_wait_for_producer(self):
         """Triggers wait for producer if the bucket buffers are less than 10% utilized."""
         while (
