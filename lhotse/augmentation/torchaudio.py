@@ -9,6 +9,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
+from lhotse.audio.resampling_backend import get_resampling_backend
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
 from lhotse.tools.libsox import libsox_rate
@@ -20,42 +21,6 @@ from lhotse.utils import (
     is_torchaudio_available,
     perturb_num_samples,
 )
-
-ResampleBackend = Literal["default", "sox"]
-
-CURRENT_RESAMPLE_BACKEND: ResampleBackend = "default"
-
-
-def set_resample_backend(backend: ResampleBackend) -> None:
-    global CURRENT_RESAMPLE_BACKEND
-
-    if backend not in available_resampling_backends():
-        raise ValueError(
-            f"Invalid resample backend: {backend}. Available backends: {available_resampling_backends()}"
-        )
-
-    CURRENT_RESAMPLE_BACKEND = backend
-
-
-def get_resample_backend() -> ResampleBackend:
-    return CURRENT_RESAMPLE_BACKEND
-
-
-def set_resample_backend_from_env():
-    if os.environ.get("LHOTSE_RESAMPLING_BACKEND"):
-        set_resample_backend(os.environ.get("LHOTSE_RESAMPLING_BACKEND"))
-
-
-def available_resampling_backends() -> List[ResampleBackend]:
-    return list(typing.get_args(ResampleBackend))
-
-
-@contextlib.contextmanager
-def resample_backend(backend: ResampleBackend | str):
-    previous_backend = get_resample_backend()
-    set_resample_backend(backend)
-    yield
-    set_resample_backend(previous_backend)
 
 
 @dataclass
@@ -134,7 +99,7 @@ class Resample(AudioTransform):
 
     @property
     def resampler(self) -> Optional[torch.nn.Module]:
-        if get_resample_backend() == "sox":
+        if get_resampling_backend() == "sox":
             return None
         return get_or_create_resampler(
             self.source_sampling_rate, self.target_sampling_rate
@@ -144,7 +109,7 @@ class Resample(AudioTransform):
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
 
-        if get_resample_backend() == "sox":
+        if get_resampling_backend() == "sox":
             channels, _ = samples.shape
             resampled_by_channel = []
             for channel in range(channels):

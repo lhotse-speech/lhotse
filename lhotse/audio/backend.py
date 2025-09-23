@@ -1,14 +1,16 @@
+import contextlib
 import logging
 import os
 import re
 import sys
 import traceback
+import typing
 from contextlib import contextmanager
 from functools import lru_cache
 from io import BytesIO, IOBase
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, run
-from typing import Any, Generator, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Generator, List, Literal, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import torch

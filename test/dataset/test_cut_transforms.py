@@ -8,7 +8,7 @@ import pytest
 import lhotse
 import lhotse.augmentation
 from lhotse import CutSet
-from lhotse.augmentation.torchaudio import resample_backend
+from lhotse.audio.resampling_backend import resampling_backend
 from lhotse.cut import MixedCut
 from lhotse.dataset import (
     ClippingTransform,
@@ -261,7 +261,7 @@ def test_lowpass_using_resampling(backend: Literal["default", "sox"]):
     if backend == "sox" and not libsox_available():
         pytest.skip("libsox not available")
 
-    with resample_backend(backend):
+    with resampling_backend(backend):
         tfnm = LowpassUsingResampling(frequencies_interval=(2000, 4000), p=1.0, seed=0)
 
         cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)

@@ -8,11 +8,11 @@ import pytest
 
 import lhotse
 import lhotse.tools.libsox
-from lhotse.augmentation.torchaudio import (
+from lhotse.audio.resampling_backend import (
     available_resampling_backends,
-    get_resample_backend,
-    resample_backend,
-    set_resample_backend,
+    get_resampling_backend,
+    resampling_backend,
+    set_resampling_backend,
 )
 
 
@@ -31,20 +31,20 @@ def test_available_resampling_backends():
     assert "sox" in available_resampling_backends()
 
 
-def test_get_resample_backend():
-    assert lhotse.get_resample_backend() in available_resampling_backends()
+def test_get_resampling_backend():
+    assert lhotse.get_resampling_backend() in available_resampling_backends()
 
 
-def test_set_resample_backend():
+def test_set_resampling_backend():
     for backend in available_resampling_backends():
-        set_resample_backend(backend)
-        assert lhotse.get_resample_backend() == backend
+        set_resampling_backend(backend)
+        assert lhotse.get_resampling_backend() == backend
 
 
-def test_resample_backend_contextmanager():
+def test_resampling_backend_contextmanager():
     for backend in available_resampling_backends():
-        with resample_backend(backend):
-            assert lhotse.get_resample_backend() == backend
+        with resampling_backend(backend):
+            assert lhotse.get_resampling_backend() == backend
 
 
 @contextlib.contextmanager
@@ -61,11 +61,11 @@ def monkeypatch_ctypes_util_find_library_so_sox_is_not_available():
     ctypes.util.find_library = original_find_library
 
 
-def test_resample_backend_contextmanager_sox_works_even_if_sox_is_not_available():
+def test_resampling_backend_contextmanager_sox_works_even_if_sox_is_not_available():
     with monkeypatch_ctypes_util_find_library_so_sox_is_not_available():
-        with resample_backend("sox"):
+        with resampling_backend("sox"):
             assert (
-                lhotse.get_resample_backend() == "sox"
+                lhotse.get_resampling_backend() == "sox"
             ), "Sox should be set as the resample backend"
 
 
@@ -73,8 +73,8 @@ def test_libsox_backend():
     if not lhotse.tools.libsox.libsox_available():
         pytest.skip("Sox is not available")
 
-    with resample_backend("sox"):
-        assert lhotse.get_resample_backend() == "sox"
+    with resampling_backend("sox"):
+        assert lhotse.get_resampling_backend() == "sox"
 
         assert (
             lhotse.tools.libsox.LIBSOX_INITIALIZED == False
@@ -98,7 +98,7 @@ def test_libsox_backend():
 
 
 def test_libsox_backend_not_available():
-    with resample_backend("sox"):
+    with resampling_backend("sox"):
         with monkeypatch_ctypes_util_find_library_so_sox_is_not_available():
             assert (
                 lhotse.tools.libsox.LIBSOX_INITIALIZED == False

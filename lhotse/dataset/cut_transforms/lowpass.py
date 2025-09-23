@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import List, Literal, Optional, Tuple, Union
 
 from lhotse import CutSet
-from lhotse.augmentation.torchaudio import get_resample_backend, set_resample_backend
 from lhotse.dataset.dataloading import resolve_seed
 
 

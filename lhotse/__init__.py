@@ -12,14 +12,14 @@ from .audio import (
     set_current_audio_backend,
     set_ffmpeg_torchaudio_info_enabled,
 )
-from .augmentation.torchaudio import (
+from .audio.resampling_backend import (
     available_resampling_backends,
-    get_resample_backend,
-    resample_backend,
-    set_resample_backend,
+    get_resampling_backend,
+    resampling_backend,
+    set_resampling_backend,
 )
-from .augmentation.torchaudio import (
-    set_resample_backend_from_env as _set_resample_backend_from_env,
+from .audio.resampling_backend import (
+    set_resampling_backend_from_env as _set_resampling_backend_from_env,
 )
 from .caching import is_caching_enabled, set_caching_enabled
 from .cut import CutSet, MonoCut, MultiCut, create_cut_set_eager, create_cut_set_lazy
@@ -77,4 +77,4 @@ from . import augmentation, dataset, features, recipes
 
 _add_tools_to_path()
 _add_macos_homebrew_lib_paths()
-_set_resample_backend_from_env()
+_set_resampling_backend_from_env()
