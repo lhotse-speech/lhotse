@@ -1,3 +1,5 @@
+from .clipping import ClippingTransform
+from .compress import Compress
 from .concatenate import CutConcatenate, concat_cuts
 from .extra_padding import ExtraPadding
 from .lowpass import LowpassUsingResampling
@@ -16,4 +18,6 @@ __all__ = [
     "PerturbTempo",
     "PerturbVolume",
     "ReverbWithImpulseResponse",
+    "Compress",
+    "ClippingTransform",
 ]

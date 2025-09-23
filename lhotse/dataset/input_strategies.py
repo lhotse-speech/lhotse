@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import torch
+import torch.nn.functional as F
 
 from lhotse import CutSet, FeatureExtractor
 from lhotse.cut import compute_supervisions_frame_mask
@@ -111,7 +112,11 @@ class PrecomputedFeatures(BatchIO):
     .. automethod:: __call__
     """
 
-    def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __call__(
+        self,
+        cuts: CutSet,
+        pad_direction: Optional[str] = "right",
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Reads the pre-computed features from disk/other storage.
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
@@ -119,10 +124,15 @@ class PrecomputedFeatures(BatchIO):
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding."""
         return collate_features(
             cuts,
+            pad_direction=pad_direction,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
         )
 
-    def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
+    def supervision_intervals(
+        self,
+        cuts: CutSet,
+        pad_direction: Optional[str] = "right",
+    ) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
         as a 1-D int tensor, in terms of frames:
@@ -139,6 +149,13 @@ class PrecomputedFeatures(BatchIO):
         Note that ``S`` might be different than the number of cuts (``B``).
         ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
+        if pad_direction not in ("left", "right"):
+            raise ValueError(
+                f"pad_direction must be 'left' or 'right', got {pad_direction}"
+            )
+
+        max_frames = max(cut.num_frames for cut in cuts)
+
         start_frames, nums_frames = zip(
             *(
                 supervision_to_frames(
@@ -148,7 +165,15 @@ class PrecomputedFeatures(BatchIO):
                 for sup in cut.supervisions
             )
         )
-        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
+
+        if pad_direction == "left":
+            offsets = [
+                max_frames - cut.num_frames for cut in cuts for _ in cut.supervisions
+            ]
+            start_frames = [s + o for s, o in zip(start_frames, offsets)]
+
+        sequence_idx = [i for i, c in enumerate(cuts) for _ in c.supervisions]
+
         return {
             "sequence_idx": torch.tensor(sequence_idx, dtype=torch.int32),
             "start_frame": torch.tensor(start_frames, dtype=torch.int32),
@@ -156,21 +181,28 @@ class PrecomputedFeatures(BatchIO):
         }
 
     def supervision_masks(
-        self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
+        self,
+        cuts: CutSet,
+        use_alignment_if_exists: Optional[str] = None,
+        pad_direction: Optional[str] = "right",
     ) -> torch.Tensor:
         """Returns the mask for supervised frames.
 
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
+        :param pad_direction: where to apply the padding (``right`` or ``left``).
         """
-        return collate_vectors(
-            [
-                cut.supervisions_feature_mask(
-                    use_alignment_if_exists=use_alignment_if_exists
-                )
-                for cut in cuts
-            ]
-        )
+        if pad_direction not in ("left", "right"):
+            raise ValueError(
+                f"pad_direction must be 'left' or 'right', got {pad_direction}"
+            )
+        masks = [
+            cut.supervisions_feature_mask(
+                use_alignment_if_exists=use_alignment_if_exists
+            )
+            for cut in cuts
+        ]
+        return collate_vectors(masks, pad_direction=pad_direction)
 
 
 class AudioSamples(BatchIO):
