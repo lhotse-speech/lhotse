@@ -348,7 +348,7 @@ def parse_ami_annotations(
                     continue
                 start_time = float(word.attrib["starttime"])
                 end_time = float(word.attrib["endtime"])
-                words[key].append((start_time, end_time, word.text))
+                words[key].append((start_time, end_time,("" if word.get("punc", False) else " ") + word.text + ("- " if word.get("trunc", False) else "")))
 
     # Now we create segment-level annotations by combining the word-level
     # annotations with the speaker segment times. We also normalize the text
@@ -377,16 +377,16 @@ def parse_ami_annotations(
                     w_symbol = normalize_text_ami(w[2], normalize=normalize)
                     if len(w_symbol) == 0:
                         continue
-                    if w_dur <= 0:
+                    if w_dur <= 0 and len(w[2]) > 1:
                         logging.warning(
                             f"Segment {key[0]}.{key[1]}.{key[2]} at time {start}-{end} "
-                            f"has a word with zero or negative duration. Skipping."
+                            f"has a word `{w[2]}` with zero or negative duration. Skipping."
                         )
                         continue
                     word_alignments.append(
                         AlignmentItem(start=w_start, duration=w_dur, symbol=w_symbol)
                     )
-                text = " ".join(w.symbol for w in word_alignments)
+                text = "".join(w.symbol for w in word_alignments).strip()
                 annotations[key].append(
                     AmiSegmentAnnotation(
                         text=text,
@@ -417,8 +417,8 @@ def split_segment(
         chunk = []
         for val in sequence:
             if val[-1] == sep:
-                if len(chunk) > 0:
-                    yield chunk
+                chunk.append(val)
+                yield chunk
                 chunk = []
             else:
                 chunk.append(val)
