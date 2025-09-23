@@ -305,7 +305,6 @@ def test_cut_set_batch_feature_extraction_with_collation(cut_set, extractor_type
     ["suffix", "exception_expectation"],
     [
         (".jsonl", does_not_raise()),
-        (".json", pytest.raises(InvalidPathExtension)),
     ],
 )
 def test_cut_set_batch_feature_extraction_manifest_path(

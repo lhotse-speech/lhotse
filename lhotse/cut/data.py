@@ -11,6 +11,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -23,6 +24,7 @@ from intervaltree import IntervalTree
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
+from lhotse.augmentation.compress import Codec
 from lhotse.custom import CustomFieldMixin
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
@@ -1052,6 +1054,84 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         source_rng_seed: Optional[int] = None,
     ) -> "DataCut":
         ...
+
+    def clip_amplitude(
+        self,
+        hard: bool = False,
+        gain_db: float = 0.0,
+        normalize: bool = True,
+        oversampling: Optional[int] = 2,
+        affix_id: bool = True,
+    ) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply clipping while loading audio.
+
+        :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft clipping (saturation).
+        :param gain_db: The amount of gain in decibels to apply before clipping.
+        :param normalize: If True, normalize the input signal to 0 dBFS before applying clipping.
+        :param oversampling: If provided, we will oversample the input signal by the given integer factor before applying saturation and then downsample back to the original sampling rate.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_cl{gain_db}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        assert (
+            self.has_recording
+        ), "Cannot apply saturation on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to apply saturation on a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "saturation."
+            )
+
+        recording_saturated = self.recording.clip_amplitude(
+            hard=hard,
+            gain_db=gain_db,
+            normalize=normalize,
+            oversampling=oversampling,
+            affix_id=affix_id,
+        )
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_cl{gain_db}" if affix_id else self.id,
+            recording=recording_saturated,
+        )
+
+    def compress(
+        self,
+        codec: Codec = "opus",
+        compression_level: float = 0.99,
+        compress_custom_fields: bool = False,
+    ) -> "DataCut":
+        """
+        Return a copy of this Cut that has its Recordings processed by a lossy audio encoder.
+
+        :param codec: The codec to use for compression. Supported codecs are "opus", "mp3", "vorbis", "gsm".
+        :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
+        :param compress_custom_fields: Whether to also compress any custom recording fields in the Cut.
+
+        :return: A modified :class:`~lhotse.DataCut` containing audio processed by a codec
+        """
+        assert self.has_recording, "Cannot compress a DataCut without a Recording."
+
+        custom = self.custom
+        if compress_custom_fields:
+            if isinstance(custom, dict) and any(
+                isinstance(v, Recording) for v in custom.values()
+            ):
+                custom = {
+                    k: v.compress(codec, compression_level)
+                    if isinstance(v, Recording)
+                    else v
+                    for k, v in custom.items()
+                }
+
+        return fastcopy(
+            self,
+            recording=self.recording.compress(codec, compression_level),
+            custom=custom,
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]

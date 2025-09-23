@@ -433,6 +433,7 @@ class CutSet(Serializable, AlgorithmMixin):
         stateful_shuffle: bool = True,
         seed: Union[int, Literal["randomized"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
+        slice_length: Optional[int] = None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -550,6 +551,10 @@ class CutSet(Serializable, AlgorithmMixin):
             It's expected to have the same length as the number of shards, so each function
             corresponds to a specific shard.
             It can be used to attach shard-specific custom attributes to cuts.
+        :param slice_length: optional int, when set enables random slicing of shards that
+            may improve sampling randomness for many-dataset-with-many-large-shards setups
+            at the cost of efficiency. In this mode, we randomly select K to skip first K examples
+            and read only ``slice_length`` examples from each shard, then move to the next one.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
@@ -565,6 +570,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 stateful_shuffle=stateful_shuffle,
                 seed=seed,
                 cut_map_fns=cut_map_fns,
+                slice_length=slice_length,
             )
         )
 
@@ -2232,9 +2238,7 @@ class CutSet(Serializable, AlgorithmMixin):
         # Non-parallel execution
         if executor is None and num_jobs == 1:
             if progress_bar:
-                progress = partial(
-                    tqdm, desc="Storing audio recordings", total=len(self)
-                )
+                progress = partial(tqdm, desc="Storing audio recordings")
             return CutSet(
                 progress(
                     cut.save_audio(
