@@ -272,9 +272,7 @@ class PaddingCut(Cut):
         resample_custom_fields: bool = True,
     ) -> "PaddingCut":
         """
-        Return a new ``MonoCut`` that will lazily resample the audio while reading it.
-        This operation will drop the feature manifest, if attached.
-        It does not affect the supervision.
+        Return a new ``PaddingCut`` that will "mimic" the effect of resampling on ``sampling_rate``, ``duration``, and ``num_samples``.
 
         :param sampling_rate: The new sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
