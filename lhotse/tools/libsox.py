@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-__all__ = ["libsox", "sox_rate", "libsox_available"]
+__all__ = ["libsox", "libsox_rate", "libsox_available"]
 
 libsox = None
 sox_free = None
@@ -160,7 +160,7 @@ def libsox_cleanup() -> None:
 atexit.register(libsox_cleanup)
 
 
-def sox_rate(
+def libsox_rate(
     audio: np.ndarray,
     sample_rate: int,
     target_rate: int,

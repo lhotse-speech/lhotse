@@ -11,7 +11,7 @@ import torch
 
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
-from lhotse.tools.sox_resample import sox_rate
+from lhotse.tools.libsox import libsox_rate
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
@@ -148,7 +148,7 @@ class Resample(AudioTransform):
             channels, _ = samples.shape
             resampled_by_channel = []
             for channel in range(channels):
-                resampled_samples, _ = sox_rate(
+                resampled_samples, _ = libsox_rate(
                     samples[channel, :],
                     self.source_sampling_rate,
                     self.target_sampling_rate,

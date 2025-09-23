@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import lhotse
-import lhotse.tools.sox_resample
+import lhotse.tools.libsox
 from lhotse.augmentation.torchaudio import (
     available_resampling_backends,
     get_resample_backend,
@@ -18,10 +18,10 @@ from lhotse.augmentation.torchaudio import (
 
 @pytest.fixture(autouse=True)
 def reload_module():
-    if "lhotse.tools.sox_resample" in sys.modules:
-        del sys.modules["lhotse.tools.sox_resample"]
+    if "lhotse.tools.libsox" in sys.modules:
+        del sys.modules["lhotse.tools.libsox"]
 
-    import lhotse.tools.sox_resample
+    import lhotse.tools.libsox
 
 
 def test_available_resampling_backends():
@@ -69,49 +69,49 @@ def test_resample_backend_contextmanager_sox_works_even_if_sox_is_not_available(
             ), "Sox should be set as the resample backend"
 
 
-def test_sox_resample_backend():
-    if not lhotse.tools.sox_resample.libsox_available():
+def test_libsox_backend():
+    if not lhotse.tools.libsox.libsox_available():
         pytest.skip("Sox is not available")
 
     with resample_backend("sox"):
         assert lhotse.get_resample_backend() == "sox"
 
         assert (
-            lhotse.tools.sox_resample.LIBSOX_INITIALIZED == False
+            lhotse.tools.libsox.LIBSOX_INITIALIZED == False
         ), "Sox should not be initialized before first resampling"
 
         signal, sampling_rate = np.zeros(16000, dtype=np.float32), 16000
         target_sampling_rate = 8000
-        resampled_signal, new_sampling_rate = lhotse.tools.sox_resample.sox_rate(
+        resampled_signal, new_sampling_rate = lhotse.tools.libsox.libsox_rate(
             signal, sampling_rate, target_sampling_rate
         )
         assert resampled_signal.shape == (8000,)
         assert new_sampling_rate == 8000
 
         assert (
-            lhotse.tools.sox_resample.LIBSOX_INITIALIZED == True
+            lhotse.tools.libsox.LIBSOX_INITIALIZED == True
         ), "Sox should be initialized after a resampling"
 
     assert (
-        lhotse.tools.sox_resample.LIBSOX_INITIALIZED == True
+        lhotse.tools.libsox.LIBSOX_INITIALIZED == True
     ), "Sox should be initialized after the context manager is exited"
 
 
-def test_sox_resample_backend_not_available():
+def test_libsox_backend_not_available():
     with resample_backend("sox"):
         with monkeypatch_ctypes_util_find_library_so_sox_is_not_available():
             assert (
-                lhotse.tools.sox_resample.LIBSOX_INITIALIZED == False
+                lhotse.tools.libsox.LIBSOX_INITIALIZED == False
             ), "Sox should not be initialized before first resampling"
             with pytest.raises(RuntimeError):
-                lhotse.tools.sox_resample.sox_rate(
+                lhotse.tools.libsox.libsox_rate(
                     np.zeros(16000, dtype=np.float32), 16000, 8000
                 )
             assert (
-                lhotse.tools.sox_resample.LIBSOX_INITIALIZED == False
+                lhotse.tools.libsox.LIBSOX_INITIALIZED == False
             ), "Sox should not be initialized because implicit initialization is expected to fail"
             with pytest.raises(RuntimeError):
-                lhotse.tools.sox_resample.libsox_import()
+                lhotse.tools.libsox.libsox_import()
             assert (
-                lhotse.tools.sox_resample.LIBSOX_INITIALIZED == False
+                lhotse.tools.libsox.LIBSOX_INITIALIZED == False
             ), "Sox should not be initialized because explicit initialization is expected to fail"
