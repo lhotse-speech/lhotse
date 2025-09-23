@@ -1,7 +1,7 @@
 import contextlib
 import os
 import typing
-from typing import List, Literal
+from typing import List, Literal, Union
 
 ResamplingBackend = Literal["default", "sox"]
 CURRENT_RESAMPLING_BACKEND: ResamplingBackend = "default"
@@ -32,7 +32,7 @@ def available_resampling_backends() -> List[ResamplingBackend]:
 
 
 @contextlib.contextmanager
-def resampling_backend(backend: ResamplingBackend | str):
+def resampling_backend(backend: Union[ResamplingBackend, str]):
     previous_backend = get_resampling_backend()
     set_resampling_backend(backend)
     yield
