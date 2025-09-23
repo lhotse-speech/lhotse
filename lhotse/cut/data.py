@@ -780,7 +780,10 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         if recording_field == "recording":
             recording = recording.resample(sampling_rate)
         else:
-            custom[recording_field] = custom[recording_field].resample(sampling_rate)
+            custom = {
+                **custom,
+                recording_field: custom[recording_field].resample(sampling_rate),
+            }
 
         return fastcopy(
             self,

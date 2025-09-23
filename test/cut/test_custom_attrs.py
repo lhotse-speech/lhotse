@@ -499,12 +499,22 @@ def test_cut_resample_custom_recording(target_sampling_rate):
     original_sample_rate = cut.sampling_rate
     original_custom_sample_rate = cut.custom_recording.sampling_rate
 
-    cut_resampled_only_recording = cut.resample(
-        target_sampling_rate, recording_field="recording"
-    )
+    cut_resampled_only_recording = cut.resample(target_sampling_rate)
     assert cut_resampled_only_recording.recording.sampling_rate == target_sampling_rate
     assert (
         cut_resampled_only_recording.custom_recording.sampling_rate
+        == original_custom_sample_rate
+    )
+
+    cut_resampled_only_recording_explicit = cut.resample(
+        target_sampling_rate, recording_field="recording"
+    )
+    assert (
+        cut_resampled_only_recording_explicit.recording.sampling_rate
+        == target_sampling_rate
+    )
+    assert (
+        cut_resampled_only_recording_explicit.custom_recording.sampling_rate
         == original_custom_sample_rate
     )
 
@@ -525,6 +535,27 @@ def test_cut_resample_custom_recording(target_sampling_rate):
     )
     assert cut_resampled_both.recording.sampling_rate == target_sampling_rate
     assert cut_resampled_both.custom_recording.sampling_rate == target_sampling_rate
+
+
+@pytest.mark.parametrize("target_sampling_rate", [4000, 8000, 16000])
+def test_cut_resample_custom_recording_leaves_original_custom_field_intact(
+    target_sampling_rate,
+):
+    # has both .recording and.custom_recording
+    cut = dummy_cut(0, duration=10.0, recording_duration=10.0, with_data=True)
+    if cut.sampling_rate == target_sampling_rate:
+        pytest.skip("Skipping test because there is no resampling to do")
+
+    cut_resampled = cut.resample(
+        target_sampling_rate, recording_field="custom_recording"
+    )
+
+    assert (
+        cut_resampled.custom_recording != cut.custom_recording
+    ), "custom_recording should be different from the original"
+    assert (
+        cut_resampled.custom != cut.custom
+    ), "set of custom fields should be different from the original"
 
 
 @pytest.mark.parametrize("target_sampling_rate", [4000, 8000, 16000])
