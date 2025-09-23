@@ -1,13 +1,13 @@
 import contextlib
 import os
 import typing
-from typing import List, Literal, Union
+from typing import List, Literal, Optional, Union
 
 ResamplingBackend = Literal["default", "sox"]
-CURRENT_RESAMPLING_BACKEND: ResamplingBackend = "default"
+CURRENT_RESAMPLING_BACKEND: Optional[ResamplingBackend] = None
 
 
-def set_resampling_backend(backend: ResamplingBackend) -> None:
+def set_current_resampling_backend(backend: ResamplingBackend) -> None:
     global CURRENT_RESAMPLING_BACKEND
 
     if backend not in available_resampling_backends():
@@ -18,13 +18,19 @@ def set_resampling_backend(backend: ResamplingBackend) -> None:
     CURRENT_RESAMPLING_BACKEND = backend
 
 
-def get_resampling_backend() -> ResamplingBackend:
+def get_current_resampling_backend() -> ResamplingBackend:
+    global CURRENT_RESAMPLING_BACKEND
+
+    if CURRENT_RESAMPLING_BACKEND is not None:
+        return CURRENT_RESAMPLING_BACKEND
+
+    maybe_env_backend = os.environ.get("LHOTSE_RESAMPLING_BACKEND")
+    if maybe_env_backend:
+        set_current_resampling_backend(maybe_env_backend)
+        return CURRENT_RESAMPLING_BACKEND
+
+    set_current_resampling_backend("default")
     return CURRENT_RESAMPLING_BACKEND
-
-
-def set_resampling_backend_from_env():
-    if os.environ.get("LHOTSE_RESAMPLING_BACKEND"):
-        set_resampling_backend(os.environ.get("LHOTSE_RESAMPLING_BACKEND"))
 
 
 def available_resampling_backends() -> List[ResamplingBackend]:
@@ -33,7 +39,7 @@ def available_resampling_backends() -> List[ResamplingBackend]:
 
 @contextlib.contextmanager
 def resampling_backend(backend: Union[ResamplingBackend, str]):
-    previous_backend = get_resampling_backend()
-    set_resampling_backend(backend)
+    previous_backend = get_current_resampling_backend()
+    set_current_resampling_backend(backend)
     yield
-    set_resampling_backend(previous_backend)
+    set_current_resampling_backend(previous_backend)

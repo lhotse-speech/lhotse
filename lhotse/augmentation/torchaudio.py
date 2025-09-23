@@ -9,7 +9,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 import numpy as np
 import torch
 
-from lhotse.audio.resampling_backend import get_resampling_backend
+from lhotse.audio.resampling_backend import get_current_resampling_backend
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
 from lhotse.tools.libsox import libsox_rate
@@ -99,7 +99,7 @@ class Resample(AudioTransform):
 
     @property
     def resampler(self) -> Optional[torch.nn.Module]:
-        if get_resampling_backend() == "sox":
+        if get_current_resampling_backend() == "sox":
             return None
         return get_or_create_resampler(
             self.source_sampling_rate, self.target_sampling_rate
@@ -109,7 +109,7 @@ class Resample(AudioTransform):
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
 
-        if get_resampling_backend() == "sox":
+        if get_current_resampling_backend() == "sox":
             channels, _ = samples.shape
             resampled_by_channel = []
             for channel in range(channels):
