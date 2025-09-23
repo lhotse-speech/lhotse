@@ -41,9 +41,7 @@ class LowpassUsingResampling:
                 )
                 cutoff_frequency = int(cutoff_frequency)
 
-                new_cut = cut.resample(
-                    cutoff_frequency * 2, resample_custom_fields=False
-                ).resample(cut.sampling_rate, resample_custom_fields=False)
+                new_cut = cut.resample(cutoff_frequency * 2).resample(cut.sampling_rate)
                 if not self.preserve_id:
                     new_cut.id = f"{cut.id}_lowpassed{cutoff_frequency:.0f}"
                 lowpassed_cuts.append(new_cut)

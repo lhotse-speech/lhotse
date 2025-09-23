@@ -490,3 +490,48 @@ def test_mixed_cut_can_access_custom_directly():
     mixed_custom = cut.custom
     assert orig_custom.keys() == mixed_custom.keys()
     assert orig_custom == mixed_custom
+
+
+@pytest.mark.parametrize("target_sampling_rate", [4000, 8000, 16000])
+def test_cut_resample_custom_recording(target_sampling_rate):
+    # has both .recording and.custom_recording
+    cut = dummy_cut(0, duration=10.0, recording_duration=10.0, with_data=True)
+    original_sample_rate = cut.sampling_rate
+    original_custom_sample_rate = cut.custom_recording.sampling_rate
+
+    cut_resampled_only_recording = cut.resample(
+        target_sampling_rate, recording_field="recording"
+    )
+    assert cut_resampled_only_recording.recording.sampling_rate == target_sampling_rate
+    assert (
+        cut_resampled_only_recording.custom_recording.sampling_rate
+        == original_custom_sample_rate
+    )
+
+    cut_resampled_only_custom_recording = cut.resample(
+        target_sampling_rate, recording_field="custom_recording"
+    )
+    assert (
+        cut_resampled_only_custom_recording.custom_recording.sampling_rate
+        == target_sampling_rate
+    )
+    assert (
+        cut_resampled_only_custom_recording.recording.sampling_rate
+        == original_sample_rate
+    )
+
+    cut_resampled_both = cut.resample(target_sampling_rate).resample(
+        target_sampling_rate, recording_field="custom_recording"
+    )
+    assert cut_resampled_both.recording.sampling_rate == target_sampling_rate
+    assert cut_resampled_both.custom_recording.sampling_rate == target_sampling_rate
+
+
+@pytest.mark.parametrize("target_sampling_rate", [4000, 8000, 16000])
+def test_cut_resample_custom_recording_fails_when_custom_recording_not_present(
+    target_sampling_rate,
+):
+    cut = dummy_cut(0, duration=10.0, recording_duration=10.0, with_data=True)
+
+    with pytest.raises(KeyError):
+        cut.resample(target_sampling_rate, recording_field="nonexistent_recording")
