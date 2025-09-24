@@ -1,12 +1,16 @@
 import random
 from math import isclose
+from typing import Literal, Optional
 
 import numpy as np
 import pytest
 
+import lhotse.augmentation
 from lhotse import CutSet
 from lhotse.cut import MixedCut
 from lhotse.dataset import (
+    ClippingTransform,
+    Compress,
     CutMix,
     ExtraPadding,
     PerturbSpeed,
@@ -88,6 +92,37 @@ def test_perturb_volume(preserve_id: bool):
     else:
         # Note: not using all() because PerturbVolume has p=0.5
         assert any(cut.id != cut_vp.id for cut, cut_vp in zip(cuts, cuts_vp))
+
+
+@pytest.mark.parametrize("oversampling", [None, 2, 4])
+@pytest.mark.parametrize("preserve_id", [False, True])
+def test_clipping_transform(preserve_id: bool, oversampling: Optional[int]):
+    tfnm = ClippingTransform(
+        gain_db=(-10.0, 10.0),
+        p_hard=0.5,
+        normalize=True,
+        p=0.5,
+        preserve_id=preserve_id,
+        oversampling=oversampling,
+    )
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    cuts_sat = tfnm(cuts)
+
+    # Basic properties should be preserved
+    assert all(
+        cut.duration == 1.0
+        and cut.start == 0.0
+        and cut.recording.sampling_rate == 16000
+        and cut.recording.num_samples == 16000
+        and cut.recording.duration == 1.0
+        for cut in cuts_sat
+    )
+
+    if preserve_id:
+        assert all(cut.id == cut_sat.id for cut, cut_sat in zip(cuts, cuts_sat))
+    else:
+        # Note: not using all() because ClippingTransform has p=0.5
+        assert any(cut.id != cut_sat.id for cut, cut_sat in zip(cuts, cuts_sat))
 
 
 @pytest.mark.parametrize("preserve_id", [False, True])
@@ -215,3 +250,59 @@ def test_extra_padding_seconds(randomized):
     if randomized:
         durations = [c.duration for c in padded_cuts]
         assert len(set(durations)) > 1
+
+
+@pytest.mark.parametrize("preserve_id", [False, True])
+def test_compress(preserve_id: bool):
+    tfnm = Compress(
+        codecs=["opus", "mp3"],
+        codec_weights=[2, 2],
+        compression_level=0.8,
+        p=0.5,
+        seed=0,
+        preserve_id=preserve_id,
+    )
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
+    cuts_comp = tfnm(cuts)
+
+    assert all(
+        cut.duration == cut_comp.duration for cut, cut_comp in zip(cuts, cuts_comp)
+    )
+
+    if preserve_id:
+        assert all(cut.id == cut_comp.id for cut, cut_comp in zip(cuts, cuts_comp))
+    else:
+        # Note: not using all() because Compress has p=0.5
+        assert any(cut.id != cut_comp.id for cut, cut_comp in zip(cuts, cuts_comp))
+
+    last_transforms = [
+        cut.recording.transforms[-1] for cut in cuts_comp if cut.recording.transforms
+    ]
+    assert all(isinstance(t, lhotse.augmentation.Compress) for t in last_transforms)
+    assert not any(t.codec == "vorbis" for t in last_transforms)
+    for cut in cuts_comp:
+        cut.load_audio()
+
+
+def test_compress_gsm():
+    tfnm = Compress(
+        codecs=["gsm"],
+        p=1.0,
+        seed=0,
+    )
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
+    cuts_comp = tfnm(cuts)
+
+    assert all(
+        cut.duration == cut_comp.duration for cut, cut_comp in zip(cuts, cuts_comp)
+    )
+
+    assert all(cut.id != cut_comp.id for cut, cut_comp in zip(cuts, cuts_comp))
+
+    last_transforms = [
+        cut.recording.transforms[-1] for cut in cuts_comp if cut.recording.transforms
+    ]
+    assert all(isinstance(t, lhotse.augmentation.Resample) for t in last_transforms)
+
+    for cut in cuts_comp:
+        cut.load_audio()

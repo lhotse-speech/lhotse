@@ -11,6 +11,7 @@ from typing import (
     Generator,
     Iterable,
     List,
+    Literal,
     Optional,
     Tuple,
     Union,
@@ -30,6 +31,7 @@ from lhotse.augmentation import (
     LoudnessNormalization,
     ReverbWithImpulseResponse,
 )
+from lhotse.augmentation.compress import Codec
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.padding import PaddingCut
@@ -290,6 +292,14 @@ class MixedCut(Cut):
         if name.startswith("load_"):
             attr_name = name[5:]
             return partial(self.load_custom, attr_name)
+
+        if name == "custom":
+            # Merge custom dicts of underlying data.
+            ans = {}
+            for t in self.tracks:
+                if cstm := t.cut.custom:
+                    ans.update(cstm)
+            return ans
 
         # Returning the contents of "mono_cut.custom[name]",
         # or raising AttributeError.
@@ -685,6 +695,36 @@ class MixedCut(Cut):
             ],
         )
 
+    def compress(
+        self,
+        codec: Codec = "opus",
+        compression_level: float = 0.99,
+        compress_custom_fields: bool = False,
+    ):
+        """
+        Return a copy of this Cut that has Recordings in its sub-Cuts processed by a lossy encoding.
+
+        :param codec: The codec to use for compression. Supported codecs are "opus", "mp3", "vorbis", "gsm".
+        :param compression_level: The level of compression (from 0.0 to 1.0, higher values correspond to higher compression).
+        :param compress_custom_fields: Whether to also compress any custom recording fields in sub-Cuts.
+
+        :return: A modified :class:`~lhotse.MixedCut` containing audio processed by a codec
+        """
+        assert self.has_recording, "Cannot compress a MixedCut without a Recording."
+
+        return MixedCut(
+            id=self.id,
+            tracks=[
+                fastcopy(
+                    t,
+                    cut=t.cut.compress(
+                        codec, compression_level, compress_custom_fields
+                    ),
+                )
+                for t in self.tracks
+            ],
+        )
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will lazily perturb the speed while loading audio.
@@ -803,6 +843,53 @@ class MixedCut(Cut):
                 fastcopy(
                     track,
                     cut=track.cut.perturb_volume(factor=factor, affix_id=affix_id),
+                )
+                for track in self.tracks
+            ],
+        )
+
+    def clip_amplitude(
+        self,
+        hard: bool = False,
+        gain_db: float = 0.0,
+        normalize: bool = True,
+        oversampling: Optional[int] = 2,
+        affix_id: bool = True,
+    ) -> "MixedCut":
+        """
+        Return a new ``MixedCut`` that will lazily apply clipping while loading audio.
+        Recordings of the underlying Cuts are updated to reflect clipping change.
+
+        :param hard: If True, apply hard clipping (sharp cutoff); otherwise, apply soft clipping (saturation).
+        :param gain_db: The amount of gain in decibels to apply before clipping.
+        :param normalize: If True, normalize the input signal to 0 dBFS before applying clipping.
+        :param oversampling: If provided, we will oversample the input signal by the given integer factor before applying saturation and then downsample back to the original sampling rate.
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_cl{gain_db}".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply saturation on a MixedCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to apply saturation on a MixedCut that references pre-computed features. "
+                "The feature manifest(s) will be detached, as we do not support feature-domain "
+                "saturation."
+            )
+        return MixedCut(
+            id=f"{self.id}_cl{gain_db}" if affix_id else self.id,
+            tracks=[
+                fastcopy(
+                    track,
+                    cut=track.cut.clip_amplitude(
+                        hard=hard,
+                        gain_db=gain_db,
+                        normalize=normalize,
+                        oversampling=oversampling,
+                        affix_id=affix_id,
+                    ),
                 )
                 for track in self.tracks
             ],

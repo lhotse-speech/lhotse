@@ -1111,6 +1111,11 @@ def soundfile_load(
 ) -> Tuple[np.ndarray, int]:
     import soundfile as sf
 
+    if isinstance(path_or_fd, (str, Path)) and ".tar/" in str(path_or_fd):
+        from lhotse.serialization import TarAsDirBackend
+
+        path_or_fd = TarAsDirBackend().open(path_or_fd)
+
     with sf.SoundFile(path_or_fd) as sf_desc:
         sampling_rate = sf_desc.samplerate
         if offset > 0:
@@ -1427,6 +1432,12 @@ def soundfile_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
 
     if isinstance(path, Path):
         path = str(path)
+
+    if isinstance(path, str) and ".tar/" in path:
+        from lhotse.serialization import TarAsDirBackend
+
+        path = TarAsDirBackend().open(path)
+
     info_ = sf.info(path)
     return LibsndfileCompatibleAudioInfo(
         channels=info_.channels,
