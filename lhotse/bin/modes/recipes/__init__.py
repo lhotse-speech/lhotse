@@ -55,6 +55,7 @@ from .l2_arctic import *
 from .libricss import *
 from .librilight import *
 from .librimix import *
+from .librimix_mini import *
 from .librispeech import *
 from .libritts import *
 from .ljspeech import *
@@ -94,5 +95,6 @@ from .voxconverse import *
 from .voxpopuli import *
 from .wenet_speech import *
 from .wenetspeech4tts import *
+from .wham import *
 from .xbmu_amdo31 import *
 from .yesno import *

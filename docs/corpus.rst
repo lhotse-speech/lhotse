@@ -147,6 +147,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_libricss`
   * - LibriLight
     - :func:`lhotse.recipes.prepare_librilight`
+  * - LibriMix
+    - :func:`lhotse.recipes.prepare_librimix`
   * - LibriSpeech (including "mini")
     - :func:`lhotse.recipes.prepare_librispeech`
   * - LibriTTS
@@ -160,7 +162,7 @@ a CLI tool that create the manifests given a corpus directory.
   * - Medical
     - :func:`lhotse.recipes.prepare_medical`
   * - MiniLibriMix
-    - :func:`lhotse.recipes.prepare_librimix`
+    - :func:`lhotse.recipes.prepare_librimix_mini`
   * - MTEDx
     - :func:`lhotse.recipes.prepare_mtdex`
   * - MobvoiHotWord
@@ -213,6 +215,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_wenet_speech`
   * - WenetSpeech4TTS
     - :func:`lhotse.recipes.prepare_wenetspeech4tts`
+  * - WHAM
+    - :func:`lhotse.recipes.prepare_wham`
   * - YesNo
     - :func:`lhotse.recipes.prepare_yesno`
   * - Emilia
