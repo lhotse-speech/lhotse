@@ -171,6 +171,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_musan`
   * - MuST-C
     - :func:`lhotse.recipes.prepare_must_c`
+  * - NOTSOFAR
+    - :func:`lhotse.recipes.prepare_notsofar`
   * - National Speech Corpus (Singaporean English)
     - :func:`lhotse.recipes.prepare_nsc`
   * - People's Speech
