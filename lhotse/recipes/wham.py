@@ -85,13 +85,3 @@ def scan_recordings(corpus_dir: Path) -> RecordingSet:
     return RecordingSet.from_recordings(
         Recording.from_file(file) for file in corpus_dir.rglob("*.wav")
     )
-
-
-def read_annotations(
-    path: Path, max_fields: Optional[int] = None
-) -> Iterable[List[str]]:
-    with open(path) as f:
-        for line in f:
-            line = line.strip().split()
-            if line:
-                yield line if max_fields is None else line[:max_fields]
