@@ -457,6 +457,7 @@ class TimeConstraint(SamplingConstraint):
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
     quadratic_duration: Optional[Seconds] = None
+    concatenate_cuts: bool = False
 
     def __post_init__(self) -> None:
         assert is_none_or_gt(self.max_duration, 0)
@@ -492,6 +493,8 @@ class TimeConstraint(SamplingConstraint):
             return True
         if self.max_duration is None:
             return False
+        if self.concatenate_cuts is True:
+            return self.current > self.max_duration
         effective_duration = self.num_cuts * self.longest_seen
         return effective_duration > self.max_duration
 
@@ -506,6 +509,11 @@ class TimeConstraint(SamplingConstraint):
             return True
 
         if self.max_duration is not None:
+            if self.concatenate_cuts is True:
+                # 80% full batch is "close to exceeding"
+                tolerance = 0.2 * self.max_duration
+                return (self.current + tolerance) > self.max_duration
+
             effective_duration = (self.num_cuts + 1) * self.longest_seen
             return effective_duration > self.max_duration
         return False
@@ -532,6 +540,7 @@ class TimeConstraint(SamplingConstraint):
         self.num_cuts = state_dict.pop("num_cuts")
         self.longest_seen = state_dict.pop("longest_seen", 0)
         self.quadratic_duration = state_dict.pop("quadratic_duration", None)
+        self.concatenate_cuts = state_dict.pop("concatenate_cuts", None)
         # backward compatibility
         state_dict.pop("strict", None)
         state_dict.pop("max_samples", None)
