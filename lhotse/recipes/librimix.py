@@ -138,7 +138,7 @@ def prepare_librimix(
         num_jobs: Number of parallel threads used for processing (default: 1)
 
     Returns:
-        Dict with keys for each split containing 'recordings', 'supervisions', and 'cuts' for both clean and noisy versions
+        Dict with keys for each split containing 'cuts' for both clean and noisy versions
     """
     logging.warning(
         "The original LibriMix recipe introduces a quantization error when saving audio files via soundfile, which by default uses PCM_16 format. If you need to replicate the exact quantization behavior from the original recipe, you can save and load the audio using a temporary file as shown in the docstring of this function."
