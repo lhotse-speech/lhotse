@@ -57,11 +57,9 @@ Citation:
 """
 import logging
 import os
-import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional, Union
-from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
