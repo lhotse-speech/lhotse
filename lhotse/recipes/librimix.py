@@ -65,6 +65,7 @@ from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
+import requests
 import tqdm
 
 import lhotse
@@ -75,10 +76,22 @@ from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
 
-MANIFEST_URL = (
-    "https://nextcloud.fit.vutbr.cz/public.php/dav/files/dY3c36H5mpARKAQ/?accept=zip"
-)
 RATE = 16000
+
+
+def download_github_dir(user, repo, path, branch="main", save_dir="."):
+    api_url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
+    r = requests.get(api_url).json()
+    os.makedirs(save_dir, exist_ok=True)
+
+    for file in r:
+        download_url = file["download_url"]
+        file_path = os.path.join(save_dir, file["name"])
+        if file["type"] == "file":
+            with open(file_path, "wb") as f:
+                f.write(requests.get(download_url).content)
+        elif file["type"] == "dir":
+            download_github_dir(user, repo, file["path"], branch, file_path)
 
 
 def download_librimix(
@@ -88,24 +101,19 @@ def download_librimix(
     """Download LibriMix metadata."""
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = target_dir / "LibriMix_metadata.zip"
-    unzipped_dir = target_dir / "metadata"
-    completed_detector = unzipped_dir / ".completed"
+    metadata_dir = target_dir / "metadata"
+    completed_detector = metadata_dir / ".completed"
 
     if completed_detector.is_file():
-        logging.info(f"Skipping {zip_path} because {completed_detector} exists.")
-        return unzipped_dir
+        logging.info(f"Skipping download because {completed_detector} exists.")
+        return metadata_dir
 
-    resumable_download(
-        MANIFEST_URL,
-        filename=zip_path,
-        force_download=force_download,
+    logging.info(
+        f"Downloading https://github.com/JorisCos/LibriMix/tree/master/metadata to {metadata_dir}..."
     )
-    shutil.rmtree(unzipped_dir, ignore_errors=True)
-    with ZipFile(zip_path) as zf:
-        zf.extractall(path=target_dir)
+    download_github_dir("JorisCos", "LibriMix", "metadata", "master", metadata_dir)
     completed_detector.touch()
-    return unzipped_dir
+    return metadata_dir
 
 
 def prepare_librimix(
