@@ -94,7 +94,6 @@ def download_github_dir(user, repo, path, branch="main", save_dir="."):
 
 def download_librimix(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
 ) -> Path:
     """Download LibriMix metadata."""
     target_dir = Path(target_dir)
@@ -120,9 +119,9 @@ def prepare_librimix(
     librimix_metadata_path: Pathlike,
     workdir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    n_src: Optional[int] = 2,
-    num_jobs: Optional[int] = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    n_src: int = 2,
+    num_jobs: int = 1,
+) -> Dict[str, Dict[str, CutSet]]:
     """
     Prepare LibriMix manifests for multi-speaker mixtures.
 
