@@ -106,7 +106,7 @@ def prepare_notsofar1(
                 sc_recs, sc_sups = fix_manifests(
                     *CutSet.from_cuts(sc_cuts).decompose()[:2]
                 )
-                tag = f"notsofar1_sc_{part}_{version}"
+                tag = f"notsofar1_sdm_{part}_{version}"
                 sc_recs.to_file(output_dir / f"{tag}_recordings.jsonl.gz")
                 sc_sups.to_file(output_dir / f"{tag}_supervisions.jsonl.gz")
                 manifests[part][version]["single_channel"] = {
@@ -118,7 +118,7 @@ def prepare_notsofar1(
                 mc_recs, mc_sups = fix_manifests(
                     *CutSet.from_cuts(mc_cuts).decompose()[:2]
                 )
-                tag = f"notsofar1_mc_{part}_{version}"
+                tag = f"notsofar1_mdm_{part}_{version}"
                 mc_recs.to_file(output_dir / f"{tag}_recordings.jsonl.gz")
                 mc_sups.to_file(output_dir / f"{tag}_supervisions.jsonl.gz")
                 manifests[part][version]["multi_channel"] = {
