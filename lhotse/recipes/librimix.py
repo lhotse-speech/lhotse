@@ -55,15 +55,16 @@ Citation:
     primaryClass={eess.AS}
 }
 """
+import csv
+import json
 import logging
 import os
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import numpy as np
-import pandas as pd
-import requests
 import tqdm
 
 import lhotse
@@ -71,23 +72,34 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.audio.backend import info, save_audio
 from lhotse.cut.set import CutSet, MonoCut, mix
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.supervision import SupervisionSet
-from lhotse.utils import Pathlike, resumable_download
+from lhotse.utils import Pathlike
 
 RATE = 16000
 
 
+def _fetch_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
+
+
+def _fetch_bytes(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp:
+        return resp.read()
+
+
 def download_github_dir(user, repo, path, branch="main", save_dir="."):
     api_url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
-    r = requests.get(api_url).json()
+    files = _fetch_json(api_url)
+
     os.makedirs(save_dir, exist_ok=True)
 
-    for file in r:
-        download_url = file["download_url"]
+    for file in files:
         file_path = os.path.join(save_dir, file["name"])
         if file["type"] == "file":
             with open(file_path, "wb") as f:
-                f.write(requests.get(download_url).content)
+                f.write(_fetch_bytes(file["download_url"]))
         elif file["type"] == "dir":
             download_github_dir(user, repo, file["path"], branch, file_path)
 
@@ -108,6 +120,7 @@ def download_librimix(
     logging.info(
         f"Downloading https://github.com/JorisCos/LibriMix/tree/master/metadata to {metadata_dir}..."
     )
+    os.makedirs(metadata_dir, exist_ok=True)
     download_github_dir("JorisCos", "LibriMix", "metadata", "master", metadata_dir)
     completed_detector.touch()
     return metadata_dir
@@ -370,6 +383,22 @@ def _extend_noise_recording(
     )
 
 
+def _read_metadata_csv(csv_path: Path) -> List[dict]:
+    """
+    Read LibriMix metadata using Python's standard csv library and cast gain fields to float.
+    """
+    rows: List[dict] = []
+    with open(csv_path, "r", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Normalize/convert values as needed
+            for k, v in list(row.items()):
+                if k.endswith("_gain"):
+                    row[k] = float(v)
+            rows.append(row)
+    return rows
+
+
 def _process_metadata_file(
     md_filename: str,
     n_src_meta_root: Path,
@@ -381,7 +410,8 @@ def _process_metadata_file(
 ) -> tuple[List[MonoCut], List[MonoCut]]:
     """Process a single metadata file and return clean and noisy cuts."""
     csv_path = n_src_meta_root / md_filename
-    metadata = pd.read_csv(csv_path)
+
+    rows = _read_metadata_csv(csv_path)
 
     librispeech_cutset = lhotse.load_manifest(
         Path(librispeech_root_path)
@@ -400,8 +430,6 @@ def _process_metadata_file(
     noisy_cuts = []
 
     logging.info(f"Processing {md_filename}...")
-    rows = metadata.to_dict(orient="records")
-
     with ThreadPoolExecutor(max_workers=num_jobs) as ex:
         futures = [
             ex.submit(
