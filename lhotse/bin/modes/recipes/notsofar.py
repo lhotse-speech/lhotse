@@ -40,6 +40,15 @@ def notsofar(
     help="Dataset parts to download.",
 )
 @click.option(
+    "--mic",
+    type=click.Choice(
+        ["sdm", "mdm"],
+        case_sensitive=False,
+    ),
+    default="sdm",
+    help="NOTSOFAR microphone setting.",
+)
+@click.option(
     "--train-version",
     type=str,
     is_flag=False,
@@ -64,6 +73,7 @@ def notsofar(
     target_dir: Pathlike,
     force_download: bool,
     dataset_parts: str,
+    mic: str,
     train_version: str,
     dev_version: str,
     test_version: str,
@@ -72,6 +82,7 @@ def notsofar(
     download_notsofar(
         target_dir,
         parts=dataset_parts,
+        mic=mic,
         train_version=train_version,
         dev_version=dev_version,
         test_version=test_version,

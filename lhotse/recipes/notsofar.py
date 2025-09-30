@@ -15,6 +15,7 @@ from lhotse.utils import Pathlike
 def download_notsofar(
     target_dir: Pathlike = ".",
     parts: Tuple[str] = ("train", "dev", "test"),
+    mic: str = "sdm",
     train_version: str = "240825.1_train",
     dev_version: str = "240825.1_dev1",
     test_version: str = "240629.1_eval_small_with_GT",
@@ -53,12 +54,24 @@ def download_notsofar(
                 f"Unknown part: {part}. Expected one of: 'train', 'dev', 'test'."
             )
 
+        download_patterns = [
+            f"benchmark-datasets/{subset_name}/{version}/MTG/*/*.json",
+        ]
+        if mic == "sdm":
+            download_patterns.append(
+                f"benchmark-datasets/{subset_name}/{version}/MTG/*/sc_*"
+            )
+        elif mic == "mdm":
+            download_patterns.append(
+                f"benchmark-datasets/{subset_name}/{version}/MTG/*/mc_*"
+            )
+
         snapshot_download(
             repo_id="microsoft/NOTSOFAR",
             repo_type="dataset",
             local_dir=target_dir,
             force_download=bool(force_download),
-            allow_patterns=f"benchmark-datasets/{subset_name}/{version}/*",
+            allow_patterns=download_patterns,
         )
 
     return target_dir
