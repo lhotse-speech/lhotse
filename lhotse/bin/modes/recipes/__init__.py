@@ -66,7 +66,7 @@ from .mls import *
 from .mtedx import *
 from .musan import *
 from .must_c import *
-from .notsofar import *
+from .notsofar1 import *
 from .nsc import *
 from .peoples_speech import *
 from .primewords import *
