@@ -12,11 +12,11 @@ import glob
 import json
 import logging
 import os
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import requests
 import tqdm
 
 from lhotse.cut.set import CutSet, MonoCut, mix
@@ -26,17 +26,31 @@ from lhotse.utils import Pathlike
 RATE = 16000
 
 
+def _fetch_json(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp:
+        return json.load(resp)
+
+
+def _fetch_bytes(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "python-urllib"})
+    with urllib.request.urlopen(req) as resp:
+        return resp.read()
+
+
 def download_github_dir(user, repo, path, branch="main", save_dir="."):
     api_url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
-    r = requests.get(api_url).json()
+    files = _fetch_json(api_url)
+
     os.makedirs(save_dir, exist_ok=True)
 
-    for file in r:
-        download_url = file["download_url"]
+    for file in files:
         file_path = os.path.join(save_dir, file["name"])
         if file["type"] == "file":
             with open(file_path, "wb") as f:
-                f.write(requests.get(download_url).content)
+                f.write(_fetch_bytes(file["download_url"]))
+        elif file["type"] == "dir":
+            download_github_dir(user, repo, file["path"], branch, file_path)
 
 
 def download_librispeechmix(
