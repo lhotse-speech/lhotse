@@ -435,10 +435,8 @@ def split_segment(
             if val[-1] == sep:
                 if keep_punctuation:
                     chunk.append(val)
+                if len(chunk) > 0:
                     yield chunk
-                else:
-                    if len(chunk) > 0:
-                        yield chunk
                 chunk = []
             else:
                 chunk.append(val)
