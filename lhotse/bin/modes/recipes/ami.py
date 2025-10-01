@@ -60,6 +60,13 @@ __all__ = ["ami"]
     default=False,
     help="Merge consecutive segments from the same speaker.",
 )
+@click.option(
+    "--keep-punctuation",
+    type=bool,
+    is_flag=True,
+    default=False,
+    help="Keep original punctuation in supervision.",
+)
 def ami(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
@@ -69,6 +76,7 @@ def ami(
     normalize_text: bool,
     max_words_per_segment: int,
     merge_consecutive: bool,
+    keep_punctuation: bool,
 ):
     """AMI data preparation."""
     prepare_ami(
@@ -80,6 +88,7 @@ def ami(
         normalize_text=normalize_text,
         max_words_per_segment=max_words_per_segment,
         merge_consecutive=merge_consecutive,
+        keep_punctuation=keep_punctuation,
     )
 
 
