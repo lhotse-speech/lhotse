@@ -36,6 +36,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tarfile
 import tempfile
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, wait
@@ -50,7 +51,7 @@ from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import TimeFormatConverter, normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, add_durations, resumable_download
+from lhotse.utils import Pathlike, add_durations, resumable_download, safe_extract
 
 # fmt: off
 DATASET_PARTS = {
@@ -78,6 +79,7 @@ CHIME6_MD5SUM_FILE = "https://raw.githubusercontent.com/chimechallenge/chime6-sy
 
 def download_chime6(
     target_dir: Pathlike = ".",
+    force_download: bool = False,
 ) -> Path:
     """
     Download the original dataset. This cannot be done automatically because of the
@@ -86,11 +88,37 @@ def download_chime6(
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :return: the path to downloaded and extracted directory with data.
     """
-    print("We cannot download the CHiME-6 dataset automatically.")
-    print("Please visit the following URL and download the dataset manually:")
+    # print("We cannot download the CHiME-6 dataset automatically.")
+    # print("Please visit the following URL and download the dataset manually:")
+    # print("https://licensing.sheffield.ac.uk/product/chime5")
+    # print("Then, please extract the tar files to the following directory:")
+    # print(f"{target_dir}")
+    print(
+        "By downloading CHiME-6 dataset, you automatically agree with the following licene:"
+    )
     print("https://licensing.sheffield.ac.uk/product/chime5")
-    print("Then, please extract the tar files to the following directory:")
-    print(f"{target_dir}")
+    url = f"https://us.openslr.org/resources/150/"
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    import ssl
+
+    unverified_ssl_ctx = ssl.create_default_context()
+    unverified_ssl_ctx.check_hostname = False
+    unverified_ssl_ctx.verify_mode = ssl.CERT_NONE
+
+    for part in ("train", "dev", "eval"):
+        file_name = f"CHiME6_{part}.tar.gz"
+        tar_path = target_dir / file_name
+        resumable_download(
+            f"{url}/{file_name}",
+            filename=tar_path,
+            force_download=force_download,
+            request_ssl_context=unverified_ssl_ctx,
+        )
+        with tarfile.open(tar_path) as tar:
+            safe_extract(tar, path=target_dir)
+
     return Path(target_dir)
 
 

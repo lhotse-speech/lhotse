@@ -17,6 +17,7 @@ from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from itertools import chain
 from math import ceil, isclose
 from pathlib import Path
+from ssl import SSLContext
 from typing import (
     Any,
     Callable,
@@ -468,6 +469,7 @@ def resumable_download(
     force_download: bool = False,
     completed_file_size: Optional[int] = None,
     missing_ok: bool = False,
+    request_ssl_context: Optional[SSLContext] = None,
 ) -> None:
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
@@ -510,7 +512,7 @@ def resumable_download(
             f.truncate()
 
             # Open the URL and read the contents in chunks
-            with urllib.request.urlopen(rq) as response:
+            with urllib.request.urlopen(rq, context=request_ssl_context) as response:
                 chunk_size = 1024
                 total_size = int(response.headers.get("content-length", 0)) + size
                 with tqdm(

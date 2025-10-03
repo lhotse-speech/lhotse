@@ -118,6 +118,7 @@ def chime6(
 
 @download.command(context_settings=dict(show_default=True))
 @click.argument("target_dir", type=click.Path())
-def chime6(target_dir: Pathlike):
+@click.option("--force-download", is_flag=True, default=False)
+def chime6(target_dir: Pathlike, force_download: bool):
     """CHiME-6 download."""
-    download_chime6(target_dir)
+    download_chime6(target_dir, force_download=force_download)
