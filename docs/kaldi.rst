@@ -112,6 +112,7 @@ To create a ``CutSet`` from the above files, you can use:
     -r ./data/train_manifests/recordings.jsonl.gz \
     -f ./data/train_manifests/features.jsonl.gz \
     -s ./data/train_manifests/supervisions.jsonl.gz \
+    --tolerance 0.1 \
     ./yesno_train.jsonl.gz
 
 Now you can use ``./yesno_train.jsonl.gz`` for training.
