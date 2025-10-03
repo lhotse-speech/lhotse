@@ -93,10 +93,10 @@ def download_chime6(
     # print("https://licensing.sheffield.ac.uk/product/chime5")
     # print("Then, please extract the tar files to the following directory:")
     # print(f"{target_dir}")
-    print(
+    logging.warning(
         "By downloading CHiME-6 dataset, you automatically agree with the following licene:"
     )
-    print("https://licensing.sheffield.ac.uk/product/chime5")
+    logging.warning("https://licensing.sheffield.ac.uk/product/chime5")
     url = f"https://us.openslr.org/resources/150/"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
