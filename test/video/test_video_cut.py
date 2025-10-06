@@ -103,3 +103,43 @@ def test_video_mixed_cut_from_appending(video_cut):
     torch.testing.assert_close(video[132:], orig_video)
     torch.testing.assert_close(audio[:, :253440], orig_audio)
     torch.testing.assert_close(audio[:, 253440:], orig_audio)
+
+
+@pytest.fixture(scope="session")
+def custom_video_cut(video_recording) -> MultiCut:
+    cut = video_recording.to_cut()
+    cut.custom_video = video_recording
+    return cut
+
+
+def test_custom_video_multi_cut(custom_video_cut):
+    # "Main" video
+    assert custom_video_cut.has_video
+    assert custom_video_cut.has("video")
+    assert custom_video_cut.num_channels == AUDIO_CHANNELS
+    assert custom_video_cut.video.fps == FPS
+    assert custom_video_cut.video.width == WIDTH
+    assert custom_video_cut.video.height == HEIGHT
+    assert custom_video_cut.video.num_frames == FRAMES_TOTAL
+
+    # Custom video
+    assert custom_video_cut.has("custom_video")
+    assert custom_video_cut.custom_video.num_channels == AUDIO_CHANNELS
+    assert custom_video_cut.custom_video.video.fps == FPS
+    assert custom_video_cut.custom_video.video.width == WIDTH
+    assert custom_video_cut.custom_video.video.height == HEIGHT
+    assert custom_video_cut.custom_video.video.num_frames == FRAMES_TOTAL
+
+    # Load all audio channels with custom video
+    video, audio = custom_video_cut.load_custom_video()
+    assert video.dtype == torch.uint8
+    assert video.shape == (132, COLOR, HEIGHT, WIDTH)
+    assert audio.dtype == torch.float32
+    assert audio.shape == (AUDIO_CHANNELS, 253440)
+
+    # Load one audio channel with custom video
+    video, audio = custom_video_cut.load_custom_video(channel=0)
+    assert video.dtype == torch.uint8
+    assert video.shape == (132, COLOR, HEIGHT, WIDTH)
+    assert audio.dtype == torch.float32
+    assert audio.shape == (1, 253440)
