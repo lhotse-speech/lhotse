@@ -56,6 +56,7 @@ from .libricss import *
 from .librilight import *
 from .librimix import *
 from .librispeech import *
+from .librispeechmix import *
 from .libritts import *
 from .ljspeech import *
 from .magicdata import *
