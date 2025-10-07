@@ -51,6 +51,7 @@ from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight
 from .librimix import download_librimix, prepare_librimix
+from .librimix_mini import download_librimix_mini, prepare_librimix_mini
 from .librispeech import download_librispeech, prepare_librispeech
 from .librispeechmix import download_librispeechmix, prepare_librispeechmix
 from .libritts import (
@@ -96,6 +97,7 @@ from .voxconverse import download_voxconverse, prepare_voxconverse
 from .voxpopuli import download_voxpopuli, prepare_voxpopuli
 from .wenet_speech import prepare_wenet_speech
 from .wenetspeech4tts import prepare_wenetspeech4tts
+from .wham import download_wham, prepare_wham
 from .xbmu_amdo31 import download_xbmu_amdo31, prepare_xbmu_amdo31
 from .yesno import download_yesno, prepare_yesno
 
@@ -178,6 +180,8 @@ __all__ = [
     "prepare_librilight",
     "download_librimix",
     "prepare_librimix",
+    "download_librimix_mini",
+    "prepare_librimix_mini",
     "download_librispeech",
     "prepare_librispeech",
     "download_libritts",
@@ -233,6 +237,8 @@ __all__ = [
     "download_voxpopuli",
     "prepare_voxpopuli",
     "prepare_wenet_speech",
+    "download_wham",
+    "prepare_wham",
     "download_xbmu_amdo31",
     "prepare_xbmu_amdo31",
     "download_yesno",

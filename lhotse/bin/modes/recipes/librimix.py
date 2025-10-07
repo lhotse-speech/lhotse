@@ -8,40 +8,43 @@ __all__ = ["librimix"]
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument("librimix-csv", type=click.Path(exists=True, dir_okay=False))
+@click.argument("librispeech_root_path", type=click.Path(exists=True, dir_okay=True))
+@click.argument("wham_recset_root_path", type=click.Path(exists=True, dir_okay=True))
+@click.argument("librimix_metadata_path", type=click.Path(exists=True, dir_okay=True))
+@click.argument("workdir", type=click.Path(exists=False, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 @click.option(
-    "--sampling-rate",
+    "-n",
+    "--n_src",
+    type=click.Choice(["2", "3"], case_sensitive=False),
+    default="2",
+    help="Number of sources used to create mixtures.",
+)
+@click.option(
+    "-j",
+    "--num-jobs",
     type=int,
-    default=16000,
-    help="Sampling rate to set in the RecordingSet manifest.",
-)
-@click.option(
-    "--min-segment-seconds",
-    type=float,
-    default=3.0,
-    help="Remove segments shorter than MIN_SEGMENT_SECONDS.",
-)
-@click.option(
-    "--with-precomputed-mixtures/--no-precomputed-mixtures",
-    type=bool,
-    default=False,
-    help="Optionally create an RecordingSet manifest including the precomputed LibriMix mixtures.",
+    default=1,
+    help="How many threads to use (can give good speed-ups with slow disks).",
 )
 def librimix(
-    librimix_csv: Pathlike,
+    librispeech_root_path: Pathlike,
+    wham_recset_root_path: Pathlike,
+    librimix_metadata_path: Pathlike,
+    workdir: Pathlike,
     output_dir: Pathlike,
-    sampling_rate: int,
-    min_segment_seconds: float,
-    with_precomputed_mixtures: bool,
+    n_src: str,
+    num_jobs: int,
 ):
     """LibrMix source separation data preparation."""
     prepare_librimix(
-        librimix_csv=librimix_csv,
+        librispeech_root_path=librispeech_root_path,
+        wham_recset_root_path=wham_recset_root_path,
+        librimix_metadata_path=librimix_metadata_path,
+        workdir=workdir,
         output_dir=output_dir,
-        sampling_rate=sampling_rate,
-        min_segment_seconds=min_segment_seconds,
-        with_precomputed_mixtures=with_precomputed_mixtures,
+        n_src=int(n_src),
+        num_jobs=num_jobs,
     )
 
 
