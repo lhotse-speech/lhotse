@@ -227,6 +227,7 @@ def collate_video(
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
     fault_tolerant: bool = False,
+    recording_field: Optional[str] = None,
 ):
     """
     Load video and audio for all cuts and return them as a batch in torch tensors.
@@ -245,15 +246,34 @@ def collate_video(
     :param fault_tolerant: when ``True``, the cuts for which video/audio loading failed
         will be skipped. Setting this parameter will cause the function to return a 5-tuple,
         where the fifth element is a CutSet for which the audio data were sucessfully read.
+    :param recording_field: when specified, we will try to load recordings from a custom field with this name
+        (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_video()``).
     :return: a tuple of tensors ``(video, video_lens, audio, audio_lens)``,
         or ``(video, video_lens, audio, audio_lens, cuts)``.
     """
-    assert all(cut.has_video for cut in cuts)
+    for cut in cuts:
+        if recording_field is None:
+            assert cut.has_video, f"Missing video in the recording of cut {cut.id}"
+        else:
+            assert cut.has_custom(
+                recording_field
+            ), f"Missing custom recording field {recording_field} in cut {cut.id}"
+            assert getattr(
+                cut, recording_field
+            ).has_video, f"Missing video in custom recording field {recording_field} of cut {cut.id}"
 
     # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
     id2lens = {}
     for cut in cuts:
-        id2lens[cut.id] = (cut.num_samples, cut.video.num_frames)
+        if recording_field is None:
+            video = cut.video
+            num_samples = cut.num_samples
+        else:
+            video = getattr(cut, recording_field).video
+            num_samples = compute_num_samples(
+                cut.duration, getattr(cut, recording_field).sampling_rate
+            )
+        id2lens[cut.id] = (num_samples, video.num_frames)
 
     cuts = cuts.pad(
         duration=max(c.duration for c in cuts),
@@ -554,6 +574,7 @@ def read_video_from_cuts(
     with_audio: bool = True,
     executor: Optional[Executor] = None,
     suppress_errors: bool = False,
+    recording_field: Optional[str] = None,
 ) -> Tuple[List[torch.Tensor], List[torch.Tensor], CutSet]:
     """
     Loads audio data from an iterable of cuts.
@@ -565,6 +586,8 @@ def read_video_from_cuts(
     :param suppress_errors: when set to ``True``, will enable fault-tolerant data reads;
         we will skip the cuts and audio data for the instances that failed (and emit a warning).
         When ``False`` (default), the errors will not be suppressed.
+    :param recording_field: when specified, we will try to load recordings from a custom field with this name
+        (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_video()``).
     :return: a tuple of two items: a list of audio tensors (with different shapes),
         and a list of cuts for which we read the data successfully.
     """
@@ -580,6 +603,7 @@ def read_video_from_cuts(
                     _read_video,
                     suppress_errors=suppress_errors,
                     with_audio=with_audio,
+                    recording_field=recording_field,
                 ),
                 cuts,
             ),
@@ -628,14 +652,24 @@ def _read_features(cut: Cut) -> torch.Tensor:
 
 
 def _read_video(
-    cut: Cut, with_audio: bool = True, suppress_errors: bool = False
+    cut: Cut,
+    with_audio: bool = True,
+    suppress_errors: bool = False,
+    recording_field: Optional[str] = None,
 ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
     """
     Loads video + audio data from cut, or returns None if there was an error
     and ``suppress_errors`` was set to ``True``.
     """
     with suppress_video_loading_errors(enabled=suppress_errors):
-        return cut.load_video(with_audio=with_audio)
+        if recording_field is None:
+            return cut.load_video(with_audio=with_audio)
+        else:
+            attr = getattr(cut, recording_field)
+            assert isinstance(
+                attr, Recording
+            ), f"Expected 'getattr(cut, {recording_field})' to yield Recording, got {type(attr)}"
+            return cut.load_custom(recording_field, with_audio=with_audio)
 
 
 def collate_images(

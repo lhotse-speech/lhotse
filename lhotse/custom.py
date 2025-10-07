@@ -92,7 +92,7 @@ class CustomFieldMixin:
         cpy.custom[name] = value
         return cpy
 
-    def load_custom(self, name: str) -> np.ndarray:
+    def load_custom(self, name: str, **kwargs) -> np.ndarray:
         """
         Load custom data as numpy array. The custom data is expected to have
         been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array`,
@@ -110,25 +110,36 @@ class CustomFieldMixin:
         value = self.custom.get(name)
         if isinstance(value, Array):
             # Array does not support slicing.
-            return value.load()
+            return value.load(**kwargs)
         elif isinstance(value, TemporalArray):
             # TemporalArray supports slicing.
-            return value.load(start=self.start, duration=self.duration)
+            return value.load(start=self.start, duration=self.duration, **kwargs)
         elif isinstance(value, Recording):
             # Note: cut.channels refers to cut.recording and not the custom field.
             # We have to use a special channel selector field instead; e.g.:
             # if this is "target_recording", we'll look for "target_recording_channel_selector"
             channels = self.custom.get(f"{name}_channel_selector")
+            if channels is None and "channel" in kwargs:
+                channels = kwargs.pop(
+                    "channel"
+                )  # channels/channel - being consistent with MultiCut.load_audio/video()
             # By default, the custom Recording is assumed to be in alignment with cut.recording,
             # i.e. has the same duration. That means slicing cut.recording should also slice the custom Recording.
             # If this is not desired, set cut.custom[f"{name}_unaligned]" = True to always load the entire thing.
             if self.custom.get(f"{name}_unaligned", False):
-                return value.load_audio(channels=channels)
+                return value.load_audio(channels=channels, **kwargs)
+            if value.has_video:
+                return value.load_video(
+                    channels=channels,
+                    offset=self.start,
+                    duration=self.duration,
+                    **kwargs,
+                )
             return value.load_audio(
-                channels=channels, offset=self.start, duration=self.duration
+                channels=channels, offset=self.start, duration=self.duration, **kwargs
             )
         elif isinstance(value, Image):
-            return value.load()
+            return value.load(**kwargs)
         else:
             raise ValueError(
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
