@@ -469,7 +469,8 @@ def resumable_download(
     force_download: bool = False,
     completed_file_size: Optional[int] = None,
     missing_ok: bool = False,
-    request_ssl_context: Optional[SSLContext] = None,
+    ssl_context: Optional[SSLContext] = None,
+    additional_headers: Optional[Dict[str, str]] = None,
 ) -> None:
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
@@ -497,6 +498,9 @@ def resumable_download(
         **ua_headers,
     }
 
+    if additional_headers is not None:
+        headers.update(additional_headers)
+
     # Create a request object with the URL and headers
     req = urllib.request.Request(url, headers=headers)
 
@@ -512,7 +516,7 @@ def resumable_download(
             f.truncate()
 
             # Open the URL and read the contents in chunks
-            with urllib.request.urlopen(rq, context=request_ssl_context) as response:
+            with urllib.request.urlopen(rq, context=ssl_context) as response:
                 chunk_size = 1024
                 total_size = int(response.headers.get("content-length", 0)) + size
                 with tqdm(

@@ -97,10 +97,14 @@ def download_chime6(
         "By downloading CHiME-6 dataset, you automatically agree with the following licene:"
     )
     logging.warning("https://licensing.sheffield.ac.uk/product/chime5")
+
+    # This URL was used by chime-utils to download the data.
+    # https://github.com/chimechallenge/chime-utils/blob/main/chime_utils/dgen/chime6.py
     url = f"https://us.openslr.org/resources/150/"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    # The https URL has expired certificate; hence, disabling its check.
     import ssl
 
     unverified_ssl_ctx = ssl.create_default_context()
