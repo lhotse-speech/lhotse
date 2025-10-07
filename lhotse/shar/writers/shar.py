@@ -172,6 +172,7 @@ class SharWriter:
         for key in self.fields:
 
             # Skip fields already taken care of.
+            # Amir: added target_recording
             if key in ["recording", "features"]:
                 continue
 
@@ -184,6 +185,7 @@ class SharWriter:
                     ), f"Expected writer type 'jsonl' (got '{self.fields[key]}') for non-data field '{key}'."
                     self.writers[key].write({"cut_id": cut.id, key: val})
                 else:
+                    
                     data = cut.load_custom(key)
                     placeholder_obj = to_shar_placeholder(val, cut)
                     channel_selector_key = f"{key}_channel_selector"
