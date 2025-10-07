@@ -62,7 +62,7 @@ import os
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import tqdm
@@ -407,7 +407,7 @@ def _process_metadata_file(
     wham_recsets: Dict[str, RecordingSet],
     workdir: Optional[Path],
     num_jobs: int,
-) -> tuple[List[MonoCut], List[MonoCut]]:
+) -> Tuple[List[MonoCut], List[MonoCut]]:
     """Process a single metadata file and return clean and noisy cuts."""
     csv_path = n_src_meta_root / md_filename
 
