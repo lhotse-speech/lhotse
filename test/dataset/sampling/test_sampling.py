@@ -1165,6 +1165,34 @@ def test_time_constraint_strictness():
     assert strict.exceeded()  # because longest seen 30s * 4 seen cuts = 120s
 
 
+def test_time_constraint_concatenate_cuts():
+    strict = TimeConstraint(max_duration=100, concatenate_cuts=True)
+
+    cut_durs = [50.0, 30.0, 10.0, 10.0, 20.0]
+    assert sum(cut_durs) == pytest.approx(120.0)
+    cuts = [dummy_cut(idx, duration=cd) for idx, cd in enumerate(cut_durs)]
+
+    strict.add(cuts[0])  # total duration: 50s
+    assert not strict.close_to_exceeding()
+    assert not strict.exceeded()
+
+    strict.add(cuts[1])  # total duration: 80s
+    assert not strict.close_to_exceeding()
+    assert not strict.exceeded()
+
+    strict.add(cuts[2])  # total duration: 90s
+    assert strict.close_to_exceeding()  # because 90s > 0.8 * max_duration
+    assert not strict.exceeded()
+
+    strict.add(cuts[3])  # total duration: 100s
+    assert strict.close_to_exceeding()  # because 100s > 0.8 * max_duration
+    assert not strict.exceeded()  # 100s is not yet above max_duration
+
+    strict.add(cuts[4])  # total duration: 120s
+    assert strict.close_to_exceeding()  # because 120s > 0.8 * max_duration
+    assert strict.exceeded()  # 120s is above max_duration
+
+
 @pytest.mark.parametrize(
     "sampler_fn",
     [
