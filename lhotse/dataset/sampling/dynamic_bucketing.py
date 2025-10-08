@@ -576,12 +576,14 @@ class DynamicBucketer:
         self.buckets: List[Queue] = [Queue() for _ in range(len(duration_bins) + 1)]
 
         self._producer_thread = None
+        self._source_exhausted = False
 
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
 
         if self.concurrent:
+            self._source_exhausted = False
             self._start_data_producer_thread()
             self._maybe_wait_for_producer()
         else:
@@ -743,7 +745,6 @@ class DynamicBucketer:
 
         def producer():
             try:
-                self._source_exhausted = False
                 while not self._source_exhausted:
                     if sum(b.qsize() for b in self.buckets) == self.buffer_size:
                         time.sleep(0.1)

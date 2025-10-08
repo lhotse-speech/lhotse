@@ -286,6 +286,7 @@ def parse_ami_annotations(
     normalize: str = "upper",
     max_words_per_segment: Optional[int] = None,
     merge_consecutive: bool = False,
+    keep_punctuation: bool = False,
 ) -> Dict[str, List[SupervisionSegment]]:
     # Extract if zipped file
     if str(annotations_dir).endswith(".zip"):
@@ -348,7 +349,17 @@ def parse_ami_annotations(
                     continue
                 start_time = float(word.attrib["starttime"])
                 end_time = float(word.attrib["endtime"])
-                words[key].append((start_time, end_time, word.text))
+                maybe_space = "" if word.get("punc", False) else " "
+                maybe_hyphen = "- " if word.get("trunc", False) else ""
+                words[key].append(
+                    (
+                        start_time,
+                        end_time,
+                        (maybe_space + word.text + maybe_hyphen)
+                        if keep_punctuation
+                        else word.text,
+                    )
+                )
 
     # Now we create segment-level annotations by combining the word-level
     # annotations with the speaker segment times. We also normalize the text
@@ -377,16 +388,20 @@ def parse_ami_annotations(
                     w_symbol = normalize_text_ami(w[2], normalize=normalize)
                     if len(w_symbol) == 0:
                         continue
-                    if w_dur <= 0:
+                    if w_dur <= 0 and (not keep_punctuation or len(w[2]) > 1):
                         logging.warning(
                             f"Segment {key[0]}.{key[1]}.{key[2]} at time {start}-{end} "
-                            f"has a word with zero or negative duration. Skipping."
+                            f"has a word `{w[2]}` with zero or negative duration. Skipping."
                         )
                         continue
                     word_alignments.append(
                         AlignmentItem(start=w_start, duration=w_dur, symbol=w_symbol)
                     )
-                text = " ".join(w.symbol for w in word_alignments)
+                text = (
+                    ("" if keep_punctuation else " ")
+                    .join(w.symbol for w in word_alignments)
+                    .strip()
+                )
                 annotations[key].append(
                     AmiSegmentAnnotation(
                         text=text,
@@ -405,6 +420,7 @@ def split_segment(
     words: List[Tuple[float, float, str]],
     max_words_per_segment: Optional[int] = None,
     merge_consecutive: bool = False,
+    keep_punctuation: bool = False,
 ) -> List[List[Tuple[float, float, str]]]:
     """
     Given a list of words, return a list of segments (each segment is a list of words)
@@ -417,6 +433,8 @@ def split_segment(
         chunk = []
         for val in sequence:
             if val[-1] == sep:
+                if keep_punctuation:
+                    chunk.append(val)
                 if len(chunk) > 0:
                     yield chunk
                 chunk = []
@@ -676,6 +694,7 @@ def prepare_ami(
     normalize_text: str = "kaldi",
     max_words_per_segment: Optional[int] = None,
     merge_consecutive: bool = False,
+    keep_punctuation: Optional[bool] = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -690,6 +709,7 @@ def prepare_ami(
     :param merge_consecutive: bool, if True, merge consecutive segments split on full-stop.
         We will only merge segments if the number of words in the merged segment is less than
         max_words_per_segment.
+    :param keep_punctuation: bool, if True, keep punctuation marks.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
@@ -728,6 +748,7 @@ def prepare_ami(
         normalize=normalize_text,
         max_words_per_segment=max_words_per_segment,
         merge_consecutive=merge_consecutive,
+        keep_punctuation=keep_punctuation,
     )
 
     # Audio

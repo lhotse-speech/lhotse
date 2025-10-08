@@ -52,3 +52,21 @@ def test_video_dataloading(video_cut_set):
             assert k in batch
 
         # Mostly just test that it runs without exceptions for a few steps.
+
+
+@pytest.fixture(scope="session")
+def custom_video_cut(video_recording) -> MultiCut:
+    cut = video_recording.to_cut()
+    cut.custom_video = video_recording
+    return cut
+
+
+def test_collate_custom_video(custom_video_cut):
+    cuts = CutSet.from_cuts([custom_video_cut]).repeat(2)
+    video, video_lens, audio, audio_lens = collate_video(
+        cuts, recording_field="custom_video"
+    )
+    assert video.shape == (2, FRAMES, COLOR, HEIGHT, WIDTH)
+    assert video_lens.tolist() == [FRAMES, FRAMES]
+    assert audio.shape == (2, AUDIO_CHANNELS, 253440)
+    assert audio_lens.tolist() == [253440, 253440]

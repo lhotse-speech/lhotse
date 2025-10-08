@@ -147,8 +147,12 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_libricss`
   * - LibriLight
     - :func:`lhotse.recipes.prepare_librilight`
+  * - LibriMix
+    - :func:`lhotse.recipes.prepare_librimix`
   * - LibriSpeech (including "mini")
     - :func:`lhotse.recipes.prepare_librispeech`
+  * - LibriSpeechMix
+    - :func:`lhotse.recipes.prepare_librispeechmix`
   * - LibriTTS
     - :func:`lhotse.recipes.prepare_libritts`
   * - LibriTTS-R
@@ -160,7 +164,7 @@ a CLI tool that create the manifests given a corpus directory.
   * - Medical
     - :func:`lhotse.recipes.prepare_medical`
   * - MiniLibriMix
-    - :func:`lhotse.recipes.prepare_librimix`
+    - :func:`lhotse.recipes.prepare_librimix_mini`
   * - MTEDx
     - :func:`lhotse.recipes.prepare_mtdex`
   * - MobvoiHotWord
@@ -171,6 +175,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_musan`
   * - MuST-C
     - :func:`lhotse.recipes.prepare_must_c`
+  * - NOTSOFAR
+    - :func:`lhotse.recipes.prepare_notsofar1`
   * - National Speech Corpus (Singaporean English)
     - :func:`lhotse.recipes.prepare_nsc`
   * - People's Speech
@@ -213,6 +219,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_wenet_speech`
   * - WenetSpeech4TTS
     - :func:`lhotse.recipes.prepare_wenetspeech4tts`
+  * - WHAM
+    - :func:`lhotse.recipes.prepare_wham`
   * - YesNo
     - :func:`lhotse.recipes.prepare_yesno`
   * - Emilia
