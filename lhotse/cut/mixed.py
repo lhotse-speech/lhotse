@@ -680,7 +680,7 @@ class MixedCut(Cut):
         self,
         sampling_rate: int,
         affix_id: bool = False,
-        recording_field: str = "recording",
+        recording_field: Optional[str] = None,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will lazily resample the audio while reading it.

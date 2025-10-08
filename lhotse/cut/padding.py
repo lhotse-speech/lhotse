@@ -269,7 +269,7 @@ class PaddingCut(Cut):
         self,
         sampling_rate: int,
         affix_id: bool = False,
-        recording_field: str = "recording",
+        recording_field: Optional[str] = None,
     ) -> "PaddingCut":
         """
         Return a new ``PaddingCut`` that will "mimic" the effect of resampling on ``sampling_rate``, ``duration``, and ``num_samples``.

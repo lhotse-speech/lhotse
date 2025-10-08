@@ -1546,7 +1546,7 @@ class CutSet(Serializable, AlgorithmMixin):
         self,
         sampling_rate: int,
         affix_id: bool = False,
-        recording_field: str = "recording",
+        recording_field: Optional[str] = None,
     ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that contains cuts resampled to the new

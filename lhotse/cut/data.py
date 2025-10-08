@@ -760,7 +760,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         self,
         sampling_rate: int,
         affix_id: bool = False,
-        recording_field: str = "recording",
+        recording_field: Optional[str] = None,
     ) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily resample the audio while reading it.
