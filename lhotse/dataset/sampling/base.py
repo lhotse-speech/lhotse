@@ -448,7 +448,14 @@ class TimeConstraint(SamplingConstraint):
 
         effective_duration = duration + (duration ** 2) / quadratic_duration
 
-    We recomend setting quadratic_duration to something between 15 and 40 for transformer architectures.
+    We recommend setting quadratic_duration to something between 15 and 40 for transformer architectures.
+
+    When ``concatenate_cuts`` is set, the effective duration of the batch is replaced by
+    simple sum of durations of utterances. The shorter utterances will be concatenated,
+    so the amount of padding becomes smaller. ``ConcatenateCuts`` also adds some silence between
+    the concatenated cuts. However, we ignore this from the computation of total duration,
+    as we don't know in advance how many concatenations will be done. The `close_to_exceeding()`
+    is defined as surpassing threshold of 80% of the `max_duration`.
     """
 
     max_duration: Optional[Seconds] = None
@@ -504,18 +511,21 @@ class TimeConstraint(SamplingConstraint):
         We define "closeness" as: if we added one more cut that has
         duration/num_frames/num_samples equal to the longest seen cut
         in the current batch, then the batch would have exceeded the constraints.
+
+        When ``concatenate_cuts`` is set, the "closeness" is defined
+        as being over 80% of max_duration, as we don't know how long
+        the next cut is.
         """
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
 
-        if self.max_duration is not None:
-            if self.concatenate_cuts is True:
-                # 80% full batch is "close to exceeding"
-                tolerance = 0.2 * self.max_duration
-                return (self.current + tolerance) > self.max_duration
+        if self.max_duration is not None and self.concatenate_cuts is True:
+            return self.current > 0.8 * self.max_duration
 
+        if self.max_duration is not None:
             effective_duration = (self.num_cuts + 1) * self.longest_seen
             return effective_duration > self.max_duration
+
         return False
 
     def reset(self) -> None:
