@@ -507,7 +507,7 @@ def test_cut_resample_custom_recording(target_sampling_rate):
     )
 
     cut_resampled_only_recording_explicit = cut.resample(
-        target_sampling_rate, recording_field="recording"
+        target_sampling_rate, recording_field=None
     )
     assert (
         cut_resampled_only_recording_explicit.recording.sampling_rate
