@@ -777,7 +777,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
         custom = self.custom
         recording = self.recording
-        if recording_field == "recording":
+        if recording_field is None:
             recording = recording.resample(sampling_rate)
         else:
             custom = {
