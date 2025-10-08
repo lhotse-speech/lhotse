@@ -82,29 +82,23 @@ def download_chime6(
     force_download: bool = False,
 ) -> Path:
     """
-    Download the original dataset. This cannot be done automatically because of the
-    license agreement. Please visit the following URL and download the dataset manually:
-    https://licensing.sheffield.ac.uk/product/chime5
+    Download the dataset.
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
+    :param force_download: bool, if True, the data are downloaded even if present in the `target_dir`.
     :return: the path to downloaded and extracted directory with data.
     """
-    # print("We cannot download the CHiME-6 dataset automatically.")
-    # print("Please visit the following URL and download the dataset manually:")
-    # print("https://licensing.sheffield.ac.uk/product/chime5")
-    # print("Then, please extract the tar files to the following directory:")
-    # print(f"{target_dir}")
     logging.warning(
-        "By downloading CHiME-6 dataset, you automatically agree with the following licene:"
+        "By downloading CHiME-6 dataset, you automatically agree to the following licene:"
     )
     logging.warning("https://licensing.sheffield.ac.uk/product/chime5")
 
-    # This URL was used by chime-utils to download the data.
+    # This URL was used in chime-utils to download the data.
     # https://github.com/chimechallenge/chime-utils/blob/main/chime_utils/dgen/chime6.py
     url = f"https://us.openslr.org/resources/150/"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # The https URL has expired certificate; hence, disabling its check.
+    # The https URL has an expired certificate; hence, disabling its check.
     import ssl
 
     unverified_ssl_ctx = ssl.create_default_context()
