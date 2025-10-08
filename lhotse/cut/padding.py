@@ -265,18 +265,22 @@ class PaddingCut(Cut):
             pad_value_dict=pad_value_dict,
         )
 
-    def resample(self, sampling_rate: int, affix_id: bool = False) -> "PaddingCut":
+    def resample(
+        self,
+        sampling_rate: int,
+        affix_id: bool = False,
+        recording_field: Optional[str] = None,
+    ) -> "PaddingCut":
         """
-        Return a new ``MonoCut`` that will lazily resample the audio while reading it.
-        This operation will drop the feature manifest, if attached.
-        It does not affect the supervision.
+        Return a new ``PaddingCut`` that will "mimic" the effect of resampling on ``sampling_rate``, ``duration``, and ``num_samples``.
 
         :param sampling_rate: The new sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
-        :return: a modified copy of the current ``MonoCut``.
+        :param recording_field: which recording field to resample. Ignored, present for interface compatibility.
+        :return: a modified copy of the current ``PaddingCut``.
         """
-        assert self.has_recording, "Cannot resample a MonoCut without Recording."
+        assert self.has_recording, "Cannot resample a PaddingCut without Recording."
         return fastcopy(
             self,
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,

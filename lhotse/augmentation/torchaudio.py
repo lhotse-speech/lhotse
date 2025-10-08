@@ -1,13 +1,18 @@
+import contextlib
+import os
+import typing
 import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import torch
 
+from lhotse.audio.resampling_backend import get_current_resampling_backend
 from lhotse.augmentation.resample import Resample as ResampleTensor
 from lhotse.augmentation.transform import AudioTransform
+from lhotse.tools.libsox import libsox_rate
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
@@ -91,13 +96,30 @@ class Resample(AudioTransform):
     def __post_init__(self):
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        self.resampler = get_or_create_resampler(
+
+    @property
+    def resampler(self) -> Optional[torch.nn.Module]:
+        if get_current_resampling_backend() == "sox":
+            return None
+        return get_or_create_resampler(
             self.source_sampling_rate, self.target_sampling_rate
         )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         if self.source_sampling_rate == self.target_sampling_rate:
             return samples
+
+        if get_current_resampling_backend() == "sox":
+            channels, _ = samples.shape
+            resampled_by_channel = []
+            for channel in range(channels):
+                resampled_samples, _ = libsox_rate(
+                    samples[channel, :],
+                    self.source_sampling_rate,
+                    self.target_sampling_rate,
+                )
+                resampled_by_channel.append(resampled_samples)
+            return np.stack(resampled_by_channel, axis=0)
 
         if is_torchaudio_available():
             if isinstance(samples, np.ndarray):

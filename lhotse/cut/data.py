@@ -756,7 +756,12 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             pad_value_dict=pad_value_dict,
         )
 
-    def resample(self, sampling_rate: int, affix_id: bool = False) -> "DataCut":
+    def resample(
+        self,
+        sampling_rate: int,
+        affix_id: bool = False,
+        recording_field: Optional[str] = None,
+    ) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily resample the audio while reading it.
         This operation will drop the feature manifest, if attached.
@@ -765,22 +770,25 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         :param sampling_rate: The new sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
+        :param recording_field: which recording field to resample.
         :return: a modified copy of the current ``DataCut``.
         """
         assert self.has_recording, "Cannot resample a DataCut without Recording."
+
         custom = self.custom
-        if isinstance(custom, dict) and any(
-            isinstance(v, Recording) for v in custom.values()
-        ):
+        recording = self.recording
+        if recording_field is None:
+            recording = recording.resample(sampling_rate)
+        else:
             custom = {
-                k: v.resample(sampling_rate) if isinstance(v, Recording) else v
-                for k, v in custom.items()
+                **custom,
+                recording_field: custom[recording_field].resample(sampling_rate),
             }
 
         return fastcopy(
             self,
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,
-            recording=self.recording.resample(sampling_rate),
+            recording=recording,
             features=None,
             custom=custom,
         )

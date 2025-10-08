@@ -5,19 +5,23 @@ from typing import Literal, Optional
 import numpy as np
 import pytest
 
+import lhotse
 import lhotse.augmentation
 from lhotse import CutSet
+from lhotse.audio.resampling_backend import resampling_backend
 from lhotse.cut import MixedCut
 from lhotse.dataset import (
     ClippingTransform,
     Compress,
     CutMix,
     ExtraPadding,
+    LowpassUsingResampling,
     PerturbSpeed,
     PerturbTempo,
     PerturbVolume,
 )
 from lhotse.testing.dummies import DummyManifest
+from lhotse.tools import libsox_available
 
 
 @pytest.mark.parametrize("preserve_id", [False, True])
@@ -250,6 +254,31 @@ def test_extra_padding_seconds(randomized):
     if randomized:
         durations = [c.duration for c in padded_cuts]
         assert len(set(durations)) > 1
+
+
+@pytest.mark.parametrize("backend", ["default", "sox"])
+def test_lowpass_using_resampling(backend: Literal["default", "sox"]):
+    if backend == "sox" and not libsox_available():
+        pytest.skip("libsox not available")
+
+    with resampling_backend(backend):
+        tfnm = LowpassUsingResampling(frequencies_interval=(2000, 4000), p=1.0, seed=0)
+
+        cuts = DummyManifest(CutSet, begin_id=0, end_id=10, with_data=True)
+        cuts_lp = tfnm(cuts)
+        assert all(
+            cut.duration == cut_lp.duration for cut, cut_lp in zip(cuts, cuts_lp)
+        )
+        assert all(
+            isinstance(cut.recording.transforms[-2], lhotse.augmentation.Resample)
+            for cut in cuts_lp
+        )
+        assert all(
+            isinstance(cut.recording.transforms[-1], lhotse.augmentation.Resample)
+            for cut in cuts_lp
+        )
+        for cut in cuts_lp:
+            cut.load_audio()
 
 
 @pytest.mark.parametrize("preserve_id", [False, True])
