@@ -28,13 +28,16 @@ class PerturbVolume:
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.random is None:
-            self.random = random
+            self.random = random.Random()
         return CutSet.from_cuts(
             cut.perturb_volume(
-                factor=self.random.uniform(self.scale_low, self.scale_high),
+                factor=self._uniform(self.scale_low, self.scale_high),
                 affix_id=not self.preserve_id,
             )
             if self.random.random() <= self.p
             else cut
             for cut in cuts
         )
+
+    def _uniform(self, low: float, high: float) -> float:
+        return low + self.random.random() * (high - low)
