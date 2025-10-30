@@ -70,7 +70,7 @@ except:
     else:
         __version__ = f"0.0.0+unknown.version"
 
-from . import augmentation, dataset, features, recipes
+from . import ais, augmentation, dataset, features, recipes
 
 _add_tools_to_path()
 _add_macos_homebrew_lib_paths()
