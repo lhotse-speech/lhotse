@@ -29,6 +29,7 @@ from lhotse.custom import CustomFieldMixin
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
 from lhotse.features.io import FeaturesWriter
+from lhotse.image import Image
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     LOG_EPSILON,
@@ -99,14 +100,14 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
     def iter_data(
         self,
     ) -> Generator[
-        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+        Tuple[str, Union[Recording, Features, Array, TemporalArray, Image]], None, None
     ]:
         """
         Iterate over each data piece attached to this cut.
         Returns a generator yielding tuples of ``(key, manifest)``, where
         ``key`` is the name of the attribute under which ``manifest`` is found.
         ``manifest`` is of type :class:`~lhotse.Recording`, :class:`~lhotse.Features`,
-        :class:`~lhotse.TemporalArray`, or :class:`~lhotse.Array`.
+        :class:`~lhotse.TemporalArray`, :class:`~lhotse.Array`, or :class:`~lhotse.Image`.
 
         For example, if ``key`` is ``recording``, then ``manifest`` is ``self.recording``.
         """
@@ -115,7 +116,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         if self.has_features:
             yield "features", self.features
         for k, v in (self.custom or {}).items():
-            if isinstance(v, (Recording, Features, Array, TemporalArray)):
+            if isinstance(v, (Recording, Features, Array, TemporalArray, Image)):
                 yield k, v
 
     @property

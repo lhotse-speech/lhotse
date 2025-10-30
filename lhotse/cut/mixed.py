@@ -42,6 +42,7 @@ from lhotse.features import (
 )
 from lhotse.features.base import Features
 from lhotse.features.io import FeaturesWriter
+from lhotse.image import Image
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
@@ -232,14 +233,14 @@ class MixedCut(Cut):
     def iter_data(
         self,
     ) -> Generator[
-        Tuple[str, Union[Recording, Features, Array, TemporalArray]], None, None
+        Tuple[str, Union[Recording, Features, Array, TemporalArray, Image]], None, None
     ]:
         """
         Iterate over each data piece attached to this cut.
         Returns a generator yielding tuples of ``(key, manifest)``, where
         ``key`` is the name of the attribute under which ``manifest`` is found.
         ``manifest`` is of type :class:`~lhotse.Recording`, :class:`~lhotse.Features`,
-        :class:`~lhotse.TemporalArray`, or :class:`~lhotse.Array`.
+        :class:`~lhotse.TemporalArray`, :class:`~lhotse.Array`, or :class:`~lhotse.Image`.
 
         For example, if ``key`` is ``recording``, then ``manifest`` is ``self.recording``.
         """
