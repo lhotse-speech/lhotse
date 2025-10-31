@@ -64,17 +64,19 @@ class AISBatchLoader:
             )
 
         batch = self.client.batch()
-        # Collect all URLs for get-batch
+        # Collect all URLs for get-batch and track which manifests have URLs
+        manifest_list = []
         for cut in cuts:
             for _, manifest in cut.iter_data():
-                self._collect_manifest_urls(manifest, batch)
+                has_url = self._collect_manifest_urls(manifest, batch)
+                manifest_list.append((manifest, has_url))
 
         # Execute batch request
         batch_result = batch.get()
 
-        # Apply the received data back into each manifest
-        for cut in cuts:
-            for _, manifest in cut.iter_data():
+        # Apply the received data back into each manifest that had a URL
+        for manifest, has_url in manifest_list:
+            if has_url:
                 _, content = next(batch_result)
                 self._inject_data_into_manifest(manifest, content)
 
@@ -88,8 +90,25 @@ class AISBatchLoader:
             for source in manifest.sources:
                 if source.type == "url":
                     self._add_url_to_batch(source.source, batch)
+                    return True
+            return False
 
-        elif isinstance(manifest, (Array, TemporalArray, Features, Image)):
+        elif isinstance(manifest, TemporalArray):
+            # TemporalArray wraps an Array, so we need to access the inner array
+            inner_array = manifest.array
+            if inner_array.storage_type not in FILE_TO_MEMORY_TYPE:
+                raise AISBatchLoaderError(
+                    f"Unsupported storage type '{inner_array.storage_type}'. "
+                    f"Supported types: {list(FILE_TO_MEMORY_TYPE.keys())}"
+                )
+
+            obj_path = f"{inner_array.storage_path}/{inner_array.storage_key}"
+            if is_valid_url(obj_path):
+                self._add_url_to_batch(obj_path, batch)
+                return True
+            return False
+
+        elif isinstance(manifest, (Array, Features, Image)):
             if manifest.storage_type not in FILE_TO_MEMORY_TYPE:
                 raise AISBatchLoaderError(
                     f"Unsupported storage type '{manifest.storage_type}'. "
@@ -99,6 +118,10 @@ class AISBatchLoader:
             obj_path = f"{manifest.storage_path}/{manifest.storage_key}"
             if is_valid_url(obj_path):
                 self._add_url_to_batch(obj_path, batch)
+                return True
+            return False
+
+        return False
 
     def _add_url_to_batch(self, url: str, batch: Any) -> None:
         """Add a single AIStore URL to the batch request."""
@@ -124,7 +147,14 @@ class AISBatchLoader:
                 source.type = "memory"
                 source.source = content
 
-        elif isinstance(manifest, (Array, TemporalArray, Features, Image)):
+        elif isinstance(manifest, TemporalArray):
+            # TemporalArray wraps an Array, so update the inner array
+            inner_array = manifest.array
+            inner_array.storage_type = FILE_TO_MEMORY_TYPE[inner_array.storage_type]
+            inner_array.storage_path = ""
+            inner_array.storage_key = content
+
+        elif isinstance(manifest, (Array, Features, Image)):
             manifest.storage_type = FILE_TO_MEMORY_TYPE[manifest.storage_type]
             manifest.storage_path = ""
             manifest.storage_key = content
