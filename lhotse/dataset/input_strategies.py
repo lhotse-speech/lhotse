@@ -222,6 +222,7 @@ class AudioSamples(BatchIO):
         num_workers: int = 0,
         fault_tolerant: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
+        use_batch_loader: bool = False,
     ) -> None:
         """
         AudioSamples constructor.
@@ -236,9 +237,18 @@ class AudioSamples(BatchIO):
             It may be a subset of the input CutSet.
         :param executor_type: the type of executor used for parallel audio reads
             (only relevant when ``num_workers>0``).
+        :param use_batch_loader: When ``True``, enables batch loading of audio data from AIStore.
+            This allows all audio samples in the batch to be fetched in a single request for increased efficiency.
+            Requires the input CutSet to be eager (not lazy).
         """
         super().__init__(num_workers=num_workers, executor_type=executor_type)
         self.fault_tolerant = fault_tolerant
+        self.ais_batch_loader = None
+        self.use_batch_loader = use_batch_loader
+        if self.use_batch_loader:
+            from lhotse.ais import AISBatchLoader
+
+            self.ais_batch_loader = AISBatchLoader()
 
     def __call__(
         self, cuts: CutSet, recording_field: Optional[str] = None
@@ -249,10 +259,19 @@ class AudioSamples(BatchIO):
         Reads the audio samples from recordings on disk/other storage.
         The returned shape is ``(B, T) => (batch_size, num_samples)``.
 
-        :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
         :param recording_field: when specified, we will try to load recordings from a custom field with this name
             (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
+        :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
+
+        .. note::
+            When AIStore batch loading is enabled (`use_batch_loader=True`), the audio data
+            will be fetched from AIStore using a single batch request before collation.
+            The input CutSet must be eager (not lazy).
         """
+        # If AIStore batch loading is enabled, fetch all data in one batch request
+        if self.use_batch_loader and self.ais_batch_loader is not None:
+            # Load all data from AIStore in a single batch request
+            cuts = self.ais_batch_loader(cuts)
         return collate_audio(
             cuts,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
