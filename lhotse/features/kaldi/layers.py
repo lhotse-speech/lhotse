@@ -167,7 +167,7 @@ class Wav2Win(nn.Module):
             x_strided = x_strided - self.preemph_coeff * x_offset[:, :, :-1]
 
         # Apply window_function to each frame
-        x_strided = x_strided * self._window
+        x_strided = x_strided * self._window.to(x_strided.device)
 
         # Pad columns with zero until we reach size (batch, num_frames, pad_length)
         if self.pad_length != self._length:
