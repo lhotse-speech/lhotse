@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def add_tools_to_path():
 
 
 def add_macos_homebrew_lib_paths():
-    if os.uname().sysname == "Darwin":  # macOS
+    if platform.system() == "Darwin":  # macOS
         HOMEBREW_LIB_PATHS = ["/opt/homebrew/lib", "/usr/local/lib"]
         for path in HOMEBREW_LIB_PATHS:
             dyld_library_path = os.environ.get("DYLD_LIBRARY_PATH", "")
