@@ -34,6 +34,7 @@ class SimpleCutSampler(CutSampler):
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
         drop_last: bool = False,
+        concatenate_cuts: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -68,6 +69,7 @@ class SimpleCutSampler(CutSampler):
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
             max_cuts=max_cuts,
+            concatenate_cuts=concatenate_cuts,
         )
 
     @property
