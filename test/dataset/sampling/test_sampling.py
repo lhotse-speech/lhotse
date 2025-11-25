@@ -1167,6 +1167,8 @@ def test_time_constraint_strictness():
 
 def test_time_constraint_concatenate_cuts():
     strict = TimeConstraint(max_duration=100, concatenate_cuts=True)
+    # for `concatenate_cuts=True` the behavior of `exceeded()`
+    # and `close_to_exceeding()` is the same
 
     cut_durs = [50.0, 30.0, 10.0, 10.0, 20.0]
     assert sum(cut_durs) == pytest.approx(120.0)
@@ -1181,15 +1183,15 @@ def test_time_constraint_concatenate_cuts():
     assert not strict.exceeded()
 
     strict.add(cuts[2])  # total duration: 90s
-    assert strict.close_to_exceeding()  # because 90s > 0.8 * max_duration
+    assert not strict.close_to_exceeding()  # because 90s < max_duration
     assert not strict.exceeded()
 
     strict.add(cuts[3])  # total duration: 100s
-    assert strict.close_to_exceeding()  # because 100s > 0.8 * max_duration
+    assert not strict.close_to_exceeding()  # 100s is not yet above max_duration
     assert not strict.exceeded()  # 100s is not yet above max_duration
 
     strict.add(cuts[4])  # total duration: 120s
-    assert strict.close_to_exceeding()  # because 120s > 0.8 * max_duration
+    assert strict.close_to_exceeding()  # because 120s is above max_duration
     assert strict.exceeded()  # 120s is above max_duration
 
 
