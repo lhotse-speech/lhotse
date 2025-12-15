@@ -195,3 +195,7 @@ The `VadDataset` will yield a batch with pairs of feature and supervision tensor
 starts roughly at the first second (100 frames):
 
 ![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/vad_sample.png)
+
+# Acknowledgment
+
+Some contributions to this project were supported by National Science Foundation CCRI award 2120435.
