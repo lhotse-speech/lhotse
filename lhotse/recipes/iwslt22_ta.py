@@ -320,8 +320,8 @@ def remove_punctuations(text):
 
 
 def remove_extra_space(text):
-    text = re.sub("\s+", " ", text)
-    text = re.sub("\s+\.\s+", ".", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+\.\s+", ".", text)
     return text
 
 
