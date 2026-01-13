@@ -74,9 +74,7 @@ class CutSampler(Sampler, Dillable):
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(
-            data_source=None
-        )  # the "data_source" arg is not used in Sampler...
+        super().__init__()
         self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed

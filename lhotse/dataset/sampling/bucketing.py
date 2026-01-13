@@ -371,7 +371,7 @@ def _create_buckets_equal_duration_single(
 
     See also: :meth:`.create_buckets_from_duration_percentiles`.
     """
-    total_duration = np.sum(c.duration for c in cuts)
+    total_duration = np.sum([c.duration for c in cuts])
     bucket_duration = total_duration / num_buckets
     # Define the order for adding cuts. We start at the beginning, then go to
     # the end, and work our way to the middle. Once in the middle we distribute
