@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, Iterator, Optional, Tuple
 
 from lhotse.array import Array, TemporalArray
@@ -72,13 +73,53 @@ class AISBatchLoader:
                 manifest_list.append((manifest, has_url))
 
         # Execute batch request
-        batch_result = batch.get()
+        from aistore.sdk.errors import AISError
+
+        try:
+            batch_result = batch.get()
+        except AISError as e:
+            logging.warning(
+                f"AIStore batch.get() failed: {e}. Falling back to sequential GET requests."
+            )
+            # Fallback: make sequential GET requests for each object in the batch
+            # Use a generator to maintain consistency with batch.get() which returns an iterator
+            def sequential_get():
+                for moss_in in batch.requests_list:
+                    try:
+                        config = None
+                        if moss_in.archpath:
+                            from aistore.sdk.archive_config import ArchiveConfig
+
+                            config = ArchiveConfig(archpath=moss_in.archpath)
+                        reader = (
+                            self.client.bucket(moss_in.bucket_name, moss_in.provider)
+                            .object(moss_in.object_name)
+                            .get_reader(archive_config=config)
+                        )
+                        content = reader.read_all()
+                        yield (moss_in.object_name, content)
+                    except Exception as ex:
+                        logging.error(
+                            f"Failed to fetch object {moss_in.object_name} from bucket "
+                            f"{moss_in.bucket_name}: {ex}"
+                        )
+                        raise AISBatchLoaderError(
+                            f"Sequential GET fallback failed for {moss_in.object_name}"
+                        ) from ex
+
+            batch_result = sequential_get()
 
         # Apply the received data back into each manifest that had a URL
         for manifest, has_url in manifest_list:
             if has_url:
-                _, content = next(batch_result)
-                self._inject_data_into_manifest(manifest, content)
+                try:
+                    _, content = next(batch_result)
+                    self._inject_data_into_manifest(manifest, content)
+                except StopIteration:
+                    raise AISBatchLoaderError(
+                        "Batch result iterator exhausted prematurely. "
+                        f"Expected more objects for manifests with URLs."
+                    )
 
         return cuts
 
