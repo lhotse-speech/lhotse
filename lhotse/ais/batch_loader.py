@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple
 
+from urllib3.exceptions import TimeoutError
+
 from lhotse.array import Array, TemporalArray
 from lhotse.audio.recording import Recording
 from lhotse.cut import CutSet
@@ -132,32 +134,53 @@ class AISBatchLoader:
             batch_result = sequential_get()
 
         # Apply the received data back into each manifest that had a URL
+        request_idx = 0
         for manifest, has_url in manifest_list:
             if has_url:
+                info = None
+                content = None
+
                 try:
                     info, content = next(batch_result)
-                    if content == b"":
-                        logging.warning(
-                            f"Object {info.obj_name}/{info.archpath} from bucket {info.provider}://{info.bck} is empty. "
-                            f"Trying to get the object using AIStore API."
-                        )
-                        # Try to get the object using AIStore API
-                        try:
-                            content = self._get_object_from_moss_in(info)
-                        except Exception as ex:
-                            logging.error(
-                                f"Failed to fetch object {info.obj_name} from bucket "
-                                f"{info.provider}://{info.bck}: {ex}"
-                            )
-                            raise AISBatchLoaderError(
-                                f"Sequential GET fallback failed for {info.object_name}"
-                            ) from ex
-                    self._inject_data_into_manifest(manifest, content)
                 except StopIteration:
                     raise AISBatchLoaderError(
                         "Batch result iterator exhausted prematurely. "
                         f"Expected more objects for manifests with URLs."
                     )
+                except TimeoutError as e:
+                    # Timeout occurred - recover the request info from batch.requests_list
+                    logging.warning(
+                        f"Timeout while fetching batch result at index {request_idx}: {e}. "
+                        f"Falling back to direct AIStore API call."
+                    )
+                    if request_idx < len(batch.requests_list):
+                        info = batch.requests_list[request_idx]
+                        content = b""  # Mark as empty to trigger retry
+                    else:
+                        raise AISBatchLoaderError(
+                            f"Timeout at request index {request_idx}, but cannot recover: "
+                            f"index out of range for batch.requests_list"
+                        ) from e
+
+                # Retry with direct API call if content is empty (from timeout or actual empty response)
+                if content == b"":
+                    logging.warning(
+                        f"Object {info.obj_name}/{info.archpath} from bucket {info.provider}://{info.bck} "
+                        f"returned empty content. Retrying with direct AIStore API call."
+                    )
+                    try:
+                        content = self._get_object_from_moss_in(info)
+                    except Exception as ex:
+                        logging.error(
+                            f"Failed to fetch object {info.obj_name} from bucket "
+                            f"{info.provider}://{info.bck}: {ex}"
+                        )
+                        raise AISBatchLoaderError(
+                            f"Direct API fallback failed for {info.obj_name}"
+                        ) from ex
+
+                self._inject_data_into_manifest(manifest, content)
+                request_idx += 1
 
         return cuts
 
