@@ -70,8 +70,8 @@ class AISBatchLoader:
             config = ArchiveConfig(archpath=moss_in.archpath)
 
         reader = (
-            self.client.bucket(moss_in.bucket_name, moss_in.provider)
-            .object(moss_in.object_name)
+            self.client.bucket(bck_name=moss_in.bck, provider=moss_in.provider)
+            .object(moss_in.obj_name)
             .get_reader(archive_config=config)
         )
         return reader.read_all()
@@ -122,11 +122,11 @@ class AISBatchLoader:
                         yield (moss_in, content)
                     except Exception as ex:
                         logging.error(
-                            f"Failed to fetch object {moss_in.object_name} from bucket "
-                            f"{moss_in.bucket_name}: {ex}"
+                            f"Failed to fetch object {moss_in.obj_name} from bucket "
+                            f"{moss_in.provider}://{moss_in.bck}: {ex}"
                         )
                         raise AISBatchLoaderError(
-                            f"Sequential GET fallback failed for {moss_in.object_name}"
+                            f"Sequential GET fallback failed for {moss_in.obj_name}"
                         ) from ex
 
             batch_result = sequential_get()
@@ -138,7 +138,7 @@ class AISBatchLoader:
                     info, content = next(batch_result)
                     if content == b"":
                         logging.warning(
-                            f"Object {info.object_name}/{info.archpath} from bucket {info.bucket_name} is empty. "
+                            f"Object {info.obj_name}/{info.archpath} from bucket {info.provider}://{info.bck} is empty. "
                             f"Trying to get the object using AIStore API."
                         )
                         # Try to get the object using AIStore API
@@ -146,8 +146,8 @@ class AISBatchLoader:
                             content = self._get_object_from_moss_in(info)
                         except Exception as ex:
                             logging.error(
-                                f"Failed to fetch object {info.object_name} from bucket "
-                                f"{info.bucket_name}: {ex}"
+                                f"Failed to fetch object {info.obj_name} from bucket "
+                                f"{info.provider}://{info.bck}: {ex}"
                             )
                             raise AISBatchLoaderError(
                                 f"Sequential GET fallback failed for {info.object_name}"
