@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Iterator, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple
 
 from lhotse.array import Array, TemporalArray
 from lhotse.audio.recording import Recording
@@ -8,6 +8,9 @@ from lhotse.features.base import Features
 from lhotse.image import Image
 from lhotse.serialization import get_aistore_client
 from lhotse.utils import is_module_available, is_valid_url
+
+if TYPE_CHECKING:
+    from aistore.sdk.batch.types import MossIn
 
 # Mapping between Lhotse file storage types and in-memory equivalents.
 FILE_TO_MEMORY_TYPE = {
@@ -43,6 +46,35 @@ class AISBatchLoader:
                 "Please run 'pip install aistore>=1.17.0' to use AISBatchLoader."
             )
         self.client, _ = get_aistore_client()
+
+    def _get_object_from_moss_in(self, moss_in: "MossIn") -> bytes:
+        """
+        Fetch a single object from AIStore using the ObjectNames request info.
+
+        This method is used as a fallback when batch operations fail or return empty content.
+        It handles archive extraction if an archpath is specified.
+
+        Args:
+            moss_in: AIStore ObjectNames request containing bucket, object, and optional archpath.
+
+        Returns:
+            The object content as bytes.
+
+        Raises:
+            Exception: If the object cannot be fetched from AIStore.
+        """
+        from aistore.sdk.archive_config import ArchiveConfig
+
+        config = None
+        if moss_in.archpath:
+            config = ArchiveConfig(archpath=moss_in.archpath)
+
+        reader = (
+            self.client.bucket(moss_in.bucket_name, moss_in.provider)
+            .object(moss_in.object_name)
+            .get_reader(archive_config=config)
+        )
+        return reader.read_all()
 
     def __call__(self, cuts: CutSet) -> CutSet:
         """
@@ -86,18 +118,8 @@ class AISBatchLoader:
             def sequential_get():
                 for moss_in in batch.requests_list:
                     try:
-                        config = None
-                        if moss_in.archpath:
-                            from aistore.sdk.archive_config import ArchiveConfig
-
-                            config = ArchiveConfig(archpath=moss_in.archpath)
-                        reader = (
-                            self.client.bucket(moss_in.bucket_name, moss_in.provider)
-                            .object(moss_in.object_name)
-                            .get_reader(archive_config=config)
-                        )
-                        content = reader.read_all()
-                        yield (moss_in.object_name, content)
+                        content = self._get_object_from_moss_in(moss_in)
+                        yield (moss_in, content)
                     except Exception as ex:
                         logging.error(
                             f"Failed to fetch object {moss_in.object_name} from bucket "
@@ -113,7 +135,23 @@ class AISBatchLoader:
         for manifest, has_url in manifest_list:
             if has_url:
                 try:
-                    _, content = next(batch_result)
+                    info, content = next(batch_result)
+                    if content == b"":
+                        logging.warning(
+                            f"Object {info.object_name}/{info.archpath} from bucket {info.bucket_name} is empty. "
+                            f"Trying to get the object using AIStore API."
+                        )
+                        # Try to get the object using AIStore API
+                        try:
+                            content = self._get_object_from_moss_in(info)
+                        except Exception as ex:
+                            logging.error(
+                                f"Failed to fetch object {info.object_name} from bucket "
+                                f"{info.bucket_name}: {ex}"
+                            )
+                            raise AISBatchLoaderError(
+                                f"Sequential GET fallback failed for {info.object_name}"
+                            ) from ex
                     self._inject_data_into_manifest(manifest, content)
                 except StopIteration:
                     raise AISBatchLoaderError(
