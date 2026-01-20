@@ -109,6 +109,9 @@ class AISBatchLoader:
         # Execute batch request
         from aistore.sdk.errors import AISError
 
+        # Save requests list before calling batch.get() - it may be cleared after execution
+        saved_requests_list = list(batch.requests_list)
+
         try:
             batch_result = batch.get()
         except AISError as e:
@@ -118,7 +121,7 @@ class AISBatchLoader:
             # Fallback: make sequential GET requests for each object in the batch
             # Use a generator to maintain consistency with batch.get() which returns an iterator
             def sequential_get():
-                for moss_in in batch.requests_list:
+                for moss_in in saved_requests_list:
                     try:
                         content = self._get_object_from_moss_in(moss_in)
                         yield (moss_in, content)
@@ -148,18 +151,19 @@ class AISBatchLoader:
                         f"Expected more objects for manifests with URLs."
                     )
                 except TimeoutError as e:
-                    # Timeout occurred - recover the request info from batch.requests_list
+                    # Timeout occurred - recover the request info from saved_requests_list
                     logging.warning(
                         f"Timeout while fetching batch result at index {request_idx}: {e}. "
                         f"Falling back to direct AIStore API call."
                     )
-                    if request_idx < len(batch.requests_list):
-                        info = batch.requests_list[request_idx]
+
+                    if request_idx < len(saved_requests_list):
+                        info = saved_requests_list[request_idx]
                         content = b""  # Mark as empty to trigger retry
                     else:
                         raise AISBatchLoaderError(
                             f"Timeout at request index {request_idx}, but cannot recover: "
-                            f"index out of range for batch.requests_list"
+                            f"index out of range for saved_requests_list (len={len(saved_requests_list)})"
                         ) from e
 
                 # Retry with direct API call if content is empty (from timeout or actual empty response)
