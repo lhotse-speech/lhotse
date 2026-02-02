@@ -42,7 +42,7 @@ def convert_cuts_info_to_hf(cutset: CutSet) -> Tuple[Dict[str, Any], Dict[str, A
     }
     cut_info_description = {
         "id": Value("string"),
-        "audio": Audio(mono=False),
+        "audio": Audio(num_channels=None),
         "duration": Value("float"),
         "num_channels": Value("uint16"),
     }
