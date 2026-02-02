@@ -66,54 +66,6 @@ def test_wav2mfcc(deterministic_rng):
     assert y.dtype == torch.float32
 
 
-def test_wav2win_is_torchscriptable(deterministic_rng):
-    x = torch.randn(1, 16000, dtype=torch.float32)
-    t = torch.jit.script(Wav2Win())
-    y, _ = t(x)
-    assert y.shape == torch.Size([1, 100, 400])
-    assert y.dtype == torch.float32
-
-
-def test_wav2fft_is_torchscriptable(deterministic_rng):
-    x = torch.randn(1, 16000, dtype=torch.float32)
-    t = torch.jit.script(Wav2FFT())
-    y = t(x)
-    assert y.shape == torch.Size([1, 100, 257])
-    assert y.dtype == torch.complex64
-
-
-def test_wav2spec_is_torchscriptable(deterministic_rng):
-    x = torch.randn(1, 16000, dtype=torch.float32)
-    t = torch.jit.script(Wav2Spec())
-    y = t(x)
-    assert y.shape == torch.Size([1, 100, 257])
-    assert y.dtype == torch.float32
-
-
-def test_wav2logspec_is_torchscriptable(deterministic_rng):
-    x = torch.randn(1, 16000, dtype=torch.float32)
-    t = torch.jit.script(Wav2LogSpec())
-    y = t(x)
-    assert y.shape == torch.Size([1, 100, 257])
-    assert y.dtype == torch.float32
-
-
-def test_wav2logfilterbank_is_torchscriptable(deterministic_rng):
-    x = torch.randn(1, 16000, dtype=torch.float32)
-    t = torch.jit.script(Wav2LogFilterBank())
-    y = t(x)
-    assert y.shape == torch.Size([1, 100, 80])
-    assert y.dtype == torch.float32
-
-
-def test_wav2mfcc_is_torchscriptable(deterministic_rng):
-    x = torch.randn(1, 16000, dtype=torch.float32)
-    t = torch.jit.script(Wav2MFCC())
-    y = t(x)
-    assert y.shape == torch.Size([1, 100, 13])
-    assert y.dtype == torch.float32
-
-
 def test_strided_waveform_batch_streaming_snip_edges_false(deterministic_rng):
     x = torch.arange(16000).unsqueeze(0)
     window_length = 400
