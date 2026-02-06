@@ -1106,6 +1106,7 @@ class CutSet(Serializable, AlgorithmMixin):
         delimiter: str = " ",
         keep_all_channels: bool = False,
         num_jobs: int = 1,
+        get_all_segments: bool = True,
     ) -> "CutSet":
         """
         Return a new CutSet with Cuts that have identical spans as the alignments of
@@ -1123,9 +1124,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
             the trimmed cut will have the same channels as the supervision.
         :param num_jobs: Number of parallel workers to process the cuts.
+        :param get_all_segments: If ``True``, all segments will be returned. If ``False``, only the first segment will be returned.
         :return: a ``CutSet``.
         """
-
         if num_jobs == 1:
             return CutSet(
                 LazyFlattener(
@@ -1138,6 +1139,7 @@ class CutSet(Serializable, AlgorithmMixin):
                             max_segment_duration=max_segment_duration,
                             delimiter=delimiter,
                             keep_all_channels=keep_all_channels,
+                            get_all_segments=get_all_segments,
                         ),
                     )
                 )
@@ -1154,6 +1156,7 @@ class CutSet(Serializable, AlgorithmMixin):
             max_segment_duration=max_segment_duration,
             delimiter=delimiter,
             keep_all_channels=keep_all_channels,
+            get_all_segments=get_all_segments,
         )
         return result
 
@@ -3464,13 +3467,16 @@ def _trim_to_alignments_single(
     max_segment_duration,
     delimiter,
     keep_all_channels,
+    get_all_segments,
 ) -> CutSet:
+    
     return cuts.trim_to_alignments(
         type=type,
         max_pause=max_pause,
         max_segment_duration=max_segment_duration,
         delimiter=delimiter,
         keep_all_channels=keep_all_channels,
+        get_all_segments=get_all_segments,
     ).to_eager()
 
 

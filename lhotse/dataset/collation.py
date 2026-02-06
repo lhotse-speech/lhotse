@@ -185,12 +185,17 @@ def collate_audio(
             num_samples = cut.num_samples
         else:
             num_samples = compute_num_samples(
-                cut.duration, sampling_rate=getattr(cut, recording_field).sampling_rate
+                getattr(cut, recording_field).duration, sampling_rate=getattr(cut, recording_field).sampling_rate
             )
         sample_counts.append(num_samples)
 
+    if recording_field is None:
+        pad_dur = max(cut.duration for cut in cuts)
+    else:
+        pad_dur = max(getattr(cut, recording_field).duration for cut in cuts)
+
     cuts = cuts.pad(
-        duration=max(cut.duration for cut in cuts),
+        duration=pad_dur,
         direction=pad_direction,
         preserve_id=True,
     )
