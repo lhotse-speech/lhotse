@@ -81,7 +81,12 @@ def get_aistore_client():
 
     endpoint_url = os.environ["AIS_ENDPOINT"]
     version = parse_version(aistore.__version__)
-    return aistore.Client(endpoint_url, timeout=(5, 30), max_pool_size=50), version
+    # NOTE: No explicit timeout is passed here so that the AIStore SDK picks up
+    # the 'AIS_CONNECT_TIMEOUT' and 'AIS_READ_TIMEOUT' environment variables
+    # when they are set. Users should configure these env vars to control
+    # request timeouts.
+    # See https://github.com/NVIDIA/aistore/tree/main/python/aistore/sdk#environment-variables
+    return aistore.Client(endpoint_url, max_pool_size=50), version
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
