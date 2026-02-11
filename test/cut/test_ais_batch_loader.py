@@ -10,11 +10,11 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet, MonoCut
-from lhotse.ais.batch_loader import (
+from lhotse.ais.batch_loader import AISBatchLoader, AISBatchLoaderError
+from lhotse.ais.common import (
     ARCHIVE_EXTENSIONS,
     FILE_TO_MEMORY_TYPE,
-    AISBatchLoader,
-    AISBatchLoaderError,
+    get_archive_extension,
 )
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import AudioSource, Recording
@@ -582,31 +582,31 @@ class TestAISBatchLoaderHelperMethods:
     def test_get_archive_extension_tar_gz(self):
         """Test archive extension detection for .tar.gz."""
         obj_name = "path/to/archive.tar.gz/file.wav"
-        ext = AISBatchLoader._get_archive_extension(obj_name)
+        ext = get_archive_extension(obj_name)
         assert ext == ".tar.gz"
 
     def test_get_archive_extension_tar(self):
         """Test archive extension detection for .tar."""
         obj_name = "path/to/archive.tar/file.wav"
-        ext = AISBatchLoader._get_archive_extension(obj_name)
+        ext = get_archive_extension(obj_name)
         assert ext == ".tar"
 
     def test_get_archive_extension_tgz(self):
         """Test archive extension detection for .tgz."""
         obj_name = "path/to/archive.tgz/file.wav"
-        ext = AISBatchLoader._get_archive_extension(obj_name)
+        ext = get_archive_extension(obj_name)
         assert ext == ".tgz"
 
     def test_get_archive_extension_none(self):
         """Test that non-archive paths return None."""
         obj_name = "path/to/file.wav"
-        ext = AISBatchLoader._get_archive_extension(obj_name)
+        ext = get_archive_extension(obj_name)
         assert ext is None
 
     def test_get_archive_extension_priority(self):
         """Test that tar.gz is detected before .tar in ambiguous cases."""
         obj_name = "archive.tar.gz"
-        ext = AISBatchLoader._get_archive_extension(obj_name)
+        ext = get_archive_extension(obj_name)
         # Should find .tar.gz first since it's checked first in ARCHIVE_EXTENSIONS
         assert ext in ARCHIVE_EXTENSIONS
 
@@ -710,7 +710,7 @@ class TestAISBatchLoaderIntegration:
             assert c.recording.sources[0].type == "file"
 
     @patch("lhotse.ais.batch_loader.get_aistore_client")
-    @patch("lhotse.ais.batch_loader.is_valid_url")
+    @patch("lhotse.ais.common.is_valid_url")
     def test_skips_invalid_feature_urls(self, mock_is_valid_url, mock_get_client):
         """Test that features with invalid URLs don't add to batch."""
         client = MagicMock()

@@ -1,31 +1,23 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from urllib3.exceptions import TimeoutError
 
 # Get a logger instance for this module
 logger = logging.getLogger(__name__)
 
-from lhotse.array import Array, TemporalArray
-from lhotse.audio.recording import Recording
+from lhotse.ais.common import (
+    AISLoaderError,
+    extract_manifest_url,
+    inject_data_into_manifest,
+)
 from lhotse.cut import CutSet
-from lhotse.features.base import Features
-from lhotse.image import Image
 from lhotse.serialization import get_aistore_client
-from lhotse.utils import is_module_available, is_valid_url
-
-# Mapping between Lhotse file storage types and in-memory equivalents.
-FILE_TO_MEMORY_TYPE = {
-    "numpy_files": "memory_raw",
-    "lilcom_files": "memory_lilcom",
-    "pillow_files": "memory_pillow",
-}
-
-ARCHIVE_EXTENSIONS = (".tar.gz", ".tar", ".tgz")
+from lhotse.utils import is_module_available
 
 
-class AISBatchLoaderError(Exception):
-    """Base exception for AISBatchLoader operations."""
+class AISBatchLoaderError(AISLoaderError):
+    """Exception for AISBatchLoader operations."""
 
 
 class AISBatchLoader:
@@ -202,7 +194,7 @@ class AISBatchLoader:
                             f"Direct API fallback failed for {info.obj_name}"
                         ) from ex
 
-                self._inject_data_into_manifest(manifest, content)
+                inject_data_into_manifest(manifest, content)
                 request_idx += 1
 
         return cuts
@@ -216,83 +208,20 @@ class AISBatchLoader:
         Returns:
             True if URLs were added to the batch, False otherwise.
         """
-        if isinstance(manifest, Recording):
-            for source in manifest.sources:
-                if source.type == "url":
-                    self._add_url_to_batch(source.source, batch)
-                    return True
-            return False
-
-        elif isinstance(manifest, TemporalArray):
-            # TemporalArray wraps an Array, so we need to access the inner array
-            inner_array = manifest.array
-            if inner_array.storage_type not in FILE_TO_MEMORY_TYPE:
-                raise AISBatchLoaderError(
-                    f"Unsupported storage type '{inner_array.storage_type}'. "
-                    f"Supported types: {list(FILE_TO_MEMORY_TYPE.keys())}"
-                )
-
-            obj_path = f"{inner_array.storage_path}/{inner_array.storage_key}"
-            if is_valid_url(obj_path):
-                self._add_url_to_batch(obj_path, batch)
-                return True
-            return False
-
-        elif isinstance(manifest, (Array, Features, Image)):
-            if manifest.storage_type not in FILE_TO_MEMORY_TYPE:
-                raise AISBatchLoaderError(
-                    f"Unsupported storage type '{manifest.storage_type}'. "
-                    f"Supported types: {list(FILE_TO_MEMORY_TYPE.keys())}"
-                )
-
-            obj_path = f"{manifest.storage_path}/{manifest.storage_key}"
-            if is_valid_url(obj_path):
-                self._add_url_to_batch(obj_path, batch)
-                return True
-            return False
-
+        url = extract_manifest_url(manifest)
+        if url is not None:
+            self._add_url_to_batch(url, batch)
+            return True
         return False
 
     def _add_url_to_batch(self, url: str, batch: Any) -> None:
         """Add a single AIStore URL to the batch request."""
-        from aistore.sdk.utils import parse_url
+        from lhotse.ais.common import parse_ais_url
 
-        provider, bck_name, obj_name = parse_url(url)
-        if not (provider and bck_name and obj_name):
-            raise AISBatchLoaderError(f"Invalid object URL: '{url}'")
-
-        arch_ext = self._get_archive_extension(obj_name)
-        archpath = None
-        if arch_ext and arch_ext in obj_name:
-            prefix, _, suffix = obj_name.partition(f"{arch_ext}/")
-            obj_name, archpath = prefix + arch_ext, suffix
+        try:
+            provider, bck_name, obj_name, archpath = parse_ais_url(url)
+        except AISLoaderError as e:
+            raise AISBatchLoaderError(str(e)) from e
 
         bucket = self.client.bucket(bck_name, provider)
         batch.add(bucket.object(obj_name), archpath=archpath)
-
-    def _inject_data_into_manifest(self, manifest: Any, content: bytes) -> None:
-        """Replace manifest storage references with in-memory content."""
-        if isinstance(manifest, Recording):
-            for source in manifest.sources:
-                source.type = "memory"
-                source.source = content
-
-        elif isinstance(manifest, TemporalArray):
-            # TemporalArray wraps an Array, so update the inner array
-            inner_array = manifest.array
-            inner_array.storage_type = FILE_TO_MEMORY_TYPE[inner_array.storage_type]
-            inner_array.storage_path = ""
-            inner_array.storage_key = content
-
-        elif isinstance(manifest, (Array, Features, Image)):
-            manifest.storage_type = FILE_TO_MEMORY_TYPE[manifest.storage_type]
-            manifest.storage_path = ""
-            manifest.storage_key = content
-
-    @staticmethod
-    def _get_archive_extension(obj_name: str) -> Optional[str]:
-        """Return the supported archive extension if present in the object name."""
-        for ext in ARCHIVE_EXTENSIONS:
-            if ext in obj_name:
-                return ext
-        return None
