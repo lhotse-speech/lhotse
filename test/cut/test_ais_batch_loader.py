@@ -769,3 +769,363 @@ class TestAISBatchLoaderIntegration:
 
         # No URLs should be added for invalid feature paths
         assert batch.add.call_count == 0
+
+
+class TestAISBatchLoaderVersionCompatibility:
+    """Tests for backward compatibility with older AIStore versions."""
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_colocation_not_available_fallback(
+        self, mock_get_client, cut_with_url_recording
+    ):
+        """Test that batch creation works when Colocation is not available (older versions)."""
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Track add() calls
+        add_count = []
+        batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
+
+        # Mock batch.get() to return content
+        def mock_batch_get():
+            for i in range(len(add_count)):
+                yield (MagicMock(), f"content_{i}".encode())
+
+        batch.get.side_effect = lambda: mock_batch_get()
+
+        # Mock client.batch() to raise TypeError when colocation is passed (older version)
+        def mock_batch_with_error(**kwargs):
+            if "colocation" in kwargs:
+                raise TypeError(
+                    "batch() got an unexpected keyword argument 'colocation'"
+                )
+            return batch
+
+        client.batch.side_effect = mock_batch_with_error
+        client.bucket.return_value = MagicMock()
+        mock_get_client.return_value = (client, None)
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut_with_url_recording])
+        result = loader(cuts)
+
+        # Verify batch was called twice: once with colocation (failed), once without
+        assert client.batch.call_count == 2
+
+        # Verify processing succeeded
+        for cut in result:
+            assert cut.recording.sources[0].type == "memory"
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_archive_config_not_available_fallback(
+        self, mock_get_client, cut_with_url_recording
+    ):
+        """Test that fallback works when ArchiveConfig is not available (older versions)."""
+        from aistore.sdk.errors import AISError
+
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Mock batch.get() to raise AISError to trigger fallback
+        batch.get.side_effect = AISError(
+            400, "Batch request failed", "http://test", MagicMock()
+        )
+
+        # Mock batch.requests_list with archpath
+        mock_request = MagicMock()
+        mock_request.obj_name = "archive.tar.gz"
+        mock_request.bck = "mybucket"
+        mock_request.provider = "ais"
+        mock_request.archpath = "audio.wav"
+        batch.requests_list = [mock_request]
+
+        # Mock sequential GET fallback
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = b"fallback_content"
+        mock_object = MagicMock()
+        mock_object.get_reader.return_value = mock_reader
+        mock_bucket = MagicMock()
+        mock_bucket.object.return_value = mock_object
+        client.bucket.return_value = mock_bucket
+
+        client.batch.return_value = batch
+        mock_get_client.return_value = (client, None)
+
+        # Mock ImportError for ArchiveConfig
+        with patch(
+            "lhotse.ais.batch_loader.AISBatchLoader._get_object_from_moss_in"
+        ) as mock_fallback:
+            mock_fallback.return_value = b"fallback_content_no_archive_config"
+
+            loader = AISBatchLoader()
+            cuts = CutSet.from_cuts([cut_with_url_recording])
+            result = loader(cuts)
+
+            # Verify fallback was called
+            assert mock_fallback.called
+
+            # Verify processing succeeded
+            for cut in result:
+                assert cut.recording.sources[0].type == "memory"
+
+
+class TestAISBatchLoaderErrorHandling:
+    """Tests for error handling and fallback mechanisms."""
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_batch_get_failure_triggers_fallback(
+        self, mock_get_client, cut_with_url_recording
+    ):
+        """Test that batch.get() failure triggers sequential GET fallback."""
+        from aistore.sdk.errors import AISError
+
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Track add() calls
+        add_count = []
+        batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
+
+        # Mock batch.get() to raise AISError (use Exception as base since AISError has complex init)
+        batch.get.side_effect = AISError(
+            400, "Batch request failed", "http://test", MagicMock()
+        )
+
+        # Mock batch.requests_list for fallback
+        mock_request = MagicMock()
+        mock_request.object_name = "audio.wav"
+        mock_request.bucket_name = "mybucket"
+        mock_request.provider = "ais"
+        mock_request.archpath = None
+        batch.requests_list = [mock_request]
+
+        # Mock sequential GET fallback
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = b"fallback_content"
+        mock_object = MagicMock()
+        mock_object.get_reader.return_value = mock_reader
+        mock_bucket = MagicMock()
+        mock_bucket.object.return_value = mock_object
+        client.bucket.return_value = mock_bucket
+
+        client.batch.return_value = batch
+        mock_get_client.return_value = (client, None)
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut_with_url_recording])
+        result = loader(cuts)
+
+        # Verify batch.get() was called and failed
+        assert batch.get.called
+
+        # Verify fallback was used (bucket.object was called)
+        assert client.bucket.called
+        assert mock_bucket.object.called
+        assert mock_reader.read_all.called
+
+        # Verify the recording was updated with fallback content
+        for cut in result:
+            assert cut.recording.sources[0].type == "memory"
+            assert cut.recording.sources[0].source == b"fallback_content"
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_fallback_with_archive_path(self, mock_get_client, cut_with_url_recording):
+        """Test that fallback handles archive paths correctly."""
+        from aistore.sdk.errors import AISError
+
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Track add() calls
+        add_count = []
+        batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
+
+        # Mock batch.get() to raise AISError
+        batch.get.side_effect = AISError(
+            400, "Batch request failed", "http://test", MagicMock()
+        )
+
+        # Mock batch.requests_list with archpath
+        mock_request = MagicMock()
+        mock_request.object_name = "archive.tar.gz"
+        mock_request.bucket_name = "mybucket"
+        mock_request.provider = "ais"
+        mock_request.archpath = "audio.wav"  # File inside archive
+        batch.requests_list = [mock_request]
+
+        # Mock sequential GET fallback with archive config
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = b"archive_content"
+        mock_object = MagicMock()
+        mock_object.get_reader.return_value = mock_reader
+        mock_bucket = MagicMock()
+        mock_bucket.object.return_value = mock_object
+        client.bucket.return_value = mock_bucket
+
+        client.batch.return_value = batch
+        mock_get_client.return_value = (client, None)
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut_with_url_recording])
+        result = loader(cuts)
+
+        # Verify get_reader was called with archive_config
+        call_kwargs = mock_object.get_reader.call_args[1]
+        assert "archive_config" in call_kwargs
+        assert call_kwargs["archive_config"] is not None
+
+        # Verify the recording was updated
+        for cut in result:
+            assert cut.recording.sources[0].type == "memory"
+            assert cut.recording.sources[0].source == b"archive_content"
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_fallback_failure_raises_error(
+        self, mock_get_client, cut_with_url_recording
+    ):
+        """Test that fallback failure raises AISBatchLoaderError."""
+        from aistore.sdk.errors import AISError
+
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Mock batch.get() to raise AISError
+        batch.get.side_effect = AISError(
+            400, "Batch request failed", "http://test", MagicMock()
+        )
+
+        # Mock batch.requests_list
+        mock_request = MagicMock()
+        mock_request.object_name = "audio.wav"
+        mock_request.bucket_name = "mybucket"
+        mock_request.provider = "ais"
+        mock_request.archpath = None
+        batch.requests_list = [mock_request]
+
+        # Mock sequential GET to also fail
+        mock_object = MagicMock()
+        mock_object.get_reader.side_effect = Exception("Sequential GET failed")
+        mock_bucket = MagicMock()
+        mock_bucket.object.return_value = mock_object
+        client.bucket.return_value = mock_bucket
+
+        client.batch.return_value = batch
+        mock_get_client.return_value = (client, None)
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut_with_url_recording])
+
+        # Should raise AISBatchLoaderError when fallback fails
+        with pytest.raises(AISBatchLoaderError, match="Sequential GET fallback failed"):
+            loader(cuts)
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_iterator_exhausted_raises_error(
+        self, mock_get_client, cut_with_url_recording
+    ):
+        """Test that iterator exhaustion raises AISBatchLoaderError."""
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Track add() calls
+        add_count = []
+        batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
+
+        # Mock batch.get() to return fewer items than expected
+        def mock_batch_get():
+            # Return nothing even though we expect 1 item
+            return iter([])
+
+        batch.get.side_effect = lambda: mock_batch_get()
+        client.batch.return_value = batch
+        client.bucket.return_value = MagicMock()
+        mock_get_client.return_value = (client, None)
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut_with_url_recording])
+
+        # Should raise AISBatchLoaderError when iterator is exhausted
+        with pytest.raises(
+            AISBatchLoaderError, match="Batch result iterator exhausted prematurely"
+        ):
+            loader(cuts)
+
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_multiple_cuts_with_fallback(self, mock_get_client, cut_with_url_recording):
+        """Test fallback with multiple cuts."""
+        from aistore.sdk.errors import AISError
+
+        client = MagicMock()
+        batch = MagicMock()
+
+        # Track add() calls
+        add_count = []
+        batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
+
+        # Mock batch.get() to raise AISError
+        batch.get.side_effect = AISError(
+            400, "Batch request failed", "http://test", MagicMock()
+        )
+
+        # Mock batch.requests_list with 2 requests
+        mock_request1 = MagicMock()
+        mock_request1.object_name = "audio1.wav"
+        mock_request1.bucket_name = "mybucket"
+        mock_request1.provider = "ais"
+        mock_request1.archpath = None
+
+        mock_request2 = MagicMock()
+        mock_request2.object_name = "audio2.wav"
+        mock_request2.bucket_name = "mybucket"
+        mock_request2.provider = "ais"
+        mock_request2.archpath = None
+
+        batch.requests_list = [mock_request1, mock_request2]
+
+        # Mock sequential GET fallback to return different content for each
+        call_count = [0]
+
+        def mock_get_reader(*args, **kwargs):
+            mock_reader = MagicMock()
+            content = f"content_{call_count[0]}".encode()
+            mock_reader.read_all.return_value = content
+            call_count[0] += 1
+            return mock_reader
+
+        mock_object = MagicMock()
+        mock_object.get_reader.side_effect = mock_get_reader
+        mock_bucket = MagicMock()
+        mock_bucket.object.return_value = mock_object
+        client.bucket.return_value = mock_bucket
+
+        client.batch.return_value = batch
+        mock_get_client.return_value = (client, None)
+
+        # Create 2 cuts
+        cut2 = MonoCut(
+            id="cut-2",
+            start=0.0,
+            duration=10.0,
+            channel=0,
+            recording=Recording(
+                id="rec-2",
+                sources=[
+                    AudioSource(
+                        type="url", channels=[0], source="ais://mybucket/audio2.wav"
+                    )
+                ],
+                sampling_rate=16000,
+                num_samples=160000,
+                duration=10.0,
+            ),
+        )
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut_with_url_recording, cut2])
+        result = loader(cuts)
+
+        # Verify both cuts were processed with fallback
+        result_list = list(result)
+        assert len(result_list) == 2
+        assert result_list[0].recording.sources[0].source == b"content_0"
+        assert result_list[1].recording.sources[0].source == b"content_1"
