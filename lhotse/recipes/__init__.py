@@ -83,6 +83,7 @@ from .spatial_librispeech import (
 from .speechcommands import download_speechcommands, prepare_speechcommands
 from .speechio import prepare_speechio
 from .spgispeech import download_spgispeech, prepare_spgispeech
+from .spokenwoz import download_spokenwoz, prepare_spokenwoz
 from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium

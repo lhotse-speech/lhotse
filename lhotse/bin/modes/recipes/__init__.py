@@ -81,6 +81,7 @@ from .spatial_librispeech import *
 from .speechcommands import *
 from .speechio import *
 from .spgispeech import *
+from .spokenwoz import *
 from .stcmds import *
 from .switchboard import *
 from .tal_asr import *
