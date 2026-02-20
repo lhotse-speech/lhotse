@@ -3100,6 +3100,8 @@ def compute_supervisions_frame_mask(
                     if ali.end < cut.duration
                     else num_frames
                 )
+                if et <= 0: 
+                    continue
                 mask[st:et] = 1.0
         else:
             st = round(supervision.start / frame_shift) if supervision.start > 0 else 0
@@ -3108,6 +3110,8 @@ def compute_supervisions_frame_mask(
                 if supervision.end < cut.duration
                 else num_frames
             )
+            if et <= 0: 
+                continue
             mask[st:et] = 1.0
     return mask
 
