@@ -181,6 +181,7 @@ tests_require = [
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
 ]
+aistore_requires = ["aistore>=1.17.0"]
 orjson_requires = ["orjson>=3.6.6"]
 webdataset_requires = ["webdataset==0.2.5"]
 dill_requires = ["dill"]
@@ -226,6 +227,7 @@ setup(
     },
     install_requires=install_requires,
     extras_require={
+        "aistore": aistore_requires,
         "dill": dill_requires,
         "orjson": orjson_requires,
         "webdataset": webdataset_requires,
