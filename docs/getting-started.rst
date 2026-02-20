@@ -143,6 +143,10 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 
 * ``AIS_ENDPOINT`` is read by AIStore client to determine AIStore endpoint URL. Required for AIStore dataloading.
 
+* ``AIS_CONNECT_TIMEOUT`` - used by AIStore SDK to set the connection timeout (in seconds) for AIStore client requests. Set to ``0`` to disable (no timeout). If not set, the SDK default is used (3s).
+
+* ``AIS_READ_TIMEOUT`` - used by AIStore SDK to set the read timeout (in seconds) for AIStore client requests. Set to ``0`` to disable (no timeout). If not set, the SDK default is used (20s).
+
 * ``RANK``, ``WORLD_SIZE``, ``WORKER``, and ``NUM_WORKERS`` are internally used to inform Lhotse Shar dataloading subprocesses.
 
 * ``READTHEDOCS`` is internally used for documentation builds.

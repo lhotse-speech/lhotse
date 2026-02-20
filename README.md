@@ -115,6 +115,8 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `LHOTSE_PREPARING_RELEASE` - used internally by developers when releasing a new version of Lhotse.
 - `TORCHAUDIO_USE_BACKEND_DISPATCHER` - when set to `1` and torchaudio version is below 2.1, we'll enable the experimental ffmpeg backend of torchaudio.
 - `AIS_ENDPOINT` is read by AIStore client to determine AIStore endpoint URL. Required for AIStore dataloading.
+- `AIS_CONNECT_TIMEOUT` - used by AIStore SDK to set the connection timeout (in seconds) for AIStore client requests. Set to `0` to disable (no timeout). If not set, the SDK default is used (3s).
+- `AIS_READ_TIMEOUT` - used by AIStore SDK to set the read timeout (in seconds) for AIStore client requests. Set to `0` to disable (no timeout). If not set, the SDK default is used (20s).
 - `RANK`, `WORLD_SIZE`, `WORKER`, and `NUM_WORKERS` are internally used to inform Lhotse Shar dataloading subprocesses.
 - `READTHEDOCS` is internally used for documentation builds.
 - `LHOTSE_MSC_OVERRIDE_PROTOCOLS` - when set, it will override your input protocols before feeding to MSCIOBackend.  Useful when you don't want to change your existing url format but want to use MSCIOBackend.  For example, if you have `s3://s3-bucket/path/to/my/object` and `gs://gs-bucket/path/to/my/object`, you can set `LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3,gs` to override the urls to `msc://s3-bucket/path/to/my/object` and `msc://gs-bucket/path/to/my/object`.
