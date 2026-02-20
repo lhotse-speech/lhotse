@@ -41,12 +41,19 @@ def cut():
     help="Force reading full manifests into memory before creating the manifests "
     "(useful when you are not sure about the input manifest sorting).",
 )
+@click.option(
+    "--tolerance",
+    type=float,
+    default=0.001,
+    help="tolerance for supervision and feature segment boundary comparison",
+)
 def simple(
     output_cut_manifest: Pathlike,
     recording_manifest: Optional[Pathlike],
     feature_manifest: Optional[Pathlike],
     supervision_manifest: Optional[Pathlike],
     force_eager: bool,
+    tolerance: float,
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST. Depending on the provided options, it may contain any combination
@@ -76,11 +83,12 @@ def simple(
             supervisions=supervision_set,
             features=feature_set,
             output_path=output_cut_manifest,
+            tolerance=tolerance,
             lazy=True,
         )
     else:
         cut_set = CutSet.from_manifests(
-            recordings=recording_set, supervisions=supervision_set, features=feature_set
+            recordings=recording_set, supervisions=supervision_set, features=feature_set, tolerance=tolerance,
         )
         cut_set.to_file(output_cut_manifest)
 
