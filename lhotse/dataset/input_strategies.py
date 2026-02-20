@@ -223,6 +223,8 @@ class AudioSamples(BatchIO):
         fault_tolerant: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
         use_batch_loader: bool = False,
+        use_object_loader: bool = False,
+        object_loader_max_workers: int = 1,
     ) -> None:
         """
         AudioSamples constructor.
@@ -240,15 +242,33 @@ class AudioSamples(BatchIO):
         :param use_batch_loader: When ``True``, enables batch loading of audio data from AIStore.
             This allows all audio samples in the batch to be fetched in a single request for increased efficiency.
             Requires the input CutSet to be eager (not lazy).
+        :param use_object_loader: When ``True``, enables individual GET-based loading of audio
+            data from AIStore. Each object is fetched independently, with concurrency controlled
+            by ``object_loader_max_workers``. Requires the input CutSet to be eager (not lazy).
+        :param object_loader_max_workers: Number of concurrent fetch threads for the object loader.
+            Only used when ``use_object_loader=True``. Default is 1 (sequential).
         """
+        if use_batch_loader and use_object_loader:
+            raise ValueError(
+                "Cannot enable both 'use_batch_loader' and 'use_object_loader'. "
+                "Please choose one."
+            )
         super().__init__(num_workers=num_workers, executor_type=executor_type)
         self.fault_tolerant = fault_tolerant
         self.ais_batch_loader = None
+        self.ais_object_loader = None
         self.use_batch_loader = use_batch_loader
+        self.use_object_loader = use_object_loader
         if self.use_batch_loader:
             from lhotse.ais import AISBatchLoader
 
             self.ais_batch_loader = AISBatchLoader()
+        if self.use_object_loader:
+            from lhotse.ais import AISObjectLoader
+
+            self.ais_object_loader = AISObjectLoader(
+                max_workers=object_loader_max_workers
+            )
 
     def __call__(
         self, cuts: CutSet, recording_field: Optional[str] = None
@@ -268,10 +288,11 @@ class AudioSamples(BatchIO):
             will be fetched from AIStore using a single batch request before collation.
             The input CutSet must be eager (not lazy).
         """
-        # If AIStore batch loading is enabled, fetch all data in one batch request
+        # If AIStore loading is enabled, fetch data before collation
         if self.use_batch_loader and self.ais_batch_loader is not None:
-            # Load all data from AIStore in a single batch request
             cuts = self.ais_batch_loader(cuts)
+        elif self.use_object_loader and self.ais_object_loader is not None:
+            cuts = self.ais_object_loader(cuts)
         return collate_audio(
             cuts,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
