@@ -70,6 +70,7 @@ from .musan import *
 from .must_c import *
 from .notsofar1 import *
 from .nsc import *
+from .oto_speech import *
 from .peoples_speech import *
 from .primewords import *
 from .radio import *
