@@ -304,24 +304,17 @@ class MixedCut(Cut):
 
         # Returning the contents of "mono_cut.custom[name]",
         # or raising AttributeError.
-        try:
-            (
-                non_padding_idx,
-                mono_cut,
-            ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
+        tracks_with_attr = self._get_tracks_with_custom_attr(name)
+        if tracks_with_attr:
+            _, mono_cut = tracks_with_attr[0]
             return getattr(mono_cut, name)
-        except AssertionError:
-            raise AttributeError(
-                f"No such attribute: '{name}' (note: custom attributes are not supported "
-                f"when a MixedCut consists of more than one MonoCut with that attribute)."
-            )
+        raise AttributeError(f"No such attribute: '{name}'")
 
     def has_custom(self, name: str) -> bool:
-        (
-            non_padding_idx,
-            mono_cut,
-        ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
-
+        tracks_with_attr = self._get_tracks_with_custom_attr(name)
+        if not tracks_with_attr:
+            return False
+        _, mono_cut = tracks_with_attr[0]
         return hasattr(mono_cut, name)
 
     def load_custom(self, name: str) -> np.ndarray:
@@ -333,10 +326,15 @@ class MixedCut(Cut):
         .. note:: It works with Array manifests stored via attribute assignments,
             e.g.: ``cut.my_custom_data = Array(...)``.
 
-        .. warning:: For :class:`.MixedCut`, this will only work if the mixed cut
-            consists of a single :class:`.MonoCut` and an arbitrary number of
-            :class:`.PaddingCuts`. This is because it is generally undefined how to
-            mix arbitrary arrays.
+        .. note:: For :class:`.MixedCut` with :class:`~lhotse.audio.Recording`-type
+            custom attributes, this supports multiple non-overlapping tracks (e.g.
+            from :meth:`Cut.append`). The audio from each track's custom Recording
+            is loaded and placed at the correct offset in the output buffer, similar
+            to how :meth:`load_audio` works for the main recording.
+
+        .. warning:: For :class:`~lhotse.array.Array` (non-temporal) and
+            :class:`~lhotse.array.TemporalArray` custom attributes, this will only
+            work if the mixed cut has a single non-padding track with that attribute.
 
         :param name: name of the custom attribute.
         :return: a numpy array with the data (after padding).
@@ -344,23 +342,37 @@ class MixedCut(Cut):
 
         from lhotse.array import Array, pad_array
 
-        (
-            non_padding_idx,
-            mono_cut,
-        ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
+        tracks_with_attr = self._get_tracks_with_custom_attr(name)
+        assert len(tracks_with_attr) > 0, (
+            f"No non-padding tracks with custom attribute '{name}' found "
+            f"in this MixedCut."
+        )
 
         # Use getattr to propagate AttributeError if "name" is not defined.
-        manifest = getattr(mono_cut, name)
+        first_idx, first_cut = tracks_with_attr[0]
+        manifest = getattr(first_cut, name)
+
+        # Multiple tracks with the attribute: only supported for Recording-type.
+        if len(tracks_with_attr) > 1:
+            if isinstance(manifest, Recording):
+                return self._load_custom_recording_multi_track(name, tracks_with_attr)
+            raise ValueError(
+                f"This MixedCut has {len(tracks_with_attr)} non-padding tracks "
+                f"with a custom attribute '{name}'. Mixing custom attributes is only "
+                f"supported for Recording-type attributes. Problematic cut:\n{self}"
+            )
+
+        # Single track with the attribute — existing behavior.
 
         # Check if the corresponding manifest for 'load_something' is of type
         # Array; if yes, just return the loaded data.
         # This is likely an embedding without a temporal dimension.
         if isinstance(manifest, Array):
-            return mono_cut.load_custom(name)
+            return first_cut.load_custom(name)
 
         # We are loading either an array with a temporal dimension, or a recording:
         # We need to pad it.
-        left_padding = self.tracks[non_padding_idx].offset
+        left_padding = self.tracks[first_idx].offset
         padded_duration = self.duration
 
         # Then, check if it's a Recording. In that case we convert it to a cut,
@@ -375,7 +387,7 @@ class MixedCut(Cut):
 
         # Load the array and retrieve the manifest from the only non-padding cut.
         # We'll also need to fetch the dict defining what padding value to use (if present).
-        array = mono_cut.load_custom(name)
+        array = first_cut.load_custom(name)
         try:
             pad_value_dict = [
                 t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)
@@ -393,29 +405,66 @@ class MixedCut(Cut):
             pad_value=pad_value,
         )
 
-    def _assert_one_data_cut_with_attr_and_return_it_with_track_index(
+    def _load_custom_recording_multi_track(
+        self,
+        name: str,
+        tracks_with_attr: list,
+    ) -> np.ndarray:
+        """
+        Load and combine audio from a custom Recording attribute across multiple
+        tracks. This handles the case where a MixedCut was created via
+        :meth:`Cut.append` and each constituent cut has its own custom Recording
+        (e.g., ``target_audio`` at a potentially different sampling rate than the
+        main recording).
+        """
+        first_idx, first_cut = tracks_with_attr[0]
+        first_audio = first_cut.load_custom(name)
+        first_recording = getattr(first_cut, name)
+        custom_sr = first_recording.sampling_rate
+
+        mixer = AudioMixer(
+            base_audio=first_audio,
+            sampling_rate=custom_sr,
+            base_offset=self.tracks[first_idx].offset,
+        )
+
+        for track_idx, cut in tracks_with_attr[1:]:
+            audio = cut.load_custom(name)
+            mixer.add_to_mix(
+                audio=audio,
+                offset=self.tracks[track_idx].offset,
+            )
+
+        audio = mixer.mixed_audio
+
+        # Fix off-by-one due to float arithmetic, same as in load_audio().
+        expected_num_samples = compute_num_samples(self.duration, custom_sr)
+        tol_samples = compute_num_samples(
+            get_audio_duration_mismatch_tolerance(), custom_sr
+        )
+        num_samples_diff = audio.shape[1] - expected_num_samples
+        if 0 < num_samples_diff < tol_samples:
+            audio = audio[:, :expected_num_samples]
+        if -tol_samples < num_samples_diff < 0:
+            audio = np.pad(audio, [(0, 0), (0, -num_samples_diff)])
+
+        return audio
+
+    def _get_tracks_with_custom_attr(
         self,
         attr_name: str,
-    ) -> Tuple[int, DataCut]:
-        # TODO(pzelasko): consider relaxing this condition to
-        #                 supporting mixed cuts that are not overlapping
-        non_padding_cuts = [
+    ) -> list:
+        """
+        Return a list of ``(track_idx, cut)`` tuples for all non-padding tracks
+        that have a custom attribute with the given name.
+        """
+        return [
             (idx, t.cut)
             for idx, t in enumerate(self.tracks)
             if isinstance(t.cut, DataCut)
+            and t.cut.custom is not None
+            and attr_name in t.cut.custom
         ]
-        non_padding_cuts_with_custom_attr = [
-            (idx, cut)
-            for idx, cut in non_padding_cuts
-            if cut.custom is not None and attr_name in cut.custom
-        ]
-        assert len(non_padding_cuts_with_custom_attr) == 1, (
-            f"This MixedCut has {len(non_padding_cuts_with_custom_attr)} non-padding cuts "
-            f"with a custom attribute '{attr_name}'. We currently don't support mixing custom attributes. "
-            f"Consider dropping the attribute on all but one of DataCuts. Problematic cut:\n{self}"
-        )
-        non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
-        return non_padding_idx, mono_cut
 
     def move_to_memory(
         self,

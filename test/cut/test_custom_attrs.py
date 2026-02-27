@@ -566,3 +566,99 @@ def test_cut_resample_custom_recording_fails_when_custom_recording_not_present(
 
     with pytest.raises(KeyError):
         cut.resample(target_sampling_rate, recording_field="nonexistent_recording")
+
+
+def test_mixed_cut_load_custom_recording_after_append():
+    """
+    When two MonoCuts each carrying a custom Recording (target_audio)
+    are appended, the resulting MixedCut.load_target_audio() should
+    return the concatenated audio from both custom Recordings.
+    """
+    # Source at 16kHz, target_audio at 24kHz (different sampling rates)
+    c1 = dummy_cut(0, recording=dummy_recording(0, with_data=True, sampling_rate=16000))
+    c1.target_audio = dummy_recording(10, with_data=True, sampling_rate=24000)
+
+    c2 = dummy_cut(1, recording=dummy_recording(1, with_data=True, sampling_rate=16000))
+    c2.target_audio = dummy_recording(11, with_data=True, sampling_rate=24000)
+
+    mixed = c1.append(c2)
+    assert isinstance(mixed, MixedCut)
+
+    # Source audio (main recording) already works — sanity check
+    source_audio = mixed.load_audio()
+    assert source_audio.shape == (1, 2 * 16000)  # 2s at 16kHz
+
+    # Custom Recording across multiple tracks — the new feature
+    target_audio = mixed.load_target_audio()
+    assert target_audio.shape == (1, 2 * 24000)  # 2s at 24kHz
+
+    # Verify the content matches the individual cuts' custom recordings
+    t1 = c1.load_target_audio()
+    t2 = c2.load_target_audio()
+    np.testing.assert_array_equal(target_audio[:, :24000], t1)
+    np.testing.assert_array_equal(target_audio[:, 24000:], t2)
+
+
+def test_mixed_cut_load_custom_recording_after_append_same_sr():
+    """Same as above but source and target at the same sampling rate."""
+    c1 = dummy_cut(0, recording=dummy_recording(0, with_data=True))
+    c1.target_audio = dummy_recording(10, with_data=True)
+
+    c2 = dummy_cut(1, recording=dummy_recording(1, with_data=True))
+    c2.target_audio = dummy_recording(11, with_data=True)
+
+    mixed = c1.append(c2)
+    target_audio = mixed.load_target_audio()
+    assert target_audio.shape == (1, 2 * 16000)
+
+    t1 = c1.load_target_audio()
+    t2 = c2.load_target_audio()
+    np.testing.assert_array_equal(target_audio[:, :16000], t1)
+    np.testing.assert_array_equal(target_audio[:, 16000:], t2)
+
+
+def test_mixed_cut_has_custom_with_multiple_tracks():
+    """has_custom should return True even when multiple tracks carry the attribute."""
+    c1 = dummy_cut(0, recording=dummy_recording(0, with_data=True))
+    c1.target_audio = dummy_recording(10, with_data=True)
+
+    c2 = dummy_cut(1, recording=dummy_recording(1, with_data=True))
+    c2.target_audio = dummy_recording(11, with_data=True)
+
+    mixed = c1.append(c2)
+    assert mixed.has_custom("target_audio")
+
+
+def test_mixed_cut_load_custom_recording_three_appended():
+    """Append three cuts, each with a custom Recording."""
+    cuts = []
+    for i in range(3):
+        c = dummy_cut(i, recording=dummy_recording(i, with_data=True))
+        c.target_audio = dummy_recording(10 + i, with_data=True)
+        cuts.append(c)
+
+    mixed = cuts[0].append(cuts[1]).append(cuts[2])
+    target_audio = mixed.load_target_audio()
+    assert target_audio.shape == (1, 3 * 16000)
+
+    for i, c in enumerate(cuts):
+        t = c.load_target_audio()
+        np.testing.assert_array_equal(target_audio[:, i * 16000 : (i + 1) * 16000], t)
+
+
+def test_mixed_cut_load_custom_recording_single_track_still_works():
+    """
+    Regression: a single MonoCut padded to a MixedCut should still
+    load its custom Recording correctly (existing behavior).
+    """
+    c = dummy_cut(0, recording=dummy_recording(0, with_data=True))
+    c.target_audio = dummy_recording(10, with_data=True)
+    mixed = c.pad(duration=c.duration * 2)  # creates a MixedCut with 1 data track
+    assert isinstance(mixed, MixedCut)
+
+    target_audio = mixed.load_target_audio()
+    # 2s total duration at 16kHz, first 1s is data, second 1s is zero-padding
+    assert target_audio.shape == (1, 2 * 16000)
+
+    orig = c.load_target_audio()
+    np.testing.assert_array_equal(target_audio[:, :16000], orig)
