@@ -1,0 +1,507 @@
+"""
+Binary index files for O(1) random-access reads into JSONL and tar archives.
+
+Index File Format
+-----------------
+An index file stores an array of little-endian ``uint64`` byte-offsets,
+one per sample, plus a sentinel entry equal to the file size.
+
+For *N* samples the file is exactly ``(N + 1) * 8`` bytes:
+
+    offset[0]  offset[1]  ...  offset[N-1]  file_size
+
+Naming convention: ``<original_file>.idx``
+    (e.g. ``cuts.000000.jsonl.idx``, ``recording.000000.tar.idx``)
+
+Constraints
+-----------
+Index files **only work with uncompressed** data files:
+
+* JSONL — plain ``.jsonl``, **not** ``.jsonl.gz``
+* Tar   — plain ``.tar``,   **not** ``.tar.gz``
+
+Usage
+-----
+>>> from lhotse.indexing import create_jsonl_index, IndexedJsonlReader
+>>> create_jsonl_index("cuts.000000.jsonl")   # writes cuts.000000.jsonl.idx
+>>> reader = IndexedJsonlReader("cuts.000000.jsonl")
+>>> reader[42]   # O(1) dict from the 42nd line
+"""
+
+import struct
+import tarfile
+from pathlib import Path
+from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from lhotse.array import Array, TemporalArray
+    from lhotse.audio import Recording
+    from lhotse.features import Features
+
+import numpy as np
+
+from lhotse.serialization import decode_json_line, deserialize_item, open_best
+from lhotse.shar.utils import fill_shar_placeholder
+from lhotse.utils import Pathlike
+
+__all__ = [
+    "create_jsonl_index",
+    "create_tar_index",
+    "create_shar_index",
+    "index_file_path",
+    "read_index",
+    "index_exists",
+    "LazyShuffledRange",
+    "IndexedJsonlReader",
+    "IndexedTarReader",
+]
+
+# ---------------------------------------------------------------------------
+# Index path convention
+# ---------------------------------------------------------------------------
+
+
+def index_file_path(data_path: Pathlike) -> Path:
+    """
+    Return the conventional index file path for a given data file.
+
+    Example::
+
+        >>> index_file_path("cuts.000000.jsonl")
+        PosixPath('cuts.000000.jsonl.idx')
+    """
+    return Path(str(data_path) + ".idx")
+
+
+def index_exists(data_path: Pathlike) -> bool:
+    """Return ``True`` when a ``.idx`` file exists alongside *data_path*."""
+    return index_file_path(data_path).is_file()
+
+
+# ---------------------------------------------------------------------------
+# Index I/O
+# ---------------------------------------------------------------------------
+
+_OFFSET_DTYPE = np.dtype("<u8")  # little-endian uint64
+
+
+def _write_index(offsets: list, path: Path) -> None:
+    arr = np.array(offsets, dtype=_OFFSET_DTYPE)
+    with open(path, "wb") as f:
+        f.write(arr.tobytes())
+
+
+def read_index(idx_path: Pathlike) -> np.ndarray:
+    """
+    Read an index file and return a NumPy array of byte-offsets.
+
+    The array is memory-mapped (``np.memmap``) so that large index files
+    do not consume resident memory.  The last element is the sentinel
+    (file size); there are ``len(arr) - 1`` samples.
+    """
+    idx_path = Path(idx_path)
+    if not idx_path.is_file():
+        raise FileNotFoundError(f"Index file not found: {idx_path}")
+    return np.memmap(idx_path, dtype=_OFFSET_DTYPE, mode="r")
+
+
+# ---------------------------------------------------------------------------
+# Index creation
+# ---------------------------------------------------------------------------
+
+
+def create_jsonl_index(jsonl_path: Pathlike) -> Path:
+    """
+    Scan an **uncompressed** JSONL file and build a binary index.
+
+    Each entry in the index is the byte-offset of the corresponding line's
+    first character.  A final sentinel entry stores the file size.
+
+    Returns the path of the newly created ``.idx`` file.
+    """
+    jsonl_path = Path(jsonl_path)
+    _assert_uncompressed(jsonl_path, "JSONL")
+    offsets = []
+    with open(jsonl_path, "rb") as f:
+        while True:
+            pos = f.tell()
+            line = f.readline()
+            if not line:
+                break
+            offsets.append(pos)
+        offsets.append(f.tell())  # sentinel = file size
+
+    idx_path = index_file_path(jsonl_path)
+    _write_index(offsets, idx_path)
+    return idx_path
+
+
+def create_tar_index(tar_path: Pathlike) -> Path:
+    """
+    Scan an **uncompressed** tar archive and build a binary index.
+
+    Each entry records the byte-offset of the **first** tar header in each
+    sample pair (data member + metadata member), following the Lhotse Shar
+    convention where every sample consists of exactly two consecutive tar
+    members.
+
+    A final sentinel entry stores the file size.
+
+    Returns the path of the newly created ``.idx`` file.
+    """
+    tar_path = Path(tar_path)
+    _assert_uncompressed(tar_path, "tar")
+
+    offsets = []
+    with tarfile.open(str(tar_path), "r:") as tf:
+        members = tf.getmembers()
+
+    if len(members) % 2 != 0:
+        raise RuntimeError(
+            f"Expected an even number of tar members (data+meta pairs) "
+            f"in {tar_path}, got {len(members)}."
+        )
+
+    for i in range(0, len(members), 2):
+        offsets.append(members[i].offset)
+    offsets.append(tar_path.stat().st_size)  # sentinel
+
+    idx_path = index_file_path(tar_path)
+    _write_index(offsets, idx_path)
+    return idx_path
+
+
+def create_shar_index(shar_dir: Pathlike) -> None:
+    """
+    Create binary index files for **all** JSONL and tar files in a
+    Shar directory.
+
+    Compressed files (``.gz``) are silently skipped because they cannot
+    be indexed.
+    """
+    shar_dir = Path(shar_dir)
+    for p in sorted(shar_dir.iterdir()):
+        if p.suffix == ".jsonl":
+            create_jsonl_index(p)
+        elif p.suffix == ".tar":
+            create_tar_index(p)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_COMPRESSED_SUFFIXES = {".gz", ".bz2", ".xz", ".lz4", ".zst"}
+
+
+def _assert_uncompressed(path: Path, kind: str) -> None:
+    if path.suffix in _COMPRESSED_SUFFIXES or (
+        len(path.suffixes) >= 2 and path.suffixes[-1] in _COMPRESSED_SUFFIXES
+    ):
+        raise RuntimeError(
+            f"Cannot create an index for a compressed {kind} file: {path}. "
+            f"Only uncompressed files are supported."
+        )
+
+
+# ---------------------------------------------------------------------------
+# LazyShuffledRange — O(1) memory permutation via Feistel cipher
+# ---------------------------------------------------------------------------
+
+
+class LazyShuffledRange:
+    """
+    An O(1)-memory lazy permutation of ``range(n)`` determined by *seed*.
+
+    Uses a balanced Feistel network (6 rounds) with cycle-walking to
+    handle non-power-of-two domain sizes.  Every element of ``[0, n)``
+    is produced exactly once in a deterministic, seed-dependent order.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
+
+    Example::
+
+        >>> perm = LazyShuffledRange(1000, seed=42)
+        >>> perm[0]   # first element of the permutation — O(1)
+        >>> list(perm) == sorted(range(1000))  # after sorting, same elements
+        True
+    """
+
+    def __init__(self, n: int, seed: int) -> None:
+        self.n = n
+        self.seed = seed
+        self._pos = 0
+
+        # Compute the number of bits for each half of the Feistel network.
+        # We need total_bits such that 2**total_bits >= n.
+        if n <= 1:
+            self._half_bits = 1
+            self._total_bits = 2
+        else:
+            self._total_bits = max(2, (n - 1).bit_length())
+            # Make total_bits even
+            if self._total_bits % 2 != 0:
+                self._total_bits += 1
+            self._half_bits = self._total_bits // 2
+
+        self._half_mask = (1 << self._half_bits) - 1
+
+        # Pre-compute round keys from the seed.
+        self._num_rounds = 6
+        rng = np.random.RandomState(seed & 0xFFFFFFFF)
+        self._round_keys = [
+            int(rng.randint(0, 2**63)) for _ in range(self._num_rounds)
+        ]
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, idx: int) -> int:
+        """Return the *idx*-th element of the permutation in O(1)."""
+        if idx < 0:
+            idx += self.n
+        if idx < 0 or idx >= self.n:
+            raise IndexError(
+                f"index {idx} out of range for LazyShuffledRange(n={self.n})"
+            )
+        return self._permute(idx)
+
+    def __iter__(self) -> "LazyShuffledRange":
+        return self
+
+    def __next__(self) -> int:
+        if self._pos >= self.n:
+            raise StopIteration
+        val = self._permute(self._pos)
+        self._pos += 1
+        return val
+
+    def reset(self) -> None:
+        """Reset the iterator to the beginning."""
+        self._pos = 0
+
+    def state_dict(self) -> dict:
+        """Return checkpoint state: ``{"n", "seed", "pos"}``."""
+        return {"n": self.n, "seed": self.seed, "pos": self._pos}
+
+    def load_state_dict(self, sd: dict) -> None:
+        """Restore from a checkpoint produced by :meth:`state_dict`."""
+        assert sd["n"] == self.n and sd["seed"] == self.seed, (
+            f"LazyShuffledRange state mismatch: "
+            f"expected n={self.n}, seed={self.seed}; "
+            f"got n={sd['n']}, seed={sd['seed']}"
+        )
+        self._pos = sd["pos"]
+
+    # ---- Feistel internals ------------------------------------------------
+
+    def _round_fn(self, value: int, round_key: int) -> int:
+        """Knuth multiplicative hash used as the Feistel round function."""
+        # 64-bit Knuth multiplicative hash
+        h = ((value ^ round_key) * 2654435761) & 0xFFFFFFFFFFFFFFFF
+        # Mix bits
+        h ^= h >> 17
+        h = (h * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+        h ^= h >> 31
+        return h & self._half_mask
+
+    def _feistel(self, x: int) -> int:
+        """One pass of the balanced Feistel cipher."""
+        left = (x >> self._half_bits) & self._half_mask
+        right = x & self._half_mask
+        for i in range(self._num_rounds):
+            new_left = right
+            new_right = left ^ self._round_fn(right, self._round_keys[i])
+            left, right = new_left, new_right
+        return (left << self._half_bits) | right
+
+    def _permute(self, idx: int) -> int:
+        """Map *idx* to a unique element in ``[0, n)`` using cycle-walking."""
+        x = idx
+        while True:
+            x = self._feistel(x)
+            if x < self.n:
+                return x
+
+
+# ---------------------------------------------------------------------------
+# IndexedJsonlReader — O(1) random-access JSONL reader
+# ---------------------------------------------------------------------------
+
+
+class IndexedJsonlReader:
+    """
+    Random-access reader for an uncompressed JSONL file using a binary
+    index.
+
+    Each ``__getitem__`` call performs a single seek + readline + JSON parse,
+    giving O(1) access to any line.
+
+    Parameters
+    ----------
+    path : Pathlike
+        Path to the uncompressed JSONL file.
+    auto_create_index : bool
+        If ``True`` (default), the ``.idx`` file will be created
+        automatically when it is missing.  Set to ``False`` to raise
+        :class:`FileNotFoundError` instead.
+    """
+
+    def __init__(self, path: Pathlike, auto_create_index: bool = True) -> None:
+        self.path = Path(path)
+        self._fh: Optional[object] = None
+        idx_path = index_file_path(self.path)
+        if not idx_path.is_file():
+            if auto_create_index:
+                create_jsonl_index(self.path)
+            else:
+                raise FileNotFoundError(
+                    f"Index file not found: {idx_path}. "
+                    f"Use create_jsonl_index() to build it, or set auto_create_index=True."
+                )
+        self._offsets = read_index(idx_path)
+
+    def _ensure_open(self):
+        if self._fh is None:
+            self._fh = open(self.path, "rb")
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
+    def __len__(self) -> int:
+        return len(self._offsets) - 1  # last entry is the sentinel
+
+    def __getitem__(self, idx: int) -> dict:
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError(
+                f"index {idx} out of range for IndexedJsonlReader with {len(self)} lines"
+            )
+        self._ensure_open()
+        start = int(self._offsets[idx])
+        end = int(self._offsets[idx + 1])
+        self._fh.seek(start)
+        line = self._fh.read(end - start)
+        return decode_json_line(line.decode("utf-8"))
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+
+
+# ---------------------------------------------------------------------------
+# IndexedTarReader — O(1) random-access tar reader for Shar format
+# ---------------------------------------------------------------------------
+
+# Tar block size
+_TAR_BLOCK_SIZE = 512
+
+
+def _ceil_block(size: int) -> int:
+    """Round *size* up to the next 512-byte boundary."""
+    return (size + _TAR_BLOCK_SIZE - 1) // _TAR_BLOCK_SIZE * _TAR_BLOCK_SIZE
+
+
+Manifest = Union["Recording", "Array", "TemporalArray", "Features"]
+
+
+class IndexedTarReader:
+    """
+    Random-access reader for an uncompressed Lhotse Shar tar archive
+    using a binary index.
+
+    Each sample in the tar file consists of two consecutive members
+    (data + metadata).  ``__getitem__`` seeks to the pair's first header,
+    reads both members, and returns the same ``(manifest, data_path)``
+    tuple as :class:`~lhotse.shar.readers.tar.TarIterator`.
+
+    Parameters
+    ----------
+    path : Pathlike
+        Path to the uncompressed tar archive.
+    auto_create_index : bool
+        If ``True`` (default), the ``.idx`` file will be created when
+        missing.
+    """
+
+    def __init__(self, path: Pathlike, auto_create_index: bool = True) -> None:
+        self.path = Path(path)
+        self._fh: Optional[object] = None
+        idx_path = index_file_path(self.path)
+        if not idx_path.is_file():
+            if auto_create_index:
+                create_tar_index(self.path)
+            else:
+                raise FileNotFoundError(
+                    f"Index file not found: {idx_path}. "
+                    f"Use create_tar_index() to build it, or set auto_create_index=True."
+                )
+        self._offsets = read_index(idx_path)
+
+    def _ensure_open(self):
+        if self._fh is None:
+            self._fh = open(self.path, "rb")
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
+    def __len__(self) -> int:
+        return len(self._offsets) - 1
+
+    def __getitem__(self, idx: int) -> Tuple[Optional[Manifest], Path]:
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError(
+                f"index {idx} out of range for IndexedTarReader with {len(self)} samples"
+            )
+        self._ensure_open()
+
+        offset = int(self._offsets[idx])
+
+        # Read first member (data)
+        data, data_path = self._read_member(offset)
+        # Advance past data to next header
+        next_offset = offset + _TAR_BLOCK_SIZE + _ceil_block(self._last_member_size)
+        # Read second member (metadata)
+        meta_bytes, meta_path = self._read_member(next_offset)
+
+        # Process like TarIterator
+        if meta_bytes is not None:
+            meta = deserialize_item(decode_json_line(meta_bytes.decode("utf-8")))
+            fill_shar_placeholder(manifest=meta, data=data, tarpath=data_path)
+        else:
+            meta = None
+
+        return meta, data_path
+
+    def _read_member(self, offset: int) -> Tuple[Optional[bytes], Path]:
+        """Read a single tar member at the given byte offset."""
+        self._fh.seek(offset)
+        header_buf = self._fh.read(_TAR_BLOCK_SIZE)
+        if len(header_buf) < _TAR_BLOCK_SIZE:
+            raise RuntimeError(f"Unexpected EOF reading tar header at offset {offset}")
+        info = tarfile.TarInfo.frombuf(header_buf, tarfile.ENCODING, "surrogateescape")
+        self._last_member_size = info.size
+
+        path = Path(info.name)
+        if path.suffix in (".nodata", ".nometa"):
+            return None, path
+
+        data = self._fh.read(info.size)
+        return data, path
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
