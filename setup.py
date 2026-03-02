@@ -189,6 +189,7 @@ h5py_requires = ["h5py"]
 kaldi_requires = ["kaldi_native_io", "kaldifeat"]
 workflow_requires = ["scipy"]
 pillow_requires = ["pillow"]
+checkpoint_requires = ["torchdata"]
 dev_requires = sorted(
     docs_require
     + tests_require
@@ -231,6 +232,7 @@ setup(
         "dill": dill_requires,
         "orjson": orjson_requires,
         "webdataset": webdataset_requires,
+        "checkpoint": checkpoint_requires,
         "h5py": h5py_requires,
         "kaldi": kaldi_requires,
         "pillow": pillow_requires,
