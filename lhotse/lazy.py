@@ -17,6 +17,29 @@ from lhotse.utils import Pathlike, fastcopy, is_module_available, streaming_shuf
 T = TypeVar("T")
 
 
+# ---------------------------------------------------------------------------
+# Stateful iterator protocol
+# ---------------------------------------------------------------------------
+
+
+class StatefulIterator:
+    """
+    Protocol (mixin) for lazy iterators that support checkpointing.
+
+    Subclasses must implement :meth:`state_dict` and :meth:`load_state_dict`.
+    The convention for child references is:
+
+    * ``self.source``  — single child iterator
+    * ``self.sources`` — list of child iterators
+    """
+
+    def state_dict(self) -> dict:
+        raise NotImplementedError
+
+    def load_state_dict(self, sd: dict) -> None:
+        raise NotImplementedError
+
+
 class AlgorithmMixin(LazyMixin, Iterable):
     """
     Helper base class with methods that are supposed to work identically
@@ -265,33 +288,62 @@ class LazyTxtIterator:
         return self._len
 
 
-class LazyJsonlIterator:
+class LazyJsonlIterator(StatefulIterator):
     """
     LazyJsonlIterator provides the ability to read JSON lines as Python dicts.
     It can also provide the number of lines via __len__ via fast newlines counting.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
+    When a binary index file (``.idx``) is available, restoration jumps directly
+    to the saved position in O(1).  Otherwise a sequential fast-forward is used.
     """
 
     def __init__(self, path: Pathlike) -> None:
         self.path = path
         self._len = None
+        self._position = 0
+        self._restored = False
 
     def __iter__(self):
-        tot = 0
-        with open_best(self.path, "r") as f:
-            for line in f:
-                data = decode_json_line(line)
-                yield data
-                tot += 1
-        if self._len is None:
-            self._len = tot
+        from lhotse.indexing import IndexedJsonlReader, index_exists
+
+        start = self._position if self._restored else 0
+        self._restored = False
+        self._position = start
+        if index_exists(self.path):
+            reader = IndexedJsonlReader(self.path)
+            for i in range(start, len(reader)):
+                self._position = i + 1
+                yield reader[i]
+        else:
+            tot = 0
+            with open_best(self.path, "r") as f:
+                for line in f:
+                    tot += 1
+                    if tot <= start:
+                        continue
+                    data = decode_json_line(line)
+                    self._position = tot
+                    yield data
+            if self._len is None:
+                self._len = tot
 
     def __len__(self) -> int:
         if self._len is None:
             self._len = count_newlines_fast(self.path)
         return self._len
 
+    def state_dict(self) -> dict:
+        """Return ``{"position": int}``."""
+        return {"position": self._position}
 
-class LazyManifestIterator(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        """Restore position.  Actual seeking happens in ``__iter__``."""
+        self._position = sd["position"]
+        self._restored = True
+
+
+class LazyManifestIterator(Dillable, StatefulIterator):
     """
     LazyManifestIterator provides the ability to read Lhotse objects from a
     JSONL file on-the-fly, without reading its full contents into memory.
@@ -300,6 +352,9 @@ class LazyManifestIterator(Dillable):
     to support lazy loading of RecordingSet, SupervisionSet and CutSet.
     Since it does not support random access reads, some methods of these classes
     might not work properly.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
+    (delegates to the inner :class:`LazyJsonlIterator`).
     """
 
     def __init__(self, path: Pathlike) -> None:
@@ -318,8 +373,14 @@ class LazyManifestIterator(Dillable):
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
 
+    def state_dict(self) -> dict:
+        return {"source": self.source.state_dict()}
 
-class LazyIteratorChain(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        self.source.load_state_dict(sd["source"])
+
+
+class LazyIteratorChain(Dillable, StatefulIterator):
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
@@ -330,6 +391,8 @@ class LazyIteratorChain(Dillable):
     an internal counter so that the next time it's iterated, the order of shards
     is again randomized.
 
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
+
     .. note:: if any of the input iterables is a dict, we'll iterate only its values.
     """
 
@@ -339,42 +402,94 @@ class LazyIteratorChain(Dillable):
         shuffle_iters: bool = False,
         seed: Optional[Union[int, Literal["trng", "randomized"]]] = None,
     ) -> None:
-        self.iterators = []
+        self.sources = []
         self.shuffle_iters = shuffle_iters
         self.seed = seed
         self.num_iters = 0
         for it in iterators:
             # Auto-flatten LazyIteratorChain instances if any are passed
             if isinstance(it, LazyIteratorChain):
-                for sub_it in it.iterators:
-                    self.iterators.append(sub_it)
+                for sub_it in it.sources:
+                    self.sources.append(sub_it)
             else:
-                self.iterators.append(it)
+                self.sources.append(it)
+        # Iteration tracking
+        self._current_iter_idx = 0
+        self._iter_order: Optional[list] = None
+        self._restored = False
 
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
 
-        iterators = self.iterators
-        if self.shuffle_iters:
-            if self.seed is None:
-                rng = random  # global Python RNG
-            else:
-                rng = random.Random(resolve_seed(self.seed) + self.num_iters)
-            rng.shuffle(iterators)
-            self.num_iters += 1
-        for it in iterators:
+        if self._restored:
+            self._restored = False
+            # Restore exact shard order and skip to the current shard
+            start_idx = self._current_iter_idx
+            sources = [self.sources[i] for i in self._iter_order]
+        else:
+            start_idx = 0
+            sources = list(self.sources)  # shallow copy for potential shuffle
+            if self.shuffle_iters:
+                if self.seed is None:
+                    rng = random  # global Python RNG
+                else:
+                    rng = random.Random(resolve_seed(self.seed) + self.num_iters)
+                rng.shuffle(sources)
+                self.num_iters += 1
+            self._iter_order = [self.sources.index(s) for s in sources]
+            self._current_iter_idx = 0
+        for idx, it in enumerate(sources):
+            if idx < start_idx:
+                continue
+            self._current_iter_idx = idx
             if isinstance(it, dict):
                 it = it.values()
             yield from it
 
     def __len__(self) -> int:
-        return sum(len(it) for it in self.iterators)
+        return sum(len(it) for it in self.sources)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
 
+    def state_dict(self) -> dict:
+        sd = {
+            "current_iter_idx": self._current_iter_idx,
+            "num_iters": self.num_iters,
+            "iter_order": self._iter_order,
+        }
+        # Save inner states for stateful children
+        inner_states = []
+        for s in self.sources:
+            if isinstance(s, StatefulIterator):
+                inner_states.append(s.state_dict())
+            else:
+                inner_states.append(None)
+        sd["inner_states"] = inner_states
+        return sd
 
-class LazyIteratorMultiplexer(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        self._current_iter_idx = sd["current_iter_idx"]
+        self.num_iters = sd["num_iters"]
+        self._iter_order = sd["iter_order"]
+        # Only restore sources that will still be iterated (at or after
+        # current_iter_idx in iter_order).  Sources before that index were
+        # fully consumed and should start fresh on the next epoch.
+        order = (
+            self._iter_order
+            if self._iter_order is not None
+            else list(range(len(self.sources)))
+        )
+        active = set(order[self._current_iter_idx :])
+        for i, (s, inner_sd) in enumerate(
+            zip(self.sources, sd.get("inner_states", []))
+        ):
+            if i in active and inner_sd is not None and isinstance(s, StatefulIterator):
+                s.load_state_dict(inner_sd)
+        self._restored = True
+
+
+class LazyIteratorMultiplexer(Dillable, StatefulIterator):
     """
     A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
     During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
@@ -384,6 +499,8 @@ class LazyIteratorMultiplexer(Dillable):
     to let the user decide which iterables should be sampled more frequently than others.
     When an iterable is exhausted, we will keep sampling from the other iterables, until
     we exhaust them all, unless ``stop_early`` is set to ``True``.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
     """
 
     def __init__(
@@ -393,27 +510,44 @@ class LazyIteratorMultiplexer(Dillable):
         weights: Optional[List[Union[int, float]]] = None,
         seed: Union[int, Literal["trng", "randomized"]] = 0,
     ) -> None:
-        self.iterators = list(iterators)
+        self.sources = list(iterators)
         self.stop_early = stop_early
         self.seed = seed
 
         assert (
-            len(self.iterators) > 1
+            len(self.sources) > 1
         ), "There have to be at least two iterables to multiplex."
 
         if weights is None:
-            self.weights = [1] * len(self.iterators)
+            self.weights = [1] * len(self.sources)
         else:
             self.weights = weights
 
-        assert len(self.iterators) == len(self.weights)
+        assert len(self.sources) == len(self.weights)
+
+        # Iteration state
+        self._rng_state = None
+        self._exhausted: Optional[list] = None
+        self._restored = False
 
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
 
         rng = random.Random(resolve_seed(self.seed))
-        iters = [iter(it) for it in self.iterators]
-        exhausted = [False for _ in range(len(iters))]
+        iters = [iter(it) for it in self.sources]
+
+        if self._restored:
+            self._restored = False
+            exhausted = (
+                list(self._exhausted)
+                if self._exhausted is not None
+                else [False] * len(iters)
+            )
+            if self._rng_state is not None:
+                rng.setstate(self._rng_state)
+        else:
+            exhausted = [False for _ in range(len(iters))]
+        self._exhausted = exhausted
 
         def should_continue():
             if self.stop_early:
@@ -430,6 +564,7 @@ class LazyIteratorMultiplexer(Dillable):
                 ]
             )
             idx = rng.choices(active_indexes, weights=active_weights, k=1)[0]
+            self._rng_state = rng.getstate()
             selected = iters[idx]
             try:
                 item = next(selected)
@@ -439,10 +574,32 @@ class LazyIteratorMultiplexer(Dillable):
                 continue
 
     def __len__(self) -> int:
-        return sum(len(it) for it in self.iterators)
+        return sum(len(it) for it in self.sources)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+    def state_dict(self) -> dict:
+        sd = {
+            "rng_state": self._rng_state,
+            "exhausted": list(self._exhausted) if self._exhausted is not None else None,
+        }
+        inner_states = []
+        for s in self.sources:
+            if isinstance(s, StatefulIterator):
+                inner_states.append(s.state_dict())
+            else:
+                inner_states.append(None)
+        sd["inner_states"] = inner_states
+        return sd
+
+    def load_state_dict(self, sd: dict) -> None:
+        self._rng_state = sd["rng_state"]
+        self._exhausted = sd["exhausted"]
+        for s, inner_sd in zip(self.sources, sd.get("inner_states", [])):
+            if inner_sd is not None and isinstance(s, StatefulIterator):
+                s.load_state_dict(inner_sd)
+        self._restored = True
 
 
 class LazyInfiniteApproximateMultiplexer(Dillable):
@@ -466,6 +623,12 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
     If we did not sample with replacement or make it infinite, we would simply
     exhaust highly-weighted iterators towards the beginning of each "epoch"
     and keep sampling only lowly-weighted iterators towards the end of each "epoch".
+
+    .. note:: This class does **not** support checkpointing
+        (``state_dict`` / ``load_state_dict``).  Its infinite, approximate
+        nature with dynamically replaced streams makes exact restoration
+        infeasible.  For resumable multiplexed iteration, use
+        :class:`.LazyIteratorMultiplexer` with finite sources instead.
     """
 
     def __init__(
@@ -476,18 +639,18 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
         seed: Union[int, Literal["trng", "randomized"]] = 0,
         max_open_streams: Optional[int] = None,
     ) -> None:
-        self.iterators = list(iterators)
+        self.sources = list(iterators)
         self.stop_early = stop_early
         self.seed = seed
         self.max_open_streams = max_open_streams
-        if max_open_streams is None or max_open_streams > len(self.iterators):
-            self.max_open_streams = len(self.iterators)
+        if max_open_streams is None or max_open_streams > len(self.sources):
+            self.max_open_streams = len(self.sources)
 
-        assert len(self.iterators) > 0
+        assert len(self.sources) > 0
         self.weights = weights
         if weights is None:
-            self.weights = [1] * len(self.iterators)
-        assert len(self.iterators) == len(self.weights)
+            self.weights = [1] * len(self.sources)
+        assert len(self.sources) == len(self.weights)
         assert (
             self.max_open_streams is None or self.max_open_streams >= 1
         ), f"{self.max_open_streams=}"
@@ -506,50 +669,31 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
         rng = random.Random(resolve_seed(self.seed))
 
         def shuffled_streams():
-            # Create an infinite iterable of our streams.
-            # Assume N is "small" enough that shuffling it will be quick
-            #
-            # we need to incorporate weights into shuffling here
-            # and sample iterators with replacement.
-            # consider it0=[shard00, shard01] with weight 0.95
-            # and      it1=[shard10, shard11] with weight 0.05
-            # so we have 4 streams [shard{01}{01}]
-            # if we just shuffle randomly and sample without replacement
-            # per each "epoch" (epoch = 4 shards) then we would have
-            # ignored the weights because we'll just exhaust it0 shards
-            # towards the beginning of an "epoch" and then keep yielding
-            # from it1 shards until the epoch is finished and we can sample
-            # from it0 again...
-            indexes = list(range(len(self.iterators)))
+            indexes = list(range(len(self.sources)))
             while True:
                 selected = rng.choices(indexes, self.weights, k=1)[0]
-                yield self.iterators[selected], self.weights[selected]
+                yield self.sources[selected], self.weights[selected], selected
 
         # Initialize an infinite sequence of finite streams.
-        # It is sampled with weights and replacement from ``self.iterators``,
-        # which are of length N.
         stream_source = shuffled_streams()
 
         # Sample the first M active streams to be multiplexed.
-        # As streams get depleted, we will replace them with
-        # new streams sampled from the stream source.
         active_streams = [None] * self.max_open_streams
         active_weights = [None] * self.max_open_streams
+        active_origins = [None] * self.max_open_streams
         stream_indexes = list(range(self.max_open_streams))
 
         def sample_new_stream_at(pos: int) -> None:
-            sampled_stream, sampled_weight = next(stream_source)
+            sampled_stream, sampled_weight, origin_idx = next(stream_source)
             active_streams[pos] = iter(sampled_stream)
             active_weights[pos] = sampled_weight
+            active_origins[pos] = origin_idx
 
         for stream_pos in range(self.max_open_streams):
             sample_new_stream_at(stream_pos)
 
         # The actual multiplexing loop.
         while True:
-            # Select a stream from the currently active streams.
-            # We actually sample an index so that we know which position
-            # to replace if a stream is exhausted.
             stream_pos = rng.choices(
                 stream_indexes,
                 weights=active_weights if sum(active_weights) > 0 else None,
@@ -557,12 +701,9 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
             )[0]
             selected = active_streams[stream_pos]
             try:
-                # Sample from the selected stream.
                 item = next(selected)
                 yield item
             except StopIteration:
-                # The selected stream is exhausted. Replace it with another one,
-                # and return a sample from the newly opened stream.
                 sample_new_stream_at(stream_pos)
                 item = next(active_streams[stream_pos])
                 yield item
@@ -573,6 +714,11 @@ class LazyShuffler(Dillable):
     A wrapper over an iterable that enables lazy shuffling.
     The shuffling algorithm is reservoir-sampling based.
     See :func:`lhotse.utils.streaming_shuffle` for details.
+
+    .. note:: LazyShuffler does **not** support checkpointing
+        (``state_dict`` / ``load_state_dict``).  The internal shuffle buffer
+        cannot be cheaply saved or reconstructed.  For resumable shuffled
+        iteration, use indexed random-access reads instead.
     """
 
     def __init__(
@@ -581,35 +727,38 @@ class LazyShuffler(Dillable):
         buffer_size: int = 10000,
         rng: Optional[random.Random] = None,
     ) -> None:
-        self.iterator = iterator
+        self.source = iterator
         self.buffer_size = buffer_size
         self.rng = rng
 
     def __iter__(self):
         return iter(
             streaming_shuffle(
-                iter(self.iterator),
+                iter(self.source),
                 bufsize=self.buffer_size,
                 rng=self.rng,
             )
         )
 
     def __len__(self) -> int:
-        return len(self.iterator)
+        return len(self.source)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
 
 
-class LazyFilter(Dillable):
+class LazyFilter(Dillable, StatefulIterator):
     """
     A wrapper over an iterable that enables lazy filtering.
     It works like Python's `filter` built-in by applying the filter predicate
     to each element and yielding it further if predicate returned ``True``.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
+    (delegates to the inner ``source`` iterator; the filter itself is stateless).
     """
 
     def __init__(self, iterator: Iterable, predicate: Callable[[Any], bool]) -> None:
-        self.iterator = iterator
+        self.source = iterator
         self.predicate = predicate
         assert callable(
             self.predicate
@@ -626,7 +775,7 @@ class LazyFilter(Dillable):
             )
 
     def __iter__(self):
-        return filter(self.predicate, self.iterator)
+        return filter(self.predicate, self.source)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
@@ -639,8 +788,18 @@ class LazyFilter(Dillable):
             "`.to_eager()`. Note that this will require loading the whole iterator into memory."
         )
 
+    def state_dict(self) -> dict:
+        sd = {}
+        if isinstance(self.source, StatefulIterator):
+            sd["source"] = self.source.state_dict()
+        return sd
 
-class LazyMapper(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        if "source" in sd and isinstance(self.source, StatefulIterator):
+            self.source.load_state_dict(sd["source"])
+
+
+class LazyMapper(Dillable, StatefulIterator):
     """
     A wrapper over an iterable that enables lazy function evaluation on each item.
     It works like Python's `map` built-in by applying a callable ``fn``
@@ -648,6 +807,9 @@ class LazyMapper(Dillable):
 
     New in Lhotse v1.22.0: ``apply_fn`` can be provided to decide whether ``fn`` should be applied
         to a given example or not (in which case it will return it as-is, i.e., it does not filter).
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
+    (delegates to the inner ``source`` iterator; the mapper itself is stateless).
     """
 
     def __init__(
@@ -656,7 +818,7 @@ class LazyMapper(Dillable):
         fn: Callable[[Any], Any],
         apply_fn: Optional[Callable[[Any], bool]] = None,
     ) -> None:
-        self.iterator = iterator
+        self.source = iterator
         self.fn = fn
         self.apply_fn = apply_fn
         assert callable(self.fn), f"LazyMapper: 'fn' arg must be callable (got {fn})."
@@ -680,9 +842,9 @@ class LazyMapper(Dillable):
 
     def __iter__(self):
         if self.apply_fn is None:
-            yield from map(self.fn, self.iterator)
+            yield from map(self.fn, self.source)
         else:
-            for item in self.iterator:
+            for item in self.source:
                 if self.apply_fn(item):
                     ans = self.fn(item)
                 else:
@@ -690,15 +852,28 @@ class LazyMapper(Dillable):
                 yield ans
 
     def __len__(self) -> int:
-        return len(self.iterator)
+        return len(self.source)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
 
+    def state_dict(self) -> dict:
+        sd = {}
+        if isinstance(self.source, StatefulIterator):
+            sd["source"] = self.source.state_dict()
+        return sd
 
-class LazyFlattener(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        if "source" in sd and isinstance(self.source, StatefulIterator):
+            self.source.load_state_dict(sd["source"])
+
+
+class LazyFlattener(Dillable, StatefulIterator):
     """
     A wrapper over an iterable of collections that flattens it to an iterable of items.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
+    (delegates to the inner ``source`` iterator).
 
     Example::
 
@@ -707,10 +882,10 @@ class LazyFlattener(Dillable):
     """
 
     def __init__(self, iterator: Iterable) -> None:
-        self.iterator = iterator
+        self.source = iterator
 
     def __iter__(self):
-        for cuts in self.iterator:
+        for cuts in self.source:
             yield from cuts
 
     def __add__(self, other) -> "LazyIteratorChain":
@@ -724,35 +899,55 @@ class LazyFlattener(Dillable):
             "`.to_eager()`. Note that this will require loading the whole iterator into memory."
         )
 
+    def state_dict(self) -> dict:
+        sd = {}
+        if isinstance(self.source, StatefulIterator):
+            sd["source"] = self.source.state_dict()
+        return sd
 
-class LazyRepeater(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        if "source" in sd and isinstance(self.source, StatefulIterator):
+            self.source.load_state_dict(sd["source"])
+
+
+class LazyRepeater(Dillable, StatefulIterator):
     """
     A wrapper over an iterable that enables to repeat it N times or infinitely (default).
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
+    Captures the current epoch and the state of the inner ``source`` iterator.
     """
 
     def __init__(
         self, iterator: Iterable, times: Optional[int] = None, preserve_id: bool = False
     ) -> None:
-        self.iterator = iterator
+        self.source = iterator
         self.times = times
         self.preserve_id = preserve_id
         assert self.times is None or self.times > 0
+        self._current_epoch = 0
+        self._restored = False
 
     def __iter__(self):
-        epoch = 0
+        restored = self._restored
+        epoch = self._current_epoch if restored else 0
+        self._restored = False
         while self.times is None or epoch < self.times:
+            self._current_epoch = epoch
             if self.preserve_id:
-                iterator = self.iterator
+                iterator = self.source
             else:
                 iterator = LazyMapper(
-                    self.iterator, partial(attach_repeat_idx_to_id, idx=epoch)
+                    self.source, partial(attach_repeat_idx_to_id, idx=epoch)
                 )
             at_least_once = False
             for item in iterator:
                 at_least_once = True
                 yield item
-            if not at_least_once:
+            if not at_least_once and not restored:
                 return  # Detect empty iterables to avoid hanging the program.
+            # After the first (possibly restored) epoch, behave normally.
+            restored = False
             epoch += 1
 
     def __len__(self) -> int:
@@ -760,27 +955,47 @@ class LazyRepeater(Dillable):
             raise TypeError(
                 f"object of type '{type(self).__name__}' is an infinite iterator"
             )
-        return len(self.iterator) * self.times
+        return len(self.source) * self.times
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
 
+    def state_dict(self) -> dict:
+        sd = {"current_epoch": self._current_epoch}
+        if isinstance(self.source, StatefulIterator):
+            sd["source"] = self.source.state_dict()
+        return sd
 
-class LazySlicer(Dillable):
+    def load_state_dict(self, sd: dict) -> None:
+        self._current_epoch = sd["current_epoch"]
+        if "source" in sd and isinstance(self.source, StatefulIterator):
+            self.source.load_state_dict(sd["source"])
+        self._restored = True
+
+
+class LazySlicer(Dillable, StatefulIterator):
     """
     A wrapper over an iterable that enables selecting k-th element every n elements.
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
+    (delegates to the inner ``source`` iterator).
     """
 
     def __init__(self, iterator: Iterable, k: int, n: int) -> None:
-        self.iterator = iterator
+        self.source = iterator
         assert (
             k < n
         ), f"When selecting k-th element every n elements, k must be less than n (got k={k} n={n})."
         self.k = k
         self.n = n
+        self._source_offset = 0
+        self._restored = False
 
     def __iter__(self):
-        for idx, item in enumerate(self.iterator):
+        start = self._source_offset if self._restored else 0
+        self._restored = False
+        for idx, item in enumerate(self.source, start=start):
+            self._source_offset = idx + 1
             if idx % self.n == self.k:
                 yield item
 
@@ -794,6 +1009,18 @@ class LazySlicer(Dillable):
             "If you really need to know the length, convert to eager mode first using "
             "`.to_eager()`. Note that this will require loading the whole iterator into memory."
         )
+
+    def state_dict(self) -> dict:
+        sd = {"source_offset": self._source_offset}
+        if isinstance(self.source, StatefulIterator):
+            sd["source"] = self.source.state_dict()
+        return sd
+
+    def load_state_dict(self, sd: dict) -> None:
+        self._source_offset = sd.get("source_offset", 0)
+        if "source" in sd and isinstance(self.source, StatefulIterator):
+            self.source.load_state_dict(sd["source"])
+        self._restored = True
 
 
 def attach_repeat_idx_to_id(item: Any, idx: int) -> Any:
