@@ -84,3 +84,13 @@ class CutMix:
             self.rng = self.seed
         else:
             self.rng = random.Random(resolve_seed(self.seed))
+
+    def state_dict(self) -> dict:
+        from lhotse.utils import save_rng_state
+
+        return {"rng_state": save_rng_state(self.rng)}
+
+    def load_state_dict(self, sd: dict) -> None:
+        from lhotse.utils import load_rng_state
+
+        self.rng = load_rng_state(sd["rng_state"], self.rng)

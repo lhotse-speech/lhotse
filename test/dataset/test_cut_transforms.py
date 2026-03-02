@@ -335,3 +335,131 @@ def test_compress_gsm():
 
     for cut in cuts_comp:
         cut.load_audio()
+
+
+# ---------------------------------------------------------------------------
+# state_dict / load_state_dict tests for transform checkpointing
+# ---------------------------------------------------------------------------
+
+
+class TestTransformStateDictRoundTrip:
+    """
+    Verify the core checkpoint property for each transform with RNG state:
+
+        items_before_checkpoint + items_after_restore == all_items_uninterrupted
+
+    Each test creates a transform, applies it to N batches, saves state at
+    batch K, restores on a fresh (identically-seeded) transform, and verifies
+    the remaining batches match the uninterrupted run exactly.
+    """
+
+    @staticmethod
+    def _make_batches(n=6, batch_size=4):
+        """Return a list of small CutSet batches for testing."""
+        return [
+            DummyManifest(CutSet, begin_id=i * batch_size, end_id=(i + 1) * batch_size)
+            for i in range(n)
+        ]
+
+    @staticmethod
+    def _ids(cutset):
+        return sorted(c.id for c in cutset)
+
+    def _assert_transform_checkpoint(self, make_tfn, n_batches=6, checkpoint_at=3):
+        """Generic checkpoint/restore test for a transform callable.
+
+        ``make_tfn`` is a zero-argument factory that creates a fresh transform
+        with the same initial RNG state each time it's called.
+        """
+        batches = self._make_batches(n=n_batches)
+
+        # 1. Uninterrupted run
+        tfn_full = make_tfn()
+        all_results = [self._ids(tfn_full(b)) for b in batches]
+
+        # 2. Interrupted run — apply checkpoint_at batches, then save state
+        tfn_int = make_tfn()
+        first_k = [self._ids(tfn_int(b)) for b in batches[:checkpoint_at]]
+        sd = tfn_int.state_dict()
+
+        # 3. Restored run on a fresh transform
+        tfn_restored = make_tfn()
+        tfn_restored.load_state_dict(sd)
+        remaining = [self._ids(tfn_restored(b)) for b in batches[checkpoint_at:]]
+
+        assert first_k + remaining == all_results
+
+    def test_perturb_speed_checkpoint(self):
+        self._assert_transform_checkpoint(
+            lambda: PerturbSpeed(factors=[0.9, 1.1], p=0.5, randgen=random.Random(42))
+        )
+
+    def test_perturb_volume_checkpoint(self):
+        self._assert_transform_checkpoint(
+            lambda: PerturbVolume(p=0.5, randgen=random.Random(42))
+        )
+
+    def test_perturb_tempo_checkpoint(self):
+        self._assert_transform_checkpoint(
+            lambda: PerturbTempo(factors=[0.9, 1.1], p=0.5, randgen=random.Random(42))
+        )
+
+    def test_cut_mix_checkpoint(self):
+        noise = DummyManifest(CutSet, begin_id=1000, end_id=1010)
+        # preserve_id=True so that mixed cuts keep original IDs (avoids
+        # comparing nondeterministic UUIDs generated during mixing).
+        self._assert_transform_checkpoint(
+            lambda: CutMix(cuts=noise, p=0.5, seed=random.Random(42), preserve_id=True)
+        )
+
+    def test_perturb_speed_checkpoint_lazy_init(self):
+        """RNG is None initially, gets lazy-initialized on first __call__.
+
+        Since unseed random.Random() instances get OS-entropy seeds, we can't
+        compare across independent instances.  Instead we verify that a
+        restored instance continues identically to the original.
+        """
+        batches = self._make_batches(n=6)
+
+        # Create instance, apply 3 batches, save, continue with 3 more
+        tfn = PerturbSpeed(factors=[0.9, 1.1], p=0.5)
+        _ = [tfn(b) for b in batches[:3]]
+        sd = tfn.state_dict()
+        continuation = [self._ids(tfn(b)) for b in batches[3:]]
+
+        # Restore into a new instance (self.random is None, load_state_dict
+        # creates and seeds it from the saved state).
+        tfn2 = PerturbSpeed(factors=[0.9, 1.1], p=0.5)
+        tfn2.load_state_dict(sd)
+        restored = [self._ids(tfn2(b)) for b in batches[3:]]
+
+        assert continuation == restored
+
+    def test_state_dict_json_roundtrip(self):
+        """Verify state_dict survives JSON serialization (lists vs tuples)."""
+        import json
+
+        tfn = PerturbSpeed(factors=[0.9, 1.1], p=0.5, randgen=random.Random(42))
+        # Advance the RNG
+        batches = self._make_batches(n=3)
+        for b in batches:
+            tfn(b)
+
+        sd = tfn.state_dict()
+        # Simulate JSON round-trip (tuples → lists)
+        sd_json = json.loads(
+            json.dumps(
+                sd,
+                default=lambda o: list(o) if isinstance(o, tuple) else o,
+            )
+        )
+
+        # Restore from JSON-loaded state
+        tfn2 = PerturbSpeed(factors=[0.9, 1.1], p=0.5, randgen=random.Random(0))
+        tfn2.load_state_dict(sd_json)
+
+        # Verify both produce identical output from this point
+        more_batches = self._make_batches(n=3)
+        results_original = [self._ids(tfn(b)) for b in more_batches]
+        results_restored = [self._ids(tfn2(b)) for b in more_batches]
+        assert results_original == results_restored

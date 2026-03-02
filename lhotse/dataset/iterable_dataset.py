@@ -104,6 +104,30 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
             self._sampler_iter = None
             raise
 
+    def state_dict(self) -> dict:
+        """
+        Return checkpoint state for this dataset wrapper.
+
+        This implements the ``Stateful`` protocol expected by
+        ``torchdata.stateful_dataloader.StatefulDataLoader``, enabling
+        automatic per-worker checkpointing of the dataloading pipeline.
+        """
+        return {
+            "epoch": self.epoch,
+            "sampler_state": self.sampler.state_dict(),
+        }
+
+    def load_state_dict(self, sd: dict) -> None:
+        """
+        Restore checkpoint state for this dataset wrapper.
+
+        This implements the ``Stateful`` protocol expected by
+        ``torchdata.stateful_dataloader.StatefulDataLoader``.
+        """
+        self.epoch = sd["epoch"]
+        self.sampler.load_state_dict(sd["sampler_state"])
+        self._sampler_iter = None  # will be re-created on next __iter__
+
     def _update_dataloading_info(self, cuts: CutSet) -> None:
         rank = get_rank()
         world_size = get_world_size()

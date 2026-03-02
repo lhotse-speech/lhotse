@@ -2,6 +2,7 @@ import random
 from typing import Sequence, Union
 
 from lhotse import CutSet
+from lhotse.utils import load_rng_state, save_rng_state
 
 
 class PerturbTempo:
@@ -27,7 +28,7 @@ class PerturbTempo:
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.random is None:
-            self.random = random
+            self.random = random.Random()
         return CutSet.from_cuts(
             cut.perturb_tempo(
                 factor=self.random.choice(self.factors), affix_id=not self.preserve_id
@@ -36,3 +37,9 @@ class PerturbTempo:
             else cut
             for cut in cuts
         )
+
+    def state_dict(self) -> dict:
+        return {"rng_state": save_rng_state(self.random)}
+
+    def load_state_dict(self, sd: dict) -> None:
+        self.random = load_rng_state(sd["rng_state"], self.random)

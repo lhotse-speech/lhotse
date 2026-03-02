@@ -181,6 +181,25 @@ class DynamicCutSampler(CutSampler):
 
         self._just_restored_state = False
         iter(self)
+
+        # If we have indexed iterator state from the enhanced state_dict,
+        # restore it in O(1) instead of O(N) fast-forwarding.
+        cuts_state = getattr(self, "_cuts_state", None)
+        if cuts_state is not None:
+            try:
+                from lhotse.checkpoint import restore_state_dict
+
+                for cs_iter, cs_state in zip(self.cuts_iter, cuts_state):
+                    restore_state_dict(cs_iter, cs_state)
+                self._cuts_state = None
+                # Also restore transform RNG states since we skipped O(N) iteration.
+                self._restore_transforms_state()
+                self._just_restored_state = True
+                return
+            except Exception:
+                pass  # Fall back to legacy O(N) fast-forward below
+
+        # O(N) fast-forward: transforms advance naturally via __next__.
         for _ in range(num_batches_to_iter):
             next(self)
         self._just_restored_state = True

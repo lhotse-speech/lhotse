@@ -1,6 +1,7 @@
 import random
 
 from lhotse import CutSet
+from lhotse.utils import load_rng_state, save_rng_state
 
 
 class PerturbVolume:
@@ -41,3 +42,9 @@ class PerturbVolume:
 
     def _uniform(self, low: float, high: float) -> float:
         return low + self.random.random() * (high - low)
+
+    def state_dict(self) -> dict:
+        return {"rng_state": save_rng_state(self.random)}
+
+    def load_state_dict(self, sd: dict) -> None:
+        self.random = load_rng_state(sd["rng_state"], self.random)

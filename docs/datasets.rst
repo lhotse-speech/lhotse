@@ -111,6 +111,260 @@ we can resume the training from where it left off like the following:
 
     The ``DataLoader``'s ``num_workers`` can be different after resuming.
 
+.. note::
+
+    The approach described above relies on ``_fast_forward()`` which re-iterates
+    from the start and skips N batches (O(N) time). For a faster O(1) alternative
+    using binary index files, see the section below.
+
+
+Resumable Stateful Dataloading (Indexed)
+----------------------------------------
+
+Lhotse supports O(1) checkpoint/restore of the entire dataloading pipeline when
+binary index files are available. This eliminates the slow ``_fast_forward()``
+re-iteration on training resumption.
+
+**Motivation.** The legacy approach re-iterates from the start to skip already-seen
+batches. For large datasets with millions of samples, this can take minutes or hours.
+With binary index files, each lazy iterator tracks its position and can seek directly
+to the right offset on restore.
+
+Setting up indexed data
+***********************
+
+Use :class:`~lhotse.shar.writers.shar.SharWriter` with ``compress_jsonl=False`` and
+``create_index=True`` (the latter is enabled by default):
+
+.. code-block::
+
+    from lhotse.shar import SharWriter
+
+    writer = SharWriter(
+        "data/",
+        fields={"recording": "wav"},
+        shard_size=1000,
+        compress_jsonl=False,   # uncompressed JSONL for indexing
+        create_index=True,      # auto-creates .idx files (default)
+    )
+    with writer:
+        for cut in cuts:
+            writer.write(cut)
+
+You can also create indexes for existing uncompressed data using the CLI:
+
+.. code-block:: bash
+
+    lhotse index shar /path/to/shar_dir/    # creates .idx for all files
+    lhotse index jsonl /path/to/cuts.jsonl   # single JSONL file
+    lhotse index tar /path/to/recording.tar  # single tar archive
+
+Using StatefulDataLoader for checkpointing
+******************************************
+
+For full per-worker checkpointing with ``num_workers > 0``, use
+``torchdata.stateful_dataloader.StatefulDataLoader`` (from the ``torchdata``
+package, ``pip install torchdata``). It is a drop-in replacement for
+``torch.utils.data.DataLoader`` that automatically collects per-worker state:
+
+.. code-block::
+
+    from torchdata.stateful_dataloader import StatefulDataLoader
+    from lhotse import CutSet
+    from lhotse.dataset import (
+        K2SpeechRecognitionDataset,
+        DynamicCutSampler,
+        IterableDatasetWrapper,
+    )
+
+    cuts = CutSet.from_shar(in_dir="data/")
+    dataset = K2SpeechRecognitionDataset()
+    sampler = DynamicCutSampler(cuts, max_duration=200, shuffle=True)
+    iter_dset = IterableDatasetWrapper(dataset, sampler)
+
+    # Use StatefulDataLoader instead of regular DataLoader
+    dloader = StatefulDataLoader(iter_dset, batch_size=None, num_workers=2)
+
+    # Training loop with checkpointing
+    for batch in dloader:
+        loss = train_step(batch)
+        if should_checkpoint:
+            dl_state = dloader.state_dict()
+            torch.save({
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "dataloader": dl_state,
+            }, "checkpoint.pt")
+
+    # Resumption -- exact continuation from checkpoint
+    ckpt = torch.load("checkpoint.pt")
+    model.load_state_dict(ckpt["model"])
+    optimizer.load_state_dict(ckpt["optimizer"])
+    dloader = StatefulDataLoader(iter_dset, batch_size=None, num_workers=2)
+    dloader.load_state_dict(ckpt["dataloader"])
+    for batch in dloader:  # continues exactly where we left off
+        train_step(batch)
+
+Requirements and limitations
+****************************
+
+* Requires ``torchdata`` package (``pip install torchdata``) for
+  ``StatefulDataLoader``. Without it, use the legacy sampler-level checkpoint
+  approach described above.
+* Index files require **uncompressed** data files (``.jsonl`` not ``.jsonl.gz``,
+  ``.tar`` not ``.tar.gz``).
+* ``num_workers`` and ``world_size`` must match between save and restore.
+* Existing gzipped Shar data continues to work in sequential mode (no indexing,
+  uses legacy ``_fast_forward`` on resume).
+
+
+Writing iterators and transforms for resumability
+-------------------------------------------------
+
+If you are extending Lhotse with custom lazy iterators or batch transforms, follow
+the patterns below so that your components participate in checkpoint/restore.
+
+Stateful iterators
+******************
+
+Every lazy iterator in the dataloading graph should inherit from
+:class:`~lhotse.lazy.StatefulIterator` and implement two methods:
+
+.. code-block:: python
+
+    from lhotse.lazy import StatefulIterator
+
+    class MyCustomIterator(StatefulIterator):
+        """
+        Example custom iterator that wraps a single child iterator.
+
+        The key contract: after ``load_state_dict``, the iterator must
+        produce the exact same remaining items as if it had been iterated
+        from scratch to the saved position.
+        """
+
+        def __init__(self, source):
+            # Use ``self.source`` for a single child, ``self.sources`` for
+            # a list of children — the graph traversal in
+            # ``lhotse.checkpoint`` relies on these attribute names.
+            self.source = source
+            self._position = 0
+
+        def __iter__(self):
+            self._position = 0
+            self.source = iter(self.source)
+            return self
+
+        def __next__(self):
+            item = next(self.source)
+            self._position += 1
+            return item
+
+        def state_dict(self) -> dict:
+            return {"position": self._position}
+
+        def load_state_dict(self, sd: dict) -> None:
+            self._position = sd["position"]
+            # Mark that state has been restored; ``__iter__`` should check
+            # a ``_restored`` flag and skip resetting state in that case.
+
+The naming convention for child attributes is:
+
+* ``self.source`` — a single child iterator
+* ``self.sources`` — a list of child iterators
+
+:func:`lhotse.checkpoint.collect_state_dict` and
+:func:`lhotse.checkpoint.restore_state_dict` use these attributes to walk
+the iterator graph recursively.
+
+If your iterator has RNG state (e.g. for shuffling), save and restore it:
+
+.. code-block:: python
+
+    import random
+
+    class MyShufflingIterator(StatefulIterator):
+        def __init__(self, source, seed=0):
+            self.source = source
+            self._rng = random.Random(seed)
+
+        def state_dict(self) -> dict:
+            return {
+                "position": self._position,
+                "rng_state": self._rng.getstate(),
+            }
+
+        def load_state_dict(self, sd: dict) -> None:
+            self._position = sd["position"]
+            rng_state = sd["rng_state"]
+            # Handle both tuple (pickle) and list (JSON) formats
+            if isinstance(rng_state, list):
+                rng_state = (rng_state[0], tuple(rng_state[1]), rng_state[2])
+            self._rng.setstate(rng_state)
+
+.. note::
+
+    If your iterator **cannot** be checkpointed without data loss (e.g. it
+    maintains an internal buffer that would be impossible to reconstruct),
+    do **not** inherit from ``StatefulIterator``. Instead, define
+    ``state_dict()`` and ``load_state_dict()`` that raise
+    ``NotImplementedError`` with a clear message.  The graph traversal will
+    surface the error rather than silently skipping the node.
+
+Stateful batch transforms
+*************************
+
+Batch transforms applied via ``sampler.map(transform)`` run inside
+:meth:`~lhotse.dataset.sampling.base.CutSampler.__next__`.  When a
+transform has RNG state (e.g. for deciding whether to apply augmentation),
+it should implement ``state_dict()`` and ``load_state_dict()`` so the
+sampler can save/restore it alongside the iterator graph state.
+
+Use the helpers :func:`~lhotse.utils.save_rng_state` and
+:func:`~lhotse.utils.load_rng_state` for convenience:
+
+.. code-block:: python
+
+    import random
+    from lhotse import CutSet
+    from lhotse.utils import save_rng_state, load_rng_state
+
+    class MyAugmentation:
+        def __init__(self, p=0.5, randgen=None):
+            self.p = p
+            self.random = randgen  # random.Random instance or None
+
+        def __call__(self, cuts: CutSet) -> CutSet:
+            if self.random is None:
+                self.random = random.Random()
+            return CutSet.from_cuts(
+                self._augment(cut) if self.random.random() < self.p else cut
+                for cut in cuts
+            )
+
+        def _augment(self, cut):
+            ...  # your augmentation logic
+
+        def state_dict(self) -> dict:
+            return {"rng_state": save_rng_state(self.random)}
+
+        def load_state_dict(self, sd: dict) -> None:
+            self.random = load_rng_state(sd["rng_state"], self.random)
+
+The sampler automatically checks for ``state_dict``/``load_state_dict``
+on each registered transform. If your transform is stateless (no RNG),
+you don't need to add these methods.
+
+All built-in Lhotse transforms (:class:`~lhotse.dataset.cut_transforms.PerturbSpeed`,
+:class:`~lhotse.dataset.cut_transforms.PerturbVolume`,
+:class:`~lhotse.dataset.cut_transforms.PerturbTempo`,
+:class:`~lhotse.dataset.cut_transforms.ReverbWithImpulseResponse`,
+:class:`~lhotse.dataset.cut_transforms.CutMix`,
+:class:`~lhotse.dataset.cut_transforms.ClippingTransform`,
+:class:`~lhotse.dataset.cut_transforms.Compress`, and
+:class:`~lhotse.dataset.cut_transforms.LowpassUsingResampling`) already
+implement this protocol.
+
 
 Batch I/O: pre-computed vs. on-the-fly features
 -----------------------------------------------

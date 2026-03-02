@@ -170,8 +170,12 @@ class CutSampler(Sampler, Dillable):
         Return the current state of the sampler in a state_dict.
         Together with ``load_state_dict()``, this can be used to restore the
         training loop's state to the one stored in the state_dict.
+
+        When possible, this also captures the state of the underlying CutSet
+        iterator graph (via :func:`lhotse.checkpoint.collect_state_dict`),
+        enabling O(1) restoration instead of O(N) fast-forwarding.
         """
-        return {
+        sd = {
             "epoch": self.epoch,
             "drop_last": self.drop_last,
             "world_size": self.world_size,
@@ -180,6 +184,31 @@ class CutSampler(Sampler, Dillable):
             "shuffle": self.shuffle,
             "diagnostics": self.diagnostics.state_dict(),
         }
+        # Capture CutSet iterator graph state when available.
+        # Only capture when cuts_iter is a list/tuple of StatefulIterator instances,
+        # otherwise fall back to the legacy _fast_forward approach.
+        if hasattr(self, "cuts_iter") and isinstance(self.cuts_iter, (list, tuple)):
+            try:
+                from lhotse.checkpoint import collect_state_dict
+                from lhotse.lazy import StatefulIterator
+
+                if all(isinstance(cs, StatefulIterator) for cs in self.cuts_iter):
+                    sd["cuts_state"] = [collect_state_dict(cs) for cs in self.cuts_iter]
+            except Exception:
+                pass  # Not all iterators support state_dict; fall back to _fast_forward
+        # Capture stateful transform RNG states (e.g. PerturbSpeed, PerturbVolume, ...).
+        # These are needed to restore augmentation decisions exactly when using the
+        # indexed O(1) restore path (which skips the O(N) fast-forward that would
+        # otherwise naturally advance the RNGs).
+        if self._transforms:
+            transforms_state = []
+            for tfn in self._transforms:
+                if hasattr(tfn, "state_dict"):
+                    transforms_state.append(tfn.state_dict())
+                else:
+                    transforms_state.append(None)
+            sd["transforms_state"] = transforms_state
+        return sd
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """
@@ -220,6 +249,12 @@ class CutSampler(Sampler, Dillable):
         self.shuffle = shuffle
         self.epoch = state_dict.pop("epoch")
         self.diagnostics.load_state_dict(state_dict.pop("diagnostics"))
+        # cuts_state is optionally captured by the enhanced state_dict();
+        # it will be consumed by the subclass's load_state_dict / _fast_forward.
+        self._cuts_state = state_dict.pop("cuts_state", None)
+        # transforms_state is optionally captured for stateful augmentation transforms.
+        # It will be consumed by _fast_forward when using the indexed restore path.
+        self._transforms_state = state_dict.pop("transforms_state", None)
         assert (
             len(state_dict) == 0
         ), "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " + "\n- ".join(
@@ -266,6 +301,22 @@ class CutSampler(Sampler, Dillable):
         raise NotImplementedError(
             "Sub-classes of CutSampler have to implement self.num_cuts"
         )
+
+    def _restore_transforms_state(self) -> None:
+        """
+        Restore stateful transform RNG states from a previously saved checkpoint.
+
+        Called by the indexed O(1) restore path in ``_fast_forward()``.
+        When using the O(N) fast-forward fallback, transforms advance naturally
+        and this method should NOT be called.
+        """
+        transforms_state = getattr(self, "_transforms_state", None)
+        if transforms_state is None:
+            return
+        for tfn, ts in zip(self._transforms, transforms_state):
+            if ts is not None and hasattr(tfn, "load_state_dict"):
+                tfn.load_state_dict(ts)
+        self._transforms_state = None
 
     def allow_iter_to_reset_state(self):
         """

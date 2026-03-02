@@ -1120,6 +1120,43 @@ def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
         return random.Random(seed)
 
 
+def save_rng_state(rng: Optional[random.Random]) -> Optional[tuple]:
+    """
+    Serialize a ``random.Random`` instance's state for checkpointing.
+
+    Returns ``None`` if *rng* is ``None`` (not yet initialized).
+    The returned value can be stored in JSON (tuples become lists) or
+    pickle (tuples preserved) and later restored with :func:`load_rng_state`.
+    """
+    if rng is None:
+        return None
+    return rng.getstate()
+
+
+def load_rng_state(
+    state, rng: Optional[random.Random] = None
+) -> Optional[random.Random]:
+    """
+    Restore a ``random.Random`` instance from a saved state.
+
+    Handles both tuple (pickle) and list (JSON) formats transparently.
+    If *rng* is provided, restores state in-place and returns it;
+    otherwise creates a new ``random.Random()`` instance.
+    Returns ``None`` if *state* is ``None``.
+    """
+    if state is None:
+        return None
+    if rng is None:
+        rng = random.Random()
+    # Handle JSON-deserialized format (lists instead of tuples)
+    if isinstance(state, list):
+        state = (state[0], tuple(state[1]), state[2])
+    elif isinstance(state, tuple) and isinstance(state[1], list):
+        state = (state[0], tuple(state[1]), state[2])
+    rng.setstate(state)
+    return rng
+
+
 _LHOTSE_DILL_ENABLED = False
 
 
