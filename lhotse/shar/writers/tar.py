@@ -1,7 +1,7 @@
 import logging
 import tarfile
 from io import BytesIO
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from lhotse.serialization import open_best
 
@@ -36,7 +36,11 @@ class TarWriter:
     """
 
     def __init__(
-        self, pattern: str, shard_size: Optional[int] = 1000, shard_offset: int = 0
+        self,
+        pattern: str,
+        shard_size: Optional[int] = 1000,
+        shard_offset: int = 0,
+        on_shard_complete: Optional[Callable[[str], None]] = None,
     ):
         self.pattern = str(pattern)
         if self.sharding_enabled and shard_size is None:
@@ -51,6 +55,7 @@ class TarWriter:
         self.shard_size = shard_size
         self.initial_shard_offset = shard_offset
         self.gzip = self.pattern.endswith(".gz")
+        self.on_shard_complete = on_shard_complete
         self.reset()
 
     @property
@@ -77,6 +82,9 @@ class TarWriter:
             self.tarstream.close()
         if self.stream is not None:
             self.stream.close()
+        if self.on_shard_complete is not None and self.fname is not None:
+            self.on_shard_complete(self.fname)
+        self.fname = None
 
     def _next_stream(self):
         self.close()

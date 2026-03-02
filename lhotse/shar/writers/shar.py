@@ -76,12 +76,16 @@ class SharWriter:
         include_cuts: bool = True,
         shard_suffix: Optional[str] = None,
         shard_offset: int = 0,
+        compress_jsonl: bool = True,
+        create_index: bool = True,
     ) -> None:
         self.output_dir = str(output_dir)
         self.shard_size = shard_size
         self.fields = fields
         self.warn_unused_fields = warn_unused_fields
         self.include_cuts = include_cuts
+        self.compress_jsonl = compress_jsonl
+        self.create_index = create_index
         if self.sharding_enabled:
             assert (
                 shard_suffix is None
@@ -91,19 +95,27 @@ class SharWriter:
             self.shard_suffix = ifnone(shard_suffix, "")
         self.initial_shard_offset = shard_offset
 
+        callback = self._index_shard if self.create_index else None
+
         self.writers = {}
         if include_cuts:
             self.writers["cuts"] = JsonlShardWriter(
-                pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
+                pattern=_create_cuts_output_url(
+                    self.output_dir, self.shard_suffix, compress=self.compress_jsonl
+                ),
                 shard_size=self.shard_size,
                 shard_offset=self.initial_shard_offset,
+                on_shard_complete=callback,
             )
         for field, writer_type in self.fields.items():
-            make_writer_fn, ext = resolve_writer(writer_type)
+            make_writer_fn, ext = resolve_writer(
+                writer_type, compress_jsonl=self.compress_jsonl
+            )
             self.writers[field] = make_writer_fn(
                 pattern=f"{self.output_dir}/{field}{self.shard_suffix}{ext}",
                 shard_size=self.shard_size,
                 shard_offset=self.initial_shard_offset,
+                on_shard_complete=callback,
             )
 
     @property
@@ -125,6 +137,33 @@ class SharWriter:
     def close(self):
         for w in self.writers.values():
             w.close()
+
+    def _index_shard(self, path_str: str) -> None:
+        """Index a single completed shard file.
+
+        Called as an ``on_shard_complete`` callback by sub-writers so that
+        indexes are created per-shard as soon as each shard is finalized.
+        Skips non-local paths (pipes, URLs, compressed files).
+        """
+        from lhotse.indexing import create_jsonl_index, create_tar_index
+
+        path_str = str(path_str)
+        if path_str.startswith("pipe:"):
+            return  # pipes are not seekable — indexing is impossible
+        if path_str.startswith(("http://", "https://", "s3://", "gs://")):
+            raise NotImplementedError(
+                f"Indexing remote paths is not yet supported: {path_str}"
+            )
+        if path_str.endswith(".jsonl"):
+            try:
+                create_jsonl_index(path_str)
+            except (RuntimeError, OSError):
+                pass
+        elif path_str.endswith(".tar"):
+            try:
+                create_tar_index(path_str)
+            except (RuntimeError, OSError):
+                pass
 
     def write(self, cut: Cut) -> None:
 
@@ -227,7 +266,8 @@ class SharWriter:
             self.writers["cuts"].write(cut)
 
 
-def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
+def resolve_writer(name: str, compress_jsonl: bool = True) -> Tuple[FieldWriter, str]:
+    jsonl_ext = ".jsonl.gz" if compress_jsonl else ".jsonl"
     opts = {
         "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
         "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
@@ -236,7 +276,7 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
         "original": (partial(AudioTarWriter, format="original"), ".tar"),
         "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
         "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
-        "jsonl": (JsonlShardWriter, ".jsonl.gz"),
+        "jsonl": (JsonlShardWriter, jsonl_ext),
     }
     assert (
         name in opts
@@ -244,13 +284,17 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
     return opts[name]
 
 
-def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:
+def _create_cuts_output_url(
+    base_output_url: str, shard_suffix: str, compress: bool = True
+) -> str:
+
+    ext = ".jsonl.gz" if compress else ".jsonl"
 
     # special case where we want to ensure the CutSet actually gets gzipped
-    if base_output_url.startswith("pipe:"):
+    if base_output_url.startswith("pipe:") and compress:
         base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
 
-    return f"{base_output_url}/cuts{shard_suffix}.jsonl.gz"
+    return f"{base_output_url}/cuts{shard_suffix}{ext}"
 
 
 def _aslist(x):

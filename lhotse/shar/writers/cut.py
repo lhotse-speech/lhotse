@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 from lhotse.cut import Cut
 from lhotse.serialization import SequentialJsonlWriter
@@ -23,7 +23,11 @@ class JsonlShardWriter:
     """
 
     def __init__(
-        self, pattern: str, shard_size: Optional[int] = 1000, shard_offset: int = 0
+        self,
+        pattern: str,
+        shard_size: Optional[int] = 1000,
+        shard_offset: int = 0,
+        on_shard_complete: Optional[Callable[[str], None]] = None,
     ):
         self.pattern = pattern
         if not self.sharding_enabled and shard_size is not None:
@@ -33,6 +37,7 @@ class JsonlShardWriter:
             )
         self.shard_size = shard_size
         self.initial_shard_offset = shard_offset
+        self.on_shard_complete = on_shard_complete
         self.reset()
 
     @property
@@ -56,6 +61,9 @@ class JsonlShardWriter:
     def close(self):
         if self.stream is not None:
             self.stream.close()
+        if self.on_shard_complete is not None and self.fname is not None:
+            self.on_shard_complete(self.fname)
+        self.fname = None
 
     def _next_stream(self):
         self.close()
