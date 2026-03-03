@@ -9,6 +9,9 @@ Each test verifies the core property::
 
 i.e., checkpointing mid-epoch and restoring on a fresh pipeline produces
 the exact same sequence of batches as an uninterrupted run.
+
+Tests cover both the direct IterableDatasetWrapper path and the
+torchdata StatefulDataLoader path (when torchdata is installed).
 """
 
 import random
@@ -21,6 +24,13 @@ from lhotse.dataset.cut_transforms import PerturbSpeed, PerturbVolume
 from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
 from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
 from lhotse.testing.dummies import DummyManifest
+
+try:
+    from torchdata.stateful_dataloader import StatefulDataLoader
+
+    _HAS_TORCHDATA = True
+except ImportError:
+    _HAS_TORCHDATA = False
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -264,5 +274,146 @@ def test_augmented_checkpoint_at_various_positions(cuts_a, cuts_b, n_consumed):
     w2 = make()
     w2.load_state_dict(sd)
     remaining = [[c.id for c in b] for b in w2]
+
+    assert first_k + remaining == all_batches
+
+
+# ---------------------------------------------------------------------------
+# StatefulDataLoader tests (torchdata)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_stateful_dataloader_basic(cuts_a, cuts_b, num_workers):
+    """Basic mux pipeline through StatefulDataLoader checkpoint/restore."""
+    n_consumed = 3
+
+    def make():
+        a = cuts_a.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 0).repeat(times=2)
+        b = cuts_b.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 1).repeat(times=2)
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+
+    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    all_batches = [[c.id for c in b] for b in dl_full]
+    assert len(all_batches) > n_consumed
+
+    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    it1 = iter(dl1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = dl1.state_dict()
+
+    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    dl2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in dl2]
+
+    assert first_k + remaining == all_batches
+
+
+@pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_stateful_dataloader_with_augmentation(cuts_a, cuts_b, num_workers):
+    """StatefulDataLoader with sampler-level PerturbSpeed + PerturbVolume."""
+    n_consumed = 5
+
+    def make():
+        a = cuts_a.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 0).repeat(times=2)
+        b = cuts_b.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 1).repeat(times=2)
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
+        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+
+    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    all_batches = [[c.id for c in b] for b in dl_full]
+    assert len(all_batches) > n_consumed
+
+    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    it1 = iter(dl1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = dl1.state_dict()
+
+    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    dl2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in dl2]
+
+    assert first_k + remaining == all_batches
+
+
+@pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_stateful_dataloader_full_pipeline(cuts_a, cuts_b, num_workers):
+    """StatefulDataLoader: mux + resample + noise mix + augmentation."""
+    n_consumed = 5
+    noise = DummyManifest(CutSet, begin_id=1000, end_id=1010)
+
+    def make():
+        a = cuts_a.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 0).repeat(times=2)
+        b = cuts_b.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 1).repeat(times=2)
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42).resample(24000)
+        pipeline = pipeline.mix(
+            noise.resample(24000), mix_prob=0.5, seed=42, preserve_id="left"
+        )
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
+        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+
+    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    all_batches = [[c.id for c in b] for b in dl_full]
+    assert len(all_batches) > n_consumed
+
+    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    it1 = iter(dl1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = dl1.state_dict()
+
+    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    dl2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in dl2]
+
+    assert first_k + remaining == all_batches
+
+
+@pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
+@pytest.mark.parametrize("num_workers", [0, 2])
+@pytest.mark.parametrize("n_consumed", [1, 3, 7])
+def test_stateful_dataloader_checkpoint_at_various_positions(
+    cuts_a, cuts_b, n_consumed, num_workers
+):
+    """StatefulDataLoader checkpoint at batch 1, 3, and 7."""
+
+    def make():
+        a = cuts_a.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 0).repeat(times=2)
+        b = cuts_b.filter(lambda c: int(c.id.split("-")[-1]) % 2 == 1).repeat(times=2)
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
+        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+
+    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    all_batches = [[c.id for c in b] for b in dl_full]
+    assert len(all_batches) > n_consumed
+
+    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    it1 = iter(dl1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = dl1.state_dict()
+
+    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
+    dl2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in dl2]
 
     assert first_k + remaining == all_batches

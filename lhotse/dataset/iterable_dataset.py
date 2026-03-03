@@ -126,7 +126,13 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         """
         self.epoch = sd["epoch"]
         self.sampler.load_state_dict(sd["sampler_state"])
-        self._sampler_iter = None  # will be re-created on next __iter__
+        # Create the sampler iter immediately — sampler.__iter__ returns self
+        # when _just_restored_state=True, preserving the restored position.
+        # This is required for torchdata's StatefulDataLoader, whose restore
+        # sequence calls load_state_dict *after* creating the internal fetcher
+        # (which already called iter(dataset)).  Setting None here would leave
+        # _sampler_iter dangling and cause a TypeError on __next__.
+        self._sampler_iter = iter(self.sampler)
 
     def _update_dataloading_info(self, cuts: CutSet) -> None:
         rank = get_rank()
