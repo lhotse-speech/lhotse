@@ -402,14 +402,32 @@ class LazyMixin:
         return not isinstance(self.data, (dict, list, tuple))
 
     @classmethod
-    def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
+    def from_jsonl_lazy(
+        cls,
+        path: Pathlike,
+        shuffle: bool = False,
+        seed: int = 0,
+    ) -> Manifest:
         """
         Read a JSONL manifest in a lazy manner, which opens the file but does not
         read it immediately. It is only suitable for sequential reads and iteration.
 
+        When ``shuffle=True``, uses :class:`~lhotse.lazy.LazyIndexedManifestIterator`
+        backed by a binary index file for O(1) random-access shuffled iteration.
+        The JSONL file must be uncompressed (``.jsonl``, not ``.jsonl.gz``).
+
+        :param path: path to a JSONL manifest file.
+        :param shuffle: when ``True``, use indexed shuffled iteration.
+        :param seed: random seed for shuffled iteration (only used when ``shuffle=True``).
+
         .. warning:: Opening the manifest in this way might cause some methods that
-            rely on random access to fail.
+            rely on random access to fail (unless ``shuffle=True`` or the file
+            has been indexed).
         """
+        if shuffle:
+            from lhotse.lazy import LazyIndexedManifestIterator
+
+            return cls(LazyIndexedManifestIterator(path, shuffle=True, seed=seed))
         from lhotse.lazy import LazyManifestIterator
 
         return cls(LazyManifestIterator(path))
@@ -469,10 +487,24 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     return data_set
 
 
-def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
+def load_manifest_lazy(
+    path: Pathlike,
+    indexed: Optional[bool] = None,
+    shuffle: bool = False,
+    seed: int = 0,
+) -> Optional[Manifest]:
     """
     Generic utility for reading an arbitrary manifest from a JSONL file.
     Returns None when the manifest is empty.
+
+    :param path: path to a JSONL manifest file.
+    :param indexed: ``True`` forces indexed mode, ``False`` forces the
+        default lazy reader, ``None`` auto-detects (indexed when ``.idx``
+        exists).
+    :param shuffle: when ``True``, use Feistel-cipher shuffled iteration
+        (requires uncompressed ``.jsonl``).  Implies ``indexed=True``.
+    :param seed: random seed for shuffled iteration (only used when
+        ``shuffle=True``).
     """
     assert extension_contains(".jsonl", path) or str(path) == "-"
     raw_data = iter(load_jsonl(path))
@@ -482,18 +514,48 @@ def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
         return None  # empty manifest
     item = deserialize_item(first)
     cls = resolve_manifest_set_class(item)
+
+    if shuffle:
+        from lhotse.lazy import LazyIndexedManifestIterator
+
+        return cls(LazyIndexedManifestIterator(path, shuffle=True, seed=seed))
+
+    if indexed is None:
+        # Auto-detect: use indexed mode if the .idx file already exists
+        from lhotse.indexing import index_exists
+
+        use_indexed = (
+            str(path) != "-"
+            and not extension_contains(".gz", path)
+            and index_exists(path)
+        )
+    else:
+        use_indexed = indexed
+
+    if use_indexed:
+        from lhotse.lazy import LazyIndexedManifestIterator
+
+        return cls(LazyIndexedManifestIterator(path))
     return cls.from_jsonl_lazy(path)
 
 
 def load_manifest_lazy_or_eager(
-    path: Pathlike, manifest_cls=None
+    path: Pathlike,
+    manifest_cls=None,
+    indexed: Optional[bool] = None,
+    shuffle: bool = False,
+    seed: int = 0,
 ) -> Optional[Manifest]:
     """
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.
+
+    :param indexed: passed through to :func:`load_manifest_lazy`.
+    :param shuffle: passed through to :func:`load_manifest_lazy`.
+    :param seed: passed through to :func:`load_manifest_lazy`.
     """
     if extension_contains(".jsonl", path) or str(path) == "-":
-        return load_manifest_lazy(path)
+        return load_manifest_lazy(path, indexed=indexed, shuffle=shuffle, seed=seed)
     else:
         return load_manifest(path, manifest_cls=manifest_cls)
 
@@ -540,8 +602,30 @@ def store_manifest(manifest: Manifest, path: Pathlike) -> None:
 
 class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
     @classmethod
-    def from_file(cls, path: Pathlike) -> Manifest:
-        return load_manifest_lazy_or_eager(path, manifest_cls=cls)
+    def from_file(
+        cls,
+        path: Pathlike,
+        indexed: Optional[bool] = None,
+        shuffle: bool = False,
+        seed: int = 0,
+    ) -> Manifest:
+        """
+        Read a manifest from a file.
+
+        :param path: path to a manifest file (JSONL, JSON, or YAML).
+        :param indexed: controls whether to use indexed random-access reading
+            for JSONL files.  ``True`` forces indexed mode (requires
+            uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
+            ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
+            file already exists alongside the JSONL file.
+        :param shuffle: when ``True``, use Feistel-cipher shuffled iteration
+            (requires uncompressed ``.jsonl``).  Implies ``indexed=True``.
+        :param seed: random seed for shuffled iteration (only used when
+            ``shuffle=True``).
+        """
+        return load_manifest_lazy_or_eager(
+            path, manifest_cls=cls, indexed=indexed, shuffle=shuffle, seed=seed
+        )
 
     def to_file(self, path: Pathlike) -> None:
         store_manifest(self, path)

@@ -373,6 +373,14 @@ class IndexedJsonlReader:
             self._fh.close()
             self._fh = None
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_fh"] = None  # file handles are not picklable
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
     def __len__(self) -> int:
         return len(self._offsets) - 1  # last entry is the sentinel
 
@@ -455,6 +463,14 @@ class IndexedTarReader:
         if self._fh is not None:
             self._fh.close()
             self._fh = None
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state["_fh"] = None  # file handles are not picklable
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
     def __len__(self) -> int:
         return len(self._offsets) - 1

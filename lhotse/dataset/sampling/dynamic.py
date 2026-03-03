@@ -166,7 +166,9 @@ class DynamicCutSampler(CutSampler):
         self.quadratic_duration = sd.pop("quadratic_duration")
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
-        self._fast_forward()
+        # Defer _fast_forward to __iter__ so the sampler remains picklable
+        # for DataLoader with num_workers > 0.
+        self._needs_fast_forward = True
 
     def _fast_forward(self):
         current_epoch = self.diagnostics.current_epoch
@@ -205,6 +207,10 @@ class DynamicCutSampler(CutSampler):
         self._just_restored_state = True
 
     def __iter__(self) -> "DynamicCutSampler":
+        if getattr(self, "_needs_fast_forward", False):
+            self._needs_fast_forward = False
+            self._fast_forward()
+            return self
         if self._just_restored_state:
             return self
         # Why reset the current epoch?

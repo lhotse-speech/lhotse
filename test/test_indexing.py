@@ -328,3 +328,160 @@ def test_tar_index_missing_error(tar_file):
     p, _ = tar_file
     with pytest.raises(FileNotFoundError):
         IndexedTarReader(p, auto_create_index=False)
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedManifestIterator
+# ---------------------------------------------------------------------------
+
+
+def _write_cuts_jsonl(path, n=20):
+    """Write a DummyManifest CutSet to an uncompressed JSONL file and return it."""
+    from lhotse import CutSet
+    from lhotse.testing.dummies import DummyManifest
+
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=n)
+    cuts.to_jsonl(path)
+    return cuts
+
+
+def test_lazy_indexed_manifest_iterator_sequential(tmp_path):
+    """Sequential (non-shuffled) iteration yields items in file order."""
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path)
+    original_ids = [c.id for c in original]
+
+    it = LazyIndexedManifestIterator(path, shuffle=False)
+    result_ids = [c.id for c in it]
+
+    assert result_ids == original_ids
+
+
+def test_lazy_indexed_manifest_iterator_shuffled(tmp_path):
+    """Shuffled iteration yields all items in a permuted order."""
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path)
+    original_ids = sorted(c.id for c in original)
+
+    it = LazyIndexedManifestIterator(path, shuffle=True, seed=42)
+    result_ids = [c.id for c in it]
+
+    # All items present
+    assert sorted(result_ids) == original_ids
+    # Order is permuted (with overwhelming probability for n=20)
+    assert result_ids != [c.id for c in original]
+
+
+def test_lazy_indexed_manifest_iterator_getitem(tmp_path):
+    """O(1) random access via __getitem__."""
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path)
+    original_ids = [c.id for c in original]
+
+    it = LazyIndexedManifestIterator(path)
+
+    # Access specific indices
+    assert it[0].id == original_ids[0]
+    assert it[5].id == original_ids[5]
+    assert it[-1].id == original_ids[-1]
+
+    # Out of range
+    with pytest.raises(IndexError):
+        it[100]
+
+
+def test_lazy_indexed_manifest_iterator_checkpoint(tmp_path):
+    """first_part + remaining == full iteration."""
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    # Full run
+    full = [c.id for c in LazyIndexedManifestIterator(path, shuffle=True, seed=42)]
+
+    # Interrupted run: consume first 7
+    it1 = LazyIndexedManifestIterator(path, shuffle=True, seed=42)
+    gen1 = iter(it1)
+    first_k = [next(gen1).id for _ in range(7)]
+    sd = it1.state_dict()
+
+    # Restored run
+    it2 = LazyIndexedManifestIterator(path, shuffle=True, seed=42)
+    it2.load_state_dict(sd)
+    remaining = [c.id for c in it2]
+
+    assert first_k + remaining == full
+
+
+# ---------------------------------------------------------------------------
+# has_constant_time_access propagation
+# ---------------------------------------------------------------------------
+
+
+def test_has_constant_time_access_propagates_through_mapper(tmp_path):
+    """LazyMapper wrapping an indexed source preserves has_constant_time_access."""
+    from lhotse.lazy import LazyIndexedManifestIterator, LazyMapper
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    indexed = LazyIndexedManifestIterator(path)
+    assert indexed.has_constant_time_access is True
+
+    mapped = LazyMapper(indexed, fn=lambda x: x)
+    assert mapped.has_constant_time_access is True
+
+    # __getitem__ should work through the mapper
+    direct = indexed[3]
+    through_mapper = mapped[3]
+    assert direct.id == through_mapper.id
+
+
+def test_has_constant_time_access_stops_at_filter(tmp_path):
+    """LazyFilter always returns has_constant_time_access == False."""
+    from lhotse.lazy import LazyFilter, LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    indexed = LazyIndexedManifestIterator(path)
+    assert indexed.has_constant_time_access is True
+
+    filtered = LazyFilter(indexed, predicate=lambda x: True)
+    assert filtered.has_constant_time_access is False
+
+
+def test_cutset_from_jsonl_lazy_shuffled(tmp_path):
+    """CutSet.from_jsonl_lazy(shuffle=True) yields all items in shuffled order."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path)
+    original_ids = sorted(c.id for c in original)
+
+    cs = CutSet.from_jsonl_lazy(path, shuffle=True, seed=42)
+    result_ids = [c.id for c in cs]
+
+    assert sorted(result_ids) == original_ids
+    assert result_ids != [c.id for c in original]
+
+
+def test_cutset_resample_preserves_constant_time_access(tmp_path):
+    """CutSet.resample() on an indexed CutSet preserves has_constant_time_access."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    cs = CutSet.from_file(path, indexed=True)
+    assert cs.has_constant_time_access is True
+
+    resampled = cs.resample(24000)
+    assert resampled.has_constant_time_access is True

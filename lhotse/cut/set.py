@@ -585,6 +585,8 @@ class CutSet(Serializable, AlgorithmMixin):
         num_jobs: int = 1,
         fault_tolerant: bool = False,
         verbose: bool = False,
+        compress_jsonl: bool = True,
+        create_index: bool = True,
     ) -> Dict[str, List[str]]:
         """
         Writes cuts and their corresponding data into multiple shards,
@@ -658,6 +660,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 shard_suffix=None,
                 fault_tolerant=fault_tolerant,
                 verbose=verbose,
+                compress_jsonl=compress_jsonl,
+                create_index=create_index,
             )
 
         progbar = partial(tqdm, desc="Shard progress") if verbose else lambda x: x
@@ -686,6 +690,8 @@ class CutSet(Serializable, AlgorithmMixin):
                         fault_tolerant=fault_tolerant,
                         verbose=False,
                         preload=True,
+                        compress_jsonl=compress_jsonl,
+                        create_index=create_index,
                     )
                 )
             for f in progbar(as_completed(futures)):
@@ -2702,6 +2708,46 @@ class CutSet(Serializable, AlgorithmMixin):
             )
         )
 
+    @property
+    def has_constant_time_access(self) -> bool:
+        """
+        Return ``True`` when every element can be retrieved in O(1) via
+        ``__getitem__`` (i.e., the underlying data supports indexed access).
+        """
+        return getattr(self.data, "has_constant_time_access", False)
+
+    def state_dict(self) -> dict:
+        """
+        Collect the full checkpoint state from the underlying lazy iterator
+        graph.  Raises :class:`RuntimeError` for eager CutSets.
+
+        See :func:`~lhotse.checkpoint.collect_state_dict`.
+        """
+        if not self.is_lazy:
+            raise RuntimeError(
+                "state_dict() is only supported for lazy CutSets. "
+                "Convert to lazy mode first (e.g., use from_jsonl_lazy or from_file)."
+            )
+        from lhotse.checkpoint import collect_state_dict
+
+        return collect_state_dict(self.data)
+
+    def load_state_dict(self, sd: dict) -> None:
+        """
+        Restore the checkpoint state into the underlying lazy iterator graph.
+        Raises :class:`RuntimeError` for eager CutSets.
+
+        See :func:`~lhotse.checkpoint.restore_state_dict`.
+        """
+        if not self.is_lazy:
+            raise RuntimeError(
+                "load_state_dict() is only supported for lazy CutSets. "
+                "Convert to lazy mode first (e.g., use from_jsonl_lazy or from_file)."
+            )
+        from lhotse.checkpoint import restore_state_dict
+
+        restore_state_dict(self.data, sd)
+
     def __repr__(self) -> str:
         try:
             len_val = len(self)
@@ -3617,6 +3663,8 @@ def _export_to_shar_single(
     verbose: bool,
     fault_tolerant: bool,
     preload: bool = False,
+    compress_jsonl: bool = True,
+    create_index: bool = True,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
 
@@ -3635,6 +3683,8 @@ def _export_to_shar_single(
         warn_unused_fields=warn_unused_fields,
         include_cuts=include_cuts,
         shard_suffix=shard_suffix,
+        compress_jsonl=compress_jsonl,
+        create_index=create_index,
     ) as writer:
         for cut in cuts:
             try:

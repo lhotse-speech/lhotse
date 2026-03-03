@@ -225,3 +225,117 @@ def test_shar_state_dict_restore_cross_shard(tmp_path, cuts):
     remaining = [c.id for c in it2]
 
     assert first_k + remaining == all_items
+
+
+# ---------------------------------------------------------------------------
+# CutSet.to_shar() passthrough
+# ---------------------------------------------------------------------------
+
+
+def test_to_shar_uncompressed_with_index(tmp_path, cuts):
+    """CutSet.to_shar(compress_jsonl=False) produces .jsonl + .idx files."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    # Check that .jsonl (not .jsonl.gz) files were created
+    jsonl_files = sorted(tmp_path.glob("cuts.*.jsonl"))
+    assert len(jsonl_files) >= 1
+    gz_files = list(tmp_path.glob("cuts.*.jsonl.gz"))
+    assert len(gz_files) == 0
+
+    # Check that .idx files were created for JSONL
+    for jf in jsonl_files:
+        assert index_exists(jf), f"Missing index for {jf}"
+
+    # Check that .idx files were created for tar
+    tar_files = sorted(tmp_path.glob("recording.*.tar"))
+    for tf in tar_files:
+        assert index_exists(tf), f"Missing index for {tf}"
+
+
+def test_cutset_from_shar_with_indexed_data(tmp_path, cuts):
+    """CutSet.from_shar(in_dir=...) works correctly with indexed Shar data."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    # Read back via CutSet.from_shar (the user-facing API)
+    shar_cuts = CutSet.from_shar(in_dir=tmp_path)
+    shar_ids = sorted(c.id for c in shar_cuts)
+    original_ids = sorted(c.id for c in cuts)
+    assert shar_ids == original_ids
+
+
+# ---------------------------------------------------------------------------
+# LazySharIterator: has_constant_time_access and __getitem__
+# ---------------------------------------------------------------------------
+
+
+def test_shar_has_constant_time_access(tmp_path, cuts):
+    """Indexed Shar reports has_constant_time_access=True."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazySharIterator(in_dir=tmp_path)
+    assert shar_iter.has_constant_time_access is True
+
+
+def test_shar_getitem(tmp_path, cuts):
+    """__getitem__ returns the same cuts as sequential iteration."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazySharIterator(in_dir=tmp_path)
+    sequential = list(LazySharIterator(in_dir=tmp_path))
+
+    # Check specific indices including cross-shard and negative
+    for idx in [0, 5, 19, -1]:
+        assert shar_iter[idx].id == sequential[idx].id
+
+    # Check all indices match
+    for i in range(len(sequential)):
+        assert shar_iter[i].id == sequential[i].id
+
+
+def test_shar_no_index_no_constant_time_access(tmp_path, cuts):
+    """Shar without indexes reports has_constant_time_access=False."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=False,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazySharIterator(in_dir=tmp_path)
+    assert shar_iter.has_constant_time_access is False

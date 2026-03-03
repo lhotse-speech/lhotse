@@ -4,7 +4,7 @@ from .cut_transforms import *
 from .dataloading import make_worker_init_fn
 from .diarization import DiarizationDataset
 from .input_strategies import AudioSamples, OnTheFlyFeatures, PrecomputedFeatures
-from .iterable_dataset import IterableDatasetWrapper
+from .iterable_dataset import IdentityDataset, IterableDatasetWrapper
 from .sampling import *
 from .signal_transforms import GlobalMVN, RandomizedSmoothing, SpecAugment
 from .source_separation import (

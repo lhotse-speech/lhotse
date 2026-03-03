@@ -39,6 +39,15 @@ class StatefulIterator:
     def load_state_dict(self, sd: dict) -> None:
         raise NotImplementedError
 
+    @property
+    def has_constant_time_access(self) -> bool:
+        """
+        Return ``True`` when every element can be retrieved in O(1) via
+        ``__getitem__``.  The default is ``False``; subclasses that support
+        indexed random access should override this.
+        """
+        return False
+
 
 class AlgorithmMixin(LazyMixin, Iterable):
     """
@@ -380,6 +389,84 @@ class LazyManifestIterator(Dillable, StatefulIterator):
         self.source.load_state_dict(sd["source"])
 
 
+class LazyIndexedManifestIterator(Dillable, StatefulIterator):
+    """
+    Lazy manifest iterator backed by an :class:`~lhotse.indexing.IndexedJsonlReader`.
+
+    Supports O(1) random access via ``__getitem__`` and optional Feistel-shuffled
+    iteration via :class:`~lhotse.indexing.LazyShuffledRange`.
+
+    Unlike :class:`LazyManifestIterator`, this class requires an uncompressed
+    JSONL file (the binary ``.idx`` index is created automatically if missing).
+
+    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
+    """
+
+    def __init__(
+        self,
+        path: Pathlike,
+        shuffle: bool = False,
+        seed: int = 0,
+    ) -> None:
+        from lhotse.indexing import IndexedJsonlReader, LazyShuffledRange
+
+        self.path = path
+        self.shuffle = shuffle
+        self.seed = seed
+        self._reader = IndexedJsonlReader(path)
+        self._range = (
+            LazyShuffledRange(len(self._reader), seed=seed) if shuffle else None
+        )
+        self._position = 0
+        self._restored = False
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        return True
+
+    def __getitem__(self, idx: int) -> Any:
+        """O(1) random access: deserializes the *idx*-th item."""
+        return deserialize_item(self._reader[idx])
+
+    def __iter__(self):
+        if self._restored:
+            self._restored = False
+            start = self._position
+        else:
+            start = 0
+            if self._range is not None:
+                self._range.reset()
+        self._position = start
+
+        n = len(self._reader)
+        if self._range is not None:
+            for i in range(start, n):
+                self._position = i + 1
+                yield deserialize_item(self._reader[self._range[i]])
+        else:
+            for i in range(start, n):
+                self._position = i + 1
+                yield deserialize_item(self._reader[i])
+
+    def __len__(self) -> int:
+        return len(self._reader)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+    def state_dict(self) -> dict:
+        sd = {"position": self._position, "shuffle": self.shuffle, "seed": self.seed}
+        if self._range is not None:
+            sd["range"] = self._range.state_dict()
+        return sd
+
+    def load_state_dict(self, sd: dict) -> None:
+        self._position = sd["position"]
+        if self._range is not None and "range" in sd:
+            self._range.load_state_dict(sd["range"])
+        self._restored = True
+
+
 class LazyIteratorChain(Dillable, StatefulIterator):
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
@@ -417,6 +504,24 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         self._current_iter_idx = 0
         self._iter_order: Optional[list] = None
         self._restored = False
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        if self.shuffle_iters:
+            return False  # shard order changes per iteration
+        return all(
+            getattr(s, "has_constant_time_access", False) for s in self.sources
+        ) and all(hasattr(s, "__len__") for s in self.sources)
+
+    def __getitem__(self, idx: int) -> Any:
+        if idx < 0:
+            idx += len(self)
+        for s in self.sources:
+            n = len(s)
+            if idx < n:
+                return s[idx]
+            idx -= n
+        raise IndexError("index out of range for LazyIteratorChain")
 
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
@@ -840,6 +945,16 @@ class LazyMapper(Dillable, StatefulIterator):
                 "try passing a regular function instead."
             )
 
+    @property
+    def has_constant_time_access(self) -> bool:
+        return getattr(self.source, "has_constant_time_access", False)
+
+    def __getitem__(self, idx: int) -> Any:
+        item = self.source[idx]
+        if self.apply_fn is None or self.apply_fn(item):
+            return self.fn(item)
+        return item
+
     def __iter__(self):
         if self.apply_fn is None:
             yield from map(self.fn, self.source)
@@ -928,6 +1043,16 @@ class LazyRepeater(Dillable, StatefulIterator):
         self._current_epoch = 0
         self._restored = False
 
+    @property
+    def has_constant_time_access(self) -> bool:
+        if self.times is None:
+            return False  # infinite repeater
+        return getattr(self.source, "has_constant_time_access", False)
+
+    def __getitem__(self, idx: int) -> Any:
+        n = len(self.source)
+        return self.source[idx % n]
+
     def __iter__(self):
         restored = self._restored
         epoch = self._current_epoch if restored else 0
@@ -990,6 +1115,13 @@ class LazySlicer(Dillable, StatefulIterator):
         self.n = n
         self._source_offset = 0
         self._restored = False
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        return getattr(self.source, "has_constant_time_access", False)
+
+    def __getitem__(self, idx: int) -> Any:
+        return self.source[idx * self.n + self.k]
 
     def __iter__(self):
         start = self._source_offset if self._restored else 0
