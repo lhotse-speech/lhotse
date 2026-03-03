@@ -286,11 +286,12 @@ class LazyShuffledRange:
 
     def load_state_dict(self, sd: dict) -> None:
         """Restore from a checkpoint produced by :meth:`state_dict`."""
-        assert sd["n"] == self.n and sd["seed"] == self.seed, (
-            f"LazyShuffledRange state mismatch: "
-            f"expected n={self.n}, seed={self.seed}; "
-            f"got n={sd['n']}, seed={sd['seed']}"
-        )
+        if sd["n"] != self.n or sd["seed"] != self.seed:
+            raise ValueError(
+                f"LazyShuffledRange state mismatch: "
+                f"expected n={self.n}, seed={self.seed}; "
+                f"got n={sd['n']}, seed={sd['seed']}"
+            )
         self._pos = sd["pos"]
 
     # ---- Feistel internals ------------------------------------------------

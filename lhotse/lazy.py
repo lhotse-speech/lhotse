@@ -31,6 +31,12 @@ class StatefulIterator:
 
     * ``self.source``  — single child iterator
     * ``self.sources`` — list of child iterators
+
+    .. warning::
+        Instances are **not thread-safe**.  Mutable position and restoration
+        flags are updated without synchronization.  For multi-worker data
+        loading use process-based parallelism (the default in PyTorch's
+        ``DataLoader``), which gives each worker its own copy.
     """
 
     def state_dict(self) -> dict:
@@ -462,7 +468,13 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
 
     def load_state_dict(self, sd: dict) -> None:
         self._position = sd["position"]
-        if self._range is not None and "range" in sd:
+        if self._range is not None:
+            if "range" not in sd:
+                raise ValueError(
+                    "LazyIndexedManifestIterator with shuffle=True requires "
+                    "'range' in state_dict, but it was not found. "
+                    "The checkpoint may have been created without shuffling."
+                )
             self._range.load_state_dict(sd["range"])
         self._restored = True
 
@@ -514,14 +526,26 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         ) and all(hasattr(s, "__len__") for s in self.sources)
 
     def __getitem__(self, idx: int) -> Any:
+        from bisect import bisect_right
+
+        cum = self._cumulative_lengths()
+        total = cum[-1]
         if idx < 0:
-            idx += len(self)
-        for s in self.sources:
-            n = len(s)
-            if idx < n:
-                return s[idx]
-            idx -= n
-        raise IndexError("index out of range for LazyIteratorChain")
+            idx += total
+        if idx < 0 or idx >= total:
+            raise IndexError("index out of range for LazyIteratorChain")
+        src_idx = bisect_right(cum, idx)
+        offset = idx - cum[src_idx - 1] if src_idx > 0 else idx
+        return self.sources[src_idx][offset]
+
+    def _cumulative_lengths(self) -> list:
+        if getattr(self, "_cum_lens", None) is None:
+            self._cum_lens = []
+            total = 0
+            for s in self.sources:
+                total += len(s)
+                self._cum_lens.append(total)
+        return self._cum_lens
 
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed

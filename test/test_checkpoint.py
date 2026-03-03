@@ -232,18 +232,20 @@ def test_dataloader_checkpoint_save_load_with_rng_state(tmp_path):
 
 
 def test_checkpoint_validation_mismatch(tmp_path):
-    """Error on num_workers/world_size mismatch."""
+    """Error on num_workers/world_size/rank mismatch."""
     ckpt = DataloaderCheckpoint(
         num_workers=2,
         world_size=4,
         rank=0,
     )
     with pytest.raises(ValueError, match="num_workers"):
-        ckpt.validate(num_workers=3, world_size=4)
+        ckpt.validate(num_workers=3, world_size=4, rank=0)
     with pytest.raises(ValueError, match="world_size"):
-        ckpt.validate(num_workers=2, world_size=8)
+        ckpt.validate(num_workers=2, world_size=8, rank=0)
+    with pytest.raises(ValueError, match="rank"):
+        ckpt.validate(num_workers=2, world_size=4, rank=1)
     # No error when matching
-    ckpt.validate(num_workers=2, world_size=4)
+    ckpt.validate(num_workers=2, world_size=4, rank=0)
 
 
 # ---------------------------------------------------------------------------

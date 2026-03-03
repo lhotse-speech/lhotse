@@ -260,6 +260,20 @@ def test_lazy_shuffled_range_state_dict():
     assert sorted(first_part + remaining) == list(range(n))
 
 
+def test_lazy_shuffled_range_load_state_dict_mismatch():
+    """Loading a state_dict with wrong n or seed raises ValueError."""
+    perm = LazyShuffledRange(100, seed=42)
+    sd = perm.state_dict()
+
+    wrong_n = LazyShuffledRange(200, seed=42)
+    with pytest.raises(ValueError, match="state mismatch"):
+        wrong_n.load_state_dict(sd)
+
+    wrong_seed = LazyShuffledRange(100, seed=99)
+    with pytest.raises(ValueError, match="state mismatch"):
+        wrong_seed.load_state_dict(sd)
+
+
 def test_lazy_shuffled_range_getitem():
     """__getitem__ is consistent with iteration."""
     n = 50
@@ -471,6 +485,24 @@ def test_cutset_from_jsonl_lazy_shuffled(tmp_path):
 
     assert sorted(result_ids) == original_ids
     assert result_ids != [c.id for c in original]
+
+
+def test_cutset_from_file_shuffled(tmp_path):
+    """CutSet.from_file(shuffle=True) yields all items in deterministic shuffled order."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path)
+    original_ids = sorted(c.id for c in original)
+
+    cs = CutSet.from_file(path, shuffle=True, seed=42)
+    result_ids = [c.id for c in cs]
+
+    # All items present, order permuted, deterministic
+    assert sorted(result_ids) == original_ids
+    assert result_ids != [c.id for c in original]
+    cs2 = CutSet.from_file(path, shuffle=True, seed=42)
+    assert [c.id for c in cs2] == result_ids
 
 
 def test_cutset_resample_preserves_constant_time_access(tmp_path):

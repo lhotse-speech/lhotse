@@ -163,12 +163,13 @@ class DataloaderCheckpoint:
             data = json.load(f)
         return cls(**data)
 
-    def validate(self, num_workers: int, world_size: int) -> None:
+    def validate(self, num_workers: int, world_size: int, rank: int = 0) -> None:
         """
         Validate that the checkpoint is compatible with the current
         dataloader configuration.
 
-        :raises ValueError: if ``num_workers`` or ``world_size`` differ.
+        :raises ValueError: if ``num_workers``, ``world_size``, or ``rank``
+            differ from the checkpoint.
         """
         if self.num_workers != num_workers:
             raise ValueError(
@@ -179,6 +180,10 @@ class DataloaderCheckpoint:
             raise ValueError(
                 f"Checkpoint world_size={self.world_size} does not match "
                 f"current world_size={world_size}."
+            )
+        if self.rank != rank:
+            raise ValueError(
+                f"Checkpoint rank={self.rank} does not match " f"current rank={rank}."
             )
 
 
