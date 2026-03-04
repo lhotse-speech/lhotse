@@ -142,6 +142,17 @@ class DynamicCutSampler(CutSampler):
                 category=DeprecationWarning,
             )
 
+        if self.shuffle and all(
+            getattr(cs, "is_indexed", False)
+            for cs in self.cuts
+            if isinstance(cs, CutSet)
+        ):
+            raise ValueError(
+                "DynamicCutSampler: shuffle=True is not supported with indexed "
+                "datasets. Indexed datasets use internal shuffling via the iterator "
+                "pipeline (e.g., LazyIndexedManifestIterator). Set shuffle=False."
+            )
+
     def state_dict(self) -> Dict[str, Any]:
         assert (
             self.constraint is None
@@ -181,25 +192,58 @@ class DynamicCutSampler(CutSampler):
             epoch=current_epoch
         )
 
-        self._just_restored_state = False
-        iter(self)
+        is_indexed = all(
+            getattr(cs, "is_indexed", False)
+            for cs in self.cuts
+            if isinstance(cs, CutSet)
+        )
 
-        # If we have indexed iterator state from the enhanced state_dict,
-        # restore it in O(1) instead of O(N) fast-forwarding.
         cuts_state = getattr(self, "_cuts_state", None)
+
+        # O(1) indexed path: restore source CutSet states and rebuild pipeline
+        if cuts_state is not None and is_indexed:
+            try:
+                # Restore source CutSet states
+                for cs, cs_state in zip(self.cuts, cuts_state):
+                    if isinstance(cs, CutSet):
+                        cs.load_state_dict(cs_state)
+
+                # Call iter(self) to create fresh iterators from restored CutSets
+                self._just_restored_state = False
+                self._cuts_state = None
+                iter(self)
+
+                # Restore transform RNG states
+                self._restore_transforms_state()
+                self._just_restored_state = True
+                return
+            except Exception as e:
+                raise RuntimeError(
+                    "O(1) indexed restore failed for indexed datasets. This is a bug — "
+                    "indexed datasets should never use O(N) fast-forward. "
+                    f"Error: {e}"
+                ) from e
+
+        # Non-indexed path: try O(1) if cuts_state is available, else O(N)
         if cuts_state is not None:
             try:
                 from lhotse.checkpoint import restore_state_dict
 
+                self._just_restored_state = False
+                self._cuts_state = None
+                iter(self)
+
                 for cs_iter, cs_state in zip(self.cuts_iter, cuts_state):
                     restore_state_dict(cs_iter, cs_state)
-                self._cuts_state = None
-                # Also restore transform RNG states since we skipped O(N) iteration.
                 self._restore_transforms_state()
                 self._just_restored_state = True
                 return
             except Exception:
                 pass  # Fall back to legacy O(N) fast-forward below
+
+        self._cuts_state = None
+        self._just_restored_state = False
+        iter(self)
 
         # O(N) fast-forward: transforms advance naturally via __next__.
         for _ in range(num_batches_to_iter):

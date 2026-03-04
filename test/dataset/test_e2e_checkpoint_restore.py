@@ -14,8 +14,10 @@ All data sources are **file-backed indexed lazy JSONL** manifests loaded
 via ``CutSet.from_file(path, indexed=True)``, exercising the
 ``LazyIndexedManifestIterator`` path end-to-end.
 
-Tests cover both the direct IterableDatasetWrapper path and the
-torchdata StatefulDataLoader path (when torchdata is installed).
+Tests cover:
+- Direct IterableDatasetWrapper path (O(N) fast-forward)
+- torchdata StatefulDataLoader path (when torchdata is installed)
+- O(1) indexed restore via DynamicBucketer state save/restore
 """
 
 import random
@@ -453,91 +455,108 @@ def test_stateful_dataloader_checkpoint_at_various_positions(
 
 
 # ---------------------------------------------------------------------------
-# CutSet state_dict / load_state_dict
+# O(1) indexed restore tests
 # ---------------------------------------------------------------------------
 
 
-def test_cutset_state_dict_basic(tmp_path):
-    """Lazy CutSet round-trip: first_k + remaining == full."""
-    from lhotse.lazy import LazyIndexedManifestIterator
-
-    path = tmp_path / "cuts.jsonl"
-    DummyManifest(CutSet, begin_id=0, end_id=20).to_jsonl(path)
-
-    # Full run
-    full_ids = [c.id for c in CutSet(LazyIndexedManifestIterator(path))]
-
-    # Interrupted run
-    cs1 = CutSet(LazyIndexedManifestIterator(path))
-    gen1 = iter(cs1)
-    first_k = [next(gen1).id for _ in range(8)]
-    sd = cs1.state_dict()
-
-    # Restored run
-    cs2 = CutSet(LazyIndexedManifestIterator(path))
-    cs2.load_state_dict(sd)
-    remaining = [c.id for c in cs2]
-
-    assert first_k + remaining == full_ids
-
-
-def test_cutset_state_dict_with_transforms(tmp_path):
-    """CutSet state_dict through resample (map transform)."""
-    path = tmp_path / "cuts.jsonl"
-    DummyManifest(CutSet, begin_id=0, end_id=20).to_jsonl(path)
+@pytest.mark.parametrize("n_consumed", [1, 3, 5])
+def test_indexed_o1_restore(cuts_a_path, cuts_b_path, n_consumed):
+    """O(1) indexed restore produces same results as uninterrupted run."""
 
     def make():
-        return _load(path).resample(24000)
+        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
+        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
 
-    full_ids = [c.id for c in make()]
+    all_batches = [[c.id for c in b] for b in make()]
+    assert len(all_batches) > n_consumed
 
-    cs1 = make()
-    gen1 = iter(cs1)
-    first_k = [next(gen1).id for _ in range(5)]
-    sd = cs1.state_dict()
+    w1 = make()
+    it1 = iter(w1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = w1.state_dict()
 
-    cs2 = make()
-    cs2.load_state_dict(sd)
-    remaining = [c.id for c in cs2]
+    # Verify that bucketer_state is captured in the state_dict
+    sampler_sd = sd.get("sampler_state", sd)
+    assert (
+        "bucketer_state" in sampler_sd and "rng_state" in sampler_sd
+    ), "O(1) indexed restore keys should be in state_dict for indexed datasets"
 
-    assert first_k + remaining == full_ids
+    w2 = make()
+    w2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in w2]
 
-
-def test_cutset_state_dict_eager_raises():
-    """Eager CutSet raises RuntimeError on state_dict / load_state_dict."""
-    cuts = DummyManifest(CutSet, begin_id=0, end_id=5)
-    with pytest.raises(RuntimeError, match="lazy"):
-        cuts.state_dict()
-    with pytest.raises(RuntimeError, match="lazy"):
-        cuts.load_state_dict({})
-
-
-def test_cutset_from_file_indexed(tmp_path):
-    """from_file(indexed=True) uses indexed iterator, has_constant_time_access == True."""
-    path = tmp_path / "cuts.jsonl"
-    DummyManifest(CutSet, begin_id=0, end_id=10).to_jsonl(path)
-
-    cs = _load(path)
-    assert cs.is_lazy
-    assert cs.has_constant_time_access is True
-    assert len(list(cs)) == 10
+    assert first_k + remaining == all_batches
 
 
-def test_cutset_getitem_indexed(tmp_path):
-    """O(1) random access through transform chain on indexed CutSet."""
-    from lhotse.lazy import LazyIndexedManifestIterator, LazyMapper
+def test_indexed_o1_restore_with_augmentation(cuts_a_path, cuts_b_path):
+    """O(1) indexed restore with sampler-level augmentation."""
+    n_consumed = 3
 
-    path = tmp_path / "cuts.jsonl"
-    DummyManifest(CutSet, begin_id=0, end_id=10).to_jsonl(path)
+    def make():
+        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
+        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
+        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
 
-    indexed = LazyIndexedManifestIterator(path)
-    mapped = LazyMapper(indexed, fn=lambda c: c)
-    cs = CutSet(mapped)
+    all_batches = [[c.id for c in b] for b in make()]
+    assert len(all_batches) > n_consumed
 
-    assert cs.has_constant_time_access is True
+    w1 = make()
+    it1 = iter(w1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = w1.state_dict()
 
-    # Access via CutSet.__getitem__ (int index)
-    c0 = cs[0]
-    c5 = cs[5]
-    assert c0.id == indexed[0].id
-    assert c5.id == indexed[5].id
+    w2 = make()
+    w2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in w2]
+
+    assert first_k + remaining == all_batches
+
+
+# ---------------------------------------------------------------------------
+# Shar fields-based E2E tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("n_consumed", [1, 3])
+def test_shar_fields_o1_restore(tmp_path, n_consumed):
+    """O(1) indexed restore works with fields-based LazySharIterator."""
+    from lhotse.shar.readers.lazy import LazySharIterator
+
+    path_a = tmp_path / "cuts_a.000000.jsonl"
+    path_b = tmp_path / "cuts_b.000000.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=30).to_jsonl(path_a)
+    DummyManifest(CutSet, begin_id=100, end_id=130).to_jsonl(path_b)
+
+    def make():
+        a = CutSet(LazySharIterator(fields={"cuts": [str(path_a)]}))
+        b = CutSet(LazySharIterator(fields={"cuts": [str(path_b)]}))
+        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+        sampler = DynamicBucketingSampler(
+            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        )
+        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+
+    all_batches = [[c.id for c in b] for b in make()]
+    assert len(all_batches) > n_consumed
+
+    w1 = make()
+    it1 = iter(w1)
+    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
+    sd = w1.state_dict()
+
+    w2 = make()
+    w2.load_state_dict(sd)
+    remaining = [[c.id for c in b] for b in w2]
+
+    assert first_k + remaining == all_batches

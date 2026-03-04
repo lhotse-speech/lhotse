@@ -13,7 +13,7 @@ This module provides:
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lhotse.lazy import StatefulIterator
 from lhotse.utils import Pathlike
@@ -22,11 +22,98 @@ __all__ = [
     "collect_state_dict",
     "restore_state_dict",
     "DataloaderCheckpoint",
+    "register_origin_loader",
+    "reload_from_origin",
 ]
 
 # Attribute names for child references (unified in Phase 2)
 _SINGLE_CHILD = "source"
 _MULTI_CHILDREN = "sources"
+
+
+# ---------------------------------------------------------------------------
+# Origin registry — extensible loaders for checkpoint restore
+# ---------------------------------------------------------------------------
+
+_ORIGIN_LOADERS: Dict[str, Callable[[str, int], Any]] = {}
+
+
+def register_origin_loader(
+    origin_type: str, loader_fn: Callable[[str, int], Any]
+) -> None:
+    """
+    Register a loader for a custom origin type.
+
+    *loader_fn* signature: ``(path: str, idx: int) -> Any``.
+    Each call should be self-contained (open, read one item, close).
+    """
+    _ORIGIN_LOADERS[origin_type] = loader_fn
+
+
+def reload_from_origin(origin) -> Any:
+    """Re-read a single item from its origin coordinates."""
+    type_, path, idx = origin
+    if type_ not in _ORIGIN_LOADERS:
+        raise ValueError(
+            f"Unknown origin type '{type_}'. Register a loader with "
+            f"register_origin_loader('{type_}', fn)."
+        )
+    return _ORIGIN_LOADERS[type_](path, idx)
+
+
+def _load_lhotse_origin(path: str, idx: int):
+    from lhotse.indexing import IndexedJsonlReader
+    from lhotse.serialization import deserialize_item
+
+    reader = IndexedJsonlReader(path)
+    return deserialize_item(reader[idx])
+
+
+def _load_lhotse_shar_origin(path: str, idx: int):
+    from lhotse.shar.readers.indexed import LazyIndexedSharIterator
+
+    reader = LazyIndexedSharIterator(in_dir=path)
+    return reader[idx]
+
+
+def _load_lhotse_shar_fields_origin(path_json: str, idx: int):
+    import json
+
+    from lhotse.indexing import IndexedJsonlReader, IndexedTarReader
+    from lhotse.serialization import deserialize_item, extension_contains
+
+    shard_paths = json.loads(path_json)
+
+    cut = deserialize_item(IndexedJsonlReader(shard_paths["cuts"])[idx])
+    for field, field_path in shard_paths.items():
+        if field == "cuts":
+            continue
+        if extension_contains(".tar", field_path):
+            maybe_manifest, data_path = IndexedTarReader(field_path)[idx]
+            if maybe_manifest is not None:
+                setattr(cut, field, maybe_manifest)
+        else:
+            item = IndexedJsonlReader(field_path)[idx]
+            if field in item:
+                setattr(cut, field, item[field])
+    return cut
+
+
+register_origin_loader("lhotse", _load_lhotse_origin)
+register_origin_loader("lhotse_shar", _load_lhotse_shar_origin)
+register_origin_loader("lhotse_shar_fields", _load_lhotse_shar_fields_origin)
+
+
+def _rng_state_to_json(rng_state) -> list:
+    """Convert a ``random.Random.getstate()`` tuple to JSON-safe lists."""
+    version, internalstate, gauss_next = rng_state
+    return [version, list(internalstate), gauss_next]
+
+
+def _rng_state_from_json(data) -> tuple:
+    """Reconstruct a ``random.Random`` state tuple from JSON data."""
+    version, internalstate, gauss_next = data
+    return (version, tuple(internalstate), gauss_next)
 
 
 # ---------------------------------------------------------------------------

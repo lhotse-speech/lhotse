@@ -46,6 +46,18 @@ class StatefulIterator:
         raise NotImplementedError
 
     @property
+    def is_indexed(self) -> bool:
+        """
+        Return ``True`` when this iterator attaches ``_origin`` metadata
+        to each yielded item, enabling O(1) checkpoint restore via the
+        origin registry in :mod:`lhotse.checkpoint`.
+
+        The default is ``False``; subclasses that support origin tracking
+        should override this to return ``True``.
+        """
+        return False
+
+    @property
     def has_constant_time_access(self) -> bool:
         """
         Return ``True`` when every element can be retrieved in O(1) via
@@ -427,6 +439,10 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
         self._restored = False
 
     @property
+    def is_indexed(self) -> bool:
+        return True
+
+    @property
     def has_constant_time_access(self) -> bool:
         return True
 
@@ -444,15 +460,21 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
                 self._range.reset()
         self._position = start
 
+        path_str = str(self.path)
         n = len(self._reader)
         if self._range is not None:
             for i in range(start, n):
                 self._position = i + 1
-                yield deserialize_item(self._reader[self._range[i]])
+                phys_idx = self._range[i]
+                item = deserialize_item(self._reader[phys_idx])
+                item._origin = ("lhotse", path_str, phys_idx)
+                yield item
         else:
             for i in range(start, n):
                 self._position = i + 1
-                yield deserialize_item(self._reader[i])
+                item = deserialize_item(self._reader[i])
+                item._origin = ("lhotse", path_str, i)
+                yield item
 
     def __len__(self) -> int:
         return len(self._reader)
@@ -484,11 +506,15 @@ class LazyIteratorChain(Dillable, StatefulIterator):
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
 
-    It also supports shuffling the sub-iterators when it's iterated over.
-    This can be used to implement sharding (where each iterator is a shard)
-    with randomized shard order. Every iteration of this object will increment
-    an internal counter so that the next time it's iterated, the order of shards
-    is again randomized.
+    It also supports shuffling via ``shuffle_iters``.  The shuffling strategy
+    is chosen automatically based on whether all sub-iterators are indexed:
+
+    * **Non-indexed sources** — shuffles the *order of sub-iterators* (shard-level
+      shuffling).  Every iteration increments an internal counter so the shard
+      order is re-randomized.
+    * **Indexed sources** — uses a Feistel-cipher permutation over the combined
+      index range for true *item-level* shuffling that crosses sub-iterator
+      boundaries, via O(1) random access.
 
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
 
@@ -512,14 +538,20 @@ class LazyIteratorChain(Dillable, StatefulIterator):
                     self.sources.append(sub_it)
             else:
                 self.sources.append(it)
-        # Iteration tracking
+        # Iteration tracking (sequential path)
         self._current_iter_idx = 0
         self._iter_order: Optional[list] = None
         self._restored = False
+        # Iteration tracking (globally-shuffled path)
+        self._global_position = 0
+
+    @property
+    def is_indexed(self) -> bool:
+        return all(getattr(s, "is_indexed", False) for s in self.sources)
 
     @property
     def has_constant_time_access(self) -> bool:
-        if self.shuffle_iters:
+        if self.shuffle_iters and not self.is_indexed:
             return False  # shard order changes per iteration
         return all(
             getattr(s, "has_constant_time_access", False) for s in self.sources
@@ -548,6 +580,15 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         return self._cum_lens
 
     def __iter__(self):
+        if self.shuffle_iters and self.is_indexed:
+            return self._iter_globally_shuffled()
+        return self._iter_sequential()
+
+    # ------------------------------------------------------------------
+    # Sequential iteration (original path — with optional shard shuffle)
+    # ------------------------------------------------------------------
+
+    def _iter_sequential(self):
         from lhotse.dataset.dataloading import resolve_seed
 
         if self._restored:
@@ -575,6 +616,29 @@ class LazyIteratorChain(Dillable, StatefulIterator):
                 it = it.values()
             yield from it
 
+    # ------------------------------------------------------------------
+    # Globally-shuffled iteration (O(1) random access across all sources)
+    # ------------------------------------------------------------------
+
+    def _iter_globally_shuffled(self):
+        from lhotse.indexing import LazyShuffledRange
+
+        total = len(self)
+        seed = self.seed if self.seed is not None else 0
+
+        if self._restored:
+            self._restored = False
+            start = self._global_position
+        else:
+            start = 0
+            self._global_position = 0
+
+        shuffled = LazyShuffledRange(total, seed=seed + self.num_iters)
+        for i in range(start, total):
+            self._global_position = i + 1
+            yield self[shuffled[i]]
+        self.num_iters += 1
+
     def __len__(self) -> int:
         return sum(len(it) for it in self.sources)
 
@@ -586,6 +650,7 @@ class LazyIteratorChain(Dillable, StatefulIterator):
             "current_iter_idx": self._current_iter_idx,
             "num_iters": self.num_iters,
             "iter_order": self._iter_order,
+            "global_position": self._global_position,
         }
         # Save inner states for stateful children
         inner_states = []
@@ -600,10 +665,15 @@ class LazyIteratorChain(Dillable, StatefulIterator):
     def load_state_dict(self, sd: dict) -> None:
         self._current_iter_idx = sd["current_iter_idx"]
         self.num_iters = sd["num_iters"]
-        self._iter_order = sd["iter_order"]
-        # Only restore sources that will still be iterated (at or after
-        # current_iter_idx in iter_order).  Sources before that index were
-        # fully consumed and should start fresh on the next epoch.
+        self._iter_order = sd.get("iter_order")
+        self._global_position = sd.get("global_position", 0)
+        if self.shuffle_iters and self.is_indexed:
+            # Globally-shuffled path: position + num_iters are enough
+            # to reconstruct the permutation deterministically.
+            self._restored = True
+            return
+        # Sequential path: only restore sources that will still be iterated
+        # (at or after current_iter_idx in iter_order).
         order = (
             self._iter_order
             if self._iter_order is not None
@@ -658,6 +728,10 @@ class LazyIteratorMultiplexer(Dillable, StatefulIterator):
         self._rng_state = None
         self._exhausted: Optional[list] = None
         self._restored = False
+
+    @property
+    def is_indexed(self) -> bool:
+        return all(getattr(s, "is_indexed", False) for s in self.sources)
 
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
@@ -903,6 +977,10 @@ class LazyFilter(Dillable, StatefulIterator):
                 "try passing a regular function instead."
             )
 
+    @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False)
+
     def __iter__(self):
         return filter(self.predicate, self.source)
 
@@ -968,6 +1046,10 @@ class LazyMapper(Dillable, StatefulIterator):
                 "If you experience issues with num_workers > 0 in torch.utils.data.DataLoader, "
                 "try passing a regular function instead."
             )
+
+    @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False)
 
     @property
     def has_constant_time_access(self) -> bool:
@@ -1068,6 +1150,10 @@ class LazyRepeater(Dillable, StatefulIterator):
         self._restored = False
 
     @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False)
+
+    @property
     def has_constant_time_access(self) -> bool:
         if self.times is None:
             return False  # infinite repeater
@@ -1139,6 +1225,10 @@ class LazySlicer(Dillable, StatefulIterator):
         self.n = n
         self._source_offset = 0
         self._restored = False
+
+    @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False)
 
     @property
     def has_constant_time_access(self) -> bool:

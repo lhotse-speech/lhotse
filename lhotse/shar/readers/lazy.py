@@ -21,21 +21,44 @@ from lhotse.lazy import (
     LazyManifestIterator,
     StatefulIterator,
     count_newlines_fast,
-    is_dill_enabled,
 )
-from lhotse.serialization import deserialize_item, extension_contains
+from lhotse.serialization import extension_contains
 from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
 
 
-def _is_local_indexed(path) -> bool:
-    """True if path is a local file with an .idx index alongside it."""
-    from lhotse.indexing import index_exists
-
-    path_str = str(path)
-    if path_str.startswith("pipe:") or "://" in path_str:
+def _is_local_uncompressed(path) -> bool:
+    """True if *path* is a local, uncompressed file (not pipe/URL/gz)."""
+    p = str(path)
+    if p.startswith("pipe:") or "://" in p:
         return False
-    return index_exists(path)
+    return not extension_contains(".gz", p)
+
+
+def _discover_fields(in_dir: Path) -> Tuple[set, dict]:
+    """Discover shard fields from an ``in_dir``.
+
+    Returns ``(fields, streams)`` where *fields* is a set of non-cuts
+    field names and *streams* maps each field (plus ``"cuts"``) to a
+    sorted list of shard paths.
+
+    Index files (``.idx``) are excluded from discovery.
+    """
+    all_paths = [p for p in in_dir.glob("*") if p.suffix != ".idx"]
+    fields = set(p.stem.split(".")[0] for p in all_paths)
+    assert "cuts" in fields, f"No cuts JSONL shards found in {in_dir}"
+    fields.remove("cuts")
+
+    streams: Dict[str, list] = {
+        "cuts": sorted(
+            p
+            for p in all_paths
+            if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
+        )
+    }
+    for field in fields:
+        streams[field] = sorted(p for p in all_paths if p.name.split(".")[0] == field)
+    return fields, streams
 
 
 class LazySharIterator(Dillable, StatefulIterator):
@@ -183,7 +206,8 @@ class LazySharIterator(Dillable, StatefulIterator):
 
         self._len = None
         if in_dir is not None:
-            self._init_from_dir(in_dir)
+            self.in_dir = Path(in_dir)
+            self.fields, self.streams = _discover_fields(self.in_dir)
         else:
             self._init_from_inputs(fields)
 
@@ -200,8 +224,6 @@ class LazySharIterator(Dillable, StatefulIterator):
 
         self.cut_map_fns = ifnone(cut_map_fns, [None] * self.num_shards)
         self._restored = False
-        self._indexed_readers = None
-        self._shard_lens = None
 
     def _init_from_inputs(self, fields: Optional[Dict[str, Sequence[str]]] = None):
         assert (
@@ -211,156 +233,10 @@ class LazySharIterator(Dillable, StatefulIterator):
         self.fields.remove("cuts")
         self.streams = fields
 
-    def _init_from_dir(self, in_dir: Pathlike):
-        self.in_dir = Path(in_dir)
-
-        # Exclude index files (.idx) from discovery
-        all_paths = [p for p in self.in_dir.glob("*") if p.suffix != ".idx"]
-        self.fields = set(p.stem.split(".")[0] for p in all_paths)
-        assert "cuts" in self.fields
-        self.fields.remove("cuts")
-
-        self.streams = {
-            "cuts": sorted(
-                p
-                for p in all_paths
-                if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
-            )
-        }
-        for field in self.fields:
-            self.streams[field] = sorted(
-                p for p in all_paths if p.name.split(".")[0] == field
-            )
-
-    # ------------------------------------------------------------------
-    # O(1) random access
-    # ------------------------------------------------------------------
-
     @property
-    def has_constant_time_access(self) -> bool:
-        """
-        Return ``True`` iff every shard file (cuts JSONL and all field
-        files) has a ``.idx`` binary index alongside it.
-
-        Pipe commands, URLs, and compressed files will cause this to
-        return ``False``.
-        """
-        for shard in self.shards:
-            for path in shard.values():
-                if not _is_local_indexed(path):
-                    return False
-        return True
-
-    def _get_shard_lengths(self) -> List[int]:
-        """Return per-shard lengths (cached)."""
-        if self._shard_lens is None:
-            self._shard_lens = [count_newlines_fast(p) for p in self.streams["cuts"]]
-        return self._shard_lens
-
-    def _resolve_index(self, idx: int) -> Tuple[int, int]:
-        """Map a global index to ``(shard_idx, position_within_shard)``."""
-        shard_lens = self._get_shard_lengths()
-        total = sum(shard_lens)
-        if idx < 0:
-            idx += total
-        if idx < 0 or idx >= total:
-            raise IndexError(
-                f"index {idx} out of range for LazySharIterator with {total} cuts"
-            )
-        cumulative = 0
-        for shard_idx, length in enumerate(shard_lens):
-            if idx < cumulative + length:
-                return shard_idx, idx - cumulative
-            cumulative += length
-        raise IndexError(f"index {idx} out of range")  # pragma: no cover
-
-    def _ensure_indexed_readers(self, shard_idx: int) -> dict:
-        """Lazily create and cache indexed readers for *shard_idx*."""
-        from lhotse.indexing import IndexedJsonlReader, IndexedTarReader
-
-        if self._indexed_readers is None:
-            self._indexed_readers = {}
-        if shard_idx in self._indexed_readers:
-            return self._indexed_readers[shard_idx]
-
-        shard = self.shards[shard_idx]
-        readers = {}
-        readers["cuts"] = IndexedJsonlReader(shard["cuts"])
-        for field in self.fields:
-            path = shard[field]
-            if extension_contains(".tar", path):
-                readers[field] = IndexedTarReader(path)
-            else:
-                readers[field] = IndexedJsonlReader(path)
-
-        self._indexed_readers[shard_idx] = readers
-        return readers
-
-    def __getitem__(self, idx: int) -> Cut:
-        """
-        O(1) random access to a cut by global index.
-
-        Requires that all shard files have ``.idx`` indexes
-        (see :attr:`has_constant_time_access`).
-        """
-        shard_idx, pos = self._resolve_index(idx)
-        readers = self._ensure_indexed_readers(shard_idx)
-
-        # Read and deserialize the cut
-        cut = deserialize_item(readers["cuts"][pos])
-
-        # Attach field data from tar / JSONL readers
-        from lhotse.indexing import IndexedTarReader
-
-        for field in self.fields:
-            reader = readers[field]
-            if isinstance(reader, IndexedTarReader):
-                maybe_manifest, data_path = reader[pos]
-                if maybe_manifest is not None:
-                    assert str(data_path.parent / data_path.stem) == cut.id, (
-                        f"Mismatched IDs: cut ID is '{cut.id}' but found "
-                        f"data with name '{data_path}' for field {field}"
-                    )
-                    setattr(cut, field, maybe_manifest)
-            else:
-                # IndexedJsonlReader for JSONL fields
-                item = reader[pos]
-                if field in item:
-                    setattr(cut, field, item[field])
-
-        cut.shard_origin = self.shards[shard_idx]["cuts"]
-        cut.shar_epoch = self.epoch
-
-        cut_map_fn = (
-            self.cut_map_fns[shard_idx] if self.cut_map_fns is not None else None
-        )
-        if cut_map_fn is not None:
-            cut = cut_map_fn(cut)
-
-        return cut
-
-    # ------------------------------------------------------------------
-    # Pickling — exclude non-picklable caches
-    # ------------------------------------------------------------------
-
-    def __getstate__(self):
-        d = self.__dict__.copy()
-        d.pop("_indexed_readers", None)
-        d.pop("_shard_lens", None)
-        if is_dill_enabled():
-            import dill
-
-            return dill.dumps(d)
-        return d
-
-    def __setstate__(self, state):
-        if is_dill_enabled():
-            import dill
-
-            state = dill.loads(state)
-        self.__dict__ = state
-        self._indexed_readers = None
-        self._shard_lens = None
+    def is_indexed(self) -> bool:
+        """Always ``False`` — ``LazySharIterator`` is the streaming reader."""
+        return False
 
     def _maybe_split_for_dataloading(self, shards: List) -> List:
         from .utils import split_by_node, split_by_worker
@@ -475,12 +351,6 @@ class LazySharIterator(Dillable, StatefulIterator):
         self.epoch += 1
 
     def state_dict(self) -> dict:
-        """
-        Return checkpoint state for the shar iterator.
-
-        Captures the current epoch, shard index, position within shard,
-        and shard ordering for reproducible shuffling.
-        """
         return {
             "epoch": self.epoch,
             "current_shard_idx": getattr(self, "_current_shard_idx", 0),
@@ -489,12 +359,6 @@ class LazySharIterator(Dillable, StatefulIterator):
         }
 
     def load_state_dict(self, sd: dict) -> None:
-        """
-        Restore from a checkpoint produced by :meth:`state_dict`.
-
-        Sets the epoch and shard tracking so that the next iteration
-        can resume from the correct position.
-        """
         self.epoch = sd["epoch"]
         self._current_shard_idx = sd["current_shard_idx"]
         self._position_in_shard = sd["position_in_shard"]

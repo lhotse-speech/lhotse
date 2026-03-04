@@ -517,3 +517,309 @@ def test_cutset_resample_preserves_constant_time_access(tmp_path):
 
     resampled = cs.resample(24000)
     assert resampled.has_constant_time_access is True
+
+
+# ---------------------------------------------------------------------------
+# is_indexed property propagation
+# ---------------------------------------------------------------------------
+
+
+def test_is_indexed_propagation(tmp_path):
+    """is_indexed propagates through the lazy pipeline."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    cs = CutSet.from_file(path, indexed=True)
+    assert cs.is_indexed is True
+
+    # Transforms preserve is_indexed
+    cs2 = cs.filter(lambda c: True).repeat(times=2).resample(24000)
+    assert cs2.is_indexed is True
+
+
+# ---------------------------------------------------------------------------
+# _origin attachment and propagation
+# ---------------------------------------------------------------------------
+
+
+def test_origin_attachment(tmp_path):
+    """_origin is attached to cuts from indexed iterators."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    cs = CutSet.from_file(path, indexed=True)
+    cuts = list(cs)
+    for i, c in enumerate(cuts):
+        assert hasattr(c, "_origin"), f"Cut {c.id} missing _origin"
+        assert c._origin[0] == "lhotse"
+        assert c._origin[1] == str(path)
+        assert c._origin[2] == i
+
+
+def test_origin_survives_pipeline(tmp_path):
+    """_origin survives filter -> repeat -> mux pipeline."""
+    from lhotse import CutSet
+
+    path_a = tmp_path / "cuts_a.jsonl"
+    path_b = tmp_path / "cuts_b.jsonl"
+    _write_cuts_jsonl(path_a, n=10)
+    _write_cuts_jsonl(path_b, n=10)
+
+    even = lambda c: int(c.id.split("-")[-1]) % 2 == 0
+    odd = lambda c: int(c.id.split("-")[-1]) % 2 == 1
+
+    a = CutSet.from_file(path_a, indexed=True).filter(even).repeat(times=2)
+    b = CutSet.from_file(path_b, indexed=True).filter(odd).repeat(times=2)
+    pipeline = CutSet.mux(a, b, weights=[0.5, 0.5], seed=42)
+
+    for c in pipeline:
+        assert hasattr(c, "_origin"), f"Cut {c.id} missing _origin after pipeline"
+        assert c._origin[0] == "lhotse"
+
+
+def test_cutset_from_file_indexed(tmp_path):
+    """from_file(indexed=True) uses indexed iterator, has_constant_time_access == True."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path, n=10)
+
+    cs = CutSet.from_file(path, indexed=True)
+    assert cs.is_lazy
+    assert cs.has_constant_time_access is True
+    assert len(list(cs)) == 10
+
+
+def test_cutset_getitem_indexed(tmp_path):
+    """O(1) random access through transform chain on indexed CutSet."""
+    from lhotse import CutSet
+    from lhotse.lazy import LazyIndexedManifestIterator, LazyMapper
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path, n=10)
+
+    indexed = LazyIndexedManifestIterator(path)
+    mapped = LazyMapper(indexed, fn=lambda c: c)
+    cs = CutSet(mapped)
+
+    assert cs.has_constant_time_access is True
+
+    # Access via CutSet.__getitem__ (int index)
+    c0 = cs[0]
+    c5 = cs[5]
+    assert c0.id == indexed[0].id
+    assert c5.id == indexed[5].id
+
+
+# ---------------------------------------------------------------------------
+# CutSet.from_files(indexed=...)
+# ---------------------------------------------------------------------------
+
+
+def test_cutset_from_files_indexed_true(tmp_path):
+    """from_files(indexed=True) uses indexed iterators with O(1) access."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=10)
+    _write_cuts_jsonl(p2, n=10)
+
+    cs = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=True)
+    assert cs.is_lazy
+    assert cs.has_constant_time_access is True
+    assert len(list(cs)) == 20
+
+
+def test_cutset_from_files_indexed_false(tmp_path):
+    """from_files(indexed=False) uses streaming iterators, no O(1) access."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=10)
+    _write_cuts_jsonl(p2, n=10)
+
+    cs = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=False)
+    assert cs.is_lazy
+    assert cs.has_constant_time_access is False
+    assert len(list(cs)) == 20
+
+
+def test_cutset_from_files_indexed_auto_detect(tmp_path):
+    """from_files(indexed=None) auto-detects: indexed when .idx exists."""
+    from lhotse import CutSet
+    from lhotse.indexing import index_exists
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=10)
+    _write_cuts_jsonl(p2, n=10)
+
+    # No .idx yet — auto-detect should fall back to streaming
+    cs_stream = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=None)
+    assert cs_stream.has_constant_time_access is False
+
+    # Force-create .idx files by reading in indexed mode once
+    CutSet.from_file(p1, indexed=True)
+    CutSet.from_file(p2, indexed=True)
+    assert index_exists(p1) and index_exists(p2)
+
+    # Now auto-detect should pick up indexed mode
+    cs_indexed = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=None)
+    assert cs_indexed.has_constant_time_access is True
+    assert len(list(cs_indexed)) == 20
+
+
+def test_cutset_from_files_indexed_getitem(tmp_path):
+    """O(1) random access across multiple files via from_files(indexed=True)."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    c1 = _write_cuts_jsonl(p1, n=10)
+    c2 = _write_cuts_jsonl(p2, n=10)
+
+    cs = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=True)
+
+    # Global index 0 is first item of first file
+    assert cs[0].id == list(c1)[0].id
+    # Global index 10 is first item of second file
+    assert cs[10].id == list(c2)[0].id
+    # Negative index
+    assert cs[-1].id == list(c2)[-1].id
+
+
+def test_cutset_from_files_indexed_checkpoint(tmp_path):
+    """Checkpoint/restore works with from_files(indexed=True)."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=10)
+    _write_cuts_jsonl(p2, n=10)
+
+    # Full uninterrupted run (no shuffle so order is deterministic)
+    all_ids = [
+        c.id for c in CutSet.from_files([p1, p2], shuffle_iters=False, indexed=True)
+    ]
+
+    # Interrupted at position 5
+    cs1 = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=True)
+    gen = iter(cs1)
+    first_k = [next(gen).id for _ in range(5)]
+    sd = cs1.state_dict()
+
+    # Restore
+    cs2 = CutSet.from_files([p1, p2], shuffle_iters=False, indexed=True)
+    cs2.load_state_dict(sd)
+    remaining = [c.id for c in cs2]
+
+    assert first_k + remaining == all_ids
+
+
+def test_cutset_from_files_indexed_shuffle_across_boundaries(tmp_path):
+    """shuffle_iters=True with indexed files shuffles across file boundaries."""
+    from lhotse import CutSet
+
+    # Two files with non-overlapping ID ranges
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=50)
+    # Second file has IDs 50..99
+    from lhotse.testing.dummies import DummyManifest
+
+    DummyManifest(CutSet, begin_id=50, end_id=100).to_jsonl(p2)
+
+    cs = CutSet.from_files([p1, p2], shuffle_iters=True, indexed=True, seed=42)
+    ids = [c.id for c in cs]
+    assert len(ids) == 100
+    # All items present
+    assert sorted(ids) == sorted([f"dummy-mono-cut-{i:04d}" for i in range(100)])
+
+    # The key property: shuffling crosses file boundaries.
+    # Check that items from both files are interleaved, not just
+    # "all of file 1 then all of file 2" (or vice versa).
+    file1_ids = {f"dummy-mono-cut-{i:04d}" for i in range(50)}
+    first_half = ids[:50]
+    from_file1_in_first_half = sum(1 for x in first_half if x in file1_ids)
+    # With true global shuffle, we expect roughly 25 from each file in
+    # the first 50 positions.  If no cross-boundary shuffling happened,
+    # we'd see either 0 or 50.
+    assert 10 < from_file1_in_first_half < 40, (
+        f"Expected interleaving across files, but got "
+        f"{from_file1_in_first_half}/50 from file1 in the first half"
+    )
+
+
+def test_cutset_from_files_indexed_shuffle_deterministic(tmp_path):
+    """Same seed produces identical order across runs."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=20)
+    from lhotse.testing.dummies import DummyManifest
+
+    DummyManifest(CutSet, begin_id=20, end_id=40).to_jsonl(p2)
+
+    def read():
+        return [
+            c.id
+            for c in CutSet.from_files(
+                [p1, p2], shuffle_iters=True, indexed=True, seed=7
+            )
+        ]
+
+    assert read() == read()
+
+
+def test_cutset_from_files_indexed_shuffle_all_items_present(tmp_path):
+    """Shuffled from_files yields every item exactly once."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=30)
+    from lhotse.testing.dummies import DummyManifest
+
+    DummyManifest(CutSet, begin_id=30, end_id=60).to_jsonl(p2)
+
+    cs = CutSet.from_files([p1, p2], shuffle_iters=True, indexed=True, seed=99)
+    ids = [c.id for c in cs]
+    assert len(ids) == 60
+    assert len(set(ids)) == 60  # no duplicates
+
+
+def test_cutset_from_files_indexed_shuffle_checkpoint(tmp_path):
+    """Checkpoint/restore with globally-shuffled from_files."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=30)
+    from lhotse.testing.dummies import DummyManifest
+
+    DummyManifest(CutSet, begin_id=30, end_id=60).to_jsonl(p2)
+
+    kwargs = dict(paths=[p1, p2], shuffle_iters=True, indexed=True, seed=42)
+
+    # Full uninterrupted run
+    all_ids = [c.id for c in CutSet.from_files(**kwargs)]
+
+    # Interrupted at position 15
+    cs1 = CutSet.from_files(**kwargs)
+    gen = iter(cs1)
+    first_k = [next(gen).id for _ in range(15)]
+    sd = cs1.state_dict()
+
+    # Restore
+    cs2 = CutSet.from_files(**kwargs)
+    cs2.load_state_dict(sd)
+    remaining = [c.id for c in cs2]
+
+    assert first_k + remaining == all_ids

@@ -292,3 +292,93 @@ def test_collect_restore_multiplexed_filtered_repeated(tmp_path):
     remaining = list(pipe2)
 
     assert first_k + remaining == all_items
+
+
+# ---------------------------------------------------------------------------
+# Origin registry: reload_from_origin
+# ---------------------------------------------------------------------------
+
+
+def test_origin_roundtrip(tmp_path):
+    """reload_from_origin correctly re-reads a cut."""
+    from lhotse import CutSet
+    from lhotse.checkpoint import reload_from_origin
+    from lhotse.testing.dummies import DummyManifest
+
+    path = tmp_path / "cuts.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=5).to_jsonl(path)
+
+    cs = CutSet.from_file(path, indexed=True)
+    cuts = list(cs)
+    for c in cuts:
+        reloaded = reload_from_origin(c._origin)
+        assert reloaded.id == c.id
+        assert reloaded.duration == c.duration
+
+
+# ---------------------------------------------------------------------------
+# CutSet state_dict / load_state_dict
+# ---------------------------------------------------------------------------
+
+
+def test_cutset_state_dict_basic(tmp_path):
+    """Lazy CutSet round-trip: first_k + remaining == full."""
+    from lhotse import CutSet
+    from lhotse.lazy import LazyIndexedManifestIterator
+    from lhotse.testing.dummies import DummyManifest
+
+    path = tmp_path / "cuts.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=20).to_jsonl(path)
+
+    # Full run
+    full_ids = [c.id for c in CutSet(LazyIndexedManifestIterator(path))]
+
+    # Interrupted run
+    cs1 = CutSet(LazyIndexedManifestIterator(path))
+    gen1 = iter(cs1)
+    first_k = [next(gen1).id for _ in range(8)]
+    sd = cs1.state_dict()
+
+    # Restored run
+    cs2 = CutSet(LazyIndexedManifestIterator(path))
+    cs2.load_state_dict(sd)
+    remaining = [c.id for c in cs2]
+
+    assert first_k + remaining == full_ids
+
+
+def test_cutset_state_dict_with_transforms(tmp_path):
+    """CutSet state_dict through resample (map transform)."""
+    from lhotse import CutSet
+    from lhotse.testing.dummies import DummyManifest
+
+    path = tmp_path / "cuts.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=20).to_jsonl(path)
+
+    def make():
+        return CutSet.from_file(path, indexed=True).resample(24000)
+
+    full_ids = [c.id for c in make()]
+
+    cs1 = make()
+    gen1 = iter(cs1)
+    first_k = [next(gen1).id for _ in range(5)]
+    sd = cs1.state_dict()
+
+    cs2 = make()
+    cs2.load_state_dict(sd)
+    remaining = [c.id for c in cs2]
+
+    assert first_k + remaining == full_ids
+
+
+def test_cutset_state_dict_eager_raises():
+    """Eager CutSet raises RuntimeError on state_dict / load_state_dict."""
+    from lhotse import CutSet
+    from lhotse.testing.dummies import DummyManifest
+
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=5)
+    with pytest.raises(RuntimeError, match="lazy"):
+        cuts.state_dict()
+    with pytest.raises(RuntimeError, match="lazy"):
+        cuts.load_state_dict({})

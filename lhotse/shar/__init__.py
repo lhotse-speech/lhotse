@@ -5,6 +5,7 @@ __all__ = [
     "ArrayTarWriter",
     "AudioTarWriter",
     "JsonlShardWriter",
+    "LazyIndexedSharIterator",
     "LazySharIterator",
     "SharWriter",
     "TarIterator",

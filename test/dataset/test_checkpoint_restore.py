@@ -119,3 +119,26 @@ class TestIterableDatasetWrapperStateDict:
 
         assert wrapper2.epoch == 3
         assert wrapper2.sampler.diagnostics.current_epoch_stats.total_batches == 2
+
+
+class TestShuffleIndexedGuard:
+    def test_dynamic_cut_sampler_rejects_shuffle_with_indexed(self, tmp_path):
+        """shuffle=True + indexed dataset raises ValueError for DynamicCutSampler.
+
+        DynamicBucketingSampler allows shuffle=True with indexed datasets because
+        its within-bucket shuffle RNG is saved/restored in the O(1) path.
+        DynamicCutSampler's streaming_shuffle is not checkpointable, so it raises.
+        """
+        path = tmp_path / "cuts.jsonl"
+        DummyManifest(CutSet, begin_id=0, end_id=20).to_jsonl(path)
+
+        cs = CutSet.from_file(path, indexed=True)
+        assert cs.is_indexed is True
+
+        # DynamicBucketingSampler with shuffle=True is allowed (RNG is saved)
+        DynamicBucketingSampler(cs, max_cuts=5, shuffle=True, num_buckets=2)
+
+        with pytest.raises(
+            ValueError, match="shuffle=True is not supported with indexed"
+        ):
+            DynamicCutSampler(cs, max_cuts=5, shuffle=True)

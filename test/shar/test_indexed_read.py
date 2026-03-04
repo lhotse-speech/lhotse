@@ -10,6 +10,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.indexing import index_exists
+from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.readers.lazy import LazySharIterator
 from lhotse.shar.writers.shar import SharWriter
 from lhotse.testing.dummies import DummyManifest
@@ -108,7 +109,7 @@ def test_shar_writer_no_index(tmp_path, cuts):
 
 
 # ---------------------------------------------------------------------------
-# LazySharIterator: reading indexed data
+# LazySharIterator (streaming): basic reading
 # ---------------------------------------------------------------------------
 
 
@@ -159,7 +160,7 @@ def test_shar_auto_detect_indexes(tmp_path, cuts):
 
 
 # ---------------------------------------------------------------------------
-# LazySharIterator: state_dict / load_state_dict
+# LazySharIterator (streaming): state_dict / load_state_dict
 # ---------------------------------------------------------------------------
 
 
@@ -278,7 +279,7 @@ def test_cutset_from_shar_with_indexed_data(tmp_path, cuts):
 
 
 # ---------------------------------------------------------------------------
-# LazySharIterator: has_constant_time_access and __getitem__
+# LazyIndexedSharIterator: has_constant_time_access and __getitem__
 # ---------------------------------------------------------------------------
 
 
@@ -295,8 +296,9 @@ def test_shar_has_constant_time_access(tmp_path, cuts):
         for c in cuts:
             writer.write(c)
 
-    shar_iter = LazySharIterator(in_dir=tmp_path)
+    shar_iter = LazyIndexedSharIterator(in_dir=tmp_path)
     assert shar_iter.has_constant_time_access is True
+    assert shar_iter.is_indexed is True
 
 
 def test_shar_getitem(tmp_path, cuts):
@@ -312,8 +314,8 @@ def test_shar_getitem(tmp_path, cuts):
         for c in cuts:
             writer.write(c)
 
-    shar_iter = LazySharIterator(in_dir=tmp_path)
-    sequential = list(LazySharIterator(in_dir=tmp_path))
+    shar_iter = LazyIndexedSharIterator(in_dir=tmp_path)
+    sequential = list(LazyIndexedSharIterator(in_dir=tmp_path))
 
     # Check specific indices including cross-shard and negative
     for idx in [0, 5, 19, -1]:
@@ -325,7 +327,7 @@ def test_shar_getitem(tmp_path, cuts):
 
 
 def test_shar_no_index_no_constant_time_access(tmp_path, cuts):
-    """Shar without indexes reports has_constant_time_access=False."""
+    """LazySharIterator (streaming) always reports is_indexed=False."""
     writer = SharWriter(
         tmp_path,
         fields=ALL_FIELDS,
@@ -338,4 +340,423 @@ def test_shar_no_index_no_constant_time_access(tmp_path, cuts):
             writer.write(c)
 
     shar_iter = LazySharIterator(in_dir=tmp_path)
-    assert shar_iter.has_constant_time_access is False
+    assert shar_iter.is_indexed is False
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: state_dict / load_state_dict
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_state_dict_restore(tmp_path, cuts):
+    """Checkpoint/restore with LazyIndexedSharIterator."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    # Full uninterrupted run
+    all_items = [c.id for c in LazyIndexedSharIterator(in_dir=tmp_path)]
+
+    # Interrupted run: consume 5 items
+    it1 = LazyIndexedSharIterator(in_dir=tmp_path)
+    gen1 = iter(it1)
+    first_k = [next(gen1).id for _ in range(5)]
+    sd = it1.state_dict()
+
+    # Restored run
+    it2 = LazyIndexedSharIterator(in_dir=tmp_path)
+    it2.load_state_dict(sd)
+    remaining = [c.id for c in it2]
+
+    assert first_k + remaining == all_items
+
+
+def test_indexed_shar_state_dict_restore_cross_shard(tmp_path, cuts):
+    """Checkpoint/restore across a shard boundary with LazyIndexedSharIterator."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    # Full uninterrupted run
+    all_items = [c.id for c in LazyIndexedSharIterator(in_dir=tmp_path)]
+    assert len(all_items) == 20
+
+    # Interrupted run: consume 15 items (crosses shard boundary at 10)
+    it1 = LazyIndexedSharIterator(in_dir=tmp_path)
+    gen1 = iter(it1)
+    first_k = [next(gen1).id for _ in range(15)]
+    sd = it1.state_dict()
+
+    assert sd["position"] == 15
+
+    # Restored run
+    it2 = LazyIndexedSharIterator(in_dir=tmp_path)
+    it2.load_state_dict(sd)
+    remaining = [c.id for c in it2]
+
+    assert first_k + remaining == all_items
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: shuffle and __len__
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_shuffle(tmp_path, cuts):
+    """Shuffled iteration yields all items."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazyIndexedSharIterator(in_dir=tmp_path, shuffle=True, seed=42)
+    shuffled = list(shar_iter)
+    assert len(shuffled) == 20
+
+    # All IDs should be present
+    expected_ids = sorted(c.id for c in cuts)
+    actual_ids = sorted(c.id for c in shuffled)
+    assert actual_ids == expected_ids
+
+    # Order should differ from sequential (with overwhelming probability)
+    sequential = list(LazyIndexedSharIterator(in_dir=tmp_path))
+    seq_ids = [c.id for c in sequential]
+    shuf_ids = [c.id for c in shuffled]
+    assert shuf_ids != seq_ids
+
+
+def test_indexed_shar_len(tmp_path, cuts):
+    """__len__ matches item count."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazyIndexedSharIterator(in_dir=tmp_path)
+    assert len(shar_iter) == 20
+
+
+# ---------------------------------------------------------------------------
+# LazySharIterator: is_indexed always False
+# ---------------------------------------------------------------------------
+
+
+def test_lazy_shar_is_indexed_false_for_gz(tmp_path, cuts):
+    """Compressed shards -> LazySharIterator.is_indexed = False."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=True,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazySharIterator(in_dir=tmp_path)
+    assert shar_iter.is_indexed is False
+
+
+# ---------------------------------------------------------------------------
+# CutSet.from_shar(indexed=...) parameter
+# ---------------------------------------------------------------------------
+
+
+def test_cutset_from_shar_indexed_true(tmp_path, cuts):
+    """CutSet.from_shar(indexed=True) uses LazyIndexedSharIterator."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    shar_cs = CutSet.from_shar(in_dir=tmp_path, indexed=True)
+    assert shar_cs.is_indexed is True
+    assert len(list(shar_cs)) == 20
+
+
+def test_cutset_from_shar_indexed_false(tmp_path, cuts):
+    """CutSet.from_shar(indexed=False) uses LazySharIterator."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    shar_cs = CutSet.from_shar(in_dir=tmp_path, indexed=False)
+    assert shar_cs.is_indexed is False
+    assert len(list(shar_cs)) == 20
+
+
+def test_cutset_from_shar_indexed_auto_detect(tmp_path, cuts):
+    """CutSet.from_shar(indexed=None) auto-detects indexed mode."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    # Auto-detect: uncompressed + .idx exists -> indexed
+    shar_cs = CutSet.from_shar(in_dir=tmp_path)
+    assert shar_cs.is_indexed is True
+
+
+def test_cutset_from_shar_indexed_auto_detect_compressed(tmp_path, cuts):
+    """CutSet.from_shar(indexed=None) falls back to streaming for compressed."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=True,
+        create_index=True,
+    )
+
+    # Auto-detect: compressed -> streaming
+    shar_cs = CutSet.from_shar(in_dir=tmp_path)
+    assert shar_cs.is_indexed is False
+
+
+def test_cutset_from_shar_indexed_rejects_streaming_params(tmp_path, cuts):
+    """CutSet.from_shar(indexed=True) rejects streaming-only params."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    with pytest.raises(ValueError, match="not supported with indexed=True"):
+        CutSet.from_shar(in_dir=tmp_path, indexed=True, slice_length=5)
+
+
+def test_cutset_from_shar_indexed_split_for_dataloading(tmp_path, cuts):
+    """CutSet.from_shar(indexed=True, split_for_dataloading=True) works."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    # Outside a DataLoader, split_for_dataloading is a no-op (1 node, 1 worker).
+    shar_cs = CutSet.from_shar(
+        in_dir=tmp_path, indexed=True, split_for_dataloading=True
+    )
+    assert shar_cs.is_indexed is True
+    assert len(list(shar_cs)) == 20
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: fields-based mode
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_fields_based(tmp_path):
+    """LazyIndexedSharIterator works with fields-based construction."""
+    path = tmp_path / "cuts.000000.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=5).to_jsonl(path)
+
+    shar = LazyIndexedSharIterator(fields={"cuts": [str(path)]})
+    assert shar.is_indexed is True
+    assert len(shar) == 5
+
+    cuts = list(shar)
+    assert len(cuts) == 5
+    for i, c in enumerate(cuts):
+        assert hasattr(c, "_origin")
+        assert c._origin[0] == "lhotse_shar_fields"
+        assert c._origin[2] == i
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: pickling
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_pickle(tmp_path, cuts):
+    """LazyIndexedSharIterator survives pickling."""
+    import pickle
+
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazyIndexedSharIterator(in_dir=tmp_path)
+    # Access an item to populate caches
+    _ = shar_iter[0]
+
+    # Pickle and unpickle
+    data = pickle.dumps(shar_iter)
+    restored = pickle.loads(data)
+
+    assert len(restored) == 20
+    assert restored[0].id == shar_iter[0].id
+    assert list(c.id for c in restored) == list(
+        c.id for c in LazyIndexedSharIterator(in_dir=tmp_path)
+    )
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: compressed shard rejection
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_rejects_compressed(tmp_path, cuts):
+    """LazyIndexedSharIterator raises ValueError for compressed JSONL."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=True,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    with pytest.raises(ValueError, match="uncompressed local"):
+        LazyIndexedSharIterator(in_dir=tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: lhotse_shar origin roundtrip
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_origin_roundtrip(tmp_path, cuts):
+    """reload_from_origin works for in_dir-based LazyIndexedSharIterator."""
+    from lhotse.checkpoint import reload_from_origin
+
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar = LazyIndexedSharIterator(in_dir=tmp_path)
+    shar_cuts = list(shar)
+
+    # Check that "lhotse_shar" origins work for a few indices
+    for idx in [0, 5, 19]:
+        c = shar_cuts[idx]
+        assert c._origin[0] == "lhotse_shar"
+        reloaded = reload_from_origin(c._origin)
+        assert reloaded.id == c.id
+
+
+# ---------------------------------------------------------------------------
+# LazyIndexedSharIterator: out-of-range indexing
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_shar_fields_origin_roundtrip(tmp_path, cuts):
+    """reload_from_origin works for fields-based LazyIndexedSharIterator."""
+    from lhotse.checkpoint import reload_from_origin
+
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    # Build fields dict manually (same as in_dir discovery but explicit).
+    cuts_jsonl = sorted(tmp_path.glob("cuts.*.jsonl"))
+    fields = {"cuts": [str(p) for p in cuts_jsonl]}
+    for field_name in ALL_FIELDS:
+        ext = "tar" if ALL_FIELDS[field_name] != "jsonl" else "jsonl"
+        paths = sorted(tmp_path.glob(f"{field_name}.*.{ext}"))
+        if paths:
+            fields[field_name] = [str(p) for p in paths]
+
+    shar = LazyIndexedSharIterator(fields=fields)
+    shar_cuts = list(shar)
+    assert len(shar_cuts) == 20
+
+    # Verify origin type and roundtrip reload for a few indices.
+    for idx in [0, 5, 19]:
+        c = shar_cuts[idx]
+        assert c._origin[0] == "lhotse_shar_fields"
+        reloaded = reload_from_origin(c._origin)
+        assert reloaded.id == c.id
+        # Verify field data was reloaded (recording should have audio data attached).
+        assert hasattr(reloaded, "recording") and reloaded.recording is not None
+
+
+def test_indexed_shar_getitem_out_of_range(tmp_path, cuts):
+    """__getitem__ with out-of-range index raises IndexError."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    shar_iter = LazyIndexedSharIterator(in_dir=tmp_path)
+
+    with pytest.raises(IndexError):
+        shar_iter[20]
+
+    with pytest.raises(IndexError):
+        shar_iter[-21]

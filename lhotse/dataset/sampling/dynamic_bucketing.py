@@ -209,6 +209,15 @@ class DynamicBucketingSampler(CutSampler):
                 "quadratic_duration": self.quadratic_duration,
             }
         )
+        # Capture bucketer state for O(1) indexed restore
+        bucketer = getattr(self, "_bucketer", None)
+        if bucketer is not None and self.rng is not None:
+            try:
+                bucketer_state = bucketer.get_state()
+                sd["rng_state"] = self.rng.getstate()
+                sd["bucketer_state"] = bucketer_state
+            except (AttributeError, TypeError):
+                pass  # Fall back to O(N) on load
         return sd
 
     def load_state_dict(self, sd: Dict[str, Any]) -> None:
@@ -223,6 +232,9 @@ class DynamicBucketingSampler(CutSampler):
             self.buffer_size += shuffle_buffer_size
         self.quadratic_duration = sd.pop("quadratic_duration", None)
         sd.pop("strict", None)  # backward compatibility
+        # O(1) indexed restore keys (optional, consumed by _fast_forward)
+        self._rng_state = sd.pop("rng_state", None)
+        self._bucketer_state = sd.pop("bucketer_state", None)
         super().load_state_dict(sd)
         # Defer _fast_forward to __iter__ so the sampler remains picklable
         # for DataLoader with num_workers > 0.
@@ -239,25 +251,64 @@ class DynamicBucketingSampler(CutSampler):
             epoch=current_epoch
         )
 
-        self._just_restored_state = False
-        iter(self)
+        is_indexed = all(
+            getattr(cs, "is_indexed", False)
+            for cs in self.cuts
+            if isinstance(cs, CutSet)
+        )
 
-        # If we have indexed iterator state from the enhanced state_dict,
-        # restore it in O(1) instead of O(N) fast-forwarding.
         cuts_state = getattr(self, "_cuts_state", None)
-        if cuts_state is not None:
-            try:
-                from lhotse.checkpoint import restore_state_dict
+        rng_state = getattr(self, "_rng_state", None)
+        bucketer_state = getattr(self, "_bucketer_state", None)
 
-                for cs_iter, cs_state in zip(self.cuts_iter, cuts_state):
-                    restore_state_dict(cs_iter, cs_state)
+        # O(1) indexed path: restore source iterators + bucketer buffer from origins
+        if (
+            cuts_state is not None
+            and rng_state is not None
+            and bucketer_state is not None
+        ):
+            try:
+                from lhotse.checkpoint import _rng_state_from_json, restore_state_dict
+
+                # 1. Restore the sampler's main RNG
+                self.rng = random.Random()
+                self.rng.setstate(_rng_state_from_json(rng_state))
+
+                # 2. Restore source CutSet states
+                for cs, cs_state in zip(self.cuts, cuts_state):
+                    if isinstance(cs, CutSet):
+                        cs.load_state_dict(cs_state)
+
+                # 3. Call iter(self) to create fresh iterators from restored CutSets
+                self._just_restored_state = False
                 self._cuts_state = None
-                # Also restore transform RNG states since we skipped O(N) iteration.
+                self._rng_state = None
+                self._bucketer_state = None
+                iter(self)
+
+                # 4. Pass bucketer state — bucketer re-reads buffer from origins
+                self._bucketer.set_state(bucketer_state)
+
+                # 5. Restore transform RNG states
                 self._restore_transforms_state()
                 self._just_restored_state = True
                 return
-            except Exception:
-                pass  # Fall back to legacy O(N) fast-forward below
+            except Exception as e:
+                if is_indexed:
+                    raise RuntimeError(
+                        "O(1) indexed restore failed for indexed datasets. This is a bug — "
+                        "indexed datasets should never use O(N) fast-forward. "
+                        f"Error: {e}"
+                    ) from e
+                # Fall through to O(N) for non-indexed datasets
+
+        # Clean up any partial state
+        self._cuts_state = None
+        self._rng_state = None
+        self._bucketer_state = None
+
+        self._just_restored_state = False
+        iter(self)
 
         # O(N) fast-forward: transforms advance naturally via __next__.
         for _ in range(num_batches_to_iter):
@@ -301,7 +352,7 @@ class DynamicBucketingSampler(CutSampler):
             diagnostics=self.diagnostics,
         )
         # Convert Iterable[Cut] -> Iterable[CutSet]
-        cuts_iter = DynamicBucketer(
+        self._bucketer = DynamicBucketer(
             cuts_iter,
             duration_bins=self.duration_bins,
             world_size=self.world_size,
@@ -317,7 +368,7 @@ class DynamicBucketingSampler(CutSampler):
             concurrent=self.concurrent,
             diagnostics=self.diagnostics,
         )
-        self.cuts_iter = iter(cuts_iter)
+        self.cuts_iter = iter(self._bucketer)
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
@@ -602,29 +653,118 @@ class DynamicBucketer:
 
         self._producer_thread = None
         self._source_exhausted = False
+        self._saved_state = None
+        self._selection_state = None
+
+    # ------------------------------------------------------------------
+    # State save / restore for O(1) indexed checkpoint
+    # ------------------------------------------------------------------
+
+    def get_state(self) -> Dict[str, Any]:
+        """Capture bucketer state for checkpoint."""
+        bucket_origins: List[List] = []
+        for bucket in self.buckets:
+            origins = []
+            with bucket.mutex:
+                for item in bucket.queue:
+                    if isinstance(item, tuple):
+                        origins.append(
+                            {
+                                "_tuple": True,
+                                "origins": [list(getattr(c, "_origin")) for c in item],
+                            }
+                        )
+                    else:
+                        origins.append(
+                            {
+                                "_tuple": False,
+                                "origin": list(getattr(item, "_origin")),
+                            }
+                        )
+            bucket_origins.append(origins)
+
+        state = {
+            "bucket_origins": bucket_origins,
+            "rng_state": list(self.rng.getstate()),
+        }
+        if self._selection_state is not None:
+            state["selection_state"] = self._selection_state.save()
+        return state
+
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Store state to be consumed at the top of the next __iter__ call."""
+        self._saved_state = state
+
+    def _restore_from_saved_state(self) -> "BucketSelectionState":
+        """
+        Restore bucket contents and RNG from saved state.
+        Returns a BucketSelectionState ready for iteration.
+        """
+        from lhotse.checkpoint import _rng_state_from_json, reload_from_origin
+
+        state = self._saved_state
+        self._saved_state = None
+
+        # Restore RNG
+        rng_state = _rng_state_from_json(state["rng_state"])
+        self.rng.setstate(rng_state)
+
+        # Re-read cuts from origins and fill buckets
+        for bucket_idx, origins in enumerate(state["bucket_origins"]):
+            bucket = self.buckets[bucket_idx]
+            # Clear existing bucket contents
+            with bucket.mutex:
+                bucket.queue.clear()
+            for entry in origins:
+                if entry["_tuple"]:
+                    items = tuple(
+                        reload_from_origin(tuple(o)) for o in entry["origins"]
+                    )
+                    bucket.put(items)
+                else:
+                    item = reload_from_origin(tuple(entry["origin"]))
+                    bucket.put(item)
+
+        # Create and restore BucketSelectionState
+        selection_state = BucketSelectionState(
+            bucket_rng=self.bucket_rng,
+            num_buckets=len(self.buckets),
+            world_size=self.world_size,
+        )
+        if "selection_state" in state:
+            selection_state.restore(state["selection_state"])
+        return selection_state
+
+    # ------------------------------------------------------------------
 
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
 
-        if self.concurrent:
-            self._source_exhausted = False
-            self._start_data_producer_thread()
-            self._maybe_wait_for_producer()
+        # Check if we need to restore from a saved state (O(1) path)
+        if self._saved_state is not None:
+            state = self._restore_from_saved_state()
+            self._selection_state = state
         else:
-            self._collect_cuts_in_buckets(self.buffer_size)
+            if self.concurrent:
+                self._source_exhausted = False
+                self._start_data_producer_thread()
+                self._maybe_wait_for_producer()
+            else:
+                self._collect_cuts_in_buckets(self.buffer_size)
 
-        state = BucketSelectionState(
-            bucket_rng=self.bucket_rng,
-            num_buckets=len(self.buckets),
-            world_size=self.world_size,
-        )
+            state = BucketSelectionState(
+                bucket_rng=self.bucket_rng,
+                num_buckets=len(self.buckets),
+                world_size=self.world_size,
+            )
+            self._selection_state = state
 
         # The iteration code starts here.
         # On each step we're sampling a new batch.
         try:
             while True:
-                sampling_bucket = self._select_bucket(state)
+                sampling_bucket = self._select_bucket(self._selection_state)
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
                 indexes_used = []

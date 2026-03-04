@@ -285,7 +285,10 @@ class CutSet(Serializable, AlgorithmMixin):
 
     @staticmethod
     def from_files(
-        paths: List[Pathlike], shuffle_iters: bool = True, seed: Optional[int] = None
+        paths: List[Pathlike],
+        shuffle_iters: bool = True,
+        seed: Optional[int] = None,
+        indexed: Optional[bool] = None,
     ) -> "CutSet":
         """
         Constructor that creates a single CutSet out of many manifest files.
@@ -295,17 +298,43 @@ class CutSet(Serializable, AlgorithmMixin):
         This is intended primarily for large datasets which are split into many small manifests,
         to ensure that the order in which data is seen during training can be properly randomized.
 
+        When ``shuffle_iters=True`` and all files are indexed (i.e. backed by
+        O(1) random-access readers), the shuffling is automatically upgraded
+        from shard-level to item-level: a Feistel-cipher permutation over the
+        combined index range produces true cross-file-boundary shuffled
+        iteration.
+
         :param paths: a list of paths to cut manifests.
-        :param shuffle_iters: bool, should we shuffle `paths` each time we iterate the returned
-            CutSet (enabled by default).
+        :param shuffle_iters: bool, should we shuffle each time we iterate the
+            returned CutSet (enabled by default).  For non-indexed files this
+            shuffles the file order; for indexed files this shuffles globally
+            across file boundaries.
         :param seed: int, random seed controlling the shuffling RNG.
             By default, we'll use Python's global RNG so the order
             will be different on each script execution.
+        :param indexed: controls whether to use indexed random-access reading
+            for each JSONL file.  ``True`` forces indexed mode (requires
+            uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
+            ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
+            file already exists alongside each JSONL file.
         :return: a lazy CutSet instance.
         """
+        from lhotse.indexing import index_exists
+        from lhotse.lazy import LazyIndexedManifestIterator
+        from lhotse.serialization import extension_contains
+
+        def _make_iter(p):
+            if indexed is True:
+                return LazyIndexedManifestIterator(p)
+            elif indexed is None:
+                use_idx = not extension_contains(".gz", p) and index_exists(p)
+                if use_idx:
+                    return LazyIndexedManifestIterator(p)
+            return LazyManifestIterator(p)
+
         return CutSet(
             LazyIteratorChain(
-                *(LazyManifestIterator(p) for p in paths),
+                *(_make_iter(p) for p in paths),
                 shuffle_iters=shuffle_iters,
                 seed=seed,
             )
@@ -434,6 +463,7 @@ class CutSet(Serializable, AlgorithmMixin):
         seed: Union[int, Literal["randomized"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
         slice_length: Optional[int] = None,
+        indexed: Optional[bool] = None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -543,10 +573,11 @@ class CutSet(Serializable, AlgorithmMixin):
             ``trng`` mode is mostly useful when the user has limited control over the training loop
             and may not be able to guarantee internal Shar epoch is being incremented, but needs
             randomness on each iteration (e.g. useful with PyTorch Lightning).
-        :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+        :param stateful_shuffle: bool, by default ``True``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
             Doesn't have any effect when ``shuffle_shards`` is ``False``.
+            Only applies to streaming mode (``indexed=False``).
         :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
             It's expected to have the same length as the number of shards, so each function
             corresponds to a specific shard.
@@ -555,11 +586,62 @@ class CutSet(Serializable, AlgorithmMixin):
             may improve sampling randomness for many-dataset-with-many-large-shards setups
             at the cost of efficiency. In this mode, we randomly select K to skip first K examples
             and read only ``slice_length`` examples from each shard, then move to the next one.
+        :param indexed: optional bool. If ``True``, uses
+            :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator` for O(1)
+            random access (requires uncompressed local cuts JSONL shards).
+            If ``False``, uses the streaming :class:`~lhotse.shar.readers.lazy.LazySharIterator`.
+            If ``None`` (default), auto-detects: uses indexed mode when all cuts JSONL
+            shards are uncompressed local files with existing ``.idx`` indexes.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
+            :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
-        from lhotse.shar import LazySharIterator
+        from lhotse.shar.readers.indexed import LazyIndexedSharIterator
+        from lhotse.shar.readers.lazy import LazySharIterator, _is_local_uncompressed
+
+        use_indexed = indexed
+
+        if use_indexed is None:
+            # Auto-detect: use indexed when all cuts JSONL shards are
+            # uncompressed local files with existing .idx indexes.
+            from lhotse.indexing import index_exists
+            from lhotse.shar.readers.lazy import _discover_fields
+
+            if in_dir is not None:
+                _, streams = _discover_fields(Path(in_dir))
+                cuts_paths = streams["cuts"]
+            elif fields is not None:
+                cuts_paths = fields.get("cuts", [])
+            else:
+                cuts_paths = []
+
+            use_indexed = len(cuts_paths) > 0 and all(
+                _is_local_uncompressed(p) and index_exists(p) for p in cuts_paths
+            )
+
+        if use_indexed:
+            # Validate that streaming-only params are not set.
+            _streaming_params = {
+                "cut_map_fns": cut_map_fns,
+                "slice_length": slice_length,
+            }
+            for name, val in _streaming_params.items():
+                if val:
+                    raise ValueError(
+                        f"'{name}' is not supported with indexed=True. "
+                        f"Use indexed=False for streaming mode."
+                    )
+
+            return CutSet(
+                cuts=LazyIndexedSharIterator(
+                    fields=fields,
+                    in_dir=in_dir,
+                    shuffle=shuffle_shards,
+                    seed=seed,
+                    split_for_dataloading=split_for_dataloading,
+                )
+            )
 
         return CutSet(
             cuts=LazySharIterator(
@@ -2707,6 +2789,14 @@ class CutSet(Serializable, AlgorithmMixin):
                 **dataset_kwargs,
             )
         )
+
+    @property
+    def is_indexed(self) -> bool:
+        """
+        Return ``True`` when the underlying iterator attaches ``_origin``
+        metadata to each yielded item, enabling O(1) checkpoint restore.
+        """
+        return getattr(self.data, "is_indexed", False)
 
     @property
     def has_constant_time_access(self) -> bool:
