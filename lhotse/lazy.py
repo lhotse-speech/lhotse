@@ -325,8 +325,9 @@ class LazyJsonlIterator(StatefulIterator):
     to the saved position in O(1).  Otherwise a sequential fast-forward is used.
     """
 
-    def __init__(self, path: Pathlike) -> None:
+    def __init__(self, path: Pathlike, index_path: Optional[Pathlike] = None) -> None:
         self.path = path
+        self.index_path = index_path
         self._len = None
         self._position = 0
         self._restored = False
@@ -337,8 +338,8 @@ class LazyJsonlIterator(StatefulIterator):
         start = self._position if self._restored else 0
         self._restored = False
         self._position = start
-        if index_exists(self.path):
-            reader = IndexedJsonlReader(self.path)
+        if index_exists(self.path, index_path=self.index_path):
+            reader = IndexedJsonlReader(self.path, index_path=self.index_path)
             for i in range(start, len(reader)):
                 self._position = i + 1
                 yield reader[i]
@@ -425,13 +426,15 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
         path: Pathlike,
         shuffle: bool = False,
         seed: int = 0,
+        index_path: Optional[Pathlike] = None,
     ) -> None:
         from lhotse.indexing import IndexedJsonlReader, LazyShuffledRange
 
         self.path = path
         self.shuffle = shuffle
         self.seed = seed
-        self._reader = IndexedJsonlReader(path)
+        self.index_path = index_path
+        self._reader = IndexedJsonlReader(path, index_path=index_path)
         self._range = (
             LazyShuffledRange(len(self._reader), seed=seed) if shuffle else None
         )
@@ -461,19 +464,20 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
         self._position = start
 
         path_str = str(self.path)
+        ip_str = str(self.index_path) if self.index_path is not None else None
         n = len(self._reader)
         if self._range is not None:
             for i in range(start, n):
                 self._position = i + 1
                 phys_idx = self._range[i]
                 item = deserialize_item(self._reader[phys_idx])
-                item._origin = ("lhotse", path_str, phys_idx)
+                item._origin = ("lhotse", path_str, phys_idx, ip_str)
                 yield item
         else:
             for i in range(start, n):
                 self._position = i + 1
                 item = deserialize_item(self._reader[i])
-                item._origin = ("lhotse", path_str, i)
+                item._origin = ("lhotse", path_str, i, ip_str)
                 yield item
 
     def __len__(self) -> int:

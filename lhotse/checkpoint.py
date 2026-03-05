@@ -52,27 +52,27 @@ def register_origin_loader(
 
 def reload_from_origin(origin) -> Any:
     """Re-read a single item from its origin coordinates."""
-    type_, path, idx = origin
+    type_, *rest = origin
     if type_ not in _ORIGIN_LOADERS:
         raise ValueError(
             f"Unknown origin type '{type_}'. Register a loader with "
             f"register_origin_loader('{type_}', fn)."
         )
-    return _ORIGIN_LOADERS[type_](path, idx)
+    return _ORIGIN_LOADERS[type_](*rest)
 
 
-def _load_lhotse_origin(path: str, idx: int):
+def _load_lhotse_origin(path: str, idx: int, index_path: Optional[str] = None):
     from lhotse.indexing import IndexedJsonlReader
     from lhotse.serialization import deserialize_item
 
-    reader = IndexedJsonlReader(path)
+    reader = IndexedJsonlReader(path, index_path=index_path)
     return deserialize_item(reader[idx])
 
 
-def _load_lhotse_shar_origin(path: str, idx: int):
+def _load_lhotse_shar_origin(path: str, idx: int, index_path: Optional[str] = None):
     from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 
-    reader = LazyIndexedSharIterator(in_dir=path)
+    reader = LazyIndexedSharIterator(in_dir=path, index_path=index_path)
     return reader[idx]
 
 
@@ -84,16 +84,25 @@ def _load_lhotse_shar_fields_origin(path_json: str, idx: int):
 
     shard_paths = json.loads(path_json)
 
-    cut = deserialize_item(IndexedJsonlReader(shard_paths["cuts"])[idx])
+    # Extract per-field index paths if present.
+    idx_paths = shard_paths.pop("_index", None)
+
+    cuts_ip = idx_paths.get("cuts") if idx_paths else None
+    cut = deserialize_item(
+        IndexedJsonlReader(shard_paths["cuts"], index_path=cuts_ip)[idx]
+    )
     for field, field_path in shard_paths.items():
         if field == "cuts":
             continue
+        field_ip = idx_paths.get(field) if idx_paths else None
         if extension_contains(".tar", field_path):
-            maybe_manifest, data_path = IndexedTarReader(field_path)[idx]
+            maybe_manifest, data_path = IndexedTarReader(
+                field_path, index_path=field_ip
+            )[idx]
             if maybe_manifest is not None:
                 setattr(cut, field, maybe_manifest)
         else:
-            item = IndexedJsonlReader(field_path)[idx]
+            item = IndexedJsonlReader(field_path, index_path=field_ip)[idx]
             if field in item:
                 setattr(cut, field, item[field])
     return cut

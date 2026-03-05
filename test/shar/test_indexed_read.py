@@ -760,3 +760,160 @@ def test_indexed_shar_getitem_out_of_range(tmp_path, cuts):
 
     with pytest.raises(IndexError):
         shar_iter[-21]
+
+
+# ---------------------------------------------------------------------------
+# Custom index_path support
+# ---------------------------------------------------------------------------
+
+
+def _write_shar_and_move_indexes(tmp_path, cuts, *, idx_dir_name="indexes"):
+    """
+    Write shar data, then move all .idx files from the data dir into
+    a separate index directory.  Returns ``(data_dir, idx_dir)``.
+    """
+    import shutil
+
+    data_dir = tmp_path / "data"
+    idx_dir = tmp_path / idx_dir_name
+    data_dir.mkdir(exist_ok=True)
+    idx_dir.mkdir(exist_ok=True)
+
+    writer = SharWriter(
+        data_dir,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    # Move all .idx files to the index directory.
+    for idx_file in sorted(data_dir.glob("*.idx")):
+        shutil.move(str(idx_file), str(idx_dir / idx_file.name))
+
+    # Verify conventional .idx files are gone.
+    assert list(data_dir.glob("*.idx")) == []
+    return data_dir, idx_dir
+
+
+def test_indexed_shar_in_dir_with_index_path_dir(tmp_path, cuts):
+    """Read shar with .idx files stored in a separate directory (in_dir mode)."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    shar = LazyIndexedSharIterator(in_dir=data_dir, index_path=idx_dir)
+    shar_cuts = list(shar)
+    assert len(shar_cuts) == 20
+
+    original_ids = sorted(c.id for c in cuts)
+    assert sorted(c.id for c in shar_cuts) == original_ids
+
+
+def test_indexed_shar_fields_with_index_path_dict(tmp_path, cuts):
+    """Read shar with .idx paths supplied via dict (fields mode)."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    # Build fields dict from the data directory.
+    cuts_jsonl = sorted(data_dir.glob("cuts.*.jsonl"))
+    fields = {"cuts": [str(p) for p in cuts_jsonl]}
+    index_dict = {"cuts": [str(idx_dir / (p.name + ".idx")) for p in cuts_jsonl]}
+    for field_name in ALL_FIELDS:
+        tar_paths = sorted(data_dir.glob(f"{field_name}.*.tar"))
+        if tar_paths:
+            fields[field_name] = [str(p) for p in tar_paths]
+            index_dict[field_name] = [
+                str(idx_dir / (p.name + ".idx")) for p in tar_paths
+            ]
+
+    shar = LazyIndexedSharIterator(fields=fields, index_path=index_dict)
+    shar_cuts = list(shar)
+    assert len(shar_cuts) == 20
+
+    original_ids = sorted(c.id for c in cuts)
+    assert sorted(c.id for c in shar_cuts) == original_ids
+
+
+def test_cutset_from_shar_in_dir_with_index_path(tmp_path, cuts):
+    """End-to-end: CutSet.from_shar(in_dir=..., index_path=...)."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    cs = CutSet.from_shar(in_dir=data_dir, index_path=idx_dir)
+    assert cs.is_indexed is True
+    shar_ids = sorted(c.id for c in cs)
+    assert shar_ids == sorted(c.id for c in cuts)
+
+
+def test_cutset_from_shar_fields_with_index_path(tmp_path, cuts):
+    """End-to-end: CutSet.from_shar(fields=..., index_path=...)."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    cuts_jsonl = sorted(data_dir.glob("cuts.*.jsonl"))
+    fields = {"cuts": [str(p) for p in cuts_jsonl]}
+    index_dict = {"cuts": [str(idx_dir / (p.name + ".idx")) for p in cuts_jsonl]}
+    for field_name in ALL_FIELDS:
+        tar_paths = sorted(data_dir.glob(f"{field_name}.*.tar"))
+        if tar_paths:
+            fields[field_name] = [str(p) for p in tar_paths]
+            index_dict[field_name] = [
+                str(idx_dir / (p.name + ".idx")) for p in tar_paths
+            ]
+
+    cs = CutSet.from_shar(fields=fields, index_path=index_dict)
+    assert cs.is_indexed is True
+    assert len(list(cs)) == 20
+
+
+def test_indexed_shar_index_path_missing_file_raises(tmp_path, cuts):
+    """Missing .idx in index dir triggers auto-create or error."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+    # Delete one .idx file to simulate a missing index.
+    idx_files = sorted(idx_dir.glob("cuts.*.idx"))
+    assert len(idx_files) > 0
+    idx_files[0].unlink()
+
+    # With auto_create=True (default), it should recreate the missing .idx
+    # at the custom location.
+    shar = LazyIndexedSharIterator(in_dir=data_dir, index_path=idx_dir)
+    assert len(shar) == 20
+
+
+def test_indexed_shar_index_path_dict_key_mismatch_raises(tmp_path, cuts):
+    """Dict key mismatch raises ValueError."""
+    data_dir, _ = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    cuts_jsonl = sorted(data_dir.glob("cuts.*.jsonl"))
+    fields = {"cuts": [str(p) for p in cuts_jsonl]}
+
+    with pytest.raises(ValueError, match="does not match any field"):
+        LazyIndexedSharIterator(
+            fields=fields,
+            index_path={"nonexistent_field": ["foo.idx"]},
+        )
+
+
+def test_indexed_shar_pickle_with_index_path(tmp_path, cuts):
+    """Pickling preserves index_path."""
+    import pickle
+
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    shar = LazyIndexedSharIterator(in_dir=data_dir, index_path=idx_dir)
+    _ = shar[0]  # populate caches
+
+    data = pickle.dumps(shar)
+    restored = pickle.loads(data)
+
+    assert len(restored) == 20
+    assert restored[0].id == shar[0].id
+    # Verify all items accessible after unpickling.
+    assert len(list(restored)) == 20
+
+
+def test_cutset_from_shar_index_path_with_indexed_false_raises(tmp_path, cuts):
+    """Setting index_path with indexed=False raises ValueError."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+
+    with pytest.raises(ValueError, match="contradictory"):
+        CutSet.from_shar(in_dir=data_dir, indexed=False, index_path=idx_dir)

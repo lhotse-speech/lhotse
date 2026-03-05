@@ -289,6 +289,7 @@ class CutSet(Serializable, AlgorithmMixin):
         shuffle_iters: bool = True,
         seed: Optional[int] = None,
         indexed: Optional[bool] = None,
+        index_path: Optional[List[Pathlike]] = None,
     ) -> "CutSet":
         """
         Constructor that creates a single CutSet out of many manifest files.
@@ -317,15 +318,26 @@ class CutSet(Serializable, AlgorithmMixin):
             uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
             ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
             file already exists alongside each JSONL file.
+        :param index_path: optional list of custom ``.idx`` file paths,
+            one per path in *paths*.  When an entry is not ``None`` and
+            ``indexed`` is ``None``, auto-detection resolves to ``True``
+            for that file.
         :return: a lazy CutSet instance.
         """
         from lhotse.indexing import index_exists
         from lhotse.lazy import LazyIndexedManifestIterator
         from lhotse.serialization import extension_contains
 
-        def _make_iter(p):
-            if indexed is True:
-                return LazyIndexedManifestIterator(p)
+        if index_path is not None and len(index_path) != len(paths):
+            raise ValueError(
+                f"index_path has {len(index_path)} entries but paths has "
+                f"{len(paths)} entries — they must match."
+            )
+
+        def _make_iter(i, p):
+            ip = index_path[i] if index_path is not None else None
+            if indexed is True or (indexed is None and ip is not None):
+                return LazyIndexedManifestIterator(p, index_path=ip)
             elif indexed is None:
                 use_idx = not extension_contains(".gz", p) and index_exists(p)
                 if use_idx:
@@ -334,7 +346,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
         return CutSet(
             LazyIteratorChain(
-                *(_make_iter(p) for p in paths),
+                *(_make_iter(i, p) for i, p in enumerate(paths)),
                 shuffle_iters=shuffle_iters,
                 seed=seed,
             )
@@ -464,6 +476,7 @@ class CutSet(Serializable, AlgorithmMixin):
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
         slice_length: Optional[int] = None,
         indexed: Optional[bool] = None,
+        index_path=None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -592,6 +605,11 @@ class CutSet(Serializable, AlgorithmMixin):
             If ``False``, uses the streaming :class:`~lhotse.shar.readers.lazy.LazySharIterator`.
             If ``None`` (default), auto-detects: uses indexed mode when all cuts JSONL
             shards are uncompressed local files with existing ``.idx`` indexes.
+        :param index_path: optional location of ``.idx`` files stored
+            separately from the data.  Accepts a directory path (when
+            ``in_dir`` is used) or a dict mapping field names to lists
+            of ``.idx`` paths (when ``fields`` is used).  When set and
+            ``indexed`` is ``None``, auto-detection resolves to ``True``.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
             :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator`,
@@ -602,23 +620,32 @@ class CutSet(Serializable, AlgorithmMixin):
 
         use_indexed = indexed
 
-        if use_indexed is None:
-            # Auto-detect: use indexed when all cuts JSONL shards are
-            # uncompressed local files with existing .idx indexes.
-            from lhotse.indexing import index_exists
-            from lhotse.shar.readers.lazy import _discover_fields
-
-            if in_dir is not None:
-                _, streams = _discover_fields(Path(in_dir))
-                cuts_paths = streams["cuts"]
-            elif fields is not None:
-                cuts_paths = fields.get("cuts", [])
-            else:
-                cuts_paths = []
-
-            use_indexed = len(cuts_paths) > 0 and all(
-                _is_local_uncompressed(p) and index_exists(p) for p in cuts_paths
+        if index_path is not None and indexed is False:
+            raise ValueError(
+                "index_path is set but indexed=False — this is contradictory. "
+                "Either set indexed=True (or None) or remove index_path."
             )
+
+        if use_indexed is None:
+            if index_path is not None:
+                use_indexed = True
+            else:
+                # Auto-detect: use indexed when all cuts JSONL shards are
+                # uncompressed local files with existing .idx indexes.
+                from lhotse.indexing import index_exists
+                from lhotse.shar.readers.lazy import _discover_fields
+
+                if in_dir is not None:
+                    _, streams = _discover_fields(Path(in_dir))
+                    cuts_paths = streams["cuts"]
+                elif fields is not None:
+                    cuts_paths = fields.get("cuts", [])
+                else:
+                    cuts_paths = []
+
+                use_indexed = len(cuts_paths) > 0 and all(
+                    _is_local_uncompressed(p) and index_exists(p) for p in cuts_paths
+                )
 
         if use_indexed:
             # Validate that streaming-only params are not set.
@@ -640,6 +667,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     shuffle=shuffle_shards,
                     seed=seed,
                     split_for_dataloading=split_for_dataloading,
+                    index_path=index_path,
                 )
             )
 

@@ -1,6 +1,6 @@
 import bisect
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from lhotse.cut import Cut
 from lhotse.lazy import Dillable, LazyIteratorChain, StatefulIterator, is_dill_enabled
@@ -39,6 +39,15 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
     :param split_for_dataloading: if ``True``, each PyTorch DataLoader
         worker (and DDP node) iterates a unique slice of the global
         index range, avoiding data duplication.
+    :param index_path: optional location of ``.idx`` files stored
+        separately from the data.  Accepted shapes:
+
+        * A directory path (when ``in_dir`` is used) — for each data file
+          ``in_dir/<name>``, the index is expected at
+          ``index_path/<name>.idx``.
+        * A dict (when ``fields`` is used) — keys must match ``fields``
+          keys, and each value is a list of ``.idx`` file paths
+          (one per shard, matching the order in ``fields``).
     """
 
     def __init__(
@@ -49,6 +58,7 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
         shuffle: bool = False,
         seed: int = 42,
         split_for_dataloading: bool = False,
+        index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
     ) -> None:
         assert exactly_one_not_null(
             fields, in_dir
@@ -84,6 +94,45 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
                     f"JSONL shards, but got: {cuts_path}"
                 )
 
+        # ----- Resolve index_path into per-shard per-field index paths -----
+        self._index_streams: Optional[Dict[str, List[Optional[Path]]]] = None
+        self._raw_index_path = index_path  # kept for pickling
+
+        if index_path is not None:
+            if in_dir is not None:
+                # index_path is a directory
+                idx_dir = Path(index_path)
+                self._index_streams = {}
+                for field_name in self.streams:
+                    per_shard = []
+                    for data_p in self.streams[field_name]:
+                        ip = idx_dir / (Path(data_p).name + ".idx")
+                        per_shard.append(ip)
+                    self._index_streams[field_name] = per_shard
+            else:
+                # index_path is a dict
+                if not isinstance(index_path, dict):
+                    raise TypeError(
+                        "When using 'fields' mode, 'index_path' must be a dict "
+                        f"mapping field names to lists of .idx paths, got {type(index_path)}."
+                    )
+                for key in index_path:
+                    if key not in self.streams and key != "cuts":
+                        raise ValueError(
+                            f"index_path key '{key}' does not match any field. "
+                            f"Expected keys from: {set(self.streams.keys())}"
+                        )
+                    n_idx = len(index_path[key])
+                    n_data = len(self.streams.get(key, self.streams.get("cuts", [])))
+                    if n_idx != n_data:
+                        raise ValueError(
+                            f"index_path['{key}'] has {n_idx} entries but "
+                            f"there are {n_data} data shards."
+                        )
+                self._index_streams = {
+                    k: [Path(p) for p in v] for k, v in index_path.items()
+                }
+
         self.shuffle = shuffle
         self.seed = seed
         self.split_for_dataloading = split_for_dataloading
@@ -92,8 +141,15 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
         # Build indexed readers for cuts JSONL shards and compute lengths.
         from lhotse.indexing import IndexedJsonlReader
 
+        cuts_idx_paths = (
+            self._index_streams.get("cuts") if self._index_streams else None
+        )
         self._cuts_readers: List[IndexedJsonlReader] = [
-            IndexedJsonlReader(p) for p in self.streams["cuts"]
+            IndexedJsonlReader(
+                p,
+                index_path=cuts_idx_paths[i] if cuts_idx_paths else None,
+            )
+            for i, p in enumerate(self.streams["cuts"])
         ]
         self._shard_lens = [len(r) for r in self._cuts_readers]
 
@@ -149,10 +205,15 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
         readers = {}
         for field in self.fields:
             path = shard[field]
+            ip = (
+                self._index_streams[field][shard_idx]
+                if self._index_streams and field in self._index_streams
+                else None
+            )
             if extension_contains(".tar", path):
-                readers[field] = IndexedTarReader(path)
+                readers[field] = IndexedTarReader(path, index_path=ip)
             else:
-                readers[field] = IndexedJsonlReader(path)
+                readers[field] = IndexedJsonlReader(path, index_path=ip)
 
         self._indexed_readers[shard_idx] = readers
         return readers
@@ -189,14 +250,21 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
 
         # Attach origin for checkpoint reload.
         global_idx = idx if idx >= 0 else idx + self._total_len
+        ip_str = str(self._raw_index_path) if self._raw_index_path is not None else None
         if hasattr(self, "in_dir"):
-            cut._origin = ("lhotse_shar", str(self.in_dir), global_idx)
+            cut._origin = ("lhotse_shar", str(self.in_dir), global_idx, ip_str)
         else:
             # Encode the per-shard path mapping so the loader can
             # reconstruct indexed readers for this specific shard.
             import json
 
             shard_paths = {k: str(v) for k, v in self.shards[shard_idx].items()}
+            if self._index_streams is not None:
+                # Include per-field index paths for this shard under "_index".
+                idx_paths = {}
+                for f_name, f_paths in self._index_streams.items():
+                    idx_paths[f_name] = str(f_paths[shard_idx])
+                shard_paths["_index"] = idx_paths
             cut._origin = ("lhotse_shar_fields", json.dumps(shard_paths), pos)
 
         return cut
@@ -270,10 +338,19 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
             state = dill.loads(state)
         self.__dict__ = state
         self._indexed_readers = None
-        # Re-open cuts readers.
+        # Re-open cuts readers with index paths if available.
         from lhotse.indexing import IndexedJsonlReader
 
-        self._cuts_readers = [IndexedJsonlReader(p) for p in self.streams["cuts"]]
+        cuts_idx_paths = (
+            self._index_streams.get("cuts") if self._index_streams else None
+        )
+        self._cuts_readers = [
+            IndexedJsonlReader(
+                p,
+                index_path=cuts_idx_paths[i] if cuts_idx_paths else None,
+            )
+            for i, p in enumerate(self.streams["cuts"])
+        ]
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)

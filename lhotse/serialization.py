@@ -492,6 +492,7 @@ def load_manifest_lazy(
     indexed: Optional[bool] = None,
     shuffle: bool = False,
     seed: int = 0,
+    index_path: Optional[Pathlike] = None,
 ) -> Optional[Manifest]:
     """
     Generic utility for reading an arbitrary manifest from a JSONL file.
@@ -505,6 +506,7 @@ def load_manifest_lazy(
         (requires uncompressed ``.jsonl``).  Implies ``indexed=True``.
     :param seed: random seed for shuffled iteration (only used when
         ``shuffle=True``).
+    :param index_path: optional custom path to the ``.idx`` file.
     """
     assert extension_contains(".jsonl", path) or str(path) == "-"
     raw_data = iter(load_jsonl(path))
@@ -518,24 +520,31 @@ def load_manifest_lazy(
     if shuffle:
         from lhotse.lazy import LazyIndexedManifestIterator
 
-        return cls(LazyIndexedManifestIterator(path, shuffle=True, seed=seed))
+        return cls(
+            LazyIndexedManifestIterator(
+                path, shuffle=True, seed=seed, index_path=index_path
+            )
+        )
 
     if indexed is None:
-        # Auto-detect: use indexed mode if the .idx file already exists
-        from lhotse.indexing import index_exists
+        if index_path is not None:
+            use_indexed = True
+        else:
+            # Auto-detect: use indexed mode if the .idx file already exists
+            from lhotse.indexing import index_exists
 
-        use_indexed = (
-            str(path) != "-"
-            and not extension_contains(".gz", path)
-            and index_exists(path)
-        )
+            use_indexed = (
+                str(path) != "-"
+                and not extension_contains(".gz", path)
+                and index_exists(path)
+            )
     else:
         use_indexed = indexed
 
     if use_indexed:
         from lhotse.lazy import LazyIndexedManifestIterator
 
-        return cls(LazyIndexedManifestIterator(path))
+        return cls(LazyIndexedManifestIterator(path, index_path=index_path))
     return cls.from_jsonl_lazy(path)
 
 
@@ -545,6 +554,7 @@ def load_manifest_lazy_or_eager(
     indexed: Optional[bool] = None,
     shuffle: bool = False,
     seed: int = 0,
+    index_path: Optional[Pathlike] = None,
 ) -> Optional[Manifest]:
     """
     Generic utility for reading an arbitrary manifest.
@@ -553,9 +563,12 @@ def load_manifest_lazy_or_eager(
     :param indexed: passed through to :func:`load_manifest_lazy`.
     :param shuffle: passed through to :func:`load_manifest_lazy`.
     :param seed: passed through to :func:`load_manifest_lazy`.
+    :param index_path: passed through to :func:`load_manifest_lazy`.
     """
     if extension_contains(".jsonl", path) or str(path) == "-":
-        return load_manifest_lazy(path, indexed=indexed, shuffle=shuffle, seed=seed)
+        return load_manifest_lazy(
+            path, indexed=indexed, shuffle=shuffle, seed=seed, index_path=index_path
+        )
     else:
         return load_manifest(path, manifest_cls=manifest_cls)
 
@@ -608,6 +621,7 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
         indexed: Optional[bool] = None,
         shuffle: bool = False,
         seed: int = 0,
+        index_path: Optional[Pathlike] = None,
     ) -> Manifest:
         """
         Read a manifest from a file.
@@ -622,9 +636,17 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
             (requires uncompressed ``.jsonl``).  Implies ``indexed=True``.
         :param seed: random seed for shuffled iteration (only used when
             ``shuffle=True``).
+        :param index_path: optional path to the ``.idx`` file stored
+            separately from the data file.  When set and ``indexed`` is
+            ``None``, auto-detection resolves to ``True``.
         """
         return load_manifest_lazy_or_eager(
-            path, manifest_cls=cls, indexed=indexed, shuffle=shuffle, seed=seed
+            path,
+            manifest_cls=cls,
+            indexed=indexed,
+            shuffle=shuffle,
+            seed=seed,
+            index_path=index_path,
         )
 
     def to_file(self, path: Pathlike) -> None:

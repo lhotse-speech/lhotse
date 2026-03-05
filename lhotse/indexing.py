@@ -73,8 +73,15 @@ def index_file_path(data_path: Pathlike) -> Path:
     return Path(str(data_path) + ".idx")
 
 
-def index_exists(data_path: Pathlike) -> bool:
-    """Return ``True`` when a ``.idx`` file exists alongside *data_path*."""
+def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> bool:
+    """
+    Return ``True`` when a ``.idx`` file exists.
+
+    When *index_path* is given, check that path instead of the conventional
+    location next to *data_path*.
+    """
+    if index_path is not None:
+        return Path(index_path).is_file()
     return index_file_path(data_path).is_file()
 
 
@@ -110,14 +117,18 @@ def read_index(idx_path: Pathlike) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def create_jsonl_index(jsonl_path: Pathlike) -> Path:
+def create_jsonl_index(
+    jsonl_path: Pathlike, output_path: Optional[Pathlike] = None
+) -> Path:
     """
     Scan an **uncompressed** JSONL file and build a binary index.
 
     Each entry in the index is the byte-offset of the corresponding line's
     first character.  A final sentinel entry stores the file size.
 
-    Returns the path of the newly created ``.idx`` file.
+    :param output_path: if set, write the ``.idx`` file to this path
+        instead of the conventional location next to *jsonl_path*.
+    :returns: the path of the newly created ``.idx`` file.
     """
     jsonl_path = Path(jsonl_path)
     _assert_uncompressed(jsonl_path, "JSONL")
@@ -131,12 +142,16 @@ def create_jsonl_index(jsonl_path: Pathlike) -> Path:
             offsets.append(pos)
         offsets.append(f.tell())  # sentinel = file size
 
-    idx_path = index_file_path(jsonl_path)
+    idx_path = (
+        Path(output_path) if output_path is not None else index_file_path(jsonl_path)
+    )
     _write_index(offsets, idx_path)
     return idx_path
 
 
-def create_tar_index(tar_path: Pathlike) -> Path:
+def create_tar_index(
+    tar_path: Pathlike, output_path: Optional[Pathlike] = None
+) -> Path:
     """
     Scan an **uncompressed** tar archive and build a binary index.
 
@@ -147,7 +162,9 @@ def create_tar_index(tar_path: Pathlike) -> Path:
 
     A final sentinel entry stores the file size.
 
-    Returns the path of the newly created ``.idx`` file.
+    :param output_path: if set, write the ``.idx`` file to this path
+        instead of the conventional location next to *tar_path*.
+    :returns: the path of the newly created ``.idx`` file.
     """
     tar_path = Path(tar_path)
     _assert_uncompressed(tar_path, "tar")
@@ -166,25 +183,36 @@ def create_tar_index(tar_path: Pathlike) -> Path:
         offsets.append(members[i].offset)
     offsets.append(tar_path.stat().st_size)  # sentinel
 
-    idx_path = index_file_path(tar_path)
+    idx_path = (
+        Path(output_path) if output_path is not None else index_file_path(tar_path)
+    )
     _write_index(offsets, idx_path)
     return idx_path
 
 
-def create_shar_index(shar_dir: Pathlike) -> None:
+def create_shar_index(
+    shar_dir: Pathlike, output_dir: Optional[Pathlike] = None
+) -> None:
     """
     Create binary index files for **all** JSONL and tar files in a
     Shar directory.
 
     Compressed files (``.gz``) are silently skipped because they cannot
     be indexed.
+
+    :param output_dir: if set, write ``.idx`` files into this directory
+        (using the same filenames as the conventional location, but under
+        a different parent).
     """
     shar_dir = Path(shar_dir)
     for p in sorted(shar_dir.iterdir()):
+        out = None
+        if output_dir is not None:
+            out = Path(output_dir) / (p.name + ".idx")
         if p.suffix == ".jsonl":
-            create_jsonl_index(p)
+            create_jsonl_index(p, output_path=out)
         elif p.suffix == ".tar":
-            create_tar_index(p)
+            create_tar_index(p, output_path=out)
 
 
 # ---------------------------------------------------------------------------
@@ -346,15 +374,30 @@ class IndexedJsonlReader:
         If ``True`` (default), the ``.idx`` file will be created
         automatically when it is missing.  Set to ``False`` to raise
         :class:`FileNotFoundError` instead.
+    index_path : Pathlike, optional
+        Custom path to the ``.idx`` file.  When set, this path is used
+        instead of the conventional ``<path>.idx`` location.  Useful when
+        the data file lives on a remote object store but the index must
+        be on local disk.
     """
 
-    def __init__(self, path: Pathlike, auto_create_index: bool = True) -> None:
+    def __init__(
+        self,
+        path: Pathlike,
+        auto_create_index: bool = True,
+        index_path: Optional[Pathlike] = None,
+    ) -> None:
         self.path = Path(path)
+        self.index_path = Path(index_path) if index_path is not None else None
         self._fh: Optional[object] = None
-        idx_path = index_file_path(self.path)
+        idx_path = (
+            self.index_path
+            if self.index_path is not None
+            else index_file_path(self.path)
+        )
         if not idx_path.is_file():
             if auto_create_index:
-                create_jsonl_index(self.path)
+                create_jsonl_index(self.path, output_path=idx_path)
             else:
                 raise FileNotFoundError(
                     f"Index file not found: {idx_path}. "
@@ -437,15 +480,28 @@ class IndexedTarReader:
     auto_create_index : bool
         If ``True`` (default), the ``.idx`` file will be created when
         missing.
+    index_path : Pathlike, optional
+        Custom path to the ``.idx`` file.  When set, this path is used
+        instead of the conventional ``<path>.idx`` location.
     """
 
-    def __init__(self, path: Pathlike, auto_create_index: bool = True) -> None:
+    def __init__(
+        self,
+        path: Pathlike,
+        auto_create_index: bool = True,
+        index_path: Optional[Pathlike] = None,
+    ) -> None:
         self.path = Path(path)
+        self.index_path = Path(index_path) if index_path is not None else None
         self._fh: Optional[object] = None
-        idx_path = index_file_path(self.path)
+        idx_path = (
+            self.index_path
+            if self.index_path is not None
+            else index_file_path(self.path)
+        )
         if not idx_path.is_file():
             if auto_create_index:
-                create_tar_index(self.path)
+                create_tar_index(self.path, output_path=idx_path)
             else:
                 raise FileNotFoundError(
                     f"Index file not found: {idx_path}. "

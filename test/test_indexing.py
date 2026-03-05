@@ -823,3 +823,194 @@ def test_cutset_from_files_indexed_shuffle_checkpoint(tmp_path):
     remaining = [c.id for c in cs2]
 
     assert first_k + remaining == all_ids
+
+
+# ---------------------------------------------------------------------------
+# Custom index_path support
+# ---------------------------------------------------------------------------
+
+
+def test_index_exists_with_custom_path(tmp_path, jsonl_file):
+    """index_exists checks a custom path instead of the conventional one."""
+    p, _ = jsonl_file
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "custom.idx"
+    assert not index_exists(p, index_path=custom_idx)
+    create_jsonl_index(p, output_path=custom_idx)
+    assert index_exists(p, index_path=custom_idx)
+    # Conventional location should still be empty.
+    assert not index_file_path(p).is_file()
+
+
+def test_create_jsonl_index_output_path(tmp_path, jsonl_file):
+    """create_jsonl_index writes to output_path when given."""
+    p, records = jsonl_file
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "data.jsonl.idx"
+    result = create_jsonl_index(p, output_path=custom_idx)
+    assert result == custom_idx
+    assert custom_idx.is_file()
+    # Conventional location should not exist.
+    assert not index_file_path(p).is_file()
+    offsets = read_index(custom_idx)
+    assert len(offsets) == len(records) + 1
+
+
+def test_create_tar_index_output_path(tmp_path, tar_file):
+    """create_tar_index writes to output_path when given."""
+    p, samples = tar_file
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "data.tar.idx"
+    result = create_tar_index(p, output_path=custom_idx)
+    assert result == custom_idx
+    assert custom_idx.is_file()
+    assert not index_file_path(p).is_file()
+    offsets = read_index(custom_idx)
+    assert len(offsets) == len(samples) + 1
+
+
+def test_create_shar_index_output_dir(tmp_path, jsonl_file, tar_file):
+    """create_shar_index writes .idx files into output_dir."""
+    import shutil
+
+    shar_dir = tmp_path / "shar"
+    shar_dir.mkdir()
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+
+    jsonl_p, _ = jsonl_file
+    tar_p, _ = tar_file
+    shutil.copy(jsonl_p, shar_dir / "cuts.000000.jsonl")
+    shutil.copy(tar_p, shar_dir / "recording.000000.tar")
+
+    create_shar_index(shar_dir, output_dir=idx_dir)
+
+    assert (idx_dir / "cuts.000000.jsonl.idx").is_file()
+    assert (idx_dir / "recording.000000.tar.idx").is_file()
+    # Conventional location next to data should not exist.
+    assert not (shar_dir / "cuts.000000.jsonl.idx").is_file()
+    assert not (shar_dir / "recording.000000.tar.idx").is_file()
+
+
+def test_indexed_jsonl_reader_custom_index_path(tmp_path, jsonl_file):
+    """IndexedJsonlReader works with a separate .idx location."""
+    p, records = jsonl_file
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "data.jsonl.idx"
+    create_jsonl_index(p, output_path=custom_idx)
+
+    reader = IndexedJsonlReader(p, index_path=custom_idx)
+    assert len(reader) == len(records)
+    for i, expected in enumerate(records):
+        assert reader[i] == expected
+
+
+def test_indexed_tar_reader_custom_index_path(tmp_path, tar_file):
+    """IndexedTarReader works with a separate .idx location."""
+    p, samples = tar_file
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "data.tar.idx"
+    create_tar_index(p, output_path=custom_idx)
+
+    reader = IndexedTarReader(p, index_path=custom_idx)
+    assert len(reader) == len(samples)
+    for i in range(len(samples)):
+        manifest, data_path = reader[i]
+        assert str(data_path) == samples[i][0]
+
+
+def test_indexed_jsonl_reader_custom_index_path_missing_raises(tmp_path, jsonl_file):
+    """FileNotFoundError when custom index_path does not exist and auto_create is off."""
+    p, _ = jsonl_file
+    missing = tmp_path / "indexes" / "nope.idx"
+    with pytest.raises(FileNotFoundError):
+        IndexedJsonlReader(p, auto_create_index=False, index_path=missing)
+
+
+def test_indexed_jsonl_reader_custom_index_path_auto_create(tmp_path, jsonl_file):
+    """auto_create_index=True creates .idx at the custom index_path location."""
+    p, records = jsonl_file
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "data.jsonl.idx"
+
+    reader = IndexedJsonlReader(p, auto_create_index=True, index_path=custom_idx)
+    assert custom_idx.is_file()
+    assert len(reader) == len(records)
+    # Conventional location should not exist.
+    assert not index_file_path(p).is_file()
+
+
+def test_lazy_indexed_manifest_iterator_custom_index_path(tmp_path):
+    """End-to-end with LazyIndexedManifestIterator and custom index_path."""
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path)
+    original_ids = [c.id for c in original]
+
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "cuts.jsonl.idx"
+    create_jsonl_index(path, output_path=custom_idx)
+
+    it = LazyIndexedManifestIterator(path, index_path=custom_idx)
+    result_ids = [c.id for c in it]
+    assert result_ids == original_ids
+
+
+def test_cutset_from_file_with_index_path(tmp_path):
+    """CutSet.from_file with custom index_path."""
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.jsonl"
+    original = _write_cuts_jsonl(path, n=10)
+    original_ids = [c.id for c in original]
+
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    custom_idx = idx_dir / "cuts.jsonl.idx"
+    create_jsonl_index(path, output_path=custom_idx)
+
+    cs = CutSet.from_file(path, index_path=custom_idx)
+    assert cs.is_lazy
+    assert cs.has_constant_time_access is True
+    result_ids = [c.id for c in cs]
+    assert result_ids == original_ids
+
+
+def test_cutset_from_files_with_index_path(tmp_path):
+    """CutSet.from_files with a list of custom indexes."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=10)
+    _write_cuts_jsonl(p2, n=10)
+
+    idx_dir = tmp_path / "indexes"
+    idx_dir.mkdir()
+    ip1 = idx_dir / "cuts1.jsonl.idx"
+    ip2 = idx_dir / "cuts2.jsonl.idx"
+    create_jsonl_index(p1, output_path=ip1)
+    create_jsonl_index(p2, output_path=ip2)
+
+    cs = CutSet.from_files([p1, p2], shuffle_iters=False, index_path=[ip1, ip2])
+    assert cs.has_constant_time_access is True
+    assert len(list(cs)) == 20
+
+
+def test_cutset_from_files_index_path_length_mismatch_raises(tmp_path):
+    """ValueError when index_path list length doesn't match paths."""
+    from lhotse import CutSet
+
+    p1 = tmp_path / "cuts1.jsonl"
+    _write_cuts_jsonl(p1, n=5)
+
+    with pytest.raises(ValueError, match="index_path has"):
+        CutSet.from_files([p1], index_path=["a.idx", "b.idx"])
