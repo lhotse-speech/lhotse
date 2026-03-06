@@ -1,0 +1,298 @@
+Indexed Manifests and IteratorNodes
+===================================
+
+Indexed manifests are the foundation for exact O(1) restore of Lhotse's
+dataloading pipeline. This page explains what they are, how they compose through
+lazy iterator graphs, how checkpointing uses them, and what contract new
+``IteratorNode`` implementations must satisfy.
+
+What an indexed manifest is
+---------------------------
+
+An indexed manifest is a lazy manifest backed by an auxiliary binary ``.idx``
+file that lets Lhotse jump directly to a specific example instead of scanning
+from the beginning.
+
+Typical examples are:
+
+* an uncompressed ``.jsonl`` manifest with ``cuts.jsonl.idx``
+* an uncompressed Shar manifest shard such as ``cuts.000000.jsonl`` together
+  with ``cuts.000000.jsonl.idx``
+* an uncompressed tar shard together with ``recording.000000.tar.idx``
+
+When the underlying data is indexed, Lhotse can reconstruct a buffered example
+directly during checkpoint restore rather than replaying earlier batches.
+
+Creating indexes
+----------------
+
+For standalone manifests:
+
+.. code-block:: bash
+
+   lhotse index jsonl /path/to/cuts.jsonl
+   lhotse index tar /path/to/recording.tar
+
+For Shar:
+
+.. code-block:: bash
+
+   lhotse index shar /path/to/shar_dir/
+
+When writing Shar from Python, keep the cuts manifest uncompressed and enable
+index creation:
+
+.. code-block:: python
+
+   from lhotse.shar import SharWriter
+
+   writer = SharWriter(
+       "data/",
+       fields={"recording": "wav"},
+       shard_size=1000,
+       compress_jsonl=False,
+       create_index=True,
+   )
+
+.. note::
+
+   Indexed access requires **uncompressed local files**. ``.jsonl.gz`` and
+   remote streams are valid for sequential streaming, but they do not provide
+   constant-time reconstruction.
+
+Reading indexed data
+--------------------
+
+Use ``indexed=True`` when reading plain manifests:
+
+.. code-block:: python
+
+   from lhotse import CutSet
+
+   cuts = CutSet.from_file("cuts.jsonl", indexed=True)
+
+For Shar:
+
+.. code-block:: python
+
+   cuts = CutSet.from_shar(in_dir="data/", indexed=True)
+
+``CutSet.from_shar(..., indexed=None)`` will auto-detect indexed mode when all
+cuts shards are uncompressed local files with indexes available.
+
+How iterator composition works
+------------------------------
+
+Lhotse builds a lazy iterator graph underneath ``CutSet``. The concrete nodes
+in that graph are subclasses of :class:`lhotse.lazy.IteratorNode`.
+
+Examples:
+
+* ``CutSet.from_file(..., indexed=True)`` creates a
+  :class:`lhotse.lazy.LazyIndexedManifestIterator`
+* ``cuts.filter(...)`` wraps the current iterator with
+  :class:`lhotse.lazy.LazyFilter`
+* ``cuts.map(...)`` wraps it with :class:`lhotse.lazy.LazyMapper`
+* ``CutSet.mux(a, b)`` creates :class:`lhotse.lazy.LazyIteratorMultiplexer`
+* ``cuts.mix(...)`` creates :class:`lhotse.cut.set.LazyCutMixer`
+
+``CutSet`` itself is just a manifest wrapper. Graph-building code should work on
+the underlying iterator stored in ``CutSet.data``. The helper
+``resolve_iterator_source()`` does exactly that.
+
+Three important capabilities
+----------------------------
+
+Every ``IteratorNode`` exposes three related but distinct properties:
+
+* ``is_checkpointable``: the node can save and restore its internal iteration
+  state.
+* ``is_indexed``: the node is backed by indexed data.
+* ``has_constant_time_access``: the node can reconstruct a specific output item
+  directly through ``__getitem__``.
+
+``has_constant_time_access`` is the crucial property for exact O(1) restore.
+It does **not** mean the node has a dense integer index. It only means the node
+can take a restore token and rebuild the matching output item directly.
+
+For example:
+
+* a plain indexed manifest may use integer tokens such as ``17``
+* a multiplexer may use ``(source_idx, child_token)``
+* a repeater may use ``(repeat_idx, child_token)``
+* an indexed Shar iterator may use ``(global_idx, shar_epoch)``
+
+Checkpointing: origin vs graph token
+------------------------------------
+
+Lhotse uses two kinds of restore metadata:
+
+* ``_origin``: a base-data coordinate such as ``("lhotse", path, idx, ...)``
+* ``_graph_origin``: a graph-local token that tells the current iterator graph
+  how to rebuild the exact output item
+
+The preferred path for indexed restore is ``_graph_origin``:
+
+1. the sampler saves a token for every buffered item
+2. on restore it calls ``source[token]``
+3. each iterator node consumes its part of the token and delegates the rest to
+   its child
+4. the graph reconstructs the same output item without replay
+
+``_origin`` is still useful as a base fallback for nodes that can reload a raw
+example from disk, but it does not encode graph transforms by itself.
+
+Why this enables O(1) restore
+-----------------------------
+
+Replay-based restore starts from the beginning and skips already-consumed data.
+For large blends that is expensive.
+
+Graph-token restore avoids replay:
+
+* the sampler restores its own RNG and buffer state
+* buffered items are rebuilt from their saved tokens
+* iterator nodes restore their internal cursor/RNG state
+* iteration continues from the next batch
+
+For indexed datasets, Lhotse treats this as a strict contract: if exact indexed
+restore fails, it raises an error instead of silently falling back to replay.
+
+Worker-process restore
+----------------------
+
+With ``torchdata.stateful_dataloader.StatefulDataLoader``, each worker process
+stores its own iterator graph state. Indexed restore works in workers for the
+same reason it works in the main process: workers also rebuild buffered items
+from graph tokens rather than replaying from the start.
+
+Implementing a new IteratorNode
+-------------------------------
+
+Start with this checklist.
+
+1. Derive from :class:`lhotse.lazy.IteratorNode`.
+2. Store children in ``self.source`` or ``self.sources``.
+3. Call ``resolve_iterator_source()`` in ``__init__`` so ``CutSet`` wrappers do
+   not leak into the graph.
+4. Set ``is_checkpointable`` correctly.
+5. If the node supports exact reconstruction, implement ``__getitem__`` and
+   ``has_constant_time_access``.
+6. Propagate graph tokens through iteration and reconstruction.
+7. If the node has mutable iteration state, implement ``state_dict()`` and
+   ``load_state_dict()``.
+
+Minimal stateless transform node
+--------------------------------
+
+This is the simplest useful pattern for a transform that preserves exact O(1)
+restore when its source supports it:
+
+.. code-block:: python
+
+   from lhotse.lazy import (
+       IteratorNode,
+       attach_graph_origin,
+       get_graph_origin,
+       maybe_attach_graph_origin,
+       normalize_graph_token,
+       resolve_iterator_source,
+       supports_graph_restore,
+   )
+
+
+   class MyTransform(IteratorNode):
+       is_checkpointable = True
+
+       def __init__(self, source):
+           self.source = resolve_iterator_source(source)
+
+       @property
+       def is_indexed(self):
+           return getattr(self.source, "is_indexed", False)
+
+       @property
+       def has_constant_time_access(self):
+           return supports_graph_restore(self.source)
+
+       def __getitem__(self, token):
+           token = normalize_graph_token(token)
+           item = self.source[token]
+           item = transform(item)
+           return attach_graph_origin(item, token)
+
+       def __iter__(self):
+           for item in self.source:
+               yield maybe_attach_graph_origin(transform(item), get_graph_origin(item))
+
+       def state_dict(self):
+           return {}
+
+       def load_state_dict(self, state):
+           pass
+
+Stateful node with RNG or cursor state
+--------------------------------------
+
+If the node has its own position, RNG state, or per-epoch behavior, that state
+must be part of the checkpoint. Typical examples are:
+
+* multiplexer choice RNG
+* iterator position within a shard
+* current repeat epoch
+* per-iteration seed used to derive deterministic item-level randomness
+
+State restoration must satisfy this rule:
+
+    after ``load_state_dict()``, the node must yield the same remaining outputs
+    as an uninterrupted run
+
+When a node also supports exact reconstruction, its token must contain all
+information needed to rebuild the exact output. Indexed Shar is a good example:
+the token includes both the global item index and the Shar epoch metadata that
+was attached when the item was first produced.
+
+When a node should not support exact restore
+--------------------------------------------
+
+Some iterator shapes are intentionally not checkpointable or not exact:
+
+* shuffle buffers that do not cheaply expose their buffered state
+* infinite approximate multiplexers
+* flatteners that can stop in the middle of an inner iterable without a stable
+  per-item coordinate
+
+For these nodes:
+
+* keep ``is_checkpointable = False`` when exact restoration is not implementable
+* do not claim ``has_constant_time_access = True``
+* prefer an explicit exception over an implicit fallback
+
+Runtime metadata rules
+----------------------
+
+Checkpoint metadata such as ``_origin`` and ``_graph_origin`` is runtime-only.
+Do not attach it through normal custom fields on cuts, because that would
+serialize it into manifests.
+
+Use:
+
+* ``attach_origin(...)``
+* ``attach_graph_origin(...)``
+
+These helpers bypass cut serialization hooks and keep checkpoint metadata
+process-local.
+
+Testing new IteratorNodes
+-------------------------
+
+A new node should have tests for:
+
+* uninterrupted iteration vs checkpoint/restore equality
+* main-process restore
+* worker-process restore when supported
+* graph-token propagation if it wraps another indexed node
+* failure behavior when reconstruction is impossible
+
+The checkpoint matrix in ``test/test_iterator_node_e2e_checkpoint.py`` is the
+main coverage gate for production ``IteratorNode`` subclasses.

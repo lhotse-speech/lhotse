@@ -300,7 +300,11 @@ def _all_iterator_node_names():
             continue
         seen.add(cls)
         queue.extend(cls.__subclasses__())
-    return {cls.__name__ for cls in seen}
+    return {
+        cls.__name__
+        for cls in seen
+        if not cls.__name__.startswith("_") and not cls.__module__.startswith("test.")
+    }
 
 
 def _strip_runtime_fields(value):

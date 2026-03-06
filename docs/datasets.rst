@@ -125,39 +125,34 @@ Lhotse supports O(1) checkpoint/restore of the entire dataloading pipeline when
 binary index files are available. This eliminates the slow ``_fast_forward()``
 re-iteration on training resumption.
 
-**Motivation.** The legacy approach re-iterates from the start to skip already-seen
-batches. For large datasets with millions of samples, this can take minutes or hours.
-With binary index files, each lazy iterator tracks its position and can seek directly
-to the right offset on restore.
+Indexed checkpointing relies on iterator nodes that can reconstruct their own
+outputs directly from graph-local restore tokens. This is what makes exact
+worker-process restore possible without replaying earlier batches.
 
-Setting up indexed data
-***********************
+For the full guide, see :doc:`indexed-manifests`.
 
-Use :class:`~lhotse.shar.writers.shar.SharWriter` with ``compress_jsonl=False`` and
-``create_index=True`` (the latter is enabled by default):
+Quick start
+***********
 
-.. code-block::
+Plain manifests:
 
-    from lhotse.shar import SharWriter
+.. code-block:: python
 
-    writer = SharWriter(
-        "data/",
-        fields={"recording": "wav"},
-        shard_size=1000,
-        compress_jsonl=False,   # uncompressed JSONL for indexing
-        create_index=True,      # auto-creates .idx files (default)
-    )
-    with writer:
-        for cut in cuts:
-            writer.write(cut)
+    cuts = CutSet.from_file("cuts.jsonl", indexed=True)
 
-You can also create indexes for existing uncompressed data using the CLI:
+Shar:
+
+.. code-block:: python
+
+    cuts = CutSet.from_shar(in_dir="data/", indexed=True)
+
+Create indexes for existing data with:
 
 .. code-block:: bash
 
-    lhotse index shar /path/to/shar_dir/    # creates .idx for all files
-    lhotse index jsonl /path/to/cuts.jsonl   # single JSONL file
-    lhotse index tar /path/to/recording.tar  # single tar archive
+    lhotse index jsonl /path/to/cuts.jsonl
+    lhotse index tar /path/to/recording.tar
+    lhotse index shar /path/to/shar_dir/
 
 Using StatefulDataLoader for checkpointing
 ******************************************
@@ -209,107 +204,17 @@ Requirements and limitations
 ****************************
 
 * Requires ``torchdata`` package (``pip install torchdata``) for
-  ``StatefulDataLoader``. Without it, use the legacy sampler-level checkpoint
-  approach described above.
-* Index files require **uncompressed** data files (``.jsonl`` not ``.jsonl.gz``,
-  ``.tar`` not ``.tar.gz``).
+  ``StatefulDataLoader``.
+* Exact indexed restore requires **uncompressed** data files.
 * ``num_workers`` and ``world_size`` must match between save and restore.
-* Existing gzipped Shar data continues to work in sequential mode (no indexing,
-  uses legacy ``_fast_forward`` on resume).
+* Non-indexed pipelines still use replay-based restore.
 
+Implementing custom iterators
+*****************************
 
-Writing iterators and transforms for resumability
--------------------------------------------------
-
-If you are extending Lhotse with custom lazy iterators or batch transforms, follow
-the patterns below so that your components participate in checkpoint/restore.
-
-Stateful iterators
-******************
-
-Every lazy iterator in the dataloading graph should inherit from
-:class:`~lhotse.lazy.StatefulIterator` and implement two methods:
-
-.. code-block:: python
-
-    from lhotse.lazy import StatefulIterator
-
-    class MyCustomIterator(StatefulIterator):
-        """
-        Example custom iterator that wraps a single child iterator.
-
-        The key contract: after ``load_state_dict``, the iterator must
-        produce the exact same remaining items as if it had been iterated
-        from scratch to the saved position.
-        """
-
-        def __init__(self, source):
-            # Use ``self.source`` for a single child, ``self.sources`` for
-            # a list of children — the graph traversal in
-            # ``lhotse.checkpoint`` relies on these attribute names.
-            self.source = source
-            self._position = 0
-
-        def __iter__(self):
-            self._position = 0
-            self.source = iter(self.source)
-            return self
-
-        def __next__(self):
-            item = next(self.source)
-            self._position += 1
-            return item
-
-        def state_dict(self) -> dict:
-            return {"position": self._position}
-
-        def load_state_dict(self, sd: dict) -> None:
-            self._position = sd["position"]
-            # Mark that state has been restored; ``__iter__`` should check
-            # a ``_restored`` flag and skip resetting state in that case.
-
-The naming convention for child attributes is:
-
-* ``self.source`` — a single child iterator
-* ``self.sources`` — a list of child iterators
-
-:func:`lhotse.checkpoint.collect_state_dict` and
-:func:`lhotse.checkpoint.restore_state_dict` use these attributes to walk
-the iterator graph recursively.
-
-If your iterator has RNG state (e.g. for shuffling), save and restore it:
-
-.. code-block:: python
-
-    import random
-
-    class MyShufflingIterator(StatefulIterator):
-        def __init__(self, source, seed=0):
-            self.source = source
-            self._rng = random.Random(seed)
-
-        def state_dict(self) -> dict:
-            return {
-                "position": self._position,
-                "rng_state": self._rng.getstate(),
-            }
-
-        def load_state_dict(self, sd: dict) -> None:
-            self._position = sd["position"]
-            rng_state = sd["rng_state"]
-            # Handle both tuple (pickle) and list (JSON) formats
-            if isinstance(rng_state, list):
-                rng_state = (rng_state[0], tuple(rng_state[1]), rng_state[2])
-            self._rng.setstate(rng_state)
-
-.. note::
-
-    If your iterator **cannot** be checkpointed without data loss (e.g. it
-    maintains an internal buffer that would be impossible to reconstruct),
-    do **not** inherit from ``StatefulIterator``. Instead, define
-    ``state_dict()`` and ``load_state_dict()`` that raise
-    ``NotImplementedError`` with a clear message.  The graph traversal will
-    surface the error rather than silently skipping the node.
+Custom lazy iterators should derive from :class:`~lhotse.lazy.IteratorNode`.
+The complete implementation guide, including how graph tokens work and how to
+propagate them through composed transforms, lives in :doc:`indexed-manifests`.
 
 Stateful batch transforms
 *************************

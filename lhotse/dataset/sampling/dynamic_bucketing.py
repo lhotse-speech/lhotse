@@ -36,7 +36,11 @@ from lhotse.dataset.sampling.checkpoint_backends import (
     build_dynamic_bucketing_checkpoint_backend,
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
-from lhotse.lazy import resolve_iterator_source
+from lhotse.lazy import (
+    get_graph_origin,
+    resolve_iterator_source,
+    supports_graph_restore,
+)
 from lhotse.utils import ifnone
 
 
@@ -631,15 +635,11 @@ class DynamicBucketer:
 
     @staticmethod
     def _supports_graph_restore(source: Any) -> bool:
-        return (
-            source is not None
-            and getattr(source, "has_constant_time_access", False)
-            and hasattr(source, "__getitem__")
-        )
+        return source is not None and supports_graph_restore(source)
 
     def _capture_item_token(self, item: Cut, source: Any) -> dict:
         if self._supports_graph_restore(source):
-            graph_origin = getattr(item, "_graph_origin", None)
+            graph_origin = get_graph_origin(item)
             if graph_origin is not None:
                 return {"kind": "graph", "value": graph_origin}
 

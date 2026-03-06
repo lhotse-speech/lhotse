@@ -51,6 +51,44 @@ def consume(it, k):
     return [next(it) for _ in range(k)]
 
 
+class _IndexedPlainIterator(IteratorNode):
+    """
+    Minimal indexed iterator used to test graph-token fallback paths.
+
+    It supports ``__getitem__`` and checkpointing, but intentionally does not
+    attach ``_graph_origin`` to yielded items.
+    """
+
+    is_checkpointable = True
+    is_indexed = True
+    has_constant_time_access = True
+
+    def __init__(self, items):
+        self.items = list(items)
+        self.position = 0
+        self._restored = False
+
+    def __iter__(self):
+        start = self.position if self._restored else 0
+        self._restored = False
+        for idx in range(start, len(self.items)):
+            self.position = idx + 1
+            yield self.items[idx]
+
+    def __getitem__(self, idx):
+        return self.items[idx]
+
+    def __len__(self):
+        return len(self.items)
+
+    def state_dict(self):
+        return {"position": self.position}
+
+    def load_state_dict(self, sd):
+        self.position = sd["position"]
+        self._restored = True
+
+
 # ---------------------------------------------------------------------------
 # LazyJsonlIterator
 # ---------------------------------------------------------------------------
@@ -431,6 +469,33 @@ class TestLazyIteratorMultiplexerStateful:
             remaining = list(mux2)
 
             assert first_k + remaining == all_items
+
+    def test_restore_without_child_graph_tokens(self):
+        mux_full = LazyIteratorMultiplexer(
+            _IndexedPlainIterator(range(8)),
+            _IndexedPlainIterator(range(100, 108)),
+            seed=42,
+        )
+        all_items = list(mux_full)
+
+        mux1 = LazyIteratorMultiplexer(
+            _IndexedPlainIterator(range(8)),
+            _IndexedPlainIterator(range(100, 108)),
+            seed=42,
+        )
+        gen1 = iter(mux1)
+        first_k = consume(gen1, 5)
+        sd = mux1.state_dict()
+
+        mux2 = LazyIteratorMultiplexer(
+            _IndexedPlainIterator(range(8)),
+            _IndexedPlainIterator(range(100, 108)),
+            seed=42,
+        )
+        mux2.load_state_dict(sd)
+        remaining = list(mux2)
+
+        assert first_k + remaining == all_items
 
 
 # ---------------------------------------------------------------------------

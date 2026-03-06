@@ -55,8 +55,10 @@ from lhotse.lazy import (
     _try_collect_child_state,
     _try_restore_child_state,
     attach_graph_origin,
+    get_graph_origin,
     normalize_graph_token,
     resolve_iterator_source,
+    supports_graph_restore,
 )
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -3925,8 +3927,7 @@ class LazyCutMixer(IteratorNode):
     def has_constant_time_access(self) -> bool:
         return (
             not isinstance(self.seed, random.Random)
-            and getattr(self.source, "has_constant_time_access", False)
-            and hasattr(self.source, "__getitem__")
+            and supports_graph_restore(self.source)
             and self._noise_is_indexed()
         )
 
@@ -3979,7 +3980,7 @@ class LazyCutMixer(IteratorNode):
 
         for cut in self.source:
             if self.has_constant_time_access:
-                source_token = getattr(cut, "_graph_origin", None)
+                source_token = get_graph_origin(cut)
                 if source_token is None:
                     raise RuntimeError(
                         "LazyCutMixer requires '_graph_origin' on indexed source items "
@@ -3992,12 +3993,9 @@ class LazyCutMixer(IteratorNode):
             yield cut
 
     def _noise_is_indexed(self) -> bool:
-        return (
-            getattr(self._mix_in_source, "is_indexed", False)
-            and getattr(self._mix_in_source, "has_constant_time_access", False)
-            and hasattr(self._mix_in_source, "__len__")
-            and hasattr(self._mix_in_source, "__getitem__")
-        )
+        return getattr(
+            self._mix_in_source, "is_indexed", False
+        ) and supports_graph_restore(self._mix_in_source, require_length=True)
 
     def _next_mix_in_cut(self, rng: random.Random) -> Cut:
         if self._noise_is_indexed():

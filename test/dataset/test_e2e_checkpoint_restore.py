@@ -15,12 +15,13 @@ via ``CutSet.from_file(path, indexed=True)``, exercising the
 ``LazyIndexedManifestIterator`` path end-to-end.
 
 Tests cover:
-- Direct IterableDatasetWrapper path (O(N) fast-forward)
+- Direct IterableDatasetWrapper path
 - torchdata StatefulDataLoader path (when torchdata is installed)
 - O(1) indexed restore via DynamicBucketer state save/restore
 """
 
 import random
+from copy import deepcopy
 
 import pytest
 import torch.utils.data
@@ -79,6 +80,102 @@ def _load(path):
     return CutSet.from_file(path, indexed=True)
 
 
+def _make_mux_pipeline(cuts_a_path, cuts_b_path, *, resample_to=None, noise_path=None):
+    a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
+    b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
+    pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
+    if resample_to is not None:
+        pipeline = pipeline.resample(resample_to)
+    if noise_path is not None:
+        noise = _load(noise_path)
+        if resample_to is not None:
+            noise = noise.resample(resample_to)
+        pipeline = pipeline.mix(
+            noise,
+            mix_prob=0.5,
+            seed=42,
+            preserve_id="left",
+        )
+    return pipeline
+
+
+def _apply_sampler_augmentation(sampler):
+    sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
+    sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
+
+
+def _make_wrapper(pipeline, *, augment=False):
+    sampler = DynamicBucketingSampler(
+        pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+    )
+    if augment:
+        _apply_sampler_augmentation(sampler)
+    return IterableDatasetWrapper(_IdentityDataset(), sampler)
+
+
+def _batch_ids(batch):
+    return [cut.id for cut in batch]
+
+
+def _consume_batches(iterator, n_consumed):
+    return [_batch_ids(next(iterator)) for _ in range(n_consumed)]
+
+
+def _collect_batches(iterable):
+    return [_batch_ids(batch) for batch in iterable]
+
+
+def _run_wrapper_checkpoint(make_wrapper, n_consumed):
+    all_batches = _collect_batches(make_wrapper())
+    assert len(all_batches) > n_consumed
+
+    wrapper = make_wrapper()
+    first_k = _consume_batches(iter(wrapper), n_consumed)
+    state = wrapper.state_dict()
+    checkpoint = deepcopy(state)
+
+    restored = make_wrapper()
+    restored.load_state_dict(state)
+    remaining = _collect_batches(restored)
+    return all_batches, first_k, remaining, checkpoint
+
+
+def _assert_wrapper_restore(make_wrapper, n_consumed, *, assert_state=None):
+    all_batches, first_k, remaining, state = _run_wrapper_checkpoint(
+        make_wrapper, n_consumed
+    )
+    if assert_state is not None:
+        assert_state(state)
+    assert first_k + remaining == all_batches
+
+
+def _run_stateful_dataloader_checkpoint(make_wrapper, n_consumed, num_workers):
+    full = StatefulDataLoader(make_wrapper(), batch_size=None, num_workers=num_workers)
+    all_batches = _collect_batches(full)
+    assert len(all_batches) > n_consumed
+
+    dloader = StatefulDataLoader(
+        make_wrapper(), batch_size=None, num_workers=num_workers
+    )
+    first_k = _consume_batches(iter(dloader), n_consumed)
+    state = dloader.state_dict()
+    checkpoint = deepcopy(state)
+
+    restored = StatefulDataLoader(
+        make_wrapper(), batch_size=None, num_workers=num_workers
+    )
+    restored.load_state_dict(state)
+    remaining = _collect_batches(restored)
+    return all_batches, first_k, remaining, checkpoint
+
+
+def _assert_stateful_dataloader_restore(make_wrapper, n_consumed, num_workers):
+    all_batches, first_k, remaining, _ = _run_stateful_dataloader_checkpoint(
+        make_wrapper, n_consumed, num_workers
+    )
+    assert first_k + remaining == all_batches
+
+
 # ---------------------------------------------------------------------------
 # IterableDatasetWrapper tests
 # ---------------------------------------------------------------------------
@@ -86,58 +183,22 @@ def _load(path):
 
 def test_basic_mux_pipeline(cuts_a_path, cuts_b_path):
     """filter → repeat(2) → mux — simplest checkpoint/restore."""
-    n_consumed = 5
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path))
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=5)
 
 
 def test_with_resample(cuts_a_path, cuts_b_path):
     """Mux pipeline + resample 16 kHz → 24 kHz."""
-    n_consumed = 5
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42).resample(24000)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
+        return _make_wrapper(
+            _make_mux_pipeline(cuts_a_path, cuts_b_path, resample_to=24000)
         )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=5)
 
 
 def test_with_sampler_level_augmentation(cuts_a_path, cuts_b_path):
@@ -147,32 +208,11 @@ def test_with_sampler_level_augmentation(cuts_a_path, cuts_b_path):
     restored in load_state_dict(), so augmentation decisions (which cuts
     get perturbed, which factors are chosen) are identical after restore.
     """
-    n_consumed = 5
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path), augment=True)
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=5)
 
 
 def test_with_mix(cuts_a_path, cuts_b_path, tmp_path):
@@ -181,72 +221,39 @@ def test_with_mix(cuts_a_path, cuts_b_path, tmp_path):
     With indexed noise input, LazyCutMixer is stateful and supports O(1)
     checkpoint restore.
     """
-    n_consumed = 5
     noise_path = tmp_path / "noise.jsonl"
     DummyManifest(CutSet, begin_id=1000, end_id=1010).to_jsonl(noise_path)
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        noise = _load(noise_path)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42).resample(24000)
-        pipeline = pipeline.mix(
-            noise.resample(24000), mix_prob=0.5, seed=42, preserve_id="left"
+        return _make_wrapper(
+            _make_mux_pipeline(
+                cuts_a_path,
+                cuts_b_path,
+                resample_to=24000,
+                noise_path=noise_path,
+            )
         )
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=5)
 
 
 def test_full_pipeline(cuts_a_path, cuts_b_path, tmp_path):
     """Kitchen-sink: mux + resample + noise mix + sampler-level augmentation."""
-    n_consumed = 5
     noise_path = tmp_path / "noise.jsonl"
     DummyManifest(CutSet, begin_id=1000, end_id=1010).to_jsonl(noise_path)
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        noise = _load(noise_path)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42).resample(24000)
-        pipeline = pipeline.mix(
-            noise.resample(24000), mix_prob=0.5, seed=42, preserve_id="left"
+        return _make_wrapper(
+            _make_mux_pipeline(
+                cuts_a_path,
+                cuts_b_path,
+                resample_to=24000,
+                noise_path=noise_path,
+            ),
+            augment=True,
         )
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=5)
 
 
 @pytest.mark.parametrize("n_consumed", [1, 3, 7])
@@ -254,27 +261,9 @@ def test_checkpoint_at_various_positions(cuts_a_path, cuts_b_path, n_consumed):
     """Checkpoint at batch 1, 3, and 7 — all produce correct results."""
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path))
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=n_consumed)
 
 
 @pytest.mark.parametrize("n_consumed", [1, 3, 7])
@@ -284,29 +273,9 @@ def test_augmented_checkpoint_at_various_positions(
     """Checkpoint at batch 1, 3, and 7 with sampler-level augmentation."""
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path), augment=True)
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=n_consumed)
 
 
 # ---------------------------------------------------------------------------
@@ -318,64 +287,22 @@ def test_augmented_checkpoint_at_various_positions(
 @pytest.mark.parametrize("num_workers", [0, 2])
 def test_stateful_dataloader_basic(cuts_a_path, cuts_b_path, num_workers):
     """Basic mux pipeline through StatefulDataLoader checkpoint/restore."""
-    n_consumed = 3
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path))
 
-    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    all_batches = [[c.id for c in b] for b in dl_full]
-    assert len(all_batches) > n_consumed
-
-    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    it1 = iter(dl1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = dl1.state_dict()
-
-    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    dl2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in dl2]
-
-    assert first_k + remaining == all_batches
+    _assert_stateful_dataloader_restore(make, n_consumed=3, num_workers=num_workers)
 
 
 @pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
 @pytest.mark.parametrize("num_workers", [0, 2])
 def test_stateful_dataloader_with_augmentation(cuts_a_path, cuts_b_path, num_workers):
     """StatefulDataLoader with sampler-level PerturbSpeed + PerturbVolume."""
-    n_consumed = 5
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path), augment=True)
 
-    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    all_batches = [[c.id for c in b] for b in dl_full]
-    assert len(all_batches) > n_consumed
-
-    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    it1 = iter(dl1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = dl1.state_dict()
-
-    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    dl2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in dl2]
-
-    assert first_k + remaining == all_batches
+    _assert_stateful_dataloader_restore(make, n_consumed=5, num_workers=num_workers)
 
 
 @pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
@@ -384,39 +311,21 @@ def test_stateful_dataloader_full_pipeline(
     cuts_a_path, cuts_b_path, tmp_path, num_workers
 ):
     """StatefulDataLoader: mux + resample + noise mix + augmentation."""
-    n_consumed = 5
     noise_path = tmp_path / "noise.jsonl"
     DummyManifest(CutSet, begin_id=1000, end_id=1010).to_jsonl(noise_path)
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        noise = _load(noise_path)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42).resample(24000)
-        pipeline = pipeline.mix(
-            noise.resample(24000), mix_prob=0.5, seed=42, preserve_id="left"
+        return _make_wrapper(
+            _make_mux_pipeline(
+                cuts_a_path,
+                cuts_b_path,
+                resample_to=24000,
+                noise_path=noise_path,
+            ),
+            augment=True,
         )
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
 
-    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    all_batches = [[c.id for c in b] for b in dl_full]
-    assert len(all_batches) > n_consumed
-
-    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    it1 = iter(dl1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = dl1.state_dict()
-
-    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    dl2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in dl2]
-
-    assert first_k + remaining == all_batches
+    _assert_stateful_dataloader_restore(make, n_consumed=5, num_workers=num_workers)
 
 
 @pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
@@ -428,30 +337,11 @@ def test_stateful_dataloader_checkpoint_at_various_positions(
     """StatefulDataLoader checkpoint at batch 1, 3, and 7."""
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path), augment=True)
 
-    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    all_batches = [[c.id for c in b] for b in dl_full]
-    assert len(all_batches) > n_consumed
-
-    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    it1 = iter(dl1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = dl1.state_dict()
-
-    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=num_workers)
-    dl2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in dl2]
-
-    assert first_k + remaining == all_batches
+    _assert_stateful_dataloader_restore(
+        make, n_consumed=n_consumed, num_workers=num_workers
+    )
 
 
 @pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
@@ -465,27 +355,13 @@ def test_stateful_dataloader_worker_prefetch_snapshot_restores_exactly(
     diagnostics. Restoring from such a checkpoint must still resume exactly
     from the next global batch.
     """
-    n_consumed = 1
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path), augment=True)
 
-    dl_full = StatefulDataLoader(make(), batch_size=None, num_workers=2)
-    all_batches = [[c.id for c in b] for b in dl_full]
-    assert len(all_batches) > n_consumed
-
-    dl1 = StatefulDataLoader(make(), batch_size=None, num_workers=2)
-    it1 = iter(dl1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = dl1.state_dict()
+    all_batches, first_k, remaining, sd = _run_stateful_dataloader_checkpoint(
+        make, n_consumed=1, num_workers=2
+    )
 
     # Worker snapshots should include a mixed prefetch state:
     # at least one worker with saved bucketer state and at least one worker
@@ -504,10 +380,6 @@ def test_stateful_dataloader_worker_prefetch_snapshot_restores_exactly(
             has_pre_yield_worker = True
     assert has_post_yield_worker and has_pre_yield_worker
 
-    dl2 = StatefulDataLoader(make(), batch_size=None, num_workers=2)
-    dl2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in dl2]
-
     assert first_k + remaining == all_batches
     # Explicitly guard against replaying the already-consumed first batch.
     assert remaining[0] == all_batches[1]
@@ -523,63 +395,22 @@ def test_indexed_o1_restore(cuts_a_path, cuts_b_path, n_consumed):
     """O(1) indexed restore produces same results as uninterrupted run."""
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path))
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
+    def assert_state(state):
+        sampler_sd = state.get("sampler_state", state)
+        assert "bucketer_state" in sampler_sd and "rng_state" in sampler_sd
 
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    # Verify that bucketer_state is captured in the state_dict
-    sampler_sd = sd.get("sampler_state", sd)
-    assert (
-        "bucketer_state" in sampler_sd and "rng_state" in sampler_sd
-    ), "O(1) indexed restore keys should be in state_dict for indexed datasets"
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=n_consumed, assert_state=assert_state)
 
 
 def test_indexed_o1_restore_with_augmentation(cuts_a_path, cuts_b_path):
     """O(1) indexed restore with sampler-level augmentation."""
-    n_consumed = 3
 
     def make():
-        a = _load(cuts_a_path).filter(_even_filter).repeat(times=2)
-        b = _load(cuts_b_path).filter(_odd_filter).repeat(times=2)
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        sampler.map(PerturbSpeed(factors=[0.9, 1.1], p=0.3, randgen=random.Random(7)))
-        sampler.map(PerturbVolume(p=0.2, randgen=random.Random(13)))
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(_make_mux_pipeline(cuts_a_path, cuts_b_path), augment=True)
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=3)
 
 
 # ---------------------------------------------------------------------------
@@ -600,22 +431,6 @@ def test_shar_fields_o1_restore(tmp_path, n_consumed):
     def make():
         a = CutSet(LazySharIterator(fields={"cuts": [str(path_a)]}))
         b = CutSet(LazySharIterator(fields={"cuts": [str(path_b)]}))
-        pipeline = CutSet.mux(a, b, weights=[0.3, 0.7], seed=42)
-        sampler = DynamicBucketingSampler(
-            pipeline, max_cuts=5, shuffle=False, seed=0, num_buckets=2
-        )
-        return IterableDatasetWrapper(_IdentityDataset(), sampler)
+        return _make_wrapper(CutSet.mux(a, b, weights=[0.3, 0.7], seed=42))
 
-    all_batches = [[c.id for c in b] for b in make()]
-    assert len(all_batches) > n_consumed
-
-    w1 = make()
-    it1 = iter(w1)
-    first_k = [[c.id for c in next(it1)] for _ in range(n_consumed)]
-    sd = w1.state_dict()
-
-    w2 = make()
-    w2.load_state_dict(sd)
-    remaining = [[c.id for c in b] for b in w2]
-
-    assert first_k + remaining == all_batches
+    _assert_wrapper_restore(make, n_consumed=n_consumed)
