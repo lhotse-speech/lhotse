@@ -4,7 +4,7 @@ Iterator graph traversal and checkpoint utilities for resumable dataloading.
 This module provides:
 
 * :func:`collect_state_dict` — recursively collect state from all
-  :class:`~lhotse.lazy.StatefulIterator` nodes in a lazy iterator graph.
+  stateful :class:`~lhotse.lazy.IteratorNode` nodes in a lazy iterator graph.
 * :func:`restore_state_dict` — recursively restore state to all nodes.
 * :class:`DataloaderCheckpoint` — a serializable container for the full
   dataloader state (per-worker iterator states + sampler state).
@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from lhotse.lazy import StatefulIterator
+from lhotse.lazy import IteratorNode
 from lhotse.utils import Pathlike
 
 __all__ = [
@@ -108,9 +108,17 @@ def _load_lhotse_shar_fields_origin(path_json: str, idx: int):
     return cut
 
 
+def _load_lhotse_repeat_origin(base_origin: list, repeat_idx: int):
+    from lhotse.lazy import attach_repeat_idx_to_id
+
+    item = reload_from_origin(tuple(base_origin))
+    return attach_repeat_idx_to_id(item, repeat_idx)
+
+
 register_origin_loader("lhotse", _load_lhotse_origin)
 register_origin_loader("lhotse_shar", _load_lhotse_shar_origin)
 register_origin_loader("lhotse_shar_fields", _load_lhotse_shar_fields_origin)
+register_origin_loader("lhotse_repeat", _load_lhotse_repeat_origin)
 
 
 def _rng_state_to_json(rng_state) -> list:
@@ -132,35 +140,35 @@ def _rng_state_from_json(data) -> tuple:
 
 def collect_state_dict(root) -> dict:
     """
-    Recursively collect state from all :class:`StatefulIterator` nodes
+    Recursively collect state from all checkpointable :class:`IteratorNode` nodes
     in the lazy iterator graph rooted at *root*.
 
     Returns a nested dict with keys:
 
     * ``"_type"`` — the class name of the node
-    * ``"_state"`` — the node's own ``state_dict()`` (if it is a
-      :class:`StatefulIterator`)
+    * ``"_state"`` — the node's own ``state_dict()`` (if checkpointable)
     * ``"source"`` — child state dict (if the node has a ``source`` attribute)
     * ``"sources"`` — list of child state dicts (if the node has a ``sources``
       attribute)
     """
     result: Dict[str, Any] = {"_type": type(root).__name__}
     has_children = hasattr(root, _SINGLE_CHILD) or hasattr(root, _MULTI_CHILDREN)
+    is_node = isinstance(root, IteratorNode)
 
-    if isinstance(root, StatefulIterator):
+    if is_node and root.is_checkpointable:
         result["_state"] = root.state_dict()
     elif has_children:
-        # Any node that participates in the iterator graph (has source/sources)
-        # MUST be a StatefulIterator so that checkpoint state is complete.
-        # If it's not, the checkpoint would silently skip this node's state,
-        # producing incorrect restoration.  This catches both known
-        # non-checkpointable classes (LazyShuffler, etc.) and any future
-        # classes that forget to inherit StatefulIterator.
+        if not is_node:
+            raise NotImplementedError(
+                f"{type(root).__name__} participates in iterator graph traversal "
+                f"(it has child iterators), but it is not an IteratorNode. "
+                f"Make it derive from IteratorNode."
+            )
         raise NotImplementedError(
             f"{type(root).__name__} does not support checkpointing "
-            f"(it has child iterators but is not a StatefulIterator). "
-            f"Either make it a StatefulIterator or remove it from the "
-            f"pipeline before checkpointing."
+            f"(it is an IteratorNode marked as non-checkpointable). Remove it from "
+            f"the pipeline before checkpointing or implement "
+            f"state_dict/load_state_dict."
         )
 
     # Recurse into children
@@ -177,13 +185,13 @@ def collect_state_dict(root) -> dict:
 
 def restore_state_dict(root, state: dict) -> None:
     """
-    Recursively restore state to all :class:`StatefulIterator` nodes
+    Recursively restore state to all checkpointable :class:`IteratorNode` nodes
     in the lazy iterator graph rooted at *root*.
 
-    When *root* is a :class:`StatefulIterator`, its ``load_state_dict``
-    already restores any :class:`StatefulIterator` children, so graph
+    When *root* is checkpointable, its ``load_state_dict``
+    already restores any checkpointable children, so graph
     traversal only recurses into children that are **not** themselves
-    :class:`StatefulIterator` (e.g. :class:`LazyShuffler`).  This avoids
+    checkpointable (e.g. :class:`LazyShuffler`). This avoids
     double-restoration which would leave stale ``_restored`` flags on
     inner nodes.
 
@@ -199,17 +207,20 @@ def restore_state_dict(root, state: dict) -> None:
             f"expected '{expected_type}', got '{actual_type}'."
         )
 
-    root_is_stateful = isinstance(root, StatefulIterator)
+    root_is_checkpointable = isinstance(root, IteratorNode) and root.is_checkpointable
 
-    if root_is_stateful and "_state" in state:
+    if root_is_checkpointable and "_state" in state:
         root.load_state_dict(state["_state"])
 
     # Recurse into children — but skip children that were already restored
-    # by the parent's load_state_dict (i.e. StatefulIterator children of a
-    # StatefulIterator parent).
+    # by the parent's load_state_dict (i.e. checkpointable children of a
+    # checkpointable parent).
     if _SINGLE_CHILD in state and hasattr(root, _SINGLE_CHILD):
         child = getattr(root, _SINGLE_CHILD)
-        if not (root_is_stateful and isinstance(child, StatefulIterator)):
+        child_is_checkpointable = (
+            isinstance(child, IteratorNode) and child.is_checkpointable
+        )
+        if not (root_is_checkpointable and child_is_checkpointable):
             restore_state_dict(child, state[_SINGLE_CHILD])
 
     if _MULTI_CHILDREN in state and hasattr(root, _MULTI_CHILDREN):
@@ -220,7 +231,7 @@ def restore_state_dict(root, state: dict) -> None:
                 f"Number of children mismatch during state restoration: "
                 f"expected {len(child_states)}, got {len(children)}."
             )
-        if not root_is_stateful:
+        if not root_is_checkpointable:
             for child, child_state in zip(children, child_states):
                 restore_state_dict(child, child_state)
 

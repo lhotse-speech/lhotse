@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from lhotse import Image, Recording, SupervisionSegment
 from lhotse.cut import CutSet, MonoCut
+from lhotse.lazy import IteratorNode
 from lhotse.utils import Pathlike, is_module_available
 
 
@@ -305,7 +306,7 @@ def export_cuts_to_hf(cutset: CutSet):
     return Dataset.from_dict(dataset_dict, features=dataset_info)
 
 
-class LazyHFDatasetIterator:
+class LazyHFDatasetIterator(IteratorNode):
     """
     Thin wrapper on top of HF datasets objects that allows to interact with them through a Lhotse CutSet.
     It can be initialized with an existing HF dataset, or args/kwargs passed on to ``datasets.load_dataset()``.

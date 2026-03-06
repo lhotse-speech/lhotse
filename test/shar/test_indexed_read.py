@@ -108,6 +108,18 @@ def test_shar_writer_no_index(tmp_path, cuts):
         assert not index_exists(tf)
 
 
+@pytest.mark.parametrize("output_dir", ["s3://bucket/shar", "pipe:cat > /tmp/shar"])
+def test_shar_writer_remote_or_pipe_with_index_enabled_raises(output_dir):
+    with pytest.raises(ValueError, match="create_index=False"):
+        SharWriter(
+            output_dir,
+            fields={"recording": "wav"},
+            shard_size=10,
+            compress_jsonl=False,
+            create_index=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # LazySharIterator (streaming): basic reading
 # ---------------------------------------------------------------------------
@@ -553,7 +565,10 @@ def test_cutset_from_shar_indexed_auto_detect_compressed(tmp_path, cuts):
     assert shar_cs.is_indexed is False
 
 
-def test_cutset_from_shar_indexed_rejects_streaming_params(tmp_path, cuts):
+@pytest.mark.parametrize("slice_length", [0, 5])
+def test_cutset_from_shar_indexed_rejects_streaming_params(
+    tmp_path, cuts, slice_length
+):
     """CutSet.from_shar(indexed=True) rejects streaming-only params."""
     cs = CutSet.from_cuts(cuts)
     cs.to_shar(
@@ -565,7 +580,7 @@ def test_cutset_from_shar_indexed_rejects_streaming_params(tmp_path, cuts):
     )
 
     with pytest.raises(ValueError, match="not supported with indexed=True"):
-        CutSet.from_shar(in_dir=tmp_path, indexed=True, slice_length=5)
+        CutSet.from_shar(in_dir=tmp_path, indexed=True, slice_length=slice_length)
 
 
 def test_cutset_from_shar_indexed_split_for_dataloading(tmp_path, cuts):

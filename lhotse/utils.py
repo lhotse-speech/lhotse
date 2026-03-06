@@ -12,7 +12,7 @@ import urllib
 import uuid
 import warnings
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from itertools import chain
 from math import ceil, isclose
@@ -282,7 +282,12 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
         >>> ts1 = TimeSpan(start=5, end=10)
         >>> ts2 = fastcopy(ts1, end=12)
     """
-    return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})
+    init_values = {
+        field.name: getattr(dataclass_obj, field.name)
+        for field in fields(dataclass_obj)
+        if field.init
+    }
+    return type(dataclass_obj)(**{**init_values, **kwargs})
 
 
 def split_manifest_lazy(

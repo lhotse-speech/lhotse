@@ -15,11 +15,10 @@ from typing import (
 from lhotse.cut import Cut
 from lhotse.dataset.dataloading import resolve_seed
 from lhotse.lazy import (
-    Dillable,
+    IteratorNode,
     LazyIteratorChain,
     LazyJsonlIterator,
     LazyManifestIterator,
-    StatefulIterator,
     count_newlines_fast,
 )
 from lhotse.serialization import extension_contains
@@ -61,7 +60,7 @@ def _discover_fields(in_dir: Path) -> Tuple[set, dict]:
     return fields, streams
 
 
-class LazySharIterator(Dillable, StatefulIterator):
+class LazySharIterator(IteratorNode):
     """
     LazySharIterator reads cuts and their corresponding data from multiple shards,
     also recognized as the Lhotse Shar format.
@@ -176,6 +175,8 @@ class LazySharIterator(Dillable, StatefulIterator):
 
     See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
+
+    is_checkpointable = True
 
     def __init__(
         self,

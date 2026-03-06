@@ -19,11 +19,14 @@ from lhotse.cut import Cut
 from lhotse.dataset.dataloading import resolve_seed
 from lhotse.dataset.sampling.base import (
     CutSampler,
-    EpochDiagnostics,
     SamplingConstraint,
     SamplingDiagnostics,
     TimeConstraint,
 )
+from lhotse.dataset.sampling.checkpoint_backends import (
+    build_dynamic_cut_checkpoint_backend,
+)
+from lhotse.lazy import resolve_iterator_source
 from lhotse.utils import ifnone, streaming_shuffle
 
 
@@ -187,68 +190,20 @@ class DynamicCutSampler(CutSampler):
 
         # Set the right epoch
         self.set_epoch(current_epoch)
-        # Reset diagnostics for this epoch as we're about to re-iterate
-        self.diagnostics.stats_per_epoch[current_epoch] = EpochDiagnostics(
-            epoch=current_epoch
+        backend = build_dynamic_cut_checkpoint_backend(
+            self,
+            current_epoch=current_epoch,
+            num_batches_to_iter=num_batches_to_iter,
         )
+        backend.restore()
 
-        is_indexed = all(
-            getattr(cs, "is_indexed", False)
-            for cs in self.cuts
-            if isinstance(cs, CutSet)
-        )
-
-        cuts_state = getattr(self, "_cuts_state", None)
-
-        # O(1) indexed path: restore source CutSet states and rebuild pipeline
-        if cuts_state is not None and is_indexed:
-            try:
-                # Restore source CutSet states
-                for cs, cs_state in zip(self.cuts, cuts_state):
-                    if isinstance(cs, CutSet):
-                        cs.load_state_dict(cs_state)
-
-                # Call iter(self) to create fresh iterators from restored CutSets
-                self._just_restored_state = False
-                self._cuts_state = None
-                iter(self)
-
-                # Restore transform RNG states
-                self._restore_transforms_state()
-                self._just_restored_state = True
-                return
-            except Exception as e:
-                raise RuntimeError(
-                    "O(1) indexed restore failed for indexed datasets. This is a bug — "
-                    "indexed datasets should never use O(N) fast-forward. "
-                    f"Error: {e}"
-                ) from e
-
-        # Non-indexed path: try O(1) if cuts_state is available, else O(N)
-        if cuts_state is not None:
-            try:
-                from lhotse.checkpoint import restore_state_dict
-
-                self._just_restored_state = False
-                self._cuts_state = None
-                iter(self)
-
-                for cs_iter, cs_state in zip(self.cuts_iter, cuts_state):
-                    restore_state_dict(cs_iter, cs_state)
-                self._restore_transforms_state()
-                self._just_restored_state = True
-                return
-            except Exception:
-                pass  # Fall back to legacy O(N) fast-forward below
-
+    def _initialize_replay_iterator(self) -> None:
         self._cuts_state = None
         self._just_restored_state = False
         iter(self)
 
-        # O(N) fast-forward: transforms advance naturally via __next__.
-        for _ in range(num_batches_to_iter):
-            next(self)
-        self._just_restored_state = True
+    def _replay_step(self) -> None:
+        next(self)
 
     def __iter__(self) -> "DynamicCutSampler":
         if getattr(self, "_needs_fast_forward", False):
@@ -261,10 +216,13 @@ class DynamicCutSampler(CutSampler):
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps
         # than are actually available per epoch would have broken the checkpoint restoration.
-        self.diagnostics.reset_current_epoch()
+        if getattr(self, "_skip_diagnostics_reset_once", False):
+            self._skip_diagnostics_reset_once = False
+        else:
+            self.diagnostics.reset_current_epoch()
         seed = resolve_seed(self.seed)
         # Initiate iteration
-        self.cuts_iter = [iter(cs) for cs in self.cuts]
+        self.cuts_iter = [iter(resolve_iterator_source(cs)) for cs in self.cuts]
         # Optionally shuffle
         if self.shuffle:
             self.cuts_iter = [

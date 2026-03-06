@@ -184,18 +184,9 @@ class CutSampler(Sampler, Dillable):
             "shuffle": self.shuffle,
             "diagnostics": self.diagnostics.state_dict(),
         }
-        # Capture CutSet iterator graph state when available.
-        # Only capture when cuts_iter is a list/tuple of StatefulIterator instances,
-        # otherwise fall back to the legacy _fast_forward approach.
-        if hasattr(self, "cuts_iter") and isinstance(self.cuts_iter, (list, tuple)):
-            try:
-                from lhotse.checkpoint import collect_state_dict
-                from lhotse.lazy import StatefulIterator
-
-                if all(isinstance(cs, StatefulIterator) for cs in self.cuts_iter):
-                    sd["cuts_state"] = [collect_state_dict(cs) for cs in self.cuts_iter]
-            except Exception:
-                pass  # Not all iterators support state_dict; fall back to _fast_forward
+        cuts_state = self._capture_cuts_state()
+        if cuts_state is not None:
+            sd["cuts_state"] = cuts_state
         # Capture stateful transform RNG states (e.g. PerturbSpeed, PerturbVolume, ...).
         # These are needed to restore augmentation decisions exactly when using the
         # indexed O(1) restore path (which skips the O(N) fast-forward that would
@@ -209,6 +200,29 @@ class CutSampler(Sampler, Dillable):
                     transforms_state.append(None)
             sd["transforms_state"] = transforms_state
         return sd
+
+    def _capture_cuts_state(self) -> Optional[list]:
+        """
+        Best-effort capture of source CutSet iterator graph state.
+
+        We only capture the canonical CutSet sources from ``self.cuts``.
+        """
+        cuts = getattr(self, "cuts", None)
+        if not isinstance(cuts, (list, tuple)):
+            return None
+
+        states = []
+        has_any_state = False
+        for src in cuts:
+            if not isinstance(src, CutSet):
+                states.append(None)
+                continue
+            try:
+                states.append(src.state_dict())
+                has_any_state = True
+            except Exception:
+                states.append(None)
+        return states if has_any_state else None
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """
@@ -326,9 +340,24 @@ class CutSampler(Sampler, Dillable):
         the progress in the current epoch and start from the beginning.
         """
         self._just_restored_state = False
+        # Dynamic samplers defer restoration to __iter__ via _needs_fast_forward.
+        # Clearing these fields allows users to intentionally discard the
+        # restored in-epoch progress and restart the epoch from scratch.
+        if hasattr(self, "_needs_fast_forward"):
+            self._needs_fast_forward = False
+        for attr in (
+            "_cuts_state",
+            "_transforms_state",
+            "_rng_state",
+            "_bucketer_state",
+        ):
+            if hasattr(self, attr):
+                setattr(self, attr, None)
 
     def __next__(self):
-        self.allow_iter_to_reset_state()
+        # Advancing one step should permit later iter(self) calls to reset epoch
+        # bookkeeping, but it should not discard deferred checkpoint state.
+        self._just_restored_state = False
         # We use the following trick to ensure equal number of batches for each distributed
         # worker:
         # Every time a next batch is required, we will sample self.world_size batches first,

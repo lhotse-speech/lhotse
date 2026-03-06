@@ -18,53 +18,148 @@ T = TypeVar("T")
 
 
 # ---------------------------------------------------------------------------
-# Stateful iterator protocol
+# Dill-backed pickling mixin
 # ---------------------------------------------------------------------------
 
 
-class StatefulIterator:
+class Dillable:
     """
-    Protocol (mixin) for lazy iterators that support checkpointing.
+    Mix-in that will leverage ``dill`` instead of ``pickle``
+    when pickling an object.
 
-    Subclasses must implement :meth:`state_dict` and :meth:`load_state_dict`.
-    The convention for child references is:
+    It is useful when the user can't avoid ``pickle`` (e.g. in multiprocessing),
+    but needs to use unpicklable objects such as lambdas.
+
+    If ``dill`` is not installed, it defers to what ``pickle`` does by default.
+    """
+
+    _ENABLED_VALUES = {"1", "True", "true", "yes"}
+
+    def __getstate__(self):
+        if is_dill_enabled():
+            import dill
+
+            return dill.dumps(self.__dict__)
+        else:
+            return self.__dict__
+
+    def __setstate__(self, state):
+        if is_dill_enabled():
+            import dill
+
+            self.__dict__ = dill.loads(state)
+        else:
+            self.__dict__ = state
+
+
+# ---------------------------------------------------------------------------
+# Iterator node protocol
+# ---------------------------------------------------------------------------
+
+
+class IteratorNode(Dillable, Iterable):
+    """
+    Base protocol for nodes in Lhotse's lazy iterator graph.
+
+    Conventions for child references:
 
     * ``self.source``  — single child iterator
     * ``self.sources`` — list of child iterators
 
+    Iterator nodes are not necessarily checkpointable. Nodes that support
+    checkpointing should set ``is_checkpointable = True`` and implement
+    :meth:`state_dict` and :meth:`load_state_dict`.
+
     .. warning::
-        Instances are **not thread-safe**.  Mutable position and restoration
-        flags are updated without synchronization.  For multi-worker data
-        loading use process-based parallelism (the default in PyTorch's
-        ``DataLoader``), which gives each worker its own copy.
+        Instances are **not thread-safe**. Mutable position/restoration flags
+        are updated without synchronization. For multi-worker data loading use
+        process-based parallelism (the default in PyTorch's ``DataLoader``),
+        which gives each worker its own copy.
     """
 
+    is_checkpointable = False
+    is_indexed = False
+    has_constant_time_access = False
+
     def state_dict(self) -> dict:
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"{type(self).__name__} is not checkpointable and does not implement state_dict()."
+        )
 
     def load_state_dict(self, sd: dict) -> None:
-        raise NotImplementedError
+        raise NotImplementedError(
+            f"{type(self).__name__} is not checkpointable and does not implement load_state_dict()."
+        )
 
-    @property
-    def is_indexed(self) -> bool:
-        """
-        Return ``True`` when this iterator attaches ``_origin`` metadata
-        to each yielded item, enabling O(1) checkpoint restore via the
-        origin registry in :mod:`lhotse.checkpoint`.
+    def iter_children(self):
+        """Yield child iterators following ``source``/``sources`` conventions."""
+        if hasattr(self, "source"):
+            yield getattr(self, "source")
+        if hasattr(self, "sources"):
+            yield from getattr(self, "sources")
 
-        The default is ``False``; subclasses that support origin tracking
-        should override this to return ``True``.
-        """
-        return False
 
-    @property
-    def has_constant_time_access(self) -> bool:
-        """
-        Return ``True`` when every element can be retrieved in O(1) via
-        ``__getitem__``.  The default is ``False``; subclasses that support
-        indexed random access should override this.
-        """
-        return False
+def resolve_iterator_source(obj: Iterable) -> Iterable:
+    """
+    Return the effective iterator payload for graph nodes.
+
+    Manifest wrappers such as ``CutSet`` expose their underlying iterator via
+    ``.data``; using it avoids introducing wrapper objects into lazy iterator
+    graphs.
+    """
+    try:
+        from lhotse.cut import CutSet
+    except Exception:
+        return obj
+    return obj.data if isinstance(obj, CutSet) else obj
+
+
+def _try_collect_child_state(obj: Any) -> Optional[dict]:
+    if isinstance(obj, IteratorNode) and obj.is_checkpointable:
+        return obj.state_dict()
+    if hasattr(obj, "state_dict") and callable(getattr(obj, "state_dict")):
+        try:
+            return obj.state_dict()
+        except Exception:
+            return None
+    return None
+
+
+def _try_restore_child_state(obj: Any, state: Optional[dict]) -> None:
+    if state is None:
+        return
+    if isinstance(obj, IteratorNode) and obj.is_checkpointable:
+        obj.load_state_dict(state)
+        return
+    if hasattr(obj, "load_state_dict") and callable(getattr(obj, "load_state_dict")):
+        obj.load_state_dict(state)
+
+
+def _attach_runtime_metadata(item: Any, name: str, value: Any) -> Any:
+    """
+    Attach iterator runtime metadata without routing through Cut.custom.
+
+    Cut-like objects use ``CustomFieldMixin.__setattr__`` to redirect unknown
+    attributes into the serialized ``custom`` field. Checkpoint metadata such as
+    ``_origin`` and ``_graph_origin`` must stay process-local and never appear in
+    manifests, so we bypass ``__setattr__`` when possible.
+    """
+    try:
+        object.__setattr__(item, name, value)
+    except Exception:
+        try:
+            setattr(item, name, value)
+        except Exception:
+            pass
+    return item
+
+
+def attach_origin(item: Any, origin: Any) -> Any:
+    return _attach_runtime_metadata(item, "_origin", origin)
+
+
+def attach_graph_origin(item: Any, idx: int) -> Any:
+    return _attach_runtime_metadata(item, "_graph_origin", idx)
 
 
 class AlgorithmMixin(LazyMixin, Iterable):
@@ -84,7 +179,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
         cls = type(self)
 
         if self.is_lazy:
-            return cls(LazyFilter(self, predicate=predicate))
+            return cls(LazyFilter(resolve_iterator_source(self), predicate=predicate))
 
         return cls.from_items(cut for cut in self if predicate(cut))
 
@@ -99,7 +194,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
         :return: a new ``CutSet`` with transformed cuts.
         """
         cls = type(self)
-        ans = cls(LazyMapper(self.data, fn=transform_fn))
+        ans = cls(LazyMapper(resolve_iterator_source(self), fn=transform_fn))
         if self.is_lazy:
             return ans
         return ans.to_eager()
@@ -126,6 +221,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
             items in the expectation.
         :param seed: the random seed, ensures deterministic order across multiple iterations.
         """
+        manifests = [resolve_iterator_source(m) for m in manifests]
         return cls(
             LazyIteratorMultiplexer(
                 *manifests, stop_early=stop_early, weights=weights, seed=seed
@@ -167,6 +263,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
         :param seed: the random seed, ensures deterministic order across multiple iterations.
         :param max_open_streams: the number of iterables that can be open simultaneously at any given time.
         """
+        manifests = [resolve_iterator_source(m) for m in manifests]
         return cls(
             LazyInfiniteApproximateMultiplexer(
                 *manifests,
@@ -194,7 +291,11 @@ class AlgorithmMixin(LazyMixin, Iterable):
             rng = random
 
         if self.is_lazy:
-            return cls(LazyShuffler(self.data, buffer_size=buffer_size, rng=rng))
+            return cls(
+                LazyShuffler(
+                    resolve_iterator_source(self), buffer_size=buffer_size, rng=rng
+                )
+            )
         else:
             new: List = self.data.copy()
             rng.shuffle(new)
@@ -210,41 +311,19 @@ class AlgorithmMixin(LazyMixin, Iterable):
         :return: a repeated manifest.
         """
         cls = type(self)
-        return cls(LazyRepeater(self, times=times, preserve_id=preserve_id))
+        return cls(
+            LazyRepeater(
+                resolve_iterator_source(self), times=times, preserve_id=preserve_id
+            )
+        )
 
     def __add__(self, other):
         cls = type(self)
-        return cls(LazyIteratorChain(self.data, other.data))
-
-
-class Dillable:
-    """
-    Mix-in that will leverage ``dill`` instead of ``pickle``
-    when pickling an object.
-
-    It is useful when the user can't avoid ``pickle`` (e.g. in multiprocessing),
-    but needs to use unpicklable objects such as lambdas.
-
-    If ``dill`` is not installed, it defers to what ``pickle`` does by default.
-    """
-
-    _ENABLED_VALUES = {"1", "True", "true", "yes"}
-
-    def __getstate__(self):
-        if is_dill_enabled():
-            import dill
-
-            return dill.dumps(self.__dict__)
-        else:
-            return self.__dict__
-
-    def __setstate__(self, state):
-        if is_dill_enabled():
-            import dill
-
-            self.__dict__ = dill.loads(state)
-        else:
-            self.__dict__ = state
+        return cls(
+            LazyIteratorChain(
+                resolve_iterator_source(self), resolve_iterator_source(other)
+            )
+        )
 
 
 def is_dill_enabled(_ENABLED_VALUES=frozenset(("1", "True", "true", "yes"))) -> bool:
@@ -283,7 +362,7 @@ def dill_enabled(value: bool):
     set_dill_enabled(previous)
 
 
-class LazyTxtIterator:
+class LazyTxtIterator(IteratorNode):
     """
     LazyTxtIterator is a thin wrapper over builtin ``open`` function to
     iterate over lines in a (possibly compressed) text file.
@@ -315,46 +394,33 @@ class LazyTxtIterator:
         return self._len
 
 
-class LazyJsonlIterator(StatefulIterator):
+class LazyJsonlIterator(IteratorNode):
     """
     LazyJsonlIterator provides the ability to read JSON lines as Python dicts.
     It can also provide the number of lines via __len__ via fast newlines counting.
-
-    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
-    When a binary index file (``.idx``) is available, restoration jumps directly
-    to the saved position in O(1).  Otherwise a sequential fast-forward is used.
     """
 
-    def __init__(self, path: Pathlike, index_path: Optional[Pathlike] = None) -> None:
+    def __init__(self, path: Pathlike) -> None:
         self.path = path
-        self.index_path = index_path
         self._len = None
         self._position = 0
         self._restored = False
 
     def __iter__(self):
-        from lhotse.indexing import IndexedJsonlReader, index_exists
-
         start = self._position if self._restored else 0
         self._restored = False
         self._position = start
-        if index_exists(self.path, index_path=self.index_path):
-            reader = IndexedJsonlReader(self.path, index_path=self.index_path)
-            for i in range(start, len(reader)):
-                self._position = i + 1
-                yield reader[i]
-        else:
-            tot = 0
-            with open_best(self.path, "r") as f:
-                for line in f:
-                    tot += 1
-                    if tot <= start:
-                        continue
-                    data = decode_json_line(line)
-                    self._position = tot
-                    yield data
-            if self._len is None:
-                self._len = tot
+        tot = 0
+        with open_best(self.path, "r") as f:
+            for line in f:
+                tot += 1
+                if tot <= start:
+                    continue
+                data = decode_json_line(line)
+                self._position = tot
+                yield data
+        if self._len is None:
+            self._len = tot
 
     def __len__(self) -> int:
         if self._len is None:
@@ -371,7 +437,7 @@ class LazyJsonlIterator(StatefulIterator):
         self._restored = True
 
 
-class LazyManifestIterator(Dillable, StatefulIterator):
+class LazyManifestIterator(IteratorNode):
     """
     LazyManifestIterator provides the ability to read Lhotse objects from a
     JSONL file on-the-fly, without reading its full contents into memory.
@@ -384,6 +450,8 @@ class LazyManifestIterator(Dillable, StatefulIterator):
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
     (delegates to the inner :class:`LazyJsonlIterator`).
     """
+
+    is_checkpointable = True
 
     def __init__(self, path: Pathlike) -> None:
         self.source = LazyJsonlIterator(path)
@@ -408,7 +476,7 @@ class LazyManifestIterator(Dillable, StatefulIterator):
         self.source.load_state_dict(sd["source"])
 
 
-class LazyIndexedManifestIterator(Dillable, StatefulIterator):
+class LazyIndexedManifestIterator(IteratorNode):
     """
     Lazy manifest iterator backed by an :class:`~lhotse.indexing.IndexedJsonlReader`.
 
@@ -420,6 +488,8 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
 
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
     """
+
+    is_checkpointable = True
 
     def __init__(
         self,
@@ -451,7 +521,10 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
 
     def __getitem__(self, idx: int) -> Any:
         """O(1) random access: deserializes the *idx*-th item."""
-        return deserialize_item(self._reader[idx])
+        item = deserialize_item(self._reader[idx])
+        ip_str = str(self.index_path) if self.index_path is not None else None
+        attach_origin(item, ("lhotse", str(self.path), idx, ip_str))
+        return attach_graph_origin(item, idx)
 
     def __iter__(self):
         if self._restored:
@@ -471,13 +544,15 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
                 self._position = i + 1
                 phys_idx = self._range[i]
                 item = deserialize_item(self._reader[phys_idx])
-                item._origin = ("lhotse", path_str, phys_idx, ip_str)
+                attach_graph_origin(item, phys_idx)
+                attach_origin(item, ("lhotse", path_str, phys_idx, ip_str))
                 yield item
         else:
             for i in range(start, n):
                 self._position = i + 1
                 item = deserialize_item(self._reader[i])
-                item._origin = ("lhotse", path_str, i, ip_str)
+                attach_graph_origin(item, i)
+                attach_origin(item, ("lhotse", path_str, i, ip_str))
                 yield item
 
     def __len__(self) -> int:
@@ -505,7 +580,7 @@ class LazyIndexedManifestIterator(Dillable, StatefulIterator):
         self._restored = True
 
 
-class LazyIteratorChain(Dillable, StatefulIterator):
+class LazyIteratorChain(IteratorNode):
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
@@ -525,6 +600,8 @@ class LazyIteratorChain(Dillable, StatefulIterator):
     .. note:: if any of the input iterables is a dict, we'll iterate only its values.
     """
 
+    is_checkpointable = True
+
     def __init__(
         self,
         *iterators: Iterable,
@@ -536,6 +613,7 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         self.seed = seed
         self.num_iters = 0
         for it in iterators:
+            it = resolve_iterator_source(it)
             # Auto-flatten LazyIteratorChain instances if any are passed
             if isinstance(it, LazyIteratorChain):
                 for sub_it in it.sources:
@@ -548,6 +626,7 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         self._restored = False
         # Iteration tracking (globally-shuffled path)
         self._global_position = 0
+        self._global_seed = None
 
     @property
     def is_indexed(self) -> bool:
@@ -572,7 +651,7 @@ class LazyIteratorChain(Dillable, StatefulIterator):
             raise IndexError("index out of range for LazyIteratorChain")
         src_idx = bisect_right(cum, idx)
         offset = idx - cum[src_idx - 1] if src_idx > 0 else idx
-        return self.sources[src_idx][offset]
+        return attach_graph_origin(self.sources[src_idx][offset], idx)
 
     def _cumulative_lengths(self) -> list:
         if getattr(self, "_cum_lens", None) is None:
@@ -597,28 +676,38 @@ class LazyIteratorChain(Dillable, StatefulIterator):
 
         if self._restored:
             self._restored = False
-            # Restore exact shard order and skip to the current shard
+            # Restore exact shard order and skip to the current shard.
             start_idx = self._current_iter_idx
-            sources = [self.sources[i] for i in self._iter_order]
+            order = self._iter_order
+            if order is None or len(order) != len(self.sources):
+                order = list(range(len(self.sources)))
         else:
             start_idx = 0
-            sources = list(self.sources)  # shallow copy for potential shuffle
+            order = list(range(len(self.sources)))
             if self.shuffle_iters:
                 if self.seed is None:
                     rng = random  # global Python RNG
                 else:
                     rng = random.Random(resolve_seed(self.seed) + self.num_iters)
-                rng.shuffle(sources)
+                rng.shuffle(order)
                 self.num_iters += 1
-            self._iter_order = [self.sources.index(s) for s in sources]
+            self._iter_order = order
             self._current_iter_idx = 0
-        for idx, it in enumerate(sources):
-            if idx < start_idx:
-                continue
+        self._iter_order = order
+        cum = self._cumulative_lengths()
+        for idx in range(start_idx, len(order)):
+            src_idx = order[idx]
+            it = self.sources[src_idx]
             self._current_iter_idx = idx
             if isinstance(it, dict):
                 it = it.values()
-            yield from it
+            for item in it:
+                if self.has_constant_time_access and not self.shuffle_iters:
+                    local_idx = getattr(item, "_graph_origin", None)
+                    if local_idx is not None:
+                        prefix = cum[src_idx - 1] if src_idx > 0 else 0
+                        attach_graph_origin(item, prefix + local_idx)
+                yield item
 
     # ------------------------------------------------------------------
     # Globally-shuffled iteration (O(1) random access across all sources)
@@ -628,16 +717,29 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         from lhotse.indexing import LazyShuffledRange
 
         total = len(self)
-        seed = self.seed if self.seed is not None else 0
-
         if self._restored:
             self._restored = False
             start = self._global_position
+            base_seed = self._global_seed
+            if base_seed is None:
+                if self.seed is None:
+                    base_seed = 0
+                else:
+                    from lhotse.dataset.dataloading import resolve_seed
+
+                    base_seed = resolve_seed(self.seed)
         else:
             start = 0
             self._global_position = 0
+            if self.seed is None:
+                base_seed = 0
+            else:
+                from lhotse.dataset.dataloading import resolve_seed
 
-        shuffled = LazyShuffledRange(total, seed=seed + self.num_iters)
+                base_seed = resolve_seed(self.seed)
+            self._global_seed = base_seed
+
+        shuffled = LazyShuffledRange(total, seed=base_seed + self.num_iters)
         for i in range(start, total):
             self._global_position = i + 1
             yield self[shuffled[i]]
@@ -655,14 +757,12 @@ class LazyIteratorChain(Dillable, StatefulIterator):
             "num_iters": self.num_iters,
             "iter_order": self._iter_order,
             "global_position": self._global_position,
+            "global_seed": getattr(self, "_global_seed", None),
         }
         # Save inner states for stateful children
         inner_states = []
         for s in self.sources:
-            if isinstance(s, StatefulIterator):
-                inner_states.append(s.state_dict())
-            else:
-                inner_states.append(None)
+            inner_states.append(_try_collect_child_state(s))
         sd["inner_states"] = inner_states
         return sd
 
@@ -671,9 +771,10 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         self.num_iters = sd["num_iters"]
         self._iter_order = sd.get("iter_order")
         self._global_position = sd.get("global_position", 0)
+        self._global_seed = sd.get("global_seed")
         if self.shuffle_iters and self.is_indexed:
-            # Globally-shuffled path: position + num_iters are enough
-            # to reconstruct the permutation deterministically.
+            # Globally-shuffled path: position + num_iters (+ stored per-epoch
+            # resolved seed) are enough to reconstruct permutation deterministically.
             self._restored = True
             return
         # Sequential path: only restore sources that will still be iterated
@@ -687,12 +788,13 @@ class LazyIteratorChain(Dillable, StatefulIterator):
         for i, (s, inner_sd) in enumerate(
             zip(self.sources, sd.get("inner_states", []))
         ):
-            if i in active and inner_sd is not None and isinstance(s, StatefulIterator):
-                s.load_state_dict(inner_sd)
+            if i not in active or inner_sd is None:
+                continue
+            _try_restore_child_state(s, inner_sd)
         self._restored = True
 
 
-class LazyIteratorMultiplexer(Dillable, StatefulIterator):
+class LazyIteratorMultiplexer(IteratorNode):
     """
     A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
     During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
@@ -706,6 +808,8 @@ class LazyIteratorMultiplexer(Dillable, StatefulIterator):
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
     """
 
+    is_checkpointable = True
+
     def __init__(
         self,
         *iterators: Iterable,
@@ -713,7 +817,7 @@ class LazyIteratorMultiplexer(Dillable, StatefulIterator):
         weights: Optional[List[Union[int, float]]] = None,
         seed: Union[int, Literal["trng", "randomized"]] = 0,
     ) -> None:
-        self.sources = list(iterators)
+        self.sources = [resolve_iterator_source(it) for it in iterators]
         self.stop_early = stop_early
         self.seed = seed
 
@@ -793,10 +897,7 @@ class LazyIteratorMultiplexer(Dillable, StatefulIterator):
         }
         inner_states = []
         for s in self.sources:
-            if isinstance(s, StatefulIterator):
-                inner_states.append(s.state_dict())
-            else:
-                inner_states.append(None)
+            inner_states.append(_try_collect_child_state(s))
         sd["inner_states"] = inner_states
         return sd
 
@@ -804,12 +905,11 @@ class LazyIteratorMultiplexer(Dillable, StatefulIterator):
         self._rng_state = sd["rng_state"]
         self._exhausted = sd["exhausted"]
         for s, inner_sd in zip(self.sources, sd.get("inner_states", [])):
-            if inner_sd is not None and isinstance(s, StatefulIterator):
-                s.load_state_dict(inner_sd)
+            _try_restore_child_state(s, inner_sd)
         self._restored = True
 
 
-class LazyInfiniteApproximateMultiplexer(Dillable):
+class LazyInfiniteApproximateMultiplexer(IteratorNode):
     """
     A variant of :class:`.LazyIteratorMultiplexer` that allows to control the number of
     iterables that are simultaneously open.
@@ -846,7 +946,7 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
         seed: Union[int, Literal["trng", "randomized"]] = 0,
         max_open_streams: Optional[int] = None,
     ) -> None:
-        self.sources = list(iterators)
+        self.sources = [resolve_iterator_source(it) for it in iterators]
         self.stop_early = stop_early
         self.seed = seed
         self.max_open_streams = max_open_streams
@@ -916,7 +1016,7 @@ class LazyInfiniteApproximateMultiplexer(Dillable):
                 yield item
 
 
-class LazyShuffler(Dillable):
+class LazyShuffler(IteratorNode):
     """
     A wrapper over an iterable that enables lazy shuffling.
     The shuffling algorithm is reservoir-sampling based.
@@ -934,7 +1034,7 @@ class LazyShuffler(Dillable):
         buffer_size: int = 10000,
         rng: Optional[random.Random] = None,
     ) -> None:
-        self.source = iterator
+        self.source = resolve_iterator_source(iterator)
         self.buffer_size = buffer_size
         self.rng = rng
 
@@ -954,7 +1054,7 @@ class LazyShuffler(Dillable):
         return LazyIteratorChain(self, other)
 
 
-class LazyFilter(Dillable, StatefulIterator):
+class LazyFilter(IteratorNode):
     """
     A wrapper over an iterable that enables lazy filtering.
     It works like Python's `filter` built-in by applying the filter predicate
@@ -964,8 +1064,10 @@ class LazyFilter(Dillable, StatefulIterator):
     (delegates to the inner ``source`` iterator; the filter itself is stateless).
     """
 
+    is_checkpointable = True
+
     def __init__(self, iterator: Iterable, predicate: Callable[[Any], bool]) -> None:
-        self.source = iterator
+        self.source = resolve_iterator_source(iterator)
         self.predicate = predicate
         assert callable(
             self.predicate
@@ -1001,16 +1103,16 @@ class LazyFilter(Dillable, StatefulIterator):
 
     def state_dict(self) -> dict:
         sd = {}
-        if isinstance(self.source, StatefulIterator):
-            sd["source"] = self.source.state_dict()
+        source_state = _try_collect_child_state(self.source)
+        if source_state is not None:
+            sd["source"] = source_state
         return sd
 
     def load_state_dict(self, sd: dict) -> None:
-        if "source" in sd and isinstance(self.source, StatefulIterator):
-            self.source.load_state_dict(sd["source"])
+        _try_restore_child_state(self.source, sd.get("source"))
 
 
-class LazyMapper(Dillable, StatefulIterator):
+class LazyMapper(IteratorNode):
     """
     A wrapper over an iterable that enables lazy function evaluation on each item.
     It works like Python's `map` built-in by applying a callable ``fn``
@@ -1023,13 +1125,15 @@ class LazyMapper(Dillable, StatefulIterator):
     (delegates to the inner ``source`` iterator; the mapper itself is stateless).
     """
 
+    is_checkpointable = True
+
     def __init__(
         self,
         iterator: Iterable,
         fn: Callable[[Any], Any],
         apply_fn: Optional[Callable[[Any], bool]] = None,
     ) -> None:
-        self.source = iterator
+        self.source = resolve_iterator_source(iterator)
         self.fn = fn
         self.apply_fn = apply_fn
         assert callable(self.fn), f"LazyMapper: 'fn' arg must be callable (got {fn})."
@@ -1062,18 +1166,26 @@ class LazyMapper(Dillable, StatefulIterator):
     def __getitem__(self, idx: int) -> Any:
         item = self.source[idx]
         if self.apply_fn is None or self.apply_fn(item):
-            return self.fn(item)
-        return item
+            item = self.fn(item)
+        return attach_graph_origin(item, idx)
 
     def __iter__(self):
         if self.apply_fn is None:
-            yield from map(self.fn, self.source)
+            for item in self.source:
+                graph_idx = getattr(item, "_graph_origin", None)
+                item = self.fn(item)
+                if self.has_constant_time_access and graph_idx is not None:
+                    attach_graph_origin(item, graph_idx)
+                yield item
         else:
             for item in self.source:
+                graph_idx = getattr(item, "_graph_origin", None)
                 if self.apply_fn(item):
                     ans = self.fn(item)
                 else:
                     ans = item
+                if self.has_constant_time_access and graph_idx is not None:
+                    attach_graph_origin(ans, graph_idx)
                 yield ans
 
     def __len__(self) -> int:
@@ -1084,21 +1196,23 @@ class LazyMapper(Dillable, StatefulIterator):
 
     def state_dict(self) -> dict:
         sd = {}
-        if isinstance(self.source, StatefulIterator):
-            sd["source"] = self.source.state_dict()
+        source_state = _try_collect_child_state(self.source)
+        if source_state is not None:
+            sd["source"] = source_state
         return sd
 
     def load_state_dict(self, sd: dict) -> None:
-        if "source" in sd and isinstance(self.source, StatefulIterator):
-            self.source.load_state_dict(sd["source"])
+        _try_restore_child_state(self.source, sd.get("source"))
 
 
-class LazyFlattener(Dillable, StatefulIterator):
+class LazyFlattener(IteratorNode):
     """
     A wrapper over an iterable of collections that flattens it to an iterable of items.
 
-    Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`
-    (delegates to the inner ``source`` iterator).
+    .. note:: This class does **not** support checkpointing
+        (``state_dict`` / ``load_state_dict``). The flattener may be interrupted
+        in the middle of an inner collection, and there is no cheap generic way
+        to capture that inner-item offset.
 
     Example::
 
@@ -1107,7 +1221,7 @@ class LazyFlattener(Dillable, StatefulIterator):
     """
 
     def __init__(self, iterator: Iterable) -> None:
-        self.source = iterator
+        self.source = resolve_iterator_source(iterator)
 
     def __iter__(self):
         for cuts in self.source:
@@ -1125,17 +1239,19 @@ class LazyFlattener(Dillable, StatefulIterator):
         )
 
     def state_dict(self) -> dict:
-        sd = {}
-        if isinstance(self.source, StatefulIterator):
-            sd["source"] = self.source.state_dict()
-        return sd
+        raise NotImplementedError(
+            "LazyFlattener does not support checkpointing. "
+            "Use a pipeline without LazyFlattener before checkpointing."
+        )
 
     def load_state_dict(self, sd: dict) -> None:
-        if "source" in sd and isinstance(self.source, StatefulIterator):
-            self.source.load_state_dict(sd["source"])
+        raise NotImplementedError(
+            "LazyFlattener does not support checkpointing. "
+            "Use a pipeline without LazyFlattener before checkpointing."
+        )
 
 
-class LazyRepeater(Dillable, StatefulIterator):
+class LazyRepeater(IteratorNode):
     """
     A wrapper over an iterable that enables to repeat it N times or infinitely (default).
 
@@ -1143,10 +1259,12 @@ class LazyRepeater(Dillable, StatefulIterator):
     Captures the current epoch and the state of the inner ``source`` iterator.
     """
 
+    is_checkpointable = True
+
     def __init__(
         self, iterator: Iterable, times: Optional[int] = None, preserve_id: bool = False
     ) -> None:
-        self.source = iterator
+        self.source = resolve_iterator_source(iterator)
         self.times = times
         self.preserve_id = preserve_id
         assert self.times is None or self.times > 0
@@ -1165,7 +1283,11 @@ class LazyRepeater(Dillable, StatefulIterator):
 
     def __getitem__(self, idx: int) -> Any:
         n = len(self.source)
-        return self.source[idx % n]
+        item = self.source[idx % n]
+        if self.preserve_id:
+            return attach_graph_origin(item, idx)
+        repeat_idx = idx // n
+        return attach_graph_origin(attach_repeat_idx_to_id(item, repeat_idx), idx)
 
     def __iter__(self):
         restored = self._restored
@@ -1182,6 +1304,10 @@ class LazyRepeater(Dillable, StatefulIterator):
             at_least_once = False
             for item in iterator:
                 at_least_once = True
+                if self.has_constant_time_access:
+                    source_idx = getattr(item, "_graph_origin", None)
+                    if source_idx is not None:
+                        attach_graph_origin(item, epoch * len(self.source) + source_idx)
                 yield item
             if not at_least_once and not restored:
                 return  # Detect empty iterables to avoid hanging the program.
@@ -1201,18 +1327,18 @@ class LazyRepeater(Dillable, StatefulIterator):
 
     def state_dict(self) -> dict:
         sd = {"current_epoch": self._current_epoch}
-        if isinstance(self.source, StatefulIterator):
-            sd["source"] = self.source.state_dict()
+        source_state = _try_collect_child_state(self.source)
+        if source_state is not None:
+            sd["source"] = source_state
         return sd
 
     def load_state_dict(self, sd: dict) -> None:
         self._current_epoch = sd["current_epoch"]
-        if "source" in sd and isinstance(self.source, StatefulIterator):
-            self.source.load_state_dict(sd["source"])
+        _try_restore_child_state(self.source, sd.get("source"))
         self._restored = True
 
 
-class LazySlicer(Dillable, StatefulIterator):
+class LazySlicer(IteratorNode):
     """
     A wrapper over an iterable that enables selecting k-th element every n elements.
 
@@ -1220,8 +1346,10 @@ class LazySlicer(Dillable, StatefulIterator):
     (delegates to the inner ``source`` iterator).
     """
 
+    is_checkpointable = True
+
     def __init__(self, iterator: Iterable, k: int, n: int) -> None:
-        self.source = iterator
+        self.source = resolve_iterator_source(iterator)
         assert (
             k < n
         ), f"When selecting k-th element every n elements, k must be less than n (got k={k} n={n})."
@@ -1239,7 +1367,7 @@ class LazySlicer(Dillable, StatefulIterator):
         return getattr(self.source, "has_constant_time_access", False)
 
     def __getitem__(self, idx: int) -> Any:
-        return self.source[idx * self.n + self.k]
+        return attach_graph_origin(self.source[idx * self.n + self.k], idx)
 
     def __iter__(self):
         start = self._source_offset if self._restored else 0
@@ -1247,6 +1375,10 @@ class LazySlicer(Dillable, StatefulIterator):
         for idx, item in enumerate(self.source, start=start):
             self._source_offset = idx + 1
             if idx % self.n == self.k:
+                if self.has_constant_time_access:
+                    source_idx = getattr(item, "_graph_origin", None)
+                    if source_idx is not None:
+                        attach_graph_origin(item, source_idx // self.n)
                 yield item
 
     def __add__(self, other) -> "LazyIteratorChain":
@@ -1262,21 +1394,25 @@ class LazySlicer(Dillable, StatefulIterator):
 
     def state_dict(self) -> dict:
         sd = {"source_offset": self._source_offset}
-        if isinstance(self.source, StatefulIterator):
-            sd["source"] = self.source.state_dict()
+        source_state = _try_collect_child_state(self.source)
+        if source_state is not None:
+            sd["source"] = source_state
         return sd
 
     def load_state_dict(self, sd: dict) -> None:
         self._source_offset = sd.get("source_offset", 0)
-        if "source" in sd and isinstance(self.source, StatefulIterator):
-            self.source.load_state_dict(sd["source"])
+        _try_restore_child_state(self.source, sd.get("source"))
         self._restored = True
 
 
 def attach_repeat_idx_to_id(item: Any, idx: int) -> Any:
     if not hasattr(item, "id"):
         return item
-    return fastcopy(item, id=f"{item.id}_repeat{idx}")
+    repeated = fastcopy(item, id=f"{item.id}_repeat{idx}")
+    origin = getattr(item, "_origin", None)
+    if origin is not None:
+        attach_origin(repeated, ("lhotse_repeat", list(origin), idx))
+    return repeated
 
 
 def count_newlines_fast(path: Pathlike):

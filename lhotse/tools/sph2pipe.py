@@ -27,7 +27,15 @@ def install_sph2pipe(
     # Download
     download_and_untar_sph2pipe(where, url=download_from, force_download=force)
     # Compile
-    subprocess.run([f'make -C {where / "sph2pipe-2.5"}'], shell=True, check=True)
+    subprocess.run(
+        [
+            "make",
+            "-C",
+            str(where / "sph2pipe-2.5"),
+            "CCFLAGS=-Wno-error=implicit-function-declaration",
+        ],
+        check=True,
+    )
     logging.info("Finished installing sph2pipe.")
 
 

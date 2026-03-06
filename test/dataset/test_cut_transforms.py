@@ -157,7 +157,7 @@ def test_cutmix(preserve_id: bool):
         )
 
 
-def test_cut_mix_is_stateful():
+def test_cut_mix_is_checkpointable():
     speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=102)
 

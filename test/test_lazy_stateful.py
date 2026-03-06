@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from lhotse.lazy import (
+    IteratorNode,
     LazyFilter,
     LazyFlattener,
     LazyIteratorChain,
@@ -25,7 +26,6 @@ from lhotse.lazy import (
     LazyRepeater,
     LazyShuffler,
     LazySlicer,
-    StatefulIterator,
 )
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,8 @@ class TestLazyJsonlIteratorStateful:
     def test_isinstance_stateful(self, tmp_path):
         with jsonl_file(tmp_path, n=5) as p:
             it = LazyJsonlIterator(p)
-            assert isinstance(it, StatefulIterator)
+            assert isinstance(it, IteratorNode)
+            assert not it.is_checkpointable
 
     def test_restore_yields_remaining_items(self, tmp_path):
         with jsonl_file(tmp_path, n=10) as p:
@@ -127,7 +128,8 @@ class TestLazyManifestIteratorStateful:
     def test_isinstance_stateful(self, tmp_path):
         with jsonl_file(tmp_path, n=5) as p:
             it = LazyManifestIterator(p)
-            assert isinstance(it, StatefulIterator)
+            assert isinstance(it, IteratorNode)
+            assert it.is_checkpointable
 
     def test_state_dict_delegates(self, tmp_path):
         """LazyManifestIterator delegates state_dict to its source."""
@@ -175,7 +177,8 @@ class TestLazyManifestIteratorStateful:
 class TestLazyIteratorChainStateful:
     def test_isinstance_stateful(self):
         chain = LazyIteratorChain([1, 2], [3, 4])
-        assert isinstance(chain, StatefulIterator)
+        assert isinstance(chain, IteratorNode)
+        assert chain.is_checkpointable
 
     def test_sources_attribute(self):
         chain = LazyIteratorChain([1, 2], [3, 4])
@@ -282,6 +285,76 @@ class TestLazyIteratorChainStateful:
 
             assert first_k + remaining == all_items
 
+    def test_restore_with_duplicate_equality_sources(self):
+        """Regression: iter_order must track source indices, not list.index(...)."""
+
+        class EqualStateful(IteratorNode):
+            is_checkpointable = True
+
+            def __init__(self, values):
+                self._values = list(values)
+                self._position = 0
+                self._restored = False
+
+            def __iter__(self):
+                start = self._position if self._restored else 0
+                self._restored = False
+                self._position = start
+                for i in range(start, len(self._values)):
+                    self._position = i + 1
+                    yield self._values[i]
+
+            def __len__(self):
+                return len(self._values)
+
+            def state_dict(self):
+                return {"position": self._position}
+
+            def load_state_dict(self, sd):
+                self._position = sd["position"]
+                self._restored = True
+
+            def __eq__(self, other):
+                return isinstance(other, EqualStateful)
+
+        def make():
+            return LazyIteratorChain(
+                EqualStateful([1, 2, 3]), EqualStateful([10, 11, 12])
+            )
+
+        all_items = list(make())
+        assert all_items == [1, 2, 3, 10, 11, 12]
+
+        chain1 = make()
+        gen1 = iter(chain1)
+        first_k = consume(gen1, 4)
+        sd = chain1.state_dict()
+
+        chain2 = make()
+        chain2.load_state_dict(sd)
+        remaining = list(chain2)
+        assert first_k + remaining == all_items
+
+    def test_global_shuffle_accepts_randomized_seed_for_indexed(self, tmp_path):
+        """Regression: globally shuffled indexed chain should handle non-int seeds."""
+        from lhotse import CutSet
+        from lhotse.lazy import LazyIndexedManifestIterator
+        from lhotse.testing.dummies import DummyManifest
+
+        p1 = tmp_path / "a.jsonl"
+        p2 = tmp_path / "b.jsonl"
+        DummyManifest(CutSet, begin_id=0, end_id=5).to_jsonl(p1)
+        DummyManifest(CutSet, begin_id=100, end_id=105).to_jsonl(p2)
+
+        chain = LazyIteratorChain(
+            LazyIndexedManifestIterator(p1),
+            LazyIndexedManifestIterator(p2),
+            shuffle_iters=True,
+            seed="randomized",
+        )
+        items = list(chain)
+        assert len(items) == 10
+
     def test_restore_does_not_poison_next_epoch(self, tmp_path):
         """Regression: load_state_dict must only restore sources that will
         be iterated (at/after current_iter_idx).  Previously, ALL sources
@@ -325,7 +398,8 @@ class TestLazyIteratorChainStateful:
 class TestLazyIteratorMultiplexerStateful:
     def test_isinstance_stateful(self):
         mux = LazyIteratorMultiplexer([1, 2], [3, 4])
-        assert isinstance(mux, StatefulIterator)
+        assert isinstance(mux, IteratorNode)
+        assert mux.is_checkpointable
 
     def test_sources_attribute(self):
         mux = LazyIteratorMultiplexer([1, 2, 3], [4, 5, 6])
@@ -369,7 +443,8 @@ class TestLazyInfiniteApproximateMultiplexerStateful:
         from lhotse.lazy import LazyInfiniteApproximateMultiplexer
 
         mux = LazyInfiniteApproximateMultiplexer([1, 2], [3, 4])
-        assert not isinstance(mux, StatefulIterator)
+        assert isinstance(mux, IteratorNode)
+        assert not mux.is_checkpointable
 
     def test_sources_attribute(self):
         from lhotse.lazy import LazyInfiniteApproximateMultiplexer
@@ -395,7 +470,8 @@ class TestLazyInfiniteApproximateMultiplexerStateful:
 class TestLazyShufflerStateful:
     def test_not_stateful_iterator(self):
         shuf = LazyShuffler([1, 2, 3])
-        assert not isinstance(shuf, StatefulIterator)
+        assert isinstance(shuf, IteratorNode)
+        assert not shuf.is_checkpointable
 
     def test_source_attribute(self):
         shuf = LazyShuffler([1, 2, 3])
@@ -417,7 +493,8 @@ class TestLazyShufflerStateful:
 class TestLazyFilterStateful:
     def test_isinstance_stateful(self):
         filt = LazyFilter([1, 2, 3], predicate=lambda x: True)
-        assert isinstance(filt, StatefulIterator)
+        assert isinstance(filt, IteratorNode)
+        assert filt.is_checkpointable
 
     def test_source_attribute(self):
         filt = LazyFilter([1, 2, 3], predicate=lambda x: x > 1)
@@ -451,7 +528,8 @@ class TestLazyFilterStateful:
 class TestLazyMapperStateful:
     def test_isinstance_stateful(self):
         mapper = LazyMapper([1, 2, 3], fn=lambda x: x)
-        assert isinstance(mapper, StatefulIterator)
+        assert isinstance(mapper, IteratorNode)
+        assert mapper.is_checkpointable
 
     def test_source_attribute(self):
         mapper = LazyMapper([1, 2, 3], fn=lambda x: x * 2)
@@ -483,40 +561,23 @@ class TestLazyMapperStateful:
 
 
 class TestLazyFlattenerStateful:
-    def test_isinstance_stateful(self):
-        flat = LazyFlattener([[1, 2]])
-        assert isinstance(flat, StatefulIterator)
+    def test_checkpointing_not_supported(self):
+        flat = LazyFlattener([[1, 2], [3, 4]])
+        with pytest.raises(NotImplementedError, match="does not support checkpointing"):
+            flat.state_dict()
+        with pytest.raises(NotImplementedError, match="does not support checkpointing"):
+            flat.load_state_dict({})
 
     def test_source_attribute(self):
         flat = LazyFlattener([[1, 2], [3, 4]])
         assert hasattr(flat, "source")
 
-    def test_restore_yields_remaining_items(self, tmp_path):
-        # Each JSONL line is a JSON list (a chunk); LazyFlattener yields individual items.
-        # We consume exactly at a chunk boundary (6 items = 3 chunks of 2) so the
-        # source position aligns with the flattener's progress.
-        from lhotse.indexing import create_jsonl_index
+    def test_collect_state_dict_raises_for_flattener(self):
+        from lhotse.checkpoint import collect_state_dict
 
-        chunks = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]]
-        p = tmp_path / "chunks.jsonl"
-        with open(p, "w") as f:
-            for chunk in chunks:
-                f.write(json.dumps(chunk) + "\n")
-        create_jsonl_index(p)
-
-        all_items = list(LazyFlattener(LazyJsonlIterator(p)))
-        assert all_items == list(range(1, 11))
-
-        flat1 = LazyFlattener(LazyJsonlIterator(p))
-        gen1 = iter(flat1)
-        first_k = consume(gen1, 6)  # exactly 3 full chunks of size 2
-        sd = flat1.state_dict()
-
-        flat2 = LazyFlattener(LazyJsonlIterator(p))
-        flat2.load_state_dict(sd)
-        remaining = list(flat2)
-
-        assert first_k + remaining == all_items
+        flat = LazyFlattener([[1, 2], [3, 4]])
+        with pytest.raises(NotImplementedError, match="does not support checkpointing"):
+            collect_state_dict(flat)
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +588,8 @@ class TestLazyFlattenerStateful:
 class TestLazyRepeaterStateful:
     def test_isinstance_stateful(self):
         rep = LazyRepeater([1, 2], times=2)
-        assert isinstance(rep, StatefulIterator)
+        assert isinstance(rep, IteratorNode)
+        assert rep.is_checkpointable
 
     def test_source_attribute(self):
         rep = LazyRepeater([1, 2, 3], times=2)
@@ -573,7 +635,8 @@ class TestLazyRepeaterStateful:
 class TestLazySlicerStateful:
     def test_isinstance_stateful(self):
         slicer = LazySlicer([1, 2, 3], k=0, n=2)
-        assert isinstance(slicer, StatefulIterator)
+        assert isinstance(slicer, IteratorNode)
+        assert slicer.is_checkpointable
 
     def test_source_attribute(self):
         slicer = LazySlicer([1, 2, 3, 4, 5, 6], k=0, n=2)

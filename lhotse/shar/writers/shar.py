@@ -86,6 +86,12 @@ class SharWriter:
         self.include_cuts = include_cuts
         self.compress_jsonl = compress_jsonl
         self.create_index = create_index
+        if self.create_index and _is_non_local_output(self.output_dir):
+            raise ValueError(
+                "create_index=True is only supported for local output paths. "
+                f"Got output_dir='{self.output_dir}'. "
+                "Set create_index=False for pipe/URL/cloud outputs."
+            )
         if self.sharding_enabled:
             assert (
                 shard_suffix is None
@@ -151,8 +157,10 @@ class SharWriter:
         if path_str.startswith("pipe:"):
             return  # pipes are not seekable — indexing is impossible
         if path_str.startswith(("http://", "https://", "s3://", "gs://")):
-            raise NotImplementedError(
-                f"Indexing remote paths is not yet supported: {path_str}"
+            raise ValueError(
+                "create_index=True is only supported for local output paths. "
+                f"Got remote shard path '{path_str}'. "
+                "Set create_index=False for pipe/URL/cloud outputs."
             )
         if path_str.endswith(".jsonl"):
             try:
@@ -295,6 +303,10 @@ def _create_cuts_output_url(
         base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
 
     return f"{base_output_url}/cuts{shard_suffix}{ext}"
+
+
+def _is_non_local_output(path: str) -> bool:
+    return path.startswith("pipe:") or "://" in path
 
 
 def _aslist(x):

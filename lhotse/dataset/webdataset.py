@@ -57,7 +57,7 @@ from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence
 import tqdm
 
 from lhotse import CutSet, MonoCut
-from lhotse.lazy import LazyIteratorChain
+from lhotse.lazy import IteratorNode, LazyIteratorChain
 from lhotse.utils import Pathlike, is_module_available, suppress_and_warn
 
 
@@ -292,7 +292,7 @@ class WebdatasetWriter:
         return [self.path_or_url % i for i in range(self.num_shards_written)]
 
 
-class LazyWebdatasetIterator:
+class LazyWebdatasetIterator(IteratorNode):
     """
     LazyWebdatasetIterator provides the ability to read Lhotse objects from a
     WebDataset tarball on-the-fly, without reading its full contents into memory.

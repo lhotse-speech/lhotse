@@ -3,13 +3,19 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from lhotse.cut import Cut
-from lhotse.lazy import Dillable, LazyIteratorChain, StatefulIterator, is_dill_enabled
+from lhotse.lazy import (
+    IteratorNode,
+    LazyIteratorChain,
+    attach_graph_origin,
+    attach_origin,
+    is_dill_enabled,
+)
 from lhotse.serialization import deserialize_item, extension_contains
 from lhotse.shar.readers.lazy import _discover_fields, _is_local_uncompressed
 from lhotse.utils import Pathlike, exactly_one_not_null
 
 
-class LazyIndexedSharIterator(Dillable, StatefulIterator):
+class LazyIndexedSharIterator(IteratorNode):
     """
     Indexed random-access reader for the Lhotse Shar format.
 
@@ -49,6 +55,8 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
           keys, and each value is a list of ``.idx`` file paths
           (one per shard, matching the order in ``fields``).
     """
+
+    is_checkpointable = True
 
     def __init__(
         self,
@@ -247,12 +255,13 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
 
         cut.shard_origin = self.shards[shard_idx]["cuts"]
         cut.shar_epoch = self.epoch
+        global_idx = idx if idx >= 0 else idx + self._total_len
+        attach_graph_origin(cut, global_idx)
 
         # Attach origin for checkpoint reload.
-        global_idx = idx if idx >= 0 else idx + self._total_len
         ip_str = str(self._raw_index_path) if self._raw_index_path is not None else None
         if hasattr(self, "in_dir"):
-            cut._origin = ("lhotse_shar", str(self.in_dir), global_idx, ip_str)
+            attach_origin(cut, ("lhotse_shar", str(self.in_dir), global_idx, ip_str))
         else:
             # Encode the per-shard path mapping so the loader can
             # reconstruct indexed readers for this specific shard.
@@ -265,7 +274,7 @@ class LazyIndexedSharIterator(Dillable, StatefulIterator):
                 for f_name, f_paths in self._index_streams.items():
                     idx_paths[f_name] = str(f_paths[shard_idx])
                 shard_paths["_index"] = idx_paths
-            cut._origin = ("lhotse_shar_fields", json.dumps(shard_paths), pos)
+            attach_origin(cut, ("lhotse_shar_fields", json.dumps(shard_paths), pos))
 
         return cut
 

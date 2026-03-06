@@ -49,7 +49,7 @@ def _consume(it, k):
 
 
 def test_collect_restore_simple(tmp_path):
-    """Single LazyJsonlIterator: interrupted + resumed == full run."""
+    """LazyJsonlIterator is non-checkpointable, so collect/restore is a no-op."""
     p = _make_jsonl(tmp_path, n=10)
 
     all_items = list(LazyJsonlIterator(p))
@@ -59,13 +59,14 @@ def test_collect_restore_simple(tmp_path):
     gen1 = iter(it1)
     first_k = _consume(gen1, 5)
     sd = collect_state_dict(it1)
+    assert "_state" not in sd
 
     # Restore via restore_state_dict
     it2 = LazyJsonlIterator(p)
     restore_state_dict(it2, sd)
     remaining = list(it2)
 
-    assert first_k + remaining == all_items
+    assert remaining == all_items
 
 
 # ---------------------------------------------------------------------------

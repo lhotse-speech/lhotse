@@ -560,9 +560,28 @@ def test_origin_attachment(tmp_path):
         assert c._origin[2] == i
 
 
+def test_indexed_runtime_metadata_is_not_serialized(tmp_path):
+    from lhotse import CutSet
+    from lhotse.utils import fastcopy
+
+    path = tmp_path / "cuts.jsonl"
+    _write_cuts_jsonl(path)
+
+    cut = next(iter(CutSet.from_file(path, indexed=True)))
+    serialized = cut.to_dict()
+
+    assert "_origin" not in serialized.get("custom", {})
+    assert "_graph_origin" not in serialized.get("custom", {})
+
+    copied = fastcopy(cut, id="copy")
+    assert copied.id == "copy"
+    assert copied.custom == cut.custom
+
+
 def test_origin_survives_pipeline(tmp_path):
     """_origin survives filter -> repeat -> mux pipeline."""
     from lhotse import CutSet
+    from lhotse.checkpoint import reload_from_origin
 
     path_a = tmp_path / "cuts_a.jsonl"
     path_b = tmp_path / "cuts_b.jsonl"
@@ -578,7 +597,7 @@ def test_origin_survives_pipeline(tmp_path):
 
     for c in pipeline:
         assert hasattr(c, "_origin"), f"Cut {c.id} missing _origin after pipeline"
-        assert c._origin[0] == "lhotse"
+        assert reload_from_origin(c._origin).id == c.id
 
 
 def test_cutset_from_file_indexed(tmp_path):
