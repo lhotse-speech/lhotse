@@ -7,6 +7,8 @@ Tests that:
 - Old state_dicts (without cuts_state) still work via legacy _fast_forward
 - IterableDatasetWrapper implements state_dict()/load_state_dict()
 """
+from copy import deepcopy
+
 import pytest
 
 from lhotse import CutSet
@@ -14,12 +16,44 @@ from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
 from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
+from lhotse.lazy import IteratorNode
 from lhotse.testing.dummies import DummyManifest
 
 
 @pytest.fixture
 def cuts():
     return DummyManifest(CutSet, begin_id=0, end_id=100)
+
+
+class _IndexedCutsWithoutGraphOrigin(IteratorNode):
+    is_checkpointable = True
+    is_indexed = True
+    has_constant_time_access = True
+
+    def __init__(self, cuts):
+        self.cuts = list(cuts)
+        self.position = 0
+        self._restored = False
+
+    def __iter__(self):
+        start = self.position if self._restored else 0
+        self._restored = False
+        for idx in range(start, len(self.cuts)):
+            self.position = idx + 1
+            yield self.cuts[idx]
+
+    def __getitem__(self, idx):
+        return self.cuts[idx]
+
+    def __len__(self):
+        return len(self.cuts)
+
+    def state_dict(self):
+        return {"position": self.position}
+
+    def load_state_dict(self, sd):
+        self.position = sd["position"]
+        self._restored = True
 
 
 class TestDynamicSamplerCheckpoint:
@@ -122,13 +156,8 @@ class TestIterableDatasetWrapperStateDict:
 
 
 class TestShuffleIndexedGuard:
-    def test_dynamic_cut_sampler_rejects_shuffle_with_indexed(self, tmp_path):
-        """shuffle=True + indexed dataset raises ValueError for DynamicCutSampler.
-
-        DynamicBucketingSampler allows shuffle=True with indexed datasets because
-        its within-bucket shuffle RNG is saved/restored in the O(1) path.
-        DynamicCutSampler's streaming_shuffle is not checkpointable, so it raises.
-        """
+    def test_dynamic_cut_sampler_allows_shuffle_with_indexed(self, tmp_path):
+        """shuffle=True + indexed dataset is supported for DynamicCutSampler."""
         path = tmp_path / "cuts.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=20).to_jsonl(path)
 
@@ -137,11 +166,7 @@ class TestShuffleIndexedGuard:
 
         # DynamicBucketingSampler with shuffle=True is allowed (RNG is saved)
         DynamicBucketingSampler(cs, max_cuts=5, shuffle=True, num_buckets=2)
-
-        with pytest.raises(
-            ValueError, match="shuffle=True is not supported with indexed"
-        ):
-            DynamicCutSampler(cs, max_cuts=5, shuffle=True)
+        DynamicCutSampler(cs, max_cuts=5, shuffle=True)
 
 
 class TestIndexedSamplerStateCapture:
@@ -195,6 +220,66 @@ class TestIndexedSamplerStateCapture:
 
         assert called["on_fast_forward"] is False
         assert sampler2.diagnostics.current_epoch_stats.total_batches == consumed
+
+    def test_dynamic_sampler_indexed_shuffle_captures_lazy_shuffler_state(
+        self, tmp_path
+    ):
+        path = tmp_path / "cuts.jsonl"
+        DummyManifest(CutSet, begin_id=0, end_id=40).to_jsonl(path)
+        cs = CutSet.from_file(path, indexed=True)
+
+        sampler = DynamicCutSampler(cs, max_cuts=5, shuffle=True, seed=13)
+        iter(sampler)
+        for _ in range(4):
+            next(sampler)
+
+        sd = sampler.state_dict()
+        assert "cuts_state" in sd
+        root_state = sd["cuts_state"][0]
+        assert root_state["_type"] == "LazyShuffler"
+        assert "_state" in root_state
+
+    def test_dynamic_sampler_indexed_shuffle_restore_is_exact(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "cuts.jsonl"
+        DummyManifest(CutSet, begin_id=0, end_id=50).to_jsonl(path)
+
+        def make_sampler():
+            return DynamicCutSampler(
+                CutSet.from_file(path, indexed=True),
+                max_cuts=5,
+                shuffle=True,
+                seed=13,
+            )
+
+        full = make_sampler()
+        all_batches = [[c.id for c in batch] for batch in full]
+
+        sampler1 = make_sampler()
+        iterator1 = iter(sampler1)
+        first_batches = [[c.id for c in next(iterator1)] for _ in range(3)]
+        sd = deepcopy(sampler1.state_dict())
+
+        sampler2 = make_sampler()
+        sampler2.load_state_dict(sd)
+
+        called = {"on_fast_forward": False}
+        orig_next = CutSampler.__next__
+
+        def _patched_next(self):
+            called["on_fast_forward"] = True
+            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
+
+        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
+        try:
+            iter(sampler2)
+        finally:
+            monkeypatch.setattr(CutSampler, "__next__", orig_next)
+
+        remaining = [[c.id for c in batch] for batch in sampler2]
+        assert called["on_fast_forward"] is False
+        assert first_batches + remaining == all_batches
 
     def test_dynamic_bucketing_sampler_captures_cuts_state_for_indexed(self, tmp_path):
         path = tmp_path / "cuts.jsonl"
@@ -362,6 +447,22 @@ class TestIndexedSamplerStateCapture:
             match="indexed datasets should never use O\\(N\\) fast-forward",
         ):
             iter(sampler2)
+
+    def test_dynamic_bucketing_indexed_restore_requires_graph_tokens(self):
+        cs = CutSet(
+            _IndexedCutsWithoutGraphOrigin(DummyManifest(CutSet, begin_id=0, end_id=40))
+        )
+
+        sampler = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
+        iter(sampler)
+        for _ in range(3):
+            next(sampler)
+
+        with pytest.raises(
+            RuntimeError,
+            match="DynamicBucketer checkpoint requires '_graph_origin'",
+        ):
+            sampler.state_dict()
 
     def test_dynamic_cut_indexed_restore_missing_cuts_state_raises(self, tmp_path):
         path = tmp_path / "cuts.jsonl"

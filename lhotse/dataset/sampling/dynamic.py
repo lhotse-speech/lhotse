@@ -26,8 +26,8 @@ from lhotse.dataset.sampling.base import (
 from lhotse.dataset.sampling.checkpoint_backends import (
     build_dynamic_cut_checkpoint_backend,
 )
-from lhotse.lazy import resolve_iterator_source
-from lhotse.utils import ifnone, streaming_shuffle
+from lhotse.lazy import IteratorNode, LazyShuffler, resolve_iterator_source
+from lhotse.utils import ifnone
 
 
 class DynamicCutSampler(CutSampler):
@@ -137,23 +137,13 @@ class DynamicCutSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
+        self._active_cuts = None
 
         if strict is not None:
             warnings.warn(
                 "In Lhotse v1.4 all samplers act as if 'strict=True'. "
                 "Sampler's argument 'strict' will be removed in a future Lhotse release.",
                 category=DeprecationWarning,
-            )
-
-        if self.shuffle and all(
-            getattr(cs, "is_indexed", False)
-            for cs in self.cuts
-            if isinstance(cs, CutSet)
-        ):
-            raise ValueError(
-                "DynamicCutSampler: shuffle=True is not supported with indexed "
-                "datasets. Indexed datasets use internal shuffling via the iterator "
-                "pipeline (e.g., LazyIndexedManifestIterator). Set shuffle=False."
             )
 
     def state_dict(self) -> Dict[str, Any]:
@@ -200,10 +190,85 @@ class DynamicCutSampler(CutSampler):
     def _initialize_replay_iterator(self) -> None:
         self._cuts_state = None
         self._just_restored_state = False
-        iter(self)
+        self._active_cuts = None
+        self._initialize_epoch_iterator(rebuild_sources=True)
 
     def _replay_step(self) -> None:
         next(self)
+
+    def _make_epoch_sources(self):
+        if not self.shuffle:
+            return list(self.cuts)
+
+        seed = resolve_seed(self.seed)
+        epoch_sources = []
+        for src in self.cuts:
+            shuffler = LazyShuffler(
+                resolve_iterator_source(src),
+                buffer_size=self.shuffle_buffer_size,
+                rng=random.Random(seed + self.epoch),
+            )
+            if isinstance(src, CutSet):
+                epoch_sources.append(CutSet(shuffler))
+            else:
+                epoch_sources.append(shuffler)
+        return epoch_sources
+
+    def _initialize_epoch_iterator(self, *, rebuild_sources: bool) -> None:
+        if rebuild_sources or self._active_cuts is None:
+            self._active_cuts = self._make_epoch_sources()
+        self.cuts_iter = [iter(resolve_iterator_source(cs)) for cs in self._active_cuts]
+        self.cuts_iter = Filter(
+            iterator=zip(*self.cuts_iter),
+            predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
+            diagnostics=self.diagnostics,
+        )
+        self.cuts_iter = DurationBatcher(
+            self.cuts_iter,
+            max_duration=self.max_duration,
+            max_cuts=self.max_cuts,
+            constraint=self.constraint,
+            drop_last=self.drop_last,
+            quadratic_duration=self.quadratic_duration,
+            diagnostics=self.diagnostics,
+        )
+        self.cuts_iter = iter(self.cuts_iter)
+
+    def _capture_cuts_state(self) -> Optional[list]:
+        from lhotse.checkpoint import collect_state_dict
+
+        sources = self._active_cuts if self._active_cuts is not None else self.cuts
+        states = []
+        has_any_state = False
+        for src in sources:
+            if isinstance(src, CutSet):
+                try:
+                    states.append(src.state_dict())
+                    has_any_state = True
+                except Exception:
+                    states.append(None)
+                continue
+            if isinstance(src, IteratorNode):
+                try:
+                    states.append(collect_state_dict(src))
+                    has_any_state = True
+                except Exception:
+                    states.append(None)
+                continue
+            states.append(None)
+        return states if has_any_state else None
+
+    def _restore_cuts_state(self, cuts_state: list) -> None:
+        from lhotse.checkpoint import restore_state_dict
+
+        self._active_cuts = self._make_epoch_sources()
+        for src, state in zip(self._active_cuts, cuts_state):
+            if state is None:
+                continue
+            if isinstance(src, CutSet):
+                src.load_state_dict(state)
+            elif isinstance(src, IteratorNode):
+                restore_state_dict(src, state)
 
     def __iter__(self) -> "DynamicCutSampler":
         if getattr(self, "_needs_fast_forward", False):
@@ -220,38 +285,7 @@ class DynamicCutSampler(CutSampler):
             self._skip_diagnostics_reset_once = False
         else:
             self.diagnostics.reset_current_epoch()
-        seed = resolve_seed(self.seed)
-        # Initiate iteration
-        self.cuts_iter = [iter(resolve_iterator_source(cs)) for cs in self.cuts]
-        # Optionally shuffle
-        if self.shuffle:
-            self.cuts_iter = [
-                # Important -- every shuffler has a copy of RNG seeded in the same way,
-                # so that they are reproducible.
-                streaming_shuffle(
-                    cs,
-                    rng=random.Random(seed + self.epoch),
-                    bufsize=self.shuffle_buffer_size,
-                )
-                for cs in self.cuts_iter
-            ]
-        # Apply filter predicate
-        self.cuts_iter = Filter(
-            iterator=zip(*self.cuts_iter),
-            predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
-            diagnostics=self.diagnostics,
-        )
-        # Convert Iterable[Cut] -> Iterable[CutSet]
-        self.cuts_iter = DurationBatcher(
-            self.cuts_iter,
-            max_duration=self.max_duration,
-            max_cuts=self.max_cuts,
-            constraint=self.constraint,
-            drop_last=self.drop_last,
-            quadratic_duration=self.quadratic_duration,
-            diagnostics=self.diagnostics,
-        )
-        self.cuts_iter = iter(self.cuts_iter)
+        self._initialize_epoch_iterator(rebuild_sources=True)
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:

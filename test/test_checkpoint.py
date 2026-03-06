@@ -296,28 +296,6 @@ def test_collect_restore_multiplexed_filtered_repeated(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Origin registry: reload_from_origin
-# ---------------------------------------------------------------------------
-
-
-def test_origin_roundtrip(tmp_path):
-    """reload_from_origin correctly re-reads a cut."""
-    from lhotse import CutSet
-    from lhotse.checkpoint import reload_from_origin
-    from lhotse.testing.dummies import DummyManifest
-
-    path = tmp_path / "cuts.jsonl"
-    DummyManifest(CutSet, begin_id=0, end_id=5).to_jsonl(path)
-
-    cs = CutSet.from_file(path, indexed=True)
-    cuts = list(cs)
-    for c in cuts:
-        reloaded = reload_from_origin(c._origin)
-        assert reloaded.id == c.id
-        assert reloaded.duration == c.duration
-
-
-# ---------------------------------------------------------------------------
 # CutSet state_dict / load_state_dict
 # ---------------------------------------------------------------------------
 

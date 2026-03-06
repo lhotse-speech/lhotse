@@ -10,11 +10,10 @@ def _is_cutset(obj: Any) -> bool:
     return isinstance(obj, CutSet)
 
 
-def _all_sources_indexed(sampler: Any) -> bool:
-    return all(
-        getattr(cs, "is_indexed", False)
-        for cs in getattr(sampler, "cuts", ())
-        if _is_cutset(cs)
+def _all_sources_graph_restorable(sampler: Any) -> bool:
+    sources = getattr(sampler, "cuts", ())
+    return len(sources) > 0 and all(
+        getattr(cs, "has_constant_time_access", False) for cs in sources
     )
 
 
@@ -94,7 +93,7 @@ def build_dynamic_cut_checkpoint_backend(
         num_batches_to_iter=num_batches_to_iter,
     )
 
-    if _all_sources_indexed(sampler):
+    if _all_sources_graph_restorable(sampler):
         return IndexedCheckpointBackend(
             has_required_state=has_state,
             restore_fn=lambda: _restore_dynamic_cut_indexed(sampler, cuts_state),
@@ -132,14 +131,12 @@ def _build_dynamic_cut_replay_backend(
 
 
 def _restore_dynamic_cut_indexed(sampler: Any, cuts_state: list) -> None:
-    for cs, cs_state in zip(sampler.cuts, cuts_state):
-        if _is_cutset(cs) and cs_state is not None:
-            cs.load_state_dict(cs_state)
+    sampler._restore_cuts_state(cuts_state)
 
     sampler._just_restored_state = False
     sampler._cuts_state = None
     sampler._skip_diagnostics_reset_once = True
-    iter(sampler)
+    sampler._initialize_epoch_iterator(rebuild_sources=False)
     sampler._restore_transforms_state()
     sampler._just_restored_state = True
 
@@ -161,7 +158,7 @@ def build_dynamic_bucketing_checkpoint_backend(
         num_batches_to_iter=num_batches_to_iter,
     )
 
-    if _all_sources_indexed(sampler):
+    if _all_sources_graph_restorable(sampler):
         if has_full_state:
             return IndexedCheckpointBackend(
                 has_required_state=True,

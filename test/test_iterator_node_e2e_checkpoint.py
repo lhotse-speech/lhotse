@@ -1,4 +1,5 @@
 import importlib
+import random
 from pathlib import Path
 from typing import Callable, Dict
 
@@ -52,6 +53,15 @@ def _even_cut_id(cut) -> bool:
 
 def _resample_to_24k(cut):
     return cut.resample(24000)
+
+
+def _expand_cut_to_pair(cut):
+    return CutSet.from_cuts(
+        [
+            fastcopy(cut, id=f"{cut.id}-left"),
+            fastcopy(cut, id=f"{cut.id}-right"),
+        ]
+    )
 
 
 def _load_indexed(path: Path) -> CutSet:
@@ -130,6 +140,24 @@ def _build_lazy_filter(sources: Dict[str, Path]) -> CutSet:
 
 def _build_lazy_mapper(sources: Dict[str, Path]) -> CutSet:
     return CutSet(LazyMapper(_load_indexed(sources["cuts_a"]).data, _resample_to_24k))
+
+
+def _build_lazy_shuffler(sources: Dict[str, Path]) -> CutSet:
+    return CutSet(
+        LazyShuffler(
+            _load_indexed(sources["cuts_a"]).data,
+            buffer_size=8,
+            rng=random.Random(17),
+        )
+    )
+
+
+def _build_lazy_flattener(sources: Dict[str, Path]) -> CutSet:
+    return CutSet(
+        LazyFlattener(
+            LazyMapper(_load_indexed(sources["cuts_a"]).data, _expand_cut_to_pair)
+        )
+    )
 
 
 def _build_lazy_repeater(sources: Dict[str, Path]) -> CutSet:
@@ -236,6 +264,8 @@ INDEXED_E2E_CASES = [
         _build_lazy_mapper,
         id="LazyMapper",
     ),
+    pytest.param("LazyShuffler", _build_lazy_shuffler, id="LazyShuffler"),
+    pytest.param("LazyFlattener", _build_lazy_flattener, id="LazyFlattener"),
     pytest.param("LazyRepeater", _build_lazy_repeater, id="LazyRepeater"),
     pytest.param("LazySlicer", _build_lazy_slicer, id="LazySlicer"),
     pytest.param(
@@ -276,8 +306,6 @@ UNIT_ONLY_NODES = {
 
 UNSUPPORTED_EXACT_RESTORE_NODES = {
     "LazyInfiniteApproximateMultiplexer",
-    "LazyShuffler",
-    "LazyFlattener",
 }
 
 
@@ -312,7 +340,7 @@ def _strip_runtime_fields(value):
         return {
             k: _strip_runtime_fields(v)
             for k, v in value.items()
-            if k not in {"_origin", "dataloading_info"}
+            if k not in {"dataloading_info"}
         }
     if isinstance(value, list):
         return [_strip_runtime_fields(v) for v in value]

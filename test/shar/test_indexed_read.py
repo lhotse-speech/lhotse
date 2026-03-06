@@ -619,9 +619,8 @@ def test_indexed_shar_fields_based(tmp_path):
     cuts = list(shar)
     assert len(cuts) == 5
     for i, c in enumerate(cuts):
-        assert hasattr(c, "_origin")
-        assert c._origin[0] == "lhotse_shar_fields"
-        assert c._origin[2] == i
+        assert hasattr(c, "_graph_origin")
+        assert c._graph_origin == (i, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -682,14 +681,12 @@ def test_indexed_shar_rejects_compressed(tmp_path, cuts):
 
 
 # ---------------------------------------------------------------------------
-# LazyIndexedSharIterator: lhotse_shar origin roundtrip
+# LazyIndexedSharIterator: graph token roundtrip
 # ---------------------------------------------------------------------------
 
 
-def test_indexed_shar_origin_roundtrip(tmp_path, cuts):
-    """reload_from_origin works for in_dir-based LazyIndexedSharIterator."""
-    from lhotse.checkpoint import reload_from_origin
-
+def test_indexed_shar_graph_token_roundtrip(tmp_path, cuts):
+    """Graph tokens round-trip for in_dir-based LazyIndexedSharIterator."""
     writer = SharWriter(
         tmp_path,
         fields=ALL_FIELDS,
@@ -704,11 +701,11 @@ def test_indexed_shar_origin_roundtrip(tmp_path, cuts):
     shar = LazyIndexedSharIterator(in_dir=tmp_path)
     shar_cuts = list(shar)
 
-    # Check that "lhotse_shar" origins work for a few indices
+    # Check that graph tokens work for a few indices.
     for idx in [0, 5, 19]:
         c = shar_cuts[idx]
-        assert c._origin[0] == "lhotse_shar"
-        reloaded = reload_from_origin(c._origin)
+        assert c._graph_origin == (idx, 0)
+        reloaded = shar[c._graph_origin]
         assert reloaded.id == c.id
 
 
@@ -717,10 +714,8 @@ def test_indexed_shar_origin_roundtrip(tmp_path, cuts):
 # ---------------------------------------------------------------------------
 
 
-def test_indexed_shar_fields_origin_roundtrip(tmp_path, cuts):
-    """reload_from_origin works for fields-based LazyIndexedSharIterator."""
-    from lhotse.checkpoint import reload_from_origin
-
+def test_indexed_shar_fields_graph_token_roundtrip(tmp_path, cuts):
+    """Graph tokens round-trip for fields-based LazyIndexedSharIterator."""
     writer = SharWriter(
         tmp_path,
         fields=ALL_FIELDS,
@@ -745,11 +740,11 @@ def test_indexed_shar_fields_origin_roundtrip(tmp_path, cuts):
     shar_cuts = list(shar)
     assert len(shar_cuts) == 20
 
-    # Verify origin type and roundtrip reload for a few indices.
+    # Verify graph-token roundtrip for a few indices.
     for idx in [0, 5, 19]:
         c = shar_cuts[idx]
-        assert c._origin[0] == "lhotse_shar_fields"
-        reloaded = reload_from_origin(c._origin)
+        assert c._graph_origin == (idx, 0)
+        reloaded = shar[c._graph_origin]
         assert reloaded.id == c.id
         # Verify field data was reloaded (recording should have audio data attached).
         assert hasattr(reloaded, "recording") and reloaded.recording is not None

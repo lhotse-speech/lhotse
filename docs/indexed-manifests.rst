@@ -122,25 +122,16 @@ For example:
 * a repeater may use ``(repeat_idx, child_token)``
 * an indexed Shar iterator may use ``(global_idx, shar_epoch)``
 
-Checkpointing: origin vs graph token
-------------------------------------
+Checkpointing: graph tokens
+---------------------------
 
-Lhotse uses two kinds of restore metadata:
-
-* ``_origin``: a base-data coordinate such as ``("lhotse", path, idx, ...)``
-* ``_graph_origin``: a graph-local token that tells the current iterator graph
-  how to rebuild the exact output item
-
-The preferred path for indexed restore is ``_graph_origin``:
+Indexed restore uses ``_graph_origin`` tokens attached to yielded items:
 
 1. the sampler saves a token for every buffered item
 2. on restore it calls ``source[token]``
 3. each iterator node consumes its part of the token and delegates the rest to
    its child
 4. the graph reconstructs the same output item without replay
-
-``_origin`` is still useful as a base fallback for nodes that can reload a raw
-example from disk, but it does not encode graph transforms by itself.
 
 Why this enables O(1) restore
 -----------------------------
@@ -155,8 +146,11 @@ Graph-token restore avoids replay:
 * iterator nodes restore their internal cursor/RNG state
 * iteration continues from the next batch
 
-For indexed datasets, Lhotse treats this as a strict contract: if exact indexed
-restore fails, it raises an error instead of silently falling back to replay.
+For indexed datasets, Lhotse treats this as a strict contract:
+
+* missing indexed checkpoint state is a hard error
+* missing ``_graph_origin`` on graph-restorable buffered items is a hard error
+* Lhotse does not silently downgrade indexed exact restore to replay
 
 Worker-process restore
 ----------------------
@@ -176,17 +170,37 @@ Start with this checklist.
 3. Call ``resolve_iterator_source()`` in ``__init__`` so ``CutSet`` wrappers do
    not leak into the graph.
 4. Set ``is_checkpointable`` correctly.
-5. If the node supports exact reconstruction, implement ``__getitem__`` and
+5. Delegate child checkpoint state from ``state_dict()`` / ``load_state_dict()``
+   when the child is checkpointable.
+6. If the node supports exact reconstruction, implement ``__getitem__`` and
    ``has_constant_time_access``.
-6. Propagate graph tokens through iteration and reconstruction.
-7. If the node has mutable iteration state, implement ``state_dict()`` and
-   ``load_state_dict()``.
+7. Propagate graph tokens through iteration and reconstruction.
+8. If the node has mutable iteration state, include that state in
+   ``state_dict()`` and ``load_state_dict()``.
+
+Checkpointable does not imply O(1)
+----------------------------------
+
+``is_checkpointable`` and ``has_constant_time_access`` are different contracts.
+
+Examples of checkpointable but non-O(1) nodes in the codebase:
+
+* ``LazyManifestIterator``
+* ``LazySharIterator``
+
+Set ``is_checkpointable = True`` when the node can resume exactly, even if that
+resume path is sequential rather than random-access. Set
+``has_constant_time_access = True`` only when ``__getitem__`` can rebuild a
+specific output item directly from a token.
 
 Minimal stateless transform node
 --------------------------------
 
 This is the simplest useful pattern for a transform that preserves exact O(1)
-restore when its source supports it:
+restore when its source supports it. The important detail is that a
+checkpointable parent must delegate child state explicitly; checkpoint graph
+traversal does not recurse into checkpointable children of a checkpointable
+parent.
 
 .. code-block:: python
 
@@ -226,10 +240,14 @@ restore when its source supports it:
                yield maybe_attach_graph_origin(transform(item), get_graph_origin(item))
 
        def state_dict(self):
-           return {}
+           state = {}
+           if getattr(self.source, "is_checkpointable", False):
+               state["source"] = self.source.state_dict()
+           return state
 
        def load_state_dict(self, state):
-           pass
+           if "source" in state:
+               self.source.load_state_dict(state["source"])
 
 Stateful node with RNG or cursor state
 --------------------------------------
@@ -257,31 +275,33 @@ When a node should not support exact restore
 
 Some iterator shapes are intentionally not checkpointable or not exact:
 
-* shuffle buffers that do not cheaply expose their buffered state
 * infinite approximate multiplexers
-* flatteners that can stop in the middle of an inner iterable without a stable
-  per-item coordinate
+* transforms whose output cannot be reconstructed exactly and whose in-flight
+  state cannot be serialized compactly
 
 For these nodes:
 
-* keep ``is_checkpointable = False`` when exact restoration is not implementable
+* keep ``is_checkpointable = False`` only when exact resumption of any kind is
+  not implementable
 * do not claim ``has_constant_time_access = True``
 * prefer an explicit exception over an implicit fallback
+
+Nodes such as ``LazyShuffler`` and ``LazyFlattener`` can still be exact for
+indexed outer sources by saving compact local state:
+
+* ``LazyShuffler`` saves its shuffle buffer and RNG state
+* ``LazyFlattener`` saves the outer token and the local offset inside the
+  current inner collection
 
 Runtime metadata rules
 ----------------------
 
-Checkpoint metadata such as ``_origin`` and ``_graph_origin`` is runtime-only.
-Do not attach it through normal custom fields on cuts, because that would
-serialize it into manifests.
+Checkpoint metadata such as ``_graph_origin`` is runtime-only. Do not attach it
+through normal custom fields on cuts, because that would serialize it into
+manifests.
 
-Use:
-
-* ``attach_origin(...)``
-* ``attach_graph_origin(...)``
-
-These helpers bypass cut serialization hooks and keep checkpoint metadata
-process-local.
+Use ``attach_graph_origin(...)``. This helper bypasses cut serialization hooks
+and keeps checkpoint metadata process-local.
 
 Testing new IteratorNodes
 -------------------------
@@ -293,6 +313,8 @@ A new node should have tests for:
 * worker-process restore when supported
 * graph-token propagation if it wraps another indexed node
 * failure behavior when reconstruction is impossible
+* strict errors when the node claims graph restore support but emitted items are
+  missing ``_graph_origin``
 
 The checkpoint matrix in ``test/test_iterator_node_e2e_checkpoint.py`` is the
 main coverage gate for production ``IteratorNode`` subclasses.

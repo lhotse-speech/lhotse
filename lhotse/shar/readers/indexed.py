@@ -7,7 +7,6 @@ from lhotse.lazy import (
     IteratorNode,
     LazyIteratorChain,
     attach_graph_origin,
-    attach_origin,
     is_dill_enabled,
     normalize_graph_token,
 )
@@ -268,31 +267,6 @@ class LazyIndexedSharIterator(IteratorNode):
         cut.shar_epoch = item_epoch
         global_idx = idx if idx >= 0 else idx + self._total_len
         attach_graph_origin(cut, (global_idx, item_epoch))
-
-        # Attach origin for checkpoint reload.
-        ip_str = str(self._raw_index_path) if self._raw_index_path is not None else None
-        if hasattr(self, "in_dir"):
-            attach_origin(
-                cut,
-                ("lhotse_shar", str(self.in_dir), global_idx, ip_str, item_epoch),
-            )
-        else:
-            # Encode the per-shard path mapping so the loader can
-            # reconstruct indexed readers for this specific shard.
-            import json
-
-            shard_paths = {k: str(v) for k, v in self.shards[shard_idx].items()}
-            if self._index_streams is not None:
-                # Include per-field index paths for this shard under "_index".
-                idx_paths = {}
-                for f_name, f_paths in self._index_streams.items():
-                    idx_paths[f_name] = str(f_paths[shard_idx])
-                shard_paths["_index"] = idx_paths
-            attach_origin(
-                cut,
-                ("lhotse_shar_fields", json.dumps(shard_paths), pos, item_epoch),
-            )
-
         return cut
 
     def _get_worker_indices(self) -> List[int]:

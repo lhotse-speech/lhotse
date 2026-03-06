@@ -2,6 +2,7 @@ import os
 import random
 import types
 import warnings
+from collections import deque
 from contextlib import contextmanager
 from functools import partial
 from typing import Any, Callable, Iterable, List, Literal, Optional, TypeVar, Union
@@ -12,7 +13,7 @@ from lhotse.serialization import (
     deserialize_item,
     open_best,
 )
-from lhotse.utils import Pathlike, fastcopy, is_module_available, streaming_shuffle
+from lhotse.utils import Pathlike, fastcopy, is_module_available
 
 T = TypeVar("T")
 
@@ -140,9 +141,9 @@ def _attach_runtime_metadata(item: Any, name: str, value: Any) -> Any:
     Attach iterator runtime metadata without routing through Cut.custom.
 
     Cut-like objects use ``CustomFieldMixin.__setattr__`` to redirect unknown
-    attributes into the serialized ``custom`` field. Checkpoint metadata such as
-    ``_origin`` and ``_graph_origin`` must stay process-local and never appear in
-    manifests, so we bypass ``__setattr__`` when possible.
+    attributes into the serialized ``custom`` field. Graph restore metadata such
+    as ``_graph_origin`` must stay process-local and never appear in manifests,
+    so we bypass ``__setattr__`` when possible.
     """
     try:
         object.__setattr__(item, name, value)
@@ -152,10 +153,6 @@ def _attach_runtime_metadata(item: Any, name: str, value: Any) -> Any:
         except Exception:
             pass
     return item
-
-
-def attach_origin(item: Any, origin: Any) -> Any:
-    return _attach_runtime_metadata(item, "_origin", origin)
 
 
 def normalize_graph_token(token: Any) -> Any:
@@ -179,6 +176,15 @@ def maybe_attach_graph_origin(item: Any, token: Any) -> Any:
     if token is None:
         return item
     return attach_graph_origin(item, token)
+
+
+def require_graph_origin(item: Any, owner: str, what: str = "items") -> Any:
+    token = get_graph_origin(item)
+    if token is None:
+        raise RuntimeError(
+            f"{owner} requires '_graph_origin' on {what} from graph-restorable sources."
+        )
+    return token
 
 
 def supports_graph_restore(source: Any, *, require_length: bool = False) -> bool:
@@ -549,8 +555,6 @@ class LazyIndexedManifestIterator(IteratorNode):
     def __getitem__(self, idx: int) -> Any:
         """O(1) random access: deserializes the *idx*-th item."""
         item = deserialize_item(self._reader[idx])
-        ip_str = str(self.index_path) if self.index_path is not None else None
-        attach_origin(item, ("lhotse", str(self.path), idx, ip_str))
         return attach_graph_origin(item, idx)
 
     def __iter__(self):
@@ -563,8 +567,6 @@ class LazyIndexedManifestIterator(IteratorNode):
                 self._range.reset()
         self._position = start
 
-        path_str = str(self.path)
-        ip_str = str(self.index_path) if self.index_path is not None else None
         n = len(self._reader)
         if self._range is not None:
             for i in range(start, n):
@@ -572,14 +574,12 @@ class LazyIndexedManifestIterator(IteratorNode):
                 phys_idx = self._range[i]
                 item = deserialize_item(self._reader[phys_idx])
                 attach_graph_origin(item, phys_idx)
-                attach_origin(item, ("lhotse", path_str, phys_idx, ip_str))
                 yield item
         else:
             for i in range(start, n):
                 self._position = i + 1
                 item = deserialize_item(self._reader[i])
                 attach_graph_origin(item, i)
-                attach_origin(item, ("lhotse", path_str, i, ip_str))
                 yield item
 
     def __len__(self) -> int:
@@ -861,7 +861,6 @@ class LazyIteratorMultiplexer(IteratorNode):
         # Iteration state
         self._rng_state = None
         self._exhausted: Optional[list] = None
-        self._local_positions: Optional[list] = None
         self._restored = False
 
     @property
@@ -901,12 +900,6 @@ class LazyIteratorMultiplexer(IteratorNode):
         else:
             exhausted = [False for _ in range(len(iters))]
         self._exhausted = exhausted
-        local_positions = (
-            list(self._local_positions)
-            if restored and self._local_positions is not None
-            else [0 for _ in range(len(iters))]
-        )
-        self._local_positions = local_positions
 
         def should_continue():
             if self.stop_early:
@@ -927,10 +920,11 @@ class LazyIteratorMultiplexer(IteratorNode):
             selected = iters[idx]
             try:
                 item = next(selected)
-                graph_token = get_graph_origin(item)
-                if graph_token is None and supports_graph_restore(self.sources[idx]):
-                    graph_token = local_positions[idx]
-                local_positions[idx] += 1
+                graph_token = None
+                if self.has_constant_time_access:
+                    graph_token = require_graph_origin(
+                        item, "LazyIteratorMultiplexer", "items"
+                    )
                 maybe_attach_graph_origin(
                     item, None if graph_token is None else (idx, graph_token)
                 )
@@ -949,11 +943,6 @@ class LazyIteratorMultiplexer(IteratorNode):
         sd = {
             "rng_state": self._rng_state,
             "exhausted": list(self._exhausted) if self._exhausted is not None else None,
-            "local_positions": (
-                list(self._local_positions)
-                if self._local_positions is not None
-                else None
-            ),
         }
         inner_states = []
         for s in self.sources:
@@ -964,7 +953,6 @@ class LazyIteratorMultiplexer(IteratorNode):
     def load_state_dict(self, sd: dict) -> None:
         self._rng_state = sd["rng_state"]
         self._exhausted = sd["exhausted"]
-        self._local_positions = sd.get("local_positions")
         for s, inner_sd in zip(self.sources, sd.get("inner_states", [])):
             _try_restore_child_state(s, inner_sd)
         self._restored = True
@@ -1048,14 +1036,12 @@ class LazyInfiniteApproximateMultiplexer(IteratorNode):
         # Sample the first M active streams to be multiplexed.
         active_streams = [None] * self.max_open_streams
         active_weights = [None] * self.max_open_streams
-        active_origins = [None] * self.max_open_streams
         stream_indexes = list(range(self.max_open_streams))
 
         def sample_new_stream_at(pos: int) -> None:
-            sampled_stream, sampled_weight, origin_idx = next(stream_source)
+            sampled_stream, sampled_weight, _ = next(stream_source)
             active_streams[pos] = iter(sampled_stream)
             active_weights[pos] = sampled_weight
-            active_origins[pos] = origin_idx
 
         for stream_pos in range(self.max_open_streams):
             sample_new_stream_at(stream_pos)
@@ -1083,10 +1069,8 @@ class LazyShuffler(IteratorNode):
     The shuffling algorithm is reservoir-sampling based.
     See :func:`lhotse.utils.streaming_shuffle` for details.
 
-    .. note:: LazyShuffler does **not** support checkpointing
-        (``state_dict`` / ``load_state_dict``).  The internal shuffle buffer
-        cannot be cheaply saved or reconstructed.  For resumable shuffled
-        iteration, use indexed random-access reads instead.
+    With graph-restorable indexed sources, the shuffle buffer and RNG state can
+    be checkpointed and restored exactly.
     """
 
     def __init__(
@@ -1097,22 +1081,130 @@ class LazyShuffler(IteratorNode):
     ) -> None:
         self.source = resolve_iterator_source(iterator)
         self.buffer_size = buffer_size
-        self.rng = rng
+        self.rng = rng if rng is not None else random.Random(random.getrandbits(64))
+        self._buffer = deque()
+        self._startup = True
+        self._source_exhausted = False
+        self._restored = False
+
+    @property
+    def is_checkpointable(self) -> bool:
+        return supports_graph_restore(self.source)
+
+    @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False)
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        return supports_graph_restore(self.source)
+
+    def __getitem__(self, token: Any) -> Any:
+        token = normalize_graph_token(token)
+        return attach_graph_origin(self.source[token], token)
+
+    def _reset_iteration_state(self) -> None:
+        self._buffer.clear()
+        self._startup = True
+        self._source_exhausted = False
+
+    def _next_source_item(self, source_iter) -> Any:
+        try:
+            return next(source_iter)
+        except StopIteration:
+            self._source_exhausted = True
+            return None
+
+    def _maybe_fill_buffer(self, source_iter) -> None:
+        if len(self._buffer) >= self.buffer_size:
+            return
+        item = self._next_source_item(source_iter)
+        if item is not None:
+            self._buffer.append(item)
+
+    def _swap_with_buffer(self, sample: Any) -> Any:
+        if not self._buffer:
+            return sample
+        swap_idx = self.rng.randint(0, len(self._buffer) - 1)
+        sample, self._buffer[swap_idx] = self._buffer[swap_idx], sample
+        return sample
+
+    def _startup_phase(self, source_iter):
+        while self._startup and not self._source_exhausted:
+            sample = self._next_source_item(source_iter)
+            if sample is None:
+                break
+            self._maybe_fill_buffer(source_iter)
+            sample = self._swap_with_buffer(sample)
+            if len(self._buffer) < self.buffer_size:
+                self._buffer.append(sample)
+                continue
+            self._startup = False
+            yield sample
+
+    def _steady_state_phase(self, source_iter):
+        while not self._source_exhausted:
+            sample = self._next_source_item(source_iter)
+            if sample is None:
+                break
+            self._maybe_fill_buffer(source_iter)
+            yield self._swap_with_buffer(sample)
 
     def __iter__(self):
-        return iter(
-            streaming_shuffle(
-                iter(self.source),
-                bufsize=self.buffer_size,
-                rng=self.rng,
-            )
-        )
+        source_iter = iter(self.source)
+        if self._restored:
+            self._restored = False
+        else:
+            self._reset_iteration_state()
+
+        yield from self._startup_phase(source_iter)
+        yield from self._steady_state_phase(source_iter)
+
+        while self._buffer:
+            yield self._buffer.popleft()
 
     def __len__(self) -> int:
         return len(self.source)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+    def state_dict(self) -> dict:
+        if not self.is_checkpointable:
+            raise NotImplementedError(
+                "LazyShuffler does not support checkpointing unless its source "
+                "supports graph restoration."
+            )
+        from lhotse.checkpoint import _rng_state_to_json
+
+        source_state = _try_collect_child_state(self.source)
+        return {
+            "buffer": [
+                require_graph_origin(item, "LazyShuffler", "buffered items")
+                for item in self._buffer
+            ],
+            "startup": self._startup,
+            "source_exhausted": self._source_exhausted,
+            "rng_state": _rng_state_to_json(self.rng.getstate()),
+            "source": source_state,
+        }
+
+    def load_state_dict(self, sd: dict) -> None:
+        if not self.is_checkpointable:
+            raise NotImplementedError(
+                "LazyShuffler does not support checkpointing unless its source "
+                "supports graph restoration."
+            )
+        from lhotse.checkpoint import _rng_state_from_json
+
+        _try_restore_child_state(self.source, sd.get("source"))
+        self._buffer = deque(
+            self.source[normalize_graph_token(token)] for token in sd.get("buffer", [])
+        )
+        self._startup = sd.get("startup", True)
+        self._source_exhausted = sd.get("source_exhausted", False)
+        self.rng.setstate(_rng_state_from_json(sd["rng_state"]))
+        self._restored = True
 
 
 class LazyFilter(IteratorNode):
@@ -1283,10 +1375,8 @@ class LazyFlattener(IteratorNode):
     """
     A wrapper over an iterable of collections that flattens it to an iterable of items.
 
-    .. note:: This class does **not** support checkpointing
-        (``state_dict`` / ``load_state_dict``). The flattener may be interrupted
-        in the middle of an inner collection, and there is no cheap generic way
-        to capture that inner-item offset.
+    With graph-restorable outer sources, this node checkpoints exactly by saving
+    the current outer-item token and the local offset within that collection.
 
     Example::
 
@@ -1296,10 +1386,92 @@ class LazyFlattener(IteratorNode):
 
     def __init__(self, iterator: Iterable) -> None:
         self.source = resolve_iterator_source(iterator)
+        self._active_outer_token = None
+        self._inner_position = 0
+        self._restored = False
+
+    @property
+    def is_checkpointable(self) -> bool:
+        return supports_graph_restore(self.source)
+
+    @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False)
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        return supports_graph_restore(self.source)
+
+    def _resolve_collection(self, collection: Any) -> Any:
+        return resolve_iterator_source(collection)
+
+    def _inner_token(self, item: Any, inner_idx: int) -> Any:
+        token = get_graph_origin(item)
+        return inner_idx if token is None else token
+
+    def _restore_inner_item(self, collection: Any, token: Any) -> Any:
+        collection = self._resolve_collection(collection)
+        token = normalize_graph_token(token)
+        if isinstance(token, int):
+            if hasattr(collection, "__getitem__"):
+                return collection[token]
+            for idx, item in enumerate(collection):
+                if idx == token:
+                    return item
+            raise IndexError(
+                f"LazyFlattener inner index {token} is out of range for {type(collection).__name__}."
+            )
+        if supports_graph_restore(collection):
+            return collection[token]
+        raise RuntimeError(
+            "LazyFlattener received a non-integer inner graph token for a collection "
+            "that does not support graph restoration."
+        )
+
+    def __getitem__(self, idx: Any) -> Any:
+        token = normalize_graph_token(idx)
+        if not isinstance(token, tuple) or len(token) != 2:
+            raise TypeError(
+                "LazyFlattener expects graph restore tokens shaped like "
+                "(outer_token, inner_token)."
+            )
+        outer_token, inner_token = token
+        collection = self.source[outer_token]
+        item = self._restore_inner_item(collection, inner_token)
+        return attach_graph_origin(item, token)
+
+    def _iter_collection(
+        self, collection: Any, outer_token: Any, start_inner: int = 0
+    ) -> Iterable[Any]:
+        collection = self._resolve_collection(collection)
+        for inner_idx, item in enumerate(collection):
+            if inner_idx < start_inner:
+                continue
+            self._active_outer_token = outer_token
+            self._inner_position = inner_idx + 1
+            token = None
+            if outer_token is not None:
+                token = (outer_token, self._inner_token(item, inner_idx))
+            yield maybe_attach_graph_origin(item, token)
+        self._active_outer_token = None
+        self._inner_position = 0
 
     def __iter__(self):
+        if self._restored and self._active_outer_token is not None:
+            collection = self.source[self._active_outer_token]
+            yield from self._iter_collection(
+                collection,
+                self._active_outer_token,
+                start_inner=self._inner_position,
+            )
+        self._restored = False
         for cuts in self.source:
-            yield from cuts
+            outer_token = (
+                require_graph_origin(cuts, "LazyFlattener", "outer collections")
+                if self.is_checkpointable
+                else None
+            )
+            yield from self._iter_collection(cuts, outer_token)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
@@ -1313,16 +1485,29 @@ class LazyFlattener(IteratorNode):
         )
 
     def state_dict(self) -> dict:
-        raise NotImplementedError(
-            "LazyFlattener does not support checkpointing. "
-            "Use a pipeline without LazyFlattener before checkpointing."
-        )
+        if not self.is_checkpointable:
+            raise NotImplementedError(
+                "LazyFlattener does not support checkpointing unless its outer "
+                "source supports graph restoration."
+            )
+        source_state = _try_collect_child_state(self.source)
+        state = {
+            "active_outer_token": self._active_outer_token,
+            "inner_position": self._inner_position,
+            "source": source_state,
+        }
+        return state
 
     def load_state_dict(self, sd: dict) -> None:
-        raise NotImplementedError(
-            "LazyFlattener does not support checkpointing. "
-            "Use a pipeline without LazyFlattener before checkpointing."
-        )
+        if not self.is_checkpointable:
+            raise NotImplementedError(
+                "LazyFlattener does not support checkpointing unless its outer "
+                "source supports graph restoration."
+            )
+        self._active_outer_token = normalize_graph_token(sd.get("active_outer_token"))
+        self._inner_position = sd.get("inner_position", 0)
+        _try_restore_child_state(self.source, sd.get("source"))
+        self._restored = True
 
 
 class LazyRepeater(IteratorNode):
@@ -1351,8 +1536,6 @@ class LazyRepeater(IteratorNode):
 
     @property
     def has_constant_time_access(self) -> bool:
-        if self.times is None:
-            return False  # infinite repeater
         return supports_graph_restore(self.source)
 
     def __getitem__(self, idx: Any) -> Any:
@@ -1498,11 +1681,7 @@ class LazySlicer(IteratorNode):
 def attach_repeat_idx_to_id(item: Any, idx: int) -> Any:
     if not hasattr(item, "id"):
         return item
-    repeated = fastcopy(item, id=f"{item.id}_repeat{idx}")
-    origin = getattr(item, "_origin", None)
-    if origin is not None:
-        attach_origin(repeated, ("lhotse_repeat", list(origin), idx))
-    return repeated
+    return fastcopy(item, id=f"{item.id}_repeat{idx}")
 
 
 def count_newlines_fast(path: Pathlike):

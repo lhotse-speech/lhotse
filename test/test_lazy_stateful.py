@@ -10,6 +10,7 @@ Every class gets two kinds of tests:
 import json
 import random
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,9 @@ from lhotse.lazy import (
     LazyRepeater,
     LazyShuffler,
     LazySlicer,
+    attach_graph_origin,
 )
+from lhotse.utils import streaming_shuffle
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -77,6 +80,57 @@ class _IndexedPlainIterator(IteratorNode):
 
     def __getitem__(self, idx):
         return self.items[idx]
+
+    def __len__(self):
+        return len(self.items)
+
+    def state_dict(self):
+        return {"position": self.position}
+
+    def load_state_dict(self, sd):
+        self.position = sd["position"]
+        self._restored = True
+
+
+@dataclass(eq=True)
+class _ToyItem:
+    id: str
+    value: int
+
+
+@dataclass(eq=True)
+class _ToyCollection:
+    items: list
+
+    def __iter__(self):
+        yield from self.items
+
+    def __getitem__(self, idx):
+        return self.items[idx]
+
+    def __len__(self):
+        return len(self.items)
+
+
+class _IndexedGraphIterator(IteratorNode):
+    is_checkpointable = True
+    is_indexed = True
+    has_constant_time_access = True
+
+    def __init__(self, items):
+        self.items = list(items)
+        self.position = 0
+        self._restored = False
+
+    def __iter__(self):
+        start = self.position if self._restored else 0
+        self._restored = False
+        for idx in range(start, len(self.items)):
+            self.position = idx + 1
+            yield attach_graph_origin(self.items[idx], idx)
+
+    def __getitem__(self, idx):
+        return attach_graph_origin(self.items[idx], idx)
 
     def __len__(self):
         return len(self.items)
@@ -470,32 +524,17 @@ class TestLazyIteratorMultiplexerStateful:
 
             assert first_k + remaining == all_items
 
-    def test_restore_without_child_graph_tokens(self):
-        mux_full = LazyIteratorMultiplexer(
+    def test_requires_child_graph_tokens(self):
+        mux = LazyIteratorMultiplexer(
             _IndexedPlainIterator(range(8)),
             _IndexedPlainIterator(range(100, 108)),
             seed=42,
         )
-        all_items = list(mux_full)
-
-        mux1 = LazyIteratorMultiplexer(
-            _IndexedPlainIterator(range(8)),
-            _IndexedPlainIterator(range(100, 108)),
-            seed=42,
-        )
-        gen1 = iter(mux1)
-        first_k = consume(gen1, 5)
-        sd = mux1.state_dict()
-
-        mux2 = LazyIteratorMultiplexer(
-            _IndexedPlainIterator(range(8)),
-            _IndexedPlainIterator(range(100, 108)),
-            seed=42,
-        )
-        mux2.load_state_dict(sd)
-        remaining = list(mux2)
-
-        assert first_k + remaining == all_items
+        with pytest.raises(
+            RuntimeError,
+            match="LazyIteratorMultiplexer requires '_graph_origin'",
+        ):
+            next(iter(mux))
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +577,10 @@ class TestLazyShufflerStateful:
         assert isinstance(shuf, IteratorNode)
         assert not shuf.is_checkpointable
 
+    def test_checkpointable_with_indexed_source(self):
+        shuf = LazyShuffler(_IndexedGraphIterator([_ToyItem("a", 1)]))
+        assert shuf.is_checkpointable
+
     def test_source_attribute(self):
         shuf = LazyShuffler([1, 2, 3])
         assert hasattr(shuf, "source")
@@ -548,6 +591,41 @@ class TestLazyShufflerStateful:
         shuf = LazyShuffler([1, 2, 3])
         with pytest.raises(NotImplementedError, match="does not support checkpointing"):
             collect_state_dict(shuf)
+
+    def test_matches_streaming_shuffle_order(self):
+        items = list(range(20))
+        expected = list(streaming_shuffle(iter(items), bufsize=4, rng=random.Random(7)))
+        actual = list(LazyShuffler(items, buffer_size=4, rng=random.Random(7)))
+        assert actual == expected
+
+    def test_restore_yields_remaining_items_for_indexed_source(self):
+        items = [_ToyItem(f"item-{idx}", idx) for idx in range(12)]
+        all_items = list(
+            LazyShuffler(
+                _IndexedGraphIterator(items),
+                buffer_size=4,
+                rng=random.Random(7),
+            )
+        )
+
+        shuf1 = LazyShuffler(
+            _IndexedGraphIterator(items),
+            buffer_size=4,
+            rng=random.Random(7),
+        )
+        gen1 = iter(shuf1)
+        first_k = consume(gen1, 5)
+        sd = shuf1.state_dict()
+
+        shuf2 = LazyShuffler(
+            _IndexedGraphIterator(items),
+            buffer_size=4,
+            rng=random.Random(7),
+        )
+        shuf2.load_state_dict(sd)
+        remaining = list(shuf2)
+
+        assert first_k + remaining == all_items
 
 
 # ---------------------------------------------------------------------------
@@ -644,6 +722,33 @@ class TestLazyFlattenerStateful:
         with pytest.raises(NotImplementedError, match="does not support checkpointing"):
             collect_state_dict(flat)
 
+    def test_checkpointable_with_indexed_outer_source(self):
+        flat = LazyFlattener(
+            _IndexedGraphIterator(
+                [_ToyCollection([_ToyItem("a", 1), _ToyItem("b", 2)])]
+            )
+        )
+        assert flat.is_checkpointable
+
+    def test_restore_yields_remaining_items_for_indexed_outer_source(self):
+        collections = [
+            _ToyCollection([_ToyItem("a0", 0), _ToyItem("a1", 1), _ToyItem("a2", 2)]),
+            _ToyCollection([_ToyItem("b0", 3), _ToyItem("b1", 4), _ToyItem("b2", 5)]),
+            _ToyCollection([_ToyItem("c0", 6), _ToyItem("c1", 7), _ToyItem("c2", 8)]),
+        ]
+        all_items = list(LazyFlattener(_IndexedGraphIterator(collections)))
+
+        flat1 = LazyFlattener(_IndexedGraphIterator(collections))
+        gen1 = iter(flat1)
+        first_k = consume(gen1, 4)
+        sd = flat1.state_dict()
+
+        flat2 = LazyFlattener(_IndexedGraphIterator(collections))
+        flat2.load_state_dict(sd)
+        remaining = list(flat2)
+
+        assert first_k + remaining == all_items
+
 
 # ---------------------------------------------------------------------------
 # LazyRepeater
@@ -690,6 +795,39 @@ class TestLazyRepeaterStateful:
         assert rep._current_epoch == 0
         consume(gen, 2)
         assert rep._current_epoch == 1
+
+    def test_infinite_repeater_is_graph_restorable(self):
+        rep = LazyRepeater(_IndexedGraphIterator([_ToyItem("a", 1)]), times=None)
+        assert rep.has_constant_time_access
+
+    def test_infinite_repeater_restore_yields_expected_prefix(self):
+        items = [_ToyItem(f"item-{idx}", idx) for idx in range(3)]
+
+        expected = consume(
+            iter(
+                LazyRepeater(_IndexedGraphIterator(items), times=None, preserve_id=True)
+            ),
+            9,
+        )
+
+        rep1 = LazyRepeater(
+            _IndexedGraphIterator(items),
+            times=None,
+            preserve_id=True,
+        )
+        gen1 = iter(rep1)
+        first_k = consume(gen1, 5)
+        sd = rep1.state_dict()
+
+        rep2 = LazyRepeater(
+            _IndexedGraphIterator(items),
+            times=None,
+            preserve_id=True,
+        )
+        rep2.load_state_dict(sd)
+        remaining = consume(iter(rep2), 4)
+
+        assert first_k + remaining == expected
 
 
 # ---------------------------------------------------------------------------

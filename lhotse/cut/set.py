@@ -2831,8 +2831,7 @@ class CutSet(Serializable, AlgorithmMixin):
     @property
     def is_indexed(self) -> bool:
         """
-        Return ``True`` when the underlying iterator attaches ``_origin``
-        metadata to each yielded item, enabling O(1) checkpoint restore.
+        Return ``True`` when the underlying iterator is backed by indexed data.
         """
         return getattr(self.data, "is_indexed", False)
 

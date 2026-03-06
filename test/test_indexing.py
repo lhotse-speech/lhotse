@@ -549,12 +549,12 @@ def test_is_indexed_propagation(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# _origin attachment and propagation
+# _graph_origin attachment and propagation
 # ---------------------------------------------------------------------------
 
 
-def test_origin_attachment(tmp_path):
-    """_origin is attached to cuts from indexed iterators."""
+def test_graph_origin_attachment(tmp_path):
+    """_graph_origin is attached to cuts from indexed iterators."""
     from lhotse import CutSet
 
     path = tmp_path / "cuts.jsonl"
@@ -563,10 +563,8 @@ def test_origin_attachment(tmp_path):
     cs = CutSet.from_file(path, indexed=True)
     cuts = list(cs)
     for i, c in enumerate(cuts):
-        assert hasattr(c, "_origin"), f"Cut {c.id} missing _origin"
-        assert c._origin[0] == "lhotse"
-        assert c._origin[1] == str(path)
-        assert c._origin[2] == i
+        assert hasattr(c, "_graph_origin"), f"Cut {c.id} missing _graph_origin"
+        assert c._graph_origin == i
 
 
 def test_indexed_runtime_metadata_is_not_serialized(tmp_path):
@@ -579,7 +577,6 @@ def test_indexed_runtime_metadata_is_not_serialized(tmp_path):
     cut = next(iter(CutSet.from_file(path, indexed=True)))
     serialized = cut.to_dict()
 
-    assert "_origin" not in serialized.get("custom", {})
     assert "_graph_origin" not in serialized.get("custom", {})
 
     copied = fastcopy(cut, id="copy")
@@ -587,10 +584,9 @@ def test_indexed_runtime_metadata_is_not_serialized(tmp_path):
     assert copied.custom == cut.custom
 
 
-def test_origin_survives_pipeline(tmp_path):
-    """_origin survives filter -> repeat -> mux pipeline."""
+def test_graph_origin_survives_pipeline(tmp_path):
+    """_graph_origin reconstructs cuts through a composite indexed pipeline."""
     from lhotse import CutSet
-    from lhotse.checkpoint import reload_from_origin
 
     path_a = tmp_path / "cuts_a.jsonl"
     path_b = tmp_path / "cuts_b.jsonl"
@@ -605,8 +601,8 @@ def test_origin_survives_pipeline(tmp_path):
     pipeline = CutSet.mux(a, b, weights=[0.5, 0.5], seed=42)
 
     for c in pipeline:
-        assert hasattr(c, "_origin"), f"Cut {c.id} missing _origin after pipeline"
-        assert reload_from_origin(c._origin).id == c.id
+        assert hasattr(c, "_graph_origin"), f"Cut {c.id} missing _graph_origin"
+        assert pipeline.data[c._graph_origin].id == c.id
 
 
 def test_cutset_from_file_indexed(tmp_path):

@@ -37,7 +37,7 @@ from lhotse.dataset.sampling.checkpoint_backends import (
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
 from lhotse.lazy import (
-    get_graph_origin,
+    require_graph_origin,
     resolve_iterator_source,
     supports_graph_restore,
 )
@@ -230,7 +230,12 @@ class DynamicBucketingSampler(CutSampler):
                 bucketer_state = bucketer.get_state()
                 sd["rng_state"] = self.rng.getstate()
                 sd["bucketer_state"] = bucketer_state
-            except (AttributeError, TypeError, RuntimeError):
+            except RuntimeError:
+                if all(
+                    getattr(cs, "has_constant_time_access", False) for cs in self.cuts
+                ):
+                    raise
+            except (AttributeError, TypeError):
                 pass  # Fall back to O(N) on load
         # If we just restored state and deferred _fast_forward to __iter__,
         # preserve the pending O(1) payload so state_dict round-trips.
@@ -637,36 +642,24 @@ class DynamicBucketer:
     def _supports_graph_restore(source: Any) -> bool:
         return source is not None and supports_graph_restore(source)
 
-    def _capture_item_token(self, item: Cut, source: Any) -> dict:
-        if self._supports_graph_restore(source):
-            graph_origin = get_graph_origin(item)
-            if graph_origin is not None:
-                return {"kind": "graph", "value": graph_origin}
-
-        origin = getattr(item, "_origin", None)
-        if origin is None:
+    def _capture_item_token(self, item: Cut, source: Any) -> Any:
+        if not self._supports_graph_restore(source):
             raise RuntimeError(
-                "DynamicBucketer checkpoint requires indexed cuts with "
-                "restore metadata, but encountered a cut without '_origin'."
+                "DynamicBucketer checkpoint requires graph-restorable sources "
+                "when saving buffered O(1) restore state."
             )
-        return {"kind": "base", "value": list(origin)}
-
-    def _restore_item_token(self, token: dict, source: Any) -> Cut:
-        from lhotse.checkpoint import reload_from_origin
-
-        if token["kind"] == "graph":
-            if not self._supports_graph_restore(source):
-                raise RuntimeError(
-                    "DynamicBucketer checkpoint captured a graph-local restore token, "
-                    "but the current iterator graph does not support constant-time "
-                    "restoration."
-                )
-            return source[token["value"]]
-        if token["kind"] == "base":
-            return reload_from_origin(tuple(token["value"]))
-        raise RuntimeError(
-            f"DynamicBucketer checkpoint has an unknown restore token kind: {token['kind']}"
+        return require_graph_origin(
+            item, "DynamicBucketer checkpoint", "buffered items"
         )
+
+    def _restore_item_token(self, token: Any, source: Any) -> Cut:
+        if not self._supports_graph_restore(source):
+            raise RuntimeError(
+                "DynamicBucketer checkpoint captured a graph-local restore token, "
+                "but the current iterator graph does not support constant-time "
+                "restoration."
+            )
+        return source[token]
 
     # ------------------------------------------------------------------
     # State save / restore for O(1) indexed checkpoint
@@ -676,23 +669,23 @@ class DynamicBucketer:
         """Capture bucketer state for checkpoint."""
         from lhotse.checkpoint import _rng_state_to_json
 
-        bucket_origins: List[List] = []
+        bucket_tokens: List[List] = []
         for bucket in self.buckets:
-            origins = []
+            tokens = []
             with bucket.mutex:
                 for item in bucket.queue:
                     cuts = item if isinstance(item, tuple) else (item,)
-                    item_origins = []
+                    item_tokens = []
                     for cut_idx, cut in enumerate(cuts):
                         source = None
                         if self.restore_sources is not None:
                             source = self.restore_sources[cut_idx]
-                        item_origins.append(self._capture_item_token(cut, source))
-                    origins.append(item_origins)
-            bucket_origins.append(origins)
+                        item_tokens.append(self._capture_item_token(cut, source))
+                    tokens.append(item_tokens)
+            bucket_tokens.append(tokens)
 
         state = {
-            "bucket_origins": bucket_origins,
+            "bucket_tokens": bucket_tokens,
             "rng_state": _rng_state_to_json(self.rng.getstate()),
         }
         if self._selection_state is not None:
@@ -717,23 +710,23 @@ class DynamicBucketer:
         rng_state = _rng_state_from_json(state["rng_state"])
         self.rng.setstate(rng_state)
 
-        # Restore buffered items from saved origins.
-        bucket_origins = state["bucket_origins"]
-        if len(bucket_origins) != len(self.buckets):
+        # Restore buffered items from saved graph tokens.
+        bucket_tokens = state["bucket_tokens"]
+        if len(bucket_tokens) != len(self.buckets):
             raise RuntimeError(
                 "DynamicBucketer checkpoint is inconsistent: "
-                f"saved {len(bucket_origins)} buckets, expected {len(self.buckets)}."
+                f"saved {len(bucket_tokens)} buckets, expected {len(self.buckets)}."
             )
-        for bucket, origins in zip(self.buckets, bucket_origins):
+        for bucket, tokens in zip(self.buckets, bucket_tokens):
             with bucket.mutex:
                 bucket.queue.clear()
-            for item_origins in origins:
+            for item_tokens in tokens:
                 items = []
-                for cut_idx, origin in enumerate(item_origins):
+                for cut_idx, token in enumerate(item_tokens):
                     source = None
                     if self.restore_sources is not None:
                         source = self.restore_sources[cut_idx]
-                    items.append(self._restore_item_token(origin, source))
+                    items.append(self._restore_item_token(token, source))
                 bucket.put(tuple(items) if len(items) > 1 else items[0])
 
         # Create and restore BucketSelectionState
