@@ -1,3 +1,4 @@
+import hashlib
 import itertools
 import logging
 import pickle
@@ -54,6 +55,7 @@ from lhotse.lazy import (
     _try_collect_child_state,
     _try_restore_child_state,
     attach_graph_origin,
+    normalize_graph_token,
     resolve_iterator_source,
 )
 from lhotse.serialization import Serializable
@@ -3924,7 +3926,6 @@ class LazyCutMixer(IteratorNode):
         return (
             not isinstance(self.seed, random.Random)
             and getattr(self.source, "has_constant_time_access", False)
-            and hasattr(self.source, "__len__")
             and hasattr(self.source, "__getitem__")
             and self._noise_is_indexed()
         )
@@ -3978,14 +3979,14 @@ class LazyCutMixer(IteratorNode):
 
         for cut in self.source:
             if self.has_constant_time_access:
-                source_idx = getattr(cut, "_graph_origin", None)
-                if source_idx is None:
+                source_token = getattr(cut, "_graph_origin", None)
+                if source_token is None:
                     raise RuntimeError(
                         "LazyCutMixer requires '_graph_origin' on indexed source items "
                         "to support constant-time reconstruction."
                     )
-                item_rng = self._make_item_rng(source_idx, iteration_seed)
-                cut = attach_graph_origin(self._mix_one(cut, item_rng), source_idx)
+                item_rng = self._make_item_rng(source_token, iteration_seed)
+                cut = attach_graph_origin(self._mix_one(cut, item_rng), source_token)
             else:
                 cut = self._mix_one(cut, rng)
             yield cut
@@ -4014,11 +4015,15 @@ class LazyCutMixer(IteratorNode):
         return resolve_seed(self.seed) + iteration_idx
 
     @staticmethod
-    def _combine_seed(iteration_seed: int, source_idx: int) -> int:
-        return ((iteration_seed * 0x9E3779B97F4A7C15) + source_idx) & 0xFFFFFFFFFFFFFFFF
+    def _combine_seed(iteration_seed: int, source_token: Any) -> int:
+        token_bytes = pickle.dumps(normalize_graph_token(source_token), protocol=4)
+        token_seed = int.from_bytes(
+            hashlib.blake2b(token_bytes, digest_size=8).digest(), byteorder="little"
+        )
+        return ((iteration_seed * 0x9E3779B97F4A7C15) + token_seed) & 0xFFFFFFFFFFFFFFFF
 
-    def _make_item_rng(self, source_idx: int, iteration_seed: int) -> random.Random:
-        return random.Random(self._combine_seed(iteration_seed, source_idx))
+    def _make_item_rng(self, source_token: Any, iteration_seed: int) -> random.Random:
+        return random.Random(self._combine_seed(iteration_seed, source_token))
 
     def _mix_one(self, cut: Cut, rng: random.Random) -> Cut:
         # Check whether we're going to mix something into the current cut
@@ -4072,20 +4077,22 @@ class LazyCutMixer(IteratorNode):
             preserve_id=self.preserve_id is not None,
         )
 
-    def __getitem__(self, idx: int) -> Cut:
+    def __getitem__(self, idx: Any) -> Cut:
         if not self.has_constant_time_access:
             raise TypeError(
                 "LazyCutMixer only supports __getitem__ when both the source and "
                 "mix-in cuts provide constant-time indexed access."
             )
+        graph_token = normalize_graph_token(idx)
         iteration_seed = (
             self._iteration_seed
             if self._iteration_seed is not None
             else self._resolve_iteration_seed(0)
         )
-        cut = self.source[idx]
+        cut = self.source[graph_token]
         return attach_graph_origin(
-            self._mix_one(cut, self._make_item_rng(idx, iteration_seed)), idx
+            self._mix_one(cut, self._make_item_rng(graph_token, iteration_seed)),
+            graph_token,
         )
 
     def state_dict(self) -> dict:

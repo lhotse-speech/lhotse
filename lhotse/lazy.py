@@ -158,6 +158,14 @@ def attach_origin(item: Any, origin: Any) -> Any:
     return _attach_runtime_metadata(item, "_origin", origin)
 
 
+def normalize_graph_token(token: Any) -> Any:
+    if isinstance(token, list):
+        return tuple(normalize_graph_token(part) for part in token)
+    if isinstance(token, tuple):
+        return tuple(normalize_graph_token(part) for part in token)
+    return token
+
+
 def attach_graph_origin(item: Any, idx: int) -> Any:
     return _attach_runtime_metadata(item, "_graph_origin", idx)
 
@@ -640,7 +648,11 @@ class LazyIteratorChain(IteratorNode):
             getattr(s, "has_constant_time_access", False) for s in self.sources
         ) and all(hasattr(s, "__len__") for s in self.sources)
 
-    def __getitem__(self, idx: int) -> Any:
+    def __getitem__(self, idx: Any) -> Any:
+        idx = normalize_graph_token(idx)
+        if isinstance(idx, tuple) and len(idx) == 2:
+            src_idx, source_token = idx
+            return attach_graph_origin(self.sources[src_idx][source_token], idx)
         from bisect import bisect_right
 
         cum = self._cumulative_lengths()
@@ -705,8 +717,7 @@ class LazyIteratorChain(IteratorNode):
                 if self.has_constant_time_access and not self.shuffle_iters:
                     local_idx = getattr(item, "_graph_origin", None)
                     if local_idx is not None:
-                        prefix = cum[src_idx - 1] if src_idx > 0 else 0
-                        attach_graph_origin(item, prefix + local_idx)
+                        attach_graph_origin(item, (src_idx, local_idx))
                 yield item
 
     # ------------------------------------------------------------------
@@ -835,11 +846,29 @@ class LazyIteratorMultiplexer(IteratorNode):
         # Iteration state
         self._rng_state = None
         self._exhausted: Optional[list] = None
+        self._local_positions: Optional[list] = None
         self._restored = False
 
     @property
     def is_indexed(self) -> bool:
         return all(getattr(s, "is_indexed", False) for s in self.sources)
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        return all(
+            getattr(s, "has_constant_time_access", False) and hasattr(s, "__getitem__")
+            for s in self.sources
+        )
+
+    def __getitem__(self, token: Any) -> Any:
+        token = normalize_graph_token(token)
+        if not isinstance(token, tuple) or len(token) != 2:
+            raise TypeError(
+                "LazyIteratorMultiplexer expects graph restore tokens shaped like "
+                "(source_index, source_token)."
+            )
+        source_idx, source_token = token
+        return attach_graph_origin(self.sources[source_idx][source_token], token)
 
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
@@ -859,6 +888,12 @@ class LazyIteratorMultiplexer(IteratorNode):
         else:
             exhausted = [False for _ in range(len(iters))]
         self._exhausted = exhausted
+        local_positions = (
+            list(self._local_positions)
+            if self._restored and self._local_positions is not None
+            else [0 for _ in range(len(iters))]
+        )
+        self._local_positions = local_positions
 
         def should_continue():
             if self.stop_early:
@@ -879,6 +914,12 @@ class LazyIteratorMultiplexer(IteratorNode):
             selected = iters[idx]
             try:
                 item = next(selected)
+                graph_token = getattr(item, "_graph_origin", None)
+                if graph_token is None and hasattr(self.sources[idx], "__getitem__"):
+                    graph_token = local_positions[idx]
+                local_positions[idx] += 1
+                if graph_token is not None:
+                    attach_graph_origin(item, (idx, graph_token))
                 yield item
             except StopIteration:
                 exhausted[idx] = True
@@ -894,6 +935,11 @@ class LazyIteratorMultiplexer(IteratorNode):
         sd = {
             "rng_state": self._rng_state,
             "exhausted": list(self._exhausted) if self._exhausted is not None else None,
+            "local_positions": (
+                list(self._local_positions)
+                if self._local_positions is not None
+                else None
+            ),
         }
         inner_states = []
         for s in self.sources:
@@ -904,6 +950,7 @@ class LazyIteratorMultiplexer(IteratorNode):
     def load_state_dict(self, sd: dict) -> None:
         self._rng_state = sd["rng_state"]
         self._exhausted = sd["exhausted"]
+        self._local_positions = sd.get("local_positions")
         for s, inner_sd in zip(self.sources, sd.get("inner_states", [])):
             _try_restore_child_state(s, inner_sd)
         self._restored = True
@@ -1087,8 +1134,25 @@ class LazyFilter(IteratorNode):
     def is_indexed(self) -> bool:
         return getattr(self.source, "is_indexed", False)
 
+    @property
+    def has_constant_time_access(self) -> bool:
+        return getattr(self.source, "has_constant_time_access", False) and hasattr(
+            self.source, "__getitem__"
+        )
+
+    def __getitem__(self, token: Any) -> Any:
+        item = self.source[normalize_graph_token(token)]
+        if not self.predicate(item):
+            raise RuntimeError(
+                "LazyFilter received a graph restore token that does not satisfy its "
+                "predicate."
+            )
+        return attach_graph_origin(item, normalize_graph_token(token))
+
     def __iter__(self):
-        return filter(self.predicate, self.source)
+        for item in self.source:
+            if self.predicate(item):
+                yield item
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
@@ -1161,20 +1225,23 @@ class LazyMapper(IteratorNode):
 
     @property
     def has_constant_time_access(self) -> bool:
-        return getattr(self.source, "has_constant_time_access", False)
+        return getattr(self.source, "has_constant_time_access", False) and hasattr(
+            self.source, "__getitem__"
+        )
 
-    def __getitem__(self, idx: int) -> Any:
-        item = self.source[idx]
+    def __getitem__(self, idx: Any) -> Any:
+        graph_token = normalize_graph_token(idx)
+        item = self.source[graph_token]
         if self.apply_fn is None or self.apply_fn(item):
             item = self.fn(item)
-        return attach_graph_origin(item, idx)
+        return attach_graph_origin(item, graph_token)
 
     def __iter__(self):
         if self.apply_fn is None:
             for item in self.source:
                 graph_idx = getattr(item, "_graph_origin", None)
                 item = self.fn(item)
-                if self.has_constant_time_access and graph_idx is not None:
+                if graph_idx is not None:
                     attach_graph_origin(item, graph_idx)
                 yield item
         else:
@@ -1184,7 +1251,7 @@ class LazyMapper(IteratorNode):
                     ans = self.fn(item)
                 else:
                     ans = item
-                if self.has_constant_time_access and graph_idx is not None:
+                if graph_idx is not None:
                     attach_graph_origin(ans, graph_idx)
                 yield ans
 
@@ -1279,15 +1346,24 @@ class LazyRepeater(IteratorNode):
     def has_constant_time_access(self) -> bool:
         if self.times is None:
             return False  # infinite repeater
-        return getattr(self.source, "has_constant_time_access", False)
+        return getattr(self.source, "has_constant_time_access", False) and hasattr(
+            self.source, "__getitem__"
+        )
 
-    def __getitem__(self, idx: int) -> Any:
-        n = len(self.source)
-        item = self.source[idx % n]
+    def __getitem__(self, idx: Any) -> Any:
+        graph_token = normalize_graph_token(idx)
+        if isinstance(graph_token, tuple) and len(graph_token) == 2:
+            repeat_idx, source_token = graph_token
+            item = self.source[source_token]
+        else:
+            n = len(self.source)
+            repeat_idx = graph_token // n
+            item = self.source[graph_token % n]
         if self.preserve_id:
-            return attach_graph_origin(item, idx)
-        repeat_idx = idx // n
-        return attach_graph_origin(attach_repeat_idx_to_id(item, repeat_idx), idx)
+            return attach_graph_origin(item, graph_token)
+        return attach_graph_origin(
+            attach_repeat_idx_to_id(item, repeat_idx), graph_token
+        )
 
     def __iter__(self):
         restored = self._restored
@@ -1304,10 +1380,9 @@ class LazyRepeater(IteratorNode):
             at_least_once = False
             for item in iterator:
                 at_least_once = True
-                if self.has_constant_time_access:
-                    source_idx = getattr(item, "_graph_origin", None)
-                    if source_idx is not None:
-                        attach_graph_origin(item, epoch * len(self.source) + source_idx)
+                source_idx = getattr(item, "_graph_origin", None)
+                if source_idx is not None:
+                    attach_graph_origin(item, (epoch, source_idx))
                 yield item
             if not at_least_once and not restored:
                 return  # Detect empty iterables to avoid hanging the program.
@@ -1364,10 +1439,21 @@ class LazySlicer(IteratorNode):
 
     @property
     def has_constant_time_access(self) -> bool:
-        return getattr(self.source, "has_constant_time_access", False)
+        return getattr(self.source, "has_constant_time_access", False) and hasattr(
+            self.source, "__getitem__"
+        )
 
-    def __getitem__(self, idx: int) -> Any:
-        return attach_graph_origin(self.source[idx * self.n + self.k], idx)
+    def __getitem__(self, idx: Any) -> Any:
+        graph_token = normalize_graph_token(idx)
+        if (
+            isinstance(graph_token, tuple)
+            and len(graph_token) == 2
+            and graph_token[0] == "source"
+        ):
+            return attach_graph_origin(self.source[graph_token[1]], graph_token)
+        if isinstance(graph_token, int):
+            return attach_graph_origin(self.source[graph_token * self.n + self.k], idx)
+        return attach_graph_origin(self.source[graph_token], graph_token)
 
     def __iter__(self):
         start = self._source_offset if self._restored else 0
@@ -1375,10 +1461,9 @@ class LazySlicer(IteratorNode):
         for idx, item in enumerate(self.source, start=start):
             self._source_offset = idx + 1
             if idx % self.n == self.k:
-                if self.has_constant_time_access:
-                    source_idx = getattr(item, "_graph_origin", None)
-                    if source_idx is not None:
-                        attach_graph_origin(item, source_idx // self.n)
+                source_idx = getattr(item, "_graph_origin", None)
+                if source_idx is not None:
+                    attach_graph_origin(item, ("source", source_idx))
                 yield item
 
     def __add__(self, other) -> "LazyIteratorChain":

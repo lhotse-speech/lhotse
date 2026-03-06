@@ -174,6 +174,23 @@ def _build_lazy_indexed_shar_iterator(sources: Dict[str, Path]) -> CutSet:
     )
 
 
+def _build_lazy_iterator_chain_over_indexed_shar(sources: Dict[str, Path]) -> CutSet:
+    return CutSet(
+        LazyIteratorChain(
+            LazyIndexedSharIterator(
+                fields={"cuts": [sources["shar_0"]]},
+                shuffle=True,
+                seed=29,
+            ),
+            LazyIndexedSharIterator(
+                fields={"cuts": [sources["shar_1"]]},
+                shuffle=True,
+                seed=31,
+            ),
+        )
+    )
+
+
 def _build_lazy_webdataset_iterator(sources: Dict[str, Path]) -> CutSet:
     pytest.importorskip("webdataset")
     return CutSet(LazyWebdatasetIterator(str(sources["webdataset_tar"])))
@@ -229,13 +246,6 @@ INDEXED_E2E_CASES = [
     pytest.param(
         "LazyIndexedSharIterator",
         _build_lazy_indexed_shar_iterator,
-        marks=pytest.mark.xfail(
-            strict=True,
-            reason=(
-                "O(1) restore does not yet preserve LazyIndexedSharIterator metadata "
-                "such as shard_origin and shar_epoch on buffered items."
-            ),
-        ),
         id="LazyIndexedSharIterator",
     ),
 ]
@@ -395,6 +405,17 @@ def test_iterator_node_checkpoint_matrix_is_complete():
         *REPLAY_E2E_NODE_NAMES,
     }
     assert _all_iterator_node_names() == expected
+
+
+def test_iterator_node_chain_preserves_nested_graph_tokens(
+    iterator_node_sources, monkeypatch
+):
+    _assert_exact_restore_with_wrapper(
+        _build_lazy_iterator_chain_over_indexed_shar,
+        iterator_node_sources,
+        monkeypatch,
+        expect_o1=True,
+    )
 
 
 @pytest.mark.parametrize(("node_name", "make_cuts"), INDEXED_E2E_CASES)

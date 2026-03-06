@@ -1,6 +1,6 @@
 import bisect
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from lhotse.cut import Cut
 from lhotse.lazy import (
@@ -9,6 +9,7 @@ from lhotse.lazy import (
     attach_graph_origin,
     attach_origin,
     is_dill_enabled,
+    normalize_graph_token,
 )
 from lhotse.serialization import deserialize_item, extension_contains
 from lhotse.shar.readers.lazy import _discover_fields, _is_local_uncompressed
@@ -226,8 +227,18 @@ class LazyIndexedSharIterator(IteratorNode):
         self._indexed_readers[shard_idx] = readers
         return readers
 
-    def __getitem__(self, idx: int) -> Cut:
+    def __getitem__(self, idx: Any) -> Cut:
         """O(1) random access to a cut by global index."""
+        idx = normalize_graph_token(idx)
+        item_epoch = self.epoch
+        if isinstance(idx, tuple):
+            if len(idx) != 2:
+                raise TypeError(
+                    "LazyIndexedSharIterator expects graph restore tokens shaped "
+                    "like (global_index, shar_epoch)."
+                )
+            idx, item_epoch = idx
+
         shard_idx, pos = self._resolve_index(idx)
 
         # Read and deserialize the cut.
@@ -254,14 +265,17 @@ class LazyIndexedSharIterator(IteratorNode):
                         setattr(cut, field, item[field])
 
         cut.shard_origin = self.shards[shard_idx]["cuts"]
-        cut.shar_epoch = self.epoch
+        cut.shar_epoch = item_epoch
         global_idx = idx if idx >= 0 else idx + self._total_len
-        attach_graph_origin(cut, global_idx)
+        attach_graph_origin(cut, (global_idx, item_epoch))
 
         # Attach origin for checkpoint reload.
         ip_str = str(self._raw_index_path) if self._raw_index_path is not None else None
         if hasattr(self, "in_dir"):
-            attach_origin(cut, ("lhotse_shar", str(self.in_dir), global_idx, ip_str))
+            attach_origin(
+                cut,
+                ("lhotse_shar", str(self.in_dir), global_idx, ip_str, item_epoch),
+            )
         else:
             # Encode the per-shard path mapping so the loader can
             # reconstruct indexed readers for this specific shard.
@@ -274,7 +288,10 @@ class LazyIndexedSharIterator(IteratorNode):
                 for f_name, f_paths in self._index_streams.items():
                     idx_paths[f_name] = str(f_paths[shard_idx])
                 shard_paths["_index"] = idx_paths
-            attach_origin(cut, ("lhotse_shar_fields", json.dumps(shard_paths), pos))
+            attach_origin(
+                cut,
+                ("lhotse_shar_fields", json.dumps(shard_paths), pos, item_epoch),
+            )
 
         return cut
 

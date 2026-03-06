@@ -458,8 +458,8 @@ def test_has_constant_time_access_propagates_through_mapper(tmp_path):
     assert direct.id == through_mapper.id
 
 
-def test_has_constant_time_access_stops_at_filter(tmp_path):
-    """LazyFilter always returns has_constant_time_access == False."""
+def test_has_constant_time_access_propagates_through_filter(tmp_path):
+    """LazyFilter preserves constant-time access via graph restore tokens."""
     from lhotse.lazy import LazyFilter, LazyIndexedManifestIterator
 
     path = tmp_path / "cuts.jsonl"
@@ -468,8 +468,17 @@ def test_has_constant_time_access_stops_at_filter(tmp_path):
     indexed = LazyIndexedManifestIterator(path)
     assert indexed.has_constant_time_access is True
 
-    filtered = LazyFilter(indexed, predicate=lambda x: True)
-    assert filtered.has_constant_time_access is False
+    filtered = LazyFilter(
+        indexed,
+        predicate=lambda x: int(x.id.split("-")[-1]) % 2 == 0,
+    )
+    assert filtered.has_constant_time_access is True
+
+    through_filter = filtered[4]
+    assert through_filter.id == indexed[4].id
+
+    with pytest.raises(RuntimeError, match="does not satisfy"):
+        filtered[3]
 
 
 def test_cutset_from_jsonl_lazy_shuffled(tmp_path):

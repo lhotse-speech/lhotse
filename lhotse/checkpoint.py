@@ -69,14 +69,23 @@ def _load_lhotse_origin(path: str, idx: int, index_path: Optional[str] = None):
     return deserialize_item(reader[idx])
 
 
-def _load_lhotse_shar_origin(path: str, idx: int, index_path: Optional[str] = None):
+def _load_lhotse_shar_origin(
+    path: str,
+    idx: int,
+    index_path: Optional[str] = None,
+    shar_epoch: Optional[int] = None,
+):
     from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 
     reader = LazyIndexedSharIterator(in_dir=path, index_path=index_path)
-    return reader[idx]
+    if shar_epoch is None:
+        return reader[idx]
+    return reader[(idx, shar_epoch)]
 
 
-def _load_lhotse_shar_fields_origin(path_json: str, idx: int):
+def _load_lhotse_shar_fields_origin(
+    path_json: str, idx: int, shar_epoch: Optional[int] = None
+):
     import json
 
     from lhotse.indexing import IndexedJsonlReader, IndexedTarReader
@@ -91,6 +100,7 @@ def _load_lhotse_shar_fields_origin(path_json: str, idx: int):
     cut = deserialize_item(
         IndexedJsonlReader(shard_paths["cuts"], index_path=cuts_ip)[idx]
     )
+    cut.shard_origin = shard_paths["cuts"]
     for field, field_path in shard_paths.items():
         if field == "cuts":
             continue
@@ -105,6 +115,7 @@ def _load_lhotse_shar_fields_origin(path_json: str, idx: int):
             item = IndexedJsonlReader(field_path, index_path=field_ip)[idx]
             if field in item:
                 setattr(cut, field, item[field])
+    cut.shar_epoch = 0 if shar_epoch is None else shar_epoch
     return cut
 
 

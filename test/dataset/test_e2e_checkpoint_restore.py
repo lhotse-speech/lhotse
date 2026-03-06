@@ -112,14 +112,6 @@ def test_basic_mux_pipeline(cuts_a_path, cuts_b_path):
     assert first_k + remaining == all_batches
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Graph-only O(1) restore does not yet reconstruct LazyMapper outputs "
-        "when the source pipeline contains non-constant-time nodes such as "
-        "LazyFilter."
-    ),
-)
 def test_with_resample(cuts_a_path, cuts_b_path):
     """Mux pipeline + resample 16 kHz → 24 kHz."""
     n_consumed = 5
@@ -183,14 +175,6 @@ def test_with_sampler_level_augmentation(cuts_a_path, cuts_b_path):
     assert first_k + remaining == all_batches
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Graph-only O(1) restore does not yet reconstruct LazyCutMixer outputs "
-        "when the speech-side pipeline contains non-constant-time nodes such as "
-        "LazyFilter."
-    ),
-)
 def test_with_mix(cuts_a_path, cuts_b_path, tmp_path):
     """Mux pipeline + resample + additive noise mixing (p=0.5).
 
@@ -229,14 +213,6 @@ def test_with_mix(cuts_a_path, cuts_b_path, tmp_path):
     assert first_k + remaining == all_batches
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Graph-only O(1) restore does not yet reconstruct LazyCutMixer outputs "
-        "when the speech-side pipeline contains non-constant-time nodes such as "
-        "LazyFilter."
-    ),
-)
 def test_full_pipeline(cuts_a_path, cuts_b_path, tmp_path):
     """Kitchen-sink: mux + resample + noise mix + sampler-level augmentation."""
     n_consumed = 5
@@ -404,14 +380,6 @@ def test_stateful_dataloader_with_augmentation(cuts_a_path, cuts_b_path, num_wor
 
 @pytest.mark.skipif(not _HAS_TORCHDATA, reason="torchdata not installed")
 @pytest.mark.parametrize("num_workers", [0, 2])
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Graph-only O(1) restore does not yet reconstruct LazyCutMixer outputs "
-        "when the speech-side pipeline contains non-constant-time nodes such as "
-        "LazyFilter."
-    ),
-)
 def test_stateful_dataloader_full_pipeline(
     cuts_a_path, cuts_b_path, tmp_path, num_workers
 ):
