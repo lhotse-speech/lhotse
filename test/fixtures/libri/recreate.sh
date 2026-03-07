@@ -10,7 +10,7 @@ rm $dir/cuts*
 rm $dir/feature_manifest.json.gz
 rm -rf $dir/storage
 
-lhotse feat extract $dir/audio.json $dir
+lhotse feat extract -f $dir/fbank40.yml $dir/audio.json $dir
 # Create three variants of cut manifests.
 # Seed 0 ensures the RNG always picks the same ID for the cuts.
 lhotse --seed 0 cut simple -r $dir/audio.json -f $dir/feature_manifest.json.gz $dir/cuts.json
