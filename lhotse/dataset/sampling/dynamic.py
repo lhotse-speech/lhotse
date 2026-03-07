@@ -22,11 +22,13 @@ from lhotse.dataset.sampling.base import (
     SamplingConstraint,
     SamplingDiagnostics,
     TimeConstraint,
+    capture_sources_state,
+    restore_sources_state,
 )
 from lhotse.dataset.sampling.checkpoint_backends import (
     build_dynamic_cut_checkpoint_backend,
 )
-from lhotse.lazy import IteratorNode, LazyShuffler, resolve_iterator_source
+from lhotse.lazy import LazyShuffler, resolve_iterator_source
 from lhotse.utils import ifnone
 
 
@@ -235,40 +237,12 @@ class DynamicCutSampler(CutSampler):
         self.cuts_iter = iter(self.cuts_iter)
 
     def _capture_cuts_state(self) -> Optional[list]:
-        from lhotse.checkpoint import collect_state_dict
-
         sources = self._active_cuts if self._active_cuts is not None else self.cuts
-        states = []
-        has_any_state = False
-        for src in sources:
-            if isinstance(src, CutSet):
-                try:
-                    states.append(src.state_dict())
-                    has_any_state = True
-                except Exception:
-                    states.append(None)
-                continue
-            if isinstance(src, IteratorNode):
-                try:
-                    states.append(collect_state_dict(src))
-                    has_any_state = True
-                except Exception:
-                    states.append(None)
-                continue
-            states.append(None)
-        return states if has_any_state else None
+        return capture_sources_state(sources)
 
     def _restore_cuts_state(self, cuts_state: list) -> None:
-        from lhotse.checkpoint import restore_state_dict
-
         self._active_cuts = self._make_epoch_sources()
-        for src, state in zip(self._active_cuts, cuts_state):
-            if state is None:
-                continue
-            if isinstance(src, CutSet):
-                src.load_state_dict(state)
-            elif isinstance(src, IteratorNode):
-                restore_state_dict(src, state)
+        restore_sources_state(self._active_cuts, cuts_state)
 
     def __iter__(self) -> "DynamicCutSampler":
         if getattr(self, "_needs_fast_forward", False):

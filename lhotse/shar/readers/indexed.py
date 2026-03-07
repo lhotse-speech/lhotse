@@ -3,6 +3,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from lhotse.cut import Cut
+from lhotse.dataset.dataloading import resolve_seed
+from lhotse.indexing import (
+    create_jsonl_index,
+    create_tar_index,
+    index_exists,
+    validate_indexed_access,
+)
 from lhotse.lazy import (
     IteratorNode,
     LazyIteratorChain,
@@ -11,8 +18,8 @@ from lhotse.lazy import (
     normalize_graph_token,
 )
 from lhotse.serialization import deserialize_item, extension_contains
-from lhotse.shar.readers.lazy import _discover_fields, _is_local_uncompressed
-from lhotse.utils import Pathlike, exactly_one_not_null
+from lhotse.shar.readers.lazy import _discover_fields
+from lhotse.utils import Pathlike, exactly_one_not_null, is_valid_url
 
 
 class LazyIndexedSharIterator(IteratorNode):
@@ -31,7 +38,9 @@ class LazyIndexedSharIterator(IteratorNode):
     * ``__iter__()`` — sequential or shuffled iteration via ``__getitem__``.
     * ``state_dict()`` / ``load_state_dict()`` — checkpoint/restore.
 
-    Requires that all cuts JSONL shards are **uncompressed local files**.
+    Requires uncompressed, seekable JSONL/tar shards for every requested field.
+    These may live on the local filesystem or on supported remote/object-store
+    backends, as long as the underlying reader can perform indexed reads.
     Binary ``.idx`` indexes are created automatically if missing.
 
     :param fields: a dict whose keys specify which fields to load,
@@ -64,24 +73,12 @@ class LazyIndexedSharIterator(IteratorNode):
         in_dir: Optional[Pathlike] = None,
         *,
         shuffle: bool = False,
-        seed: int = 42,
+        seed: Union[int, str] = 42,
         split_for_dataloading: bool = False,
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
     ) -> None:
-        assert exactly_one_not_null(
-            fields, in_dir
-        ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
-
-        if in_dir is not None:
-            self.in_dir = Path(in_dir)
-            self.fields, self.streams = _discover_fields(self.in_dir)
-        else:
-            assert (
-                "cuts" in fields
-            ), "To initialize Shar reader, please provide the value for key 'cuts' in 'fields'."
-            self.fields = set(fields.keys())
-            self.fields.remove("cuts")
-            self.streams = fields
+        self.in_dir = Path(in_dir) if in_dir is not None else None
+        self.fields, self.streams = self._resolve_streams(fields=fields, in_dir=in_dir)
 
         self.num_shards = len(self.streams["cuts"])
         for field in self.fields:
@@ -94,57 +91,25 @@ class LazyIndexedSharIterator(IteratorNode):
             for shard_idx in range(self.num_shards)
         ]
 
-        # Validate that all cuts JSONL shards are uncompressed local files.
-        for cuts_path in self.streams["cuts"]:
-            if not _is_local_uncompressed(cuts_path):
-                raise ValueError(
-                    f"LazyIndexedSharIterator requires uncompressed local cuts "
-                    f"JSONL shards, but got: {cuts_path}"
-                )
-
         # ----- Resolve index_path into per-shard per-field index paths -----
-        self._index_streams: Optional[Dict[str, List[Optional[Path]]]] = None
+        self._index_streams: Optional[Dict[str, List[Optional[Pathlike]]]] = None
         self._raw_index_path = index_path  # kept for pickling
-
-        if index_path is not None:
-            if in_dir is not None:
-                # index_path is a directory
-                idx_dir = Path(index_path)
-                self._index_streams = {}
-                for field_name in self.streams:
-                    per_shard = []
-                    for data_p in self.streams[field_name]:
-                        ip = idx_dir / (Path(data_p).name + ".idx")
-                        per_shard.append(ip)
-                    self._index_streams[field_name] = per_shard
-            else:
-                # index_path is a dict
-                if not isinstance(index_path, dict):
-                    raise TypeError(
-                        "When using 'fields' mode, 'index_path' must be a dict "
-                        f"mapping field names to lists of .idx paths, got {type(index_path)}."
-                    )
-                for key in index_path:
-                    if key not in self.streams and key != "cuts":
-                        raise ValueError(
-                            f"index_path key '{key}' does not match any field. "
-                            f"Expected keys from: {set(self.streams.keys())}"
-                        )
-                    n_idx = len(index_path[key])
-                    n_data = len(self.streams.get(key, self.streams.get("cuts", [])))
-                    if n_idx != n_data:
-                        raise ValueError(
-                            f"index_path['{key}'] has {n_idx} entries but "
-                            f"there are {n_data} data shards."
-                        )
-                self._index_streams = {
-                    k: [Path(p) for p in v] for k, v in index_path.items()
-                }
+        self._index_streams = self._resolve_index_streams(
+            streams=self.streams,
+            index_path=index_path,
+            in_dir=in_dir,
+        )
+        self._validate_indexed_streams(
+            streams=self.streams,
+            index_streams=self._index_streams,
+            auto_create_index=True,
+        )
 
         self.shuffle = shuffle
         self.seed = seed
         self.split_for_dataloading = split_for_dataloading
         self.epoch = 0
+        self._iteration_seed = None
 
         # Build indexed readers for cuts JSONL shards and compute lengths.
         from lhotse.indexing import IndexedJsonlReader
@@ -175,6 +140,129 @@ class LazyIndexedSharIterator(IteratorNode):
         # Iteration state
         self._position = 0
         self._restored = False
+
+    @staticmethod
+    def _join_index_dir(index_dir: Pathlike, filename: str) -> Pathlike:
+        if isinstance(index_dir, Path):
+            return index_dir / filename
+        index_dir = str(index_dir)
+        if is_valid_url(index_dir):
+            return f"{index_dir.rstrip('/')}/{filename}"
+        return Path(index_dir) / filename
+
+    @classmethod
+    def _resolve_streams(
+        cls,
+        *,
+        fields: Optional[Dict[str, Sequence[Pathlike]]],
+        in_dir: Optional[Pathlike],
+    ) -> Tuple[set, Dict[str, Sequence[Pathlike]]]:
+        assert exactly_one_not_null(
+            fields, in_dir
+        ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
+        if in_dir is not None:
+            _, streams = _discover_fields(Path(in_dir))
+            field_names = set(streams.keys())
+            field_names.remove("cuts")
+            return field_names, streams
+        assert (
+            "cuts" in fields
+        ), "To initialize Shar reader, please provide the value for key 'cuts' in 'fields'."
+        field_names = set(fields.keys())
+        field_names.remove("cuts")
+        return field_names, fields
+
+    @classmethod
+    def _resolve_index_streams(
+        cls,
+        *,
+        streams: Dict[str, Sequence[Pathlike]],
+        index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]],
+        in_dir: Optional[Pathlike],
+    ) -> Optional[Dict[str, List[Optional[Pathlike]]]]:
+        if index_path is None:
+            return None
+        if in_dir is not None:
+            index_streams = {}
+            for field_name, shard_paths in streams.items():
+                index_streams[field_name] = [
+                    cls._join_index_dir(index_path, Path(str(data_p)).name + ".idx")
+                    for data_p in shard_paths
+                ]
+            return index_streams
+        if not isinstance(index_path, dict):
+            raise TypeError(
+                "When using 'fields' mode, 'index_path' must be a dict "
+                f"mapping field names to lists of .idx paths, got {type(index_path)}."
+            )
+        for key, idx_paths in index_path.items():
+            if key not in streams:
+                raise ValueError(
+                    f"index_path key '{key}' does not match any field. "
+                    f"Expected keys from: {set(streams.keys())}"
+                )
+            if len(idx_paths) != len(streams[key]):
+                raise ValueError(
+                    f"index_path['{key}'] has {len(idx_paths)} entries but "
+                    f"there are {len(streams[key])} data shards."
+                )
+        return {k: list(v) for k, v in index_path.items()}
+
+    @classmethod
+    def _validate_indexed_streams(
+        cls,
+        *,
+        streams: Dict[str, Sequence[Pathlike]],
+        index_streams: Optional[Dict[str, List[Optional[Pathlike]]]],
+        auto_create_index: bool,
+    ) -> None:
+        for field_name, shard_paths in streams.items():
+            expected_kind = "jsonl" if field_name == "cuts" else None
+            for shard_idx, path in enumerate(shard_paths):
+                context = (
+                    f"LazyIndexedSharIterator field '{field_name}' shard {shard_idx}"
+                )
+                kind = validate_indexed_access(
+                    path, kind=expected_kind, context=context
+                )
+                idx_path = None
+                if index_streams is not None and field_name in index_streams:
+                    idx_path = index_streams[field_name][shard_idx]
+                if index_exists(path, index_path=idx_path):
+                    continue
+                if not auto_create_index:
+                    raise FileNotFoundError(
+                        f"{context} is missing an index file. "
+                        f"Expected it at {idx_path if idx_path is not None else str(path) + '.idx'}."
+                    )
+                if kind == "jsonl":
+                    create_jsonl_index(path, output_path=idx_path)
+                else:
+                    create_tar_index(path, output_path=idx_path)
+
+    @classmethod
+    def supports_configuration(
+        cls,
+        *,
+        fields: Optional[Dict[str, Sequence[Pathlike]]] = None,
+        in_dir: Optional[Pathlike] = None,
+        index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
+    ) -> bool:
+        try:
+            _, streams = cls._resolve_streams(fields=fields, in_dir=in_dir)
+            index_streams = cls._resolve_index_streams(
+                streams=streams,
+                index_path=index_path,
+                in_dir=in_dir,
+            )
+            cls._validate_indexed_streams(
+                streams=streams,
+                index_streams=index_streams,
+                auto_create_index=False,
+            )
+            return True
+        except (AssertionError, TypeError, ValueError, FileNotFoundError):
+            return False
 
     @property
     def is_indexed(self) -> bool:
@@ -288,12 +376,17 @@ class LazyIndexedSharIterator(IteratorNode):
         if self._restored:
             self._restored = False
             start = self._position
+            iteration_seed = self._iteration_seed
         else:
             start = 0
             self._position = 0
+            iteration_seed = None
 
         if self.shuffle:
-            shuffled = LazyShuffledRange(n, seed=self.seed + self.epoch)
+            if iteration_seed is None:
+                iteration_seed = resolve_seed(self.seed) + self.epoch
+            self._iteration_seed = iteration_seed
+            shuffled = LazyShuffledRange(n, seed=iteration_seed)
             for i in range(start, n):
                 self._position = i + 1
                 yield self[indices[shuffled[i]]]
@@ -303,6 +396,7 @@ class LazyIndexedSharIterator(IteratorNode):
                 yield self[indices[i]]
 
         self.epoch += 1
+        self._iteration_seed = None
 
     def state_dict(self) -> dict:
         return {
@@ -310,11 +404,13 @@ class LazyIndexedSharIterator(IteratorNode):
             "epoch": self.epoch,
             "shuffle": self.shuffle,
             "seed": self.seed,
+            "iteration_seed": self._iteration_seed,
         }
 
     def load_state_dict(self, sd: dict) -> None:
         self._position = sd["position"]
         self.epoch = sd["epoch"]
+        self._iteration_seed = sd.get("iteration_seed")
         self._restored = True
 
     # ------------------------------------------------------------------

@@ -11,6 +11,19 @@ def index():
     pass
 
 
+def _output_index_path(path: str, output_dir: str):
+    if output_dir is None:
+        return None
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / (Path(path).name + ".idx")
+
+
+def _create_single_index(path: str, output_dir: str, create_index_fn):
+    idx_path = create_index_fn(path, output_path=_output_index_path(path, output_dir))
+    click.echo(f"Created index: {idx_path}")
+
+
 @index.command()
 @click.argument("path", type=click.Path(exists=True, dir_okay=False))
 @click.option(
@@ -29,12 +42,7 @@ def jsonl(path: str, output_dir: str):
     """
     from lhotse.indexing import create_jsonl_index
 
-    output_path = None
-    if output_dir is not None:
-        output_path = Path(output_dir) / (Path(path).name + ".idx")
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-    idx_path = create_jsonl_index(path, output_path=output_path)
-    click.echo(f"Created index: {idx_path}")
+    _create_single_index(path, output_dir, create_jsonl_index)
 
 
 @index.command()
@@ -55,12 +63,7 @@ def tar(path: str, output_dir: str):
     """
     from lhotse.indexing import create_tar_index
 
-    output_path = None
-    if output_dir is not None:
-        output_path = Path(output_dir) / (Path(path).name + ".idx")
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-    idx_path = create_tar_index(path, output_path=output_path)
-    click.echo(f"Created index: {idx_path}")
+    _create_single_index(path, output_dir, create_tar_index)
 
 
 @index.command()

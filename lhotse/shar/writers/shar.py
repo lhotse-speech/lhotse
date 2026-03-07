@@ -48,9 +48,11 @@ class SharWriter:
         It is advisable to use the same audio backend for saving and loading audio data in Shar and other formats.
         See: :class:`lhotse.audio.recording.Recording`.
 
-    It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
-    ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
-    and then the same names but numbered with ``000001``, etc.
+    By default it creates a directory ``some_dir`` with files such as
+    ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
+    ``some_dir/features.000000.tar``, and then the same names but numbered with
+    ``000001``, etc. Set ``compress_jsonl=False`` to write uncompressed
+    ``cuts.*.jsonl`` shards that can be indexed for exact indexed restore.
     The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
@@ -91,6 +93,13 @@ class SharWriter:
                 "create_index=True is only supported for local output paths. "
                 f"Got output_dir='{self.output_dir}'. "
                 "Set create_index=False for pipe/URL/cloud outputs."
+            )
+        if self.create_index and self.compress_jsonl:
+            warnings.warn(
+                "create_index=True with compress_jsonl=True creates only a partially "
+                "indexed Shar: compressed cuts.*.jsonl.gz shards cannot be indexed. "
+                "Use compress_jsonl=False to enable exact indexed Shar restore.",
+                stacklevel=2,
             )
         if self.sharding_enabled:
             assert (

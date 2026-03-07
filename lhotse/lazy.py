@@ -116,7 +116,15 @@ def resolve_iterator_source(obj: Iterable) -> Iterable:
 
 
 def _try_collect_child_state(obj: Any) -> Optional[dict]:
-    if isinstance(obj, IteratorNode) and obj.is_checkpointable:
+    if isinstance(obj, IteratorNode):
+        if type(obj).state_dict is IteratorNode.state_dict:
+            if any(True for _ in obj.iter_children()):
+                raise NotImplementedError(
+                    f"{type(obj).__name__} does not support checkpointing. "
+                    f"Remove it from the pipeline before checkpointing or implement "
+                    f"state_dict/load_state_dict."
+                )
+            return None
         return obj.state_dict()
     if hasattr(obj, "state_dict") and callable(getattr(obj, "state_dict")):
         try:
@@ -129,7 +137,13 @@ def _try_collect_child_state(obj: Any) -> Optional[dict]:
 def _try_restore_child_state(obj: Any, state: Optional[dict]) -> None:
     if state is None:
         return
-    if isinstance(obj, IteratorNode) and obj.is_checkpointable:
+    if isinstance(obj, IteratorNode):
+        if type(obj).load_state_dict is IteratorNode.load_state_dict:
+            raise NotImplementedError(
+                f"{type(obj).__name__} does not support checkpoint restoration. "
+                f"Remove it from the pipeline before checkpointing or implement "
+                f"state_dict/load_state_dict."
+            )
         obj.load_state_dict(state)
         return
     if hasattr(obj, "load_state_dict") and callable(getattr(obj, "load_state_dict")):
@@ -193,6 +207,16 @@ def supports_graph_restore(source: Any, *, require_length: bool = False) -> bool
     if not hasattr(source, "__getitem__"):
         return False
     return not require_length or hasattr(source, "__len__")
+
+
+def resolve_iteration_seed(
+    seed: Optional[Union[int, Literal["trng", "randomized"]]]
+) -> int:
+    from lhotse.dataset.dataloading import resolve_seed
+
+    if seed is None:
+        return random.getrandbits(31)
+    return resolve_seed(seed)
 
 
 class AlgorithmMixin(LazyMixin, Iterable):
@@ -748,21 +772,11 @@ class LazyIteratorChain(IteratorNode):
             start = self._global_position
             base_seed = self._global_seed
             if base_seed is None:
-                if self.seed is None:
-                    base_seed = 0
-                else:
-                    from lhotse.dataset.dataloading import resolve_seed
-
-                    base_seed = resolve_seed(self.seed)
+                base_seed = resolve_iteration_seed(self.seed)
         else:
             start = 0
             self._global_position = 0
-            if self.seed is None:
-                base_seed = 0
-            else:
-                from lhotse.dataset.dataloading import resolve_seed
-
-                base_seed = resolve_seed(self.seed)
+            base_seed = resolve_iteration_seed(self.seed)
             self._global_seed = base_seed
 
         shuffled = LazyShuffledRange(total, seed=base_seed + self.num_iters)
@@ -953,7 +967,14 @@ class LazyIteratorMultiplexer(IteratorNode):
     def load_state_dict(self, sd: dict) -> None:
         self._rng_state = sd["rng_state"]
         self._exhausted = sd["exhausted"]
-        for s, inner_sd in zip(self.sources, sd.get("inner_states", [])):
+        active = None
+        if self._exhausted is not None:
+            active = {i for i, exhausted in enumerate(self._exhausted) if not exhausted}
+        for i, (s, inner_sd) in enumerate(
+            zip(self.sources, sd.get("inner_states", []))
+        ):
+            if active is not None and i not in active:
+                continue
             _try_restore_child_state(s, inner_sd)
         self._restored = True
 

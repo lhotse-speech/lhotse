@@ -169,6 +169,7 @@ else:
     install_requires.append("lilcom>=1.1.0")
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
+checkpoint_requires = ["torchdata"]
 tests_require = [
     "pytest",
     "pytest-forked",
@@ -189,7 +190,7 @@ h5py_requires = ["h5py"]
 kaldi_requires = ["kaldi_native_io", "kaldifeat"]
 workflow_requires = ["scipy"]
 pillow_requires = ["pillow"]
-checkpoint_requires = ["torchdata"]
+tests_require = tests_require + checkpoint_requires
 dev_requires = sorted(
     docs_require
     + tests_require

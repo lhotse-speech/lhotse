@@ -4,12 +4,6 @@ from typing import Any, Callable, Optional
 from lhotse.dataset.sampling.base import EpochDiagnostics
 
 
-def _is_cutset(obj: Any) -> bool:
-    from lhotse.cut import CutSet
-
-    return isinstance(obj, CutSet)
-
-
 def _all_sources_graph_restorable(sampler: Any) -> bool:
     sources = getattr(sampler, "cuts", ())
     return len(sources) > 0 and all(
@@ -19,6 +13,27 @@ def _all_sources_graph_restorable(sampler: Any) -> bool:
 
 def _has_cuts_state(cuts_state: Optional[list]) -> bool:
     return cuts_state is not None and any(state is not None for state in cuts_state)
+
+
+def _indexed_restore_failure_message(
+    prefix: str = "O(1) indexed restore failed",
+) -> str:
+    return (
+        f"{prefix} for indexed datasets. This is a bug — indexed datasets should "
+        "never use O(N) fast-forward."
+    )
+
+
+def _indexed_missing_state_message(
+    sampler_name: str, *, num_batches_to_iter: int, **state_flags: Any
+) -> str:
+    flags = ", ".join(f"{key}={value}" for key, value in state_flags.items())
+    return (
+        f"O(1) indexed restore is missing required checkpoint state for "
+        f"{sampler_name}. This is a bug — indexed datasets should never use "
+        f"O(N) fast-forward. State flags: {flags}, "
+        f"num_batches_to_iter={num_batches_to_iter}."
+    )
 
 
 class IndexedCheckpointBackend:
@@ -87,7 +102,7 @@ def build_dynamic_cut_checkpoint_backend(
 ) -> Any:
     cuts_state = getattr(sampler, "_cuts_state", None)
     has_state = _has_cuts_state(cuts_state)
-    replay_backend = _build_dynamic_cut_replay_backend(
+    replay_backend = _build_replay_backend(
         sampler=sampler,
         current_epoch=current_epoch,
         num_batches_to_iter=num_batches_to_iter,
@@ -97,23 +112,18 @@ def build_dynamic_cut_checkpoint_backend(
         return IndexedCheckpointBackend(
             has_required_state=has_state,
             restore_fn=lambda: _restore_dynamic_cut_indexed(sampler, cuts_state),
-            missing_state_message=(
-                "O(1) indexed restore is missing required checkpoint state for "
-                "DynamicCutSampler. This is a bug — indexed datasets should never "
-                "use O(N) fast-forward. "
-                f"State flags: has_cuts_state={has_state}, "
-                f"num_batches_to_iter={num_batches_to_iter}."
+            missing_state_message=_indexed_missing_state_message(
+                "DynamicCutSampler",
+                has_cuts_state=has_state,
+                num_batches_to_iter=num_batches_to_iter,
             ),
-            failure_message=(
-                "O(1) indexed restore failed for indexed datasets. This is a bug — "
-                "indexed datasets should never use O(N) fast-forward."
-            ),
+            failure_message=_indexed_restore_failure_message(),
         )
 
     return replay_backend
 
 
-def _build_dynamic_cut_replay_backend(
+def _build_replay_backend(
     *, sampler: Any, current_epoch: int, num_batches_to_iter: int
 ) -> ReplayCheckpointBackend:
     def _reset_diagnostics_for_replay() -> None:
@@ -152,7 +162,7 @@ def build_dynamic_bucketing_checkpoint_backend(
         has_cuts_state and rng_state is not None and bucketer_state is not None
     )
 
-    replay_backend = _build_dynamic_bucketing_replay_backend(
+    replay_backend = _build_replay_backend(
         sampler=sampler,
         current_epoch=current_epoch,
         num_batches_to_iter=num_batches_to_iter,
@@ -169,54 +179,31 @@ def build_dynamic_bucketing_checkpoint_backend(
                     bucketer_state=bucketer_state,
                 ),
                 missing_state_message="",
-                failure_message=(
-                    "O(1) indexed restore failed for indexed datasets. This is a bug — "
-                    "indexed datasets should never use O(N) fast-forward."
-                ),
+                failure_message=_indexed_restore_failure_message(),
             )
         if num_batches_to_iter == 0:
             return IndexedCheckpointBackend(
                 has_required_state=True,
                 restore_fn=lambda: _restore_dynamic_bucketing_pre_yield(sampler),
                 missing_state_message="",
-                failure_message=(
-                    "O(1) indexed restore (pre-yield) failed for indexed datasets. "
-                    "This is a bug — indexed datasets should never use O(N) fast-forward."
+                failure_message=_indexed_restore_failure_message(
+                    "O(1) indexed restore (pre-yield) failed"
                 ),
             )
         return IndexedCheckpointBackend(
             has_required_state=False,
             restore_fn=lambda: None,
-            missing_state_message=(
-                "O(1) indexed restore is missing required checkpoint state for "
-                "DynamicBucketingSampler. This is a bug — indexed datasets should "
-                "never use O(N) fast-forward. "
-                f"State flags: has_cuts_state={has_cuts_state}, "
-                f"has_rng_state={rng_state is not None}, "
-                f"has_bucketer_state={bucketer_state is not None}, "
-                f"num_batches_to_iter={num_batches_to_iter}."
+            missing_state_message=_indexed_missing_state_message(
+                "DynamicBucketingSampler",
+                has_cuts_state=has_cuts_state,
+                has_rng_state=rng_state is not None,
+                has_bucketer_state=bucketer_state is not None,
+                num_batches_to_iter=num_batches_to_iter,
             ),
             failure_message="",
         )
 
     return replay_backend
-
-
-def _build_dynamic_bucketing_replay_backend(
-    *, sampler: Any, current_epoch: int, num_batches_to_iter: int
-) -> ReplayCheckpointBackend:
-    def _reset_diagnostics_for_replay() -> None:
-        sampler.diagnostics.stats_per_epoch[current_epoch] = EpochDiagnostics(
-            epoch=current_epoch
-        )
-
-    return ReplayCheckpointBackend(
-        num_steps=num_batches_to_iter,
-        reset_for_replay_fn=_reset_diagnostics_for_replay,
-        initialize_iterator_fn=sampler._initialize_replay_iterator,
-        replay_step_fn=sampler._replay_step,
-        post_restore_fn=lambda: setattr(sampler, "_just_restored_state", True),
-    )
 
 
 def _restore_dynamic_bucketing_full(
@@ -227,9 +214,7 @@ def _restore_dynamic_bucketing_full(
     sampler.rng = random.Random()
     sampler.rng.setstate(_rng_state_from_json(rng_state))
 
-    for cs, cs_state in zip(sampler.cuts, cuts_state):
-        if _is_cutset(cs) and cs_state is not None:
-            cs.load_state_dict(cs_state)
+    sampler._restore_cuts_state(cuts_state)
 
     sampler._just_restored_state = False
     sampler._cuts_state = None

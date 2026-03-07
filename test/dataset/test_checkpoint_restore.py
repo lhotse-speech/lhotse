@@ -16,7 +16,7 @@ from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
 from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
-from lhotse.lazy import IteratorNode
+from lhotse.lazy import IteratorNode, LazyRepeater
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -400,6 +400,46 @@ class TestIndexedSamplerStateCapture:
 
         assert called["on_fast_forward"] is False
         assert sampler2.diagnostics.current_epoch_stats.total_batches == consumed
+
+    def test_dynamic_bucketing_indexed_restore_supports_iterator_node_roots(
+        self, tmp_path, monkeypatch
+    ):
+        path = tmp_path / "cuts.jsonl"
+        DummyManifest(CutSet, begin_id=0, end_id=40).to_jsonl(path)
+
+        def make_sampler():
+            source = LazyRepeater(CutSet.from_file(path, indexed=True).data, times=2)
+            return DynamicBucketingSampler(
+                source, max_cuts=5, shuffle=False, num_buckets=2
+            )
+
+        full = make_sampler()
+        all_batches = [[c.id for c in batch] for batch in full]
+
+        sampler1 = make_sampler()
+        iterator1 = iter(sampler1)
+        first_batches = [[c.id for c in next(iterator1)] for _ in range(3)]
+        sd = sampler1.state_dict()
+
+        sampler2 = make_sampler()
+        sampler2.load_state_dict(sd.copy())
+
+        called = {"on_fast_forward": False}
+        orig_next = CutSampler.__next__
+
+        def _patched_next(self):
+            called["on_fast_forward"] = True
+            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
+
+        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
+        try:
+            iter(sampler2)
+        finally:
+            monkeypatch.setattr(CutSampler, "__next__", orig_next)
+
+        remaining = [[c.id for c in batch] for batch in sampler2]
+        assert called["on_fast_forward"] is False
+        assert first_batches + remaining == all_batches
 
     def test_dynamic_bucketing_indexed_prefetch_state_has_bucketer_state(
         self, tmp_path

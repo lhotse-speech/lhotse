@@ -536,6 +536,35 @@ class TestLazyIteratorMultiplexerStateful:
         ):
             next(iter(mux))
 
+    def test_restore_does_not_poison_next_epoch(self, tmp_path):
+        with jsonl_file(tmp_path, n=1, name="a.jsonl") as p1, jsonl_file(
+            tmp_path, n=5, name="b.jsonl"
+        ) as p2:
+
+            def make():
+                return LazyIteratorMultiplexer(
+                    LazyJsonlIterator(p1), LazyJsonlIterator(p2), seed=42
+                )
+
+            full_run = list(make())
+
+            mux1 = make()
+            gen1 = iter(mux1)
+            first_k = []
+            while True:
+                first_k.append(next(gen1))
+                if mux1._exhausted is not None and mux1._exhausted[0]:
+                    break
+            sd = mux1.state_dict()
+
+            mux2 = make()
+            mux2.load_state_dict(sd)
+            remaining = list(mux2)
+            next_epoch = list(mux2)
+
+            assert first_k + remaining == full_run
+            assert next_epoch == full_run
+
 
 # ---------------------------------------------------------------------------
 # LazyInfiniteApproximateMultiplexer

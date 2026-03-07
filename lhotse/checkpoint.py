@@ -65,6 +65,7 @@ def collect_state_dict(root) -> dict:
 
     if is_node and root.is_checkpointable:
         result["_state"] = root.state_dict()
+        return result
     elif has_children:
         if not is_node:
             raise NotImplementedError(
@@ -119,17 +120,12 @@ def restore_state_dict(root, state: dict) -> None:
 
     if root_is_checkpointable and "_state" in state:
         root.load_state_dict(state["_state"])
+        return
 
-    # Recurse into children — but skip children that were already restored
-    # by the parent's load_state_dict (i.e. checkpointable children of a
-    # checkpointable parent).
+    # Recurse into children only for non-checkpointable roots.
     if _SINGLE_CHILD in state and hasattr(root, _SINGLE_CHILD):
         child = getattr(root, _SINGLE_CHILD)
-        child_is_checkpointable = (
-            isinstance(child, IteratorNode) and child.is_checkpointable
-        )
-        if not (root_is_checkpointable and child_is_checkpointable):
-            restore_state_dict(child, state[_SINGLE_CHILD])
+        restore_state_dict(child, state[_SINGLE_CHILD])
 
     if _MULTI_CHILDREN in state and hasattr(root, _MULTI_CHILDREN):
         children = getattr(root, _MULTI_CHILDREN)
@@ -139,9 +135,8 @@ def restore_state_dict(root, state: dict) -> None:
                 f"Number of children mismatch during state restoration: "
                 f"expected {len(child_states)}, got {len(children)}."
             )
-        if not root_is_checkpointable:
-            for child, child_state in zip(children, child_states):
-                restore_state_dict(child, child_state)
+        for child, child_state in zip(children, child_states):
+            restore_state_dict(child, child_state)
 
 
 # ---------------------------------------------------------------------------

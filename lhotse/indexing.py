@@ -28,8 +28,11 @@ Usage
 >>> reader[42]   # O(1) dict from the 42nd line
 """
 
+import hashlib
+import os
 import struct
 import tarfile
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Union
 
@@ -40,9 +43,13 @@ if TYPE_CHECKING:
 
 import numpy as np
 
-from lhotse.serialization import decode_json_line, deserialize_item, open_best
-from lhotse.shar.utils import fill_shar_placeholder
-from lhotse.utils import Pathlike
+from lhotse.serialization import (
+    decode_json_line,
+    deserialize_item,
+    extension_contains,
+    open_best,
+)
+from lhotse.utils import Pathlike, is_valid_url
 
 __all__ = [
     "create_jsonl_index",
@@ -51,6 +58,8 @@ __all__ = [
     "index_file_path",
     "read_index",
     "index_exists",
+    "supports_indexed_access",
+    "validate_indexed_access",
     "LazyShuffledRange",
     "IndexedJsonlReader",
     "IndexedTarReader",
@@ -61,7 +70,71 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def index_file_path(data_path: Pathlike) -> Path:
+def _path_str(path: Pathlike) -> str:
+    return str(path)
+
+
+def _is_pipe_path(path: Pathlike) -> bool:
+    return _path_str(path).startswith("pipe:")
+
+
+def _as_local_path(path: Pathlike) -> Optional[Path]:
+    path_str = _path_str(path)
+    if _is_pipe_path(path_str) or is_valid_url(path_str):
+        return None
+    return path if isinstance(path, Path) else Path(path_str)
+
+
+def _is_compressed_path(path: Pathlike) -> bool:
+    suffixes = Path(_path_str(path)).suffixes
+    return bool(suffixes) and (
+        suffixes[-1] in _COMPRESSED_SUFFIXES
+        or (len(suffixes) >= 2 and suffixes[-2] in _COMPRESSED_SUFFIXES)
+    )
+
+
+def indexed_path_kind(path: Pathlike) -> Optional[str]:
+    if _is_pipe_path(path) or _is_compressed_path(path):
+        return None
+    if extension_contains(".jsonl", path):
+        return "jsonl"
+    if extension_contains(".tar", path):
+        return "tar"
+    return None
+
+
+def supports_indexed_access(path: Pathlike, *, kind: Optional[str] = None) -> bool:
+    path_kind = indexed_path_kind(path)
+    return path_kind is not None and (kind is None or path_kind == kind)
+
+
+def validate_indexed_access(
+    path: Pathlike,
+    *,
+    kind: Optional[str] = None,
+    context: str = "Indexed reader",
+) -> str:
+    path_kind = indexed_path_kind(path)
+    if path_kind is None:
+        if _is_pipe_path(path):
+            raise ValueError(
+                f"{context} requires seekable data sources, but got a pipe command: {path}"
+            )
+        if _is_compressed_path(path):
+            raise ValueError(
+                f"{context} requires uncompressed JSONL or tar data, but got a compressed path: {path}"
+            )
+        raise ValueError(
+            f"{context} requires a .jsonl or .tar data source, but got: {path}"
+        )
+    if kind is not None and path_kind != kind:
+        raise ValueError(
+            f"{context} expected a {kind} source, but got a {path_kind} path: {path}"
+        )
+    return path_kind
+
+
+def index_file_path(data_path: Pathlike) -> Pathlike:
     """
     Return the conventional index file path for a given data file.
 
@@ -70,7 +143,10 @@ def index_file_path(data_path: Pathlike) -> Path:
         >>> index_file_path("cuts.000000.jsonl")
         PosixPath('cuts.000000.jsonl.idx')
     """
-    return Path(str(data_path) + ".idx")
+    local_path = _as_local_path(data_path)
+    if local_path is not None:
+        return Path(str(local_path) + ".idx")
+    return str(data_path) + ".idx"
 
 
 def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> bool:
@@ -80,9 +156,16 @@ def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> 
     When *index_path* is given, check that path instead of the conventional
     location next to *data_path*.
     """
-    if index_path is not None:
-        return Path(index_path).is_file()
-    return index_file_path(data_path).is_file()
+    idx_path = index_path if index_path is not None else index_file_path(data_path)
+    local_path = _as_local_path(idx_path)
+    if local_path is not None:
+        return local_path.is_file()
+    try:
+        with open_best(idx_path, "rb") as f:
+            f.read(1)
+        return True
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +175,64 @@ def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> 
 _OFFSET_DTYPE = np.dtype("<u8")  # little-endian uint64
 
 
-def _write_index(offsets: list, path: Path) -> None:
+def _write_index(offsets: list, path: Pathlike) -> None:
     arr = np.array(offsets, dtype=_OFFSET_DTYPE)
-    with open(path, "wb") as f:
+    local_path = _as_local_path(path)
+    if local_path is not None:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+    with open_best(path, "wb") as f:
         f.write(arr.tobytes())
+
+
+def _remote_index_cache_dir() -> Path:
+    return Path(tempfile.gettempdir()) / "lhotse-index-cache"
+
+
+def _remote_index_cache_path(idx_path: Pathlike) -> Path:
+    digest = hashlib.sha256(_path_str(idx_path).encode("utf-8")).hexdigest()
+    return _remote_index_cache_dir() / f"{digest}.idx"
+
+
+def _is_valid_index_file(path: Path) -> bool:
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return False
+    return size >= _OFFSET_DTYPE.itemsize and size % _OFFSET_DTYPE.itemsize == 0
+
+
+def _materialize_remote_index(idx_path: Pathlike) -> Path:
+    cache_path = _remote_index_cache_path(idx_path)
+    if _is_valid_index_file(cache_path):
+        return cache_path
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f"{cache_path.name}.",
+        suffix=".tmp",
+        dir=str(cache_path.parent),
+    )
+    tmp_path = Path(tmp_name)
+
+    try:
+        with open_best(idx_path, "rb") as src, os.fdopen(fd, "wb") as dst:
+            while True:
+                chunk = src.read(1024 * 1024)
+                if not chunk:
+                    break
+                dst.write(chunk)
+            dst.flush()
+            os.fsync(dst.fileno())
+        if not _is_valid_index_file(tmp_path):
+            raise FileNotFoundError(
+                f"Index file not found, empty, or invalid: {idx_path}"
+            )
+        os.replace(tmp_path, cache_path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+    return cache_path
 
 
 def read_index(idx_path: Pathlike) -> np.ndarray:
@@ -104,12 +241,17 @@ def read_index(idx_path: Pathlike) -> np.ndarray:
 
     The array is memory-mapped (``np.memmap``) so that large index files
     do not consume resident memory.  The last element is the sentinel
-    (file size); there are ``len(arr) - 1`` samples.
+    (file size); there are ``len(arr) - 1`` samples. Remote index files
+    are first cached under a deterministic local temp path and memory-mapped
+    from there.
     """
-    idx_path = Path(idx_path)
-    if not idx_path.is_file():
-        raise FileNotFoundError(f"Index file not found: {idx_path}")
-    return np.memmap(idx_path, dtype=_OFFSET_DTYPE, mode="r")
+    local_path = _as_local_path(idx_path)
+    if local_path is not None:
+        if not local_path.is_file():
+            raise FileNotFoundError(f"Index file not found: {local_path}")
+        return np.memmap(local_path, dtype=_OFFSET_DTYPE, mode="r")
+    cache_path = _materialize_remote_index(idx_path)
+    return np.memmap(cache_path, dtype=_OFFSET_DTYPE, mode="r")
 
 
 # ---------------------------------------------------------------------------
@@ -130,10 +272,9 @@ def create_jsonl_index(
         instead of the conventional location next to *jsonl_path*.
     :returns: the path of the newly created ``.idx`` file.
     """
-    jsonl_path = Path(jsonl_path)
     _assert_uncompressed(jsonl_path, "JSONL")
     offsets = []
-    with open(jsonl_path, "rb") as f:
+    with open_best(jsonl_path, "rb") as f:
         while True:
             pos = f.tell()
             line = f.readline()
@@ -142,9 +283,7 @@ def create_jsonl_index(
             offsets.append(pos)
         offsets.append(f.tell())  # sentinel = file size
 
-    idx_path = (
-        Path(output_path) if output_path is not None else index_file_path(jsonl_path)
-    )
+    idx_path = output_path if output_path is not None else index_file_path(jsonl_path)
     _write_index(offsets, idx_path)
     return idx_path
 
@@ -166,26 +305,24 @@ def create_tar_index(
         instead of the conventional location next to *tar_path*.
     :returns: the path of the newly created ``.idx`` file.
     """
-    tar_path = Path(tar_path)
     _assert_uncompressed(tar_path, "tar")
 
     offsets = []
-    with tarfile.open(str(tar_path), "r:") as tf:
-        members = tf.getmembers()
+    num_members = 0
+    with open_best(tar_path, "rb") as f:
+        with tarfile.open(fileobj=f, mode="r|") as tf:
+            for member in tf:
+                if num_members % 2 == 0:
+                    offsets.append(member.offset)
+                num_members += 1
+        if num_members % 2 != 0:
+            raise RuntimeError(
+                f"Expected an even number of tar members (data+meta pairs) "
+                f"in {tar_path}, got {num_members}."
+            )
+        offsets.append(f.tell())  # sentinel
 
-    if len(members) % 2 != 0:
-        raise RuntimeError(
-            f"Expected an even number of tar members (data+meta pairs) "
-            f"in {tar_path}, got {len(members)}."
-        )
-
-    for i in range(0, len(members), 2):
-        offsets.append(members[i].offset)
-    offsets.append(tar_path.stat().st_size)  # sentinel
-
-    idx_path = (
-        Path(output_path) if output_path is not None else index_file_path(tar_path)
-    )
+    idx_path = output_path if output_path is not None else index_file_path(tar_path)
     _write_index(offsets, idx_path)
     return idx_path
 
@@ -222,10 +359,8 @@ def create_shar_index(
 _COMPRESSED_SUFFIXES = {".gz", ".bz2", ".xz", ".lz4", ".zst"}
 
 
-def _assert_uncompressed(path: Path, kind: str) -> None:
-    if path.suffix in _COMPRESSED_SUFFIXES or (
-        len(path.suffixes) >= 2 and path.suffixes[-1] in _COMPRESSED_SUFFIXES
-    ):
+def _assert_uncompressed(path: Pathlike, kind: str) -> None:
+    if _is_compressed_path(path):
         raise RuntimeError(
             f"Cannot create an index for a compressed {kind} file: {path}. "
             f"Only uncompressed files are supported."
@@ -387,15 +522,16 @@ class IndexedJsonlReader:
         auto_create_index: bool = True,
         index_path: Optional[Pathlike] = None,
     ) -> None:
-        self.path = Path(path)
-        self.index_path = Path(index_path) if index_path is not None else None
+        validate_indexed_access(path, kind="jsonl", context="IndexedJsonlReader")
+        self.path = path
+        self.index_path = index_path
         self._fh: Optional[object] = None
         idx_path = (
             self.index_path
             if self.index_path is not None
             else index_file_path(self.path)
         )
-        if not idx_path.is_file():
+        if not index_exists(self.path, index_path=idx_path):
             if auto_create_index:
                 create_jsonl_index(self.path, output_path=idx_path)
             else:
@@ -407,7 +543,7 @@ class IndexedJsonlReader:
 
     def _ensure_open(self):
         if self._fh is None:
-            self._fh = open(self.path, "rb")
+            self._fh = open_best(self.path, "rb")
 
     def __del__(self):
         self.close()
@@ -491,15 +627,16 @@ class IndexedTarReader:
         auto_create_index: bool = True,
         index_path: Optional[Pathlike] = None,
     ) -> None:
-        self.path = Path(path)
-        self.index_path = Path(index_path) if index_path is not None else None
+        validate_indexed_access(path, kind="tar", context="IndexedTarReader")
+        self.path = path
+        self.index_path = index_path
         self._fh: Optional[object] = None
         idx_path = (
             self.index_path
             if self.index_path is not None
             else index_file_path(self.path)
         )
-        if not idx_path.is_file():
+        if not index_exists(self.path, index_path=idx_path):
             if auto_create_index:
                 create_tar_index(self.path, output_path=idx_path)
             else:
@@ -511,7 +648,7 @@ class IndexedTarReader:
 
     def _ensure_open(self):
         if self._fh is None:
-            self._fh = open(self.path, "rb")
+            self._fh = open_best(self.path, "rb")
 
     def __del__(self):
         self.close()
@@ -552,6 +689,8 @@ class IndexedTarReader:
 
         # Process like TarIterator
         if meta_bytes is not None:
+            from lhotse.shar.utils import fill_shar_placeholder
+
             meta = deserialize_item(decode_json_line(meta_bytes.decode("utf-8")))
             fill_shar_placeholder(manifest=meta, data=data, tarpath=data_path)
         else:

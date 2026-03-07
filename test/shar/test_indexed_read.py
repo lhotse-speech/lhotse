@@ -9,7 +9,7 @@ from test.shar.conftest import cuts  # noqa: F401
 import pytest
 
 from lhotse import CutSet
-from lhotse.indexing import index_exists
+from lhotse.indexing import create_jsonl_index, index_exists
 from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.readers.lazy import LazySharIterator
 from lhotse.shar.writers.shar import SharWriter
@@ -62,13 +62,14 @@ def test_shar_writer_uncompressed(tmp_path, cuts):
 
 def test_shar_writer_compressed_no_index(tmp_path, cuts):
     """Compressed JSONL doesn't get indexed."""
-    writer = SharWriter(
-        tmp_path,
-        fields=ALL_FIELDS,
-        shard_size=10,
-        compress_jsonl=True,
-        create_index=True,  # index creation skips compressed files
-    )
+    with pytest.warns(UserWarning, match="partially indexed Shar"):
+        writer = SharWriter(
+            tmp_path,
+            fields=ALL_FIELDS,
+            shard_size=10,
+            compress_jsonl=True,
+            create_index=True,
+        )
     with writer:
         for c in cuts:
             writer.write(c)
@@ -457,6 +458,43 @@ def test_indexed_shar_shuffle(tmp_path, cuts):
     assert shuf_ids != seq_ids
 
 
+@pytest.mark.parametrize("seed", ["randomized", "trng"])
+def test_indexed_shar_shuffle_restore_uses_saved_iteration_seed(
+    tmp_path, cuts, seed, monkeypatch
+):
+    """Special seeds must not be re-resolved after loading checkpoint state."""
+    writer = SharWriter(
+        tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    it1 = LazyIndexedSharIterator(in_dir=tmp_path, shuffle=True, seed=seed)
+    gen1 = iter(it1)
+    first_k = [next(gen1).id for _ in range(5)]
+    sd = it1.state_dict()
+    expected_remaining = [c.id for c in gen1]
+
+    it2 = LazyIndexedSharIterator(in_dir=tmp_path, shuffle=True, seed=seed)
+    it2.load_state_dict(sd)
+
+    monkeypatch.setattr(
+        "lhotse.shar.readers.indexed.resolve_seed",
+        lambda _: (_ for _ in ()).throw(
+            AssertionError("resolve_seed() should not be called after restore")
+        ),
+    )
+    remaining = [c.id for c in it2]
+
+    assert len(first_k) == 5
+    assert remaining == expected_remaining
+
+
 def test_indexed_shar_len(tmp_path, cuts):
     """__len__ matches item count."""
     writer = SharWriter(
@@ -563,6 +601,58 @@ def test_cutset_from_shar_indexed_auto_detect_compressed(tmp_path, cuts):
     # Auto-detect: compressed -> streaming
     shar_cs = CutSet.from_shar(in_dir=tmp_path)
     assert shar_cs.is_indexed is False
+
+
+def test_cutset_from_shar_indexed_auto_detect_requires_all_fields_indexed(
+    tmp_path, cuts
+):
+    """Auto-detect should stay in streaming mode when a non-cut field lacks .idx."""
+    cs = CutSet.from_cuts(cuts)
+    cs.to_shar(
+        output_dir=tmp_path,
+        fields=ALL_FIELDS,
+        shard_size=10,
+        compress_jsonl=False,
+        create_index=True,
+    )
+
+    missing_idx = tmp_path / "recording.000000.tar.idx"
+    assert missing_idx.is_file()
+    missing_idx.unlink()
+
+    shar_cs = CutSet.from_shar(in_dir=tmp_path)
+    assert shar_cs.is_indexed is False
+
+
+def test_cutset_from_shar_indexed_auto_detect_rejects_pipe_fields(tmp_path):
+    """Auto-detect must not select indexed mode when any requested field is a pipe."""
+    cuts_path = tmp_path / "cuts.000000.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=5).to_jsonl(cuts_path)
+    create_jsonl_index(cuts_path)
+
+    shar_cs = CutSet.from_shar(
+        fields={
+            "cuts": [str(cuts_path)],
+            "recording": ["pipe:cat recording.000000.tar"],
+        }
+    )
+    assert shar_cs.is_indexed is False
+
+
+def test_cutset_from_shar_indexed_true_requires_all_fields_indexed(tmp_path):
+    """Explicit indexed=True should fail fast on non-indexable fields."""
+    cuts_path = tmp_path / "cuts.000000.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=5).to_jsonl(cuts_path)
+    create_jsonl_index(cuts_path)
+
+    with pytest.raises(ValueError, match="field 'recording' shard 0"):
+        CutSet.from_shar(
+            fields={
+                "cuts": [str(cuts_path)],
+                "recording": ["pipe:cat recording.000000.tar"],
+            },
+            indexed=True,
+        )
 
 
 @pytest.mark.parametrize("slice_length", [0, 5])
@@ -676,7 +766,7 @@ def test_indexed_shar_rejects_compressed(tmp_path, cuts):
         for c in cuts:
             writer.write(c)
 
-    with pytest.raises(ValueError, match="uncompressed local"):
+    with pytest.raises(ValueError, match="uncompressed JSONL or tar data"):
         LazyIndexedSharIterator(in_dir=tmp_path)
 
 

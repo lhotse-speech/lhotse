@@ -14,9 +14,49 @@ from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
 from lhotse.cut.text import TextExample
-from lhotse.lazy import Dillable
+from lhotse.lazy import Dillable, IteratorNode
 from lhotse.manipulation import combine
 from lhotse.utils import Seconds, exactly_one_not_null, ifnone, is_none_or_gt
+
+
+def _capture_source_state(src) -> Optional[dict]:
+    from lhotse.checkpoint import collect_state_dict
+
+    if isinstance(src, CutSet):
+        return src.state_dict()
+    if isinstance(src, IteratorNode):
+        return collect_state_dict(src)
+    return None
+
+
+def capture_sources_state(sources) -> Optional[list]:
+    if not isinstance(sources, (list, tuple)):
+        return None
+
+    states = []
+    has_any_state = False
+    for src in sources:
+        try:
+            state = _capture_source_state(src)
+        except Exception:
+            state = None
+        states.append(state)
+        has_any_state = has_any_state or state is not None
+    return states if has_any_state else None
+
+
+def restore_sources_state(sources, cuts_state: Optional[list]) -> None:
+    from lhotse.checkpoint import restore_state_dict
+
+    if cuts_state is None:
+        return
+    for src, state in zip(sources, cuts_state):
+        if state is None:
+            continue
+        if isinstance(src, CutSet):
+            src.load_state_dict(state)
+        elif isinstance(src, IteratorNode):
+            restore_state_dict(src, state)
 
 
 class CutSampler(Sampler, Dillable):
@@ -203,26 +243,12 @@ class CutSampler(Sampler, Dillable):
 
     def _capture_cuts_state(self) -> Optional[list]:
         """
-        Best-effort capture of source CutSet iterator graph state.
-
-        We only capture the canonical CutSet sources from ``self.cuts``.
+        Best-effort capture of source iterator graph state.
         """
-        cuts = getattr(self, "cuts", None)
-        if not isinstance(cuts, (list, tuple)):
-            return None
+        return capture_sources_state(getattr(self, "cuts", None))
 
-        states = []
-        has_any_state = False
-        for src in cuts:
-            if not isinstance(src, CutSet):
-                states.append(None)
-                continue
-            try:
-                states.append(src.state_dict())
-                has_any_state = True
-            except Exception:
-                states.append(None)
-        return states if has_any_state else None
+    def _restore_cuts_state(self, cuts_state: Optional[list]) -> None:
+        restore_sources_state(getattr(self, "cuts", ()), cuts_state)
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """

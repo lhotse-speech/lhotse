@@ -1,4 +1,5 @@
 import json
+import random
 import tarfile
 from collections import Counter
 from pathlib import Path
@@ -849,6 +850,28 @@ def test_cutset_from_files_indexed_shuffle_checkpoint(tmp_path):
     assert first_k + remaining == all_ids
 
 
+def test_cutset_from_files_indexed_shuffle_seed_none_varies_with_process_seed(tmp_path):
+    """seed=None in indexed global shuffle should not collapse to a hardcoded seed."""
+    from lhotse import CutSet
+    from lhotse.testing.dummies import DummyManifest
+
+    p1 = tmp_path / "cuts1.jsonl"
+    p2 = tmp_path / "cuts2.jsonl"
+    _write_cuts_jsonl(p1, n=20)
+    DummyManifest(CutSet, begin_id=20, end_id=40).to_jsonl(p2)
+
+    def read_with_global_seed(seed):
+        random.seed(seed)
+        return [
+            c.id
+            for c in CutSet.from_files(
+                [p1, p2], shuffle_iters=True, indexed=True, seed=None
+            )
+        ]
+
+    assert read_with_global_seed(1234) != read_with_global_seed(5678)
+
+
 # ---------------------------------------------------------------------------
 # Custom index_path support
 # ---------------------------------------------------------------------------
@@ -946,6 +969,198 @@ def test_indexed_tar_reader_custom_index_path(tmp_path, tar_file):
     for i in range(len(samples)):
         manifest, data_path = reader[i]
         assert str(data_path) == samples[i][0]
+
+
+def test_indexed_jsonl_reader_remote_data_with_local_index_path(
+    tmp_path, jsonl_file, monkeypatch
+):
+    """Remote/URI data paths work when the index lives on local disk."""
+    import lhotse.indexing as indexing_mod
+
+    p, records = jsonl_file
+    custom_idx = tmp_path / "remote.jsonl.idx"
+    create_jsonl_index(p, output_path=custom_idx)
+
+    remote_path = "s3://bucket/data.jsonl"
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_best(path, mode="r"):
+        if path == remote_path:
+            return original_open_best(p, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+
+    reader = IndexedJsonlReader(
+        remote_path, auto_create_index=False, index_path=custom_idx
+    )
+    assert len(reader) == len(records)
+    assert reader[3] == records[3]
+
+
+def test_indexed_tar_reader_remote_data_with_local_index_path(
+    tmp_path, tar_file, monkeypatch
+):
+    """IndexedTarReader keeps URI paths intact and opens them via open_best()."""
+    import lhotse.indexing as indexing_mod
+
+    p, samples = tar_file
+    custom_idx = tmp_path / "remote.tar.idx"
+    create_tar_index(p, output_path=custom_idx)
+
+    remote_path = "s3://bucket/data.tar"
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_best(path, mode="r"):
+        if path == remote_path:
+            return original_open_best(p, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+
+    reader = IndexedTarReader(
+        remote_path, auto_create_index=False, index_path=custom_idx
+    )
+    assert len(reader) == len(samples)
+    manifest, data_path = reader[1]
+    assert manifest is None
+    assert str(data_path) == samples[1][0]
+
+
+def test_indexed_jsonl_reader_remote_data_with_remote_index_path(
+    tmp_path, jsonl_file, monkeypatch
+):
+    """IndexedJsonlReader can open URI-hosted index files through open_best()."""
+    import lhotse.indexing as indexing_mod
+
+    p, records = jsonl_file
+    local_idx = tmp_path / "remote.jsonl.idx"
+    create_jsonl_index(p, output_path=local_idx)
+
+    remote_path = "s3://bucket/data.jsonl"
+    remote_idx = "s3://bucket/data.jsonl.idx"
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_best(path, mode="r"):
+        if path == remote_path:
+            return original_open_best(p, mode)
+        if path == remote_idx:
+            return original_open_best(local_idx, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+
+    reader = IndexedJsonlReader(
+        remote_path, auto_create_index=False, index_path=remote_idx
+    )
+    assert len(reader) == len(records)
+    assert reader[2]["id"] == records[2]["id"]
+
+
+def test_indexed_tar_reader_remote_data_with_remote_index_path(
+    tmp_path, tar_file, monkeypatch
+):
+    """IndexedTarReader can open URI-hosted index files through open_best()."""
+    import lhotse.indexing as indexing_mod
+
+    p, samples = tar_file
+    local_idx = tmp_path / "remote.tar.idx"
+    create_tar_index(p, output_path=local_idx)
+
+    remote_path = "s3://bucket/data.tar"
+    remote_idx = "s3://bucket/data.tar.idx"
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_best(path, mode="r"):
+        if path == remote_path:
+            return original_open_best(p, mode)
+        if path == remote_idx:
+            return original_open_best(local_idx, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+
+    reader = IndexedTarReader(
+        remote_path, auto_create_index=False, index_path=remote_idx
+    )
+    assert len(reader) == len(samples)
+    manifest, data_path = reader[1]
+    assert manifest is None
+    assert str(data_path) == samples[1][0]
+
+
+def test_read_index_remote_path_is_cached_and_memmapped(
+    tmp_path, jsonl_file, monkeypatch
+):
+    """Remote index files are cached locally and then memory-mapped."""
+    import lhotse.indexing as indexing_mod
+
+    p, _ = jsonl_file
+    local_idx = tmp_path / "remote.jsonl.idx"
+    create_jsonl_index(p, output_path=local_idx)
+
+    remote_idx = "s3://bucket/data.jsonl.idx"
+    calls = Counter()
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_best(path, mode="r"):
+        if path == remote_idx:
+            calls["remote_idx"] += 1
+            return original_open_best(local_idx, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+    monkeypatch.setattr(
+        indexing_mod, "_remote_index_cache_dir", lambda: tmp_path / "index-cache"
+    )
+
+    offsets1 = read_index(remote_idx)
+    offsets2 = read_index(remote_idx)
+
+    assert isinstance(offsets1, np.memmap)
+    assert isinstance(offsets2, np.memmap)
+    assert np.array_equal(np.asarray(offsets1), np.asarray(offsets2))
+    assert calls["remote_idx"] == 1
+
+    cache_path = indexing_mod._remote_index_cache_path(remote_idx)
+    assert cache_path.is_file()
+    assert cache_path.stat().st_size == local_idx.stat().st_size
+
+
+def test_read_index_remote_path_refreshes_invalid_cached_file(
+    tmp_path, jsonl_file, monkeypatch
+):
+    """An invalid cached remote index is replaced with a fresh download."""
+    import lhotse.indexing as indexing_mod
+
+    p, _ = jsonl_file
+    local_idx = tmp_path / "remote.jsonl.idx"
+    create_jsonl_index(p, output_path=local_idx)
+
+    remote_idx = "s3://bucket/data.jsonl.idx"
+    calls = Counter()
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_best(path, mode="r"):
+        if path == remote_idx:
+            calls["remote_idx"] += 1
+            return original_open_best(local_idx, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+    monkeypatch.setattr(
+        indexing_mod, "_remote_index_cache_dir", lambda: tmp_path / "index-cache"
+    )
+
+    cache_path = indexing_mod._remote_index_cache_path(remote_idx)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_bytes(b"broken")
+
+    offsets = read_index(remote_idx)
+
+    assert isinstance(offsets, np.memmap)
+    assert calls["remote_idx"] == 1
+    assert cache_path.stat().st_size == local_idx.stat().st_size
 
 
 def test_indexed_jsonl_reader_custom_index_path_missing_raises(tmp_path, jsonl_file):

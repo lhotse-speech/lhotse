@@ -56,9 +56,11 @@ index creation:
 
 .. note::
 
-   Indexed access requires **uncompressed local files**. ``.jsonl.gz`` and
-   remote streams are valid for sequential streaming, but they do not provide
-   constant-time reconstruction.
+   Indexed access requires **uncompressed, seekable** data sources.
+   ``.jsonl.gz`` and ``pipe:...`` inputs are valid for sequential streaming,
+   but they do not provide constant-time reconstruction. Local files and
+   supported remote/object-store URIs can be indexed as long as the storage
+   backend supports indexed reads.
 
 Reading indexed data
 --------------------
@@ -78,7 +80,8 @@ For Shar:
    cuts = CutSet.from_shar(in_dir="data/", indexed=True)
 
 ``CutSet.from_shar(..., indexed=None)`` will auto-detect indexed mode when all
-cuts shards are uncompressed local files with indexes available.
+requested field shards are uncompressed, indexable, and have matching indexes
+available.
 
 How iterator composition works
 ------------------------------

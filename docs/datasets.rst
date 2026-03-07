@@ -109,7 +109,9 @@ we can resume the training from where it left off like the following:
 
 .. note::
 
-    The ``DataLoader``'s ``num_workers`` can be different after resuming.
+    For replay-based sampler restore with a regular ``DataLoader``, the
+    ``num_workers`` setting can differ after resuming. For exact per-worker
+    restore with ``StatefulDataLoader``, it must match between save and restore.
 
 .. note::
 
@@ -205,7 +207,8 @@ Requirements and limitations
 
 * Requires ``torchdata`` package (``pip install torchdata``) for
   ``StatefulDataLoader``.
-* Exact indexed restore requires **uncompressed** data files.
+* Exact indexed restore requires **uncompressed** data files. For Shar, write
+  it with ``compress_jsonl=False``.
 * ``num_workers`` and ``world_size`` must match between save and restore.
 * Non-indexed pipelines still use replay-based restore.
 

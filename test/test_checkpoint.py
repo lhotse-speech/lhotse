@@ -18,6 +18,7 @@ from lhotse.lazy import (
     LazyIteratorChain,
     LazyIteratorMultiplexer,
     LazyJsonlIterator,
+    LazyManifestIterator,
     LazyMapper,
     LazyRepeater,
     LazyShuffler,
@@ -136,6 +137,19 @@ def test_collect_restore_with_filter_mapper(tmp_path):
     remaining = list(pipe2)
 
     assert first_k + remaining == all_items
+
+
+def test_collect_state_dict_does_not_duplicate_checkpointable_children(tmp_path):
+    """Checkpointable parents should own child state instead of duplicating it."""
+    p = _make_jsonl(tmp_path, n=10)
+
+    pipe = LazyRepeater(LazyManifestIterator(p), times=2)
+    sd = collect_state_dict(pipe)
+
+    assert "_state" in sd
+    assert "source" not in sd
+    assert "sources" not in sd
+    assert "source" in sd["_state"]
 
 
 # ---------------------------------------------------------------------------
