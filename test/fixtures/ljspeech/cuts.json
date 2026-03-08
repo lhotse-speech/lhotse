@@ -25,9 +25,9 @@
       "sampling_rate": 22050,
       "start": 0,
       "duration": 1.53963719,
-      "storage_type": "lilcom_files",
+      "storage_type": "numpy_files",
       "storage_path": "test/fixtures/ljspeech/feats",
-      "storage_key": "5bb/5bb52a3d-aaf6-42ff-8891-2be7852a4858.llc",
+      "storage_key": "5bb/5bb52a3d-aaf6-42ff-8891-2be7852a4858.npy",
       "channels": 0
     },
     "recording": {
@@ -73,9 +73,9 @@
       "sampling_rate": 22050,
       "start": 0,
       "duration": 1.59768707,
-      "storage_type": "lilcom_files",
+      "storage_type": "numpy_files",
       "storage_path": "test/fixtures/ljspeech/feats",
-      "storage_key": "d39/d39cf273-a42d-433a-a63c-ba6357f1669e.llc",
+      "storage_key": "d39/d39cf273-a42d-433a-a63c-ba6357f1669e.npy",
       "channels": 0
     },
     "recording": {

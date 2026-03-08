@@ -109,6 +109,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE` - used when we load audio from a file and receive a different number of samples than declared in `Recording.num_samples`. This is sometimes necessary because different codecs (or even different versions of the same codec) may use different padding when decoding compressed audio. Typically values up to 0.1, or even 0.3 (second) are still reasonable, and anything beyond that indicates a serious issue.
 - `LHOTSE_AUDIO_BACKEND` - may be set to any of the values returned from CLI `lhotse list-audio-backends` to override the default behavior of trial-and-error and always use a specific audio backend.
 - `LHOTSE_RESAMPLING_BACKEND` - may be set to any of the value returned from CLI `lhotse list-resampling-backends` to override the default behaviour.
+- `LHOTSE_FEATURES_STORAGE_BACKEND` - may be set to any valid feature storage backend name (e.g. `numpy_files`, `lilcom_chunky`) to override the default feature storage backend (which is `numpy_files`).
 - `LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE` - when set to `1` we'll emit full exception stack traces when every available audio backend fails to load a given file (they might be very large).
 - `LHOTSE_DILL_ENABLED` - when it's set to `1|True|true|yes`, we will enable `dill`-based serialization of `CutSet` and `Sampler` across processes (it's disabled by default even when `dill` is installed).
 - `LHOTSE_LEGACY_OPUS_LOADING` - (`=1`) reverts to a legacy OPUS loading mechanism that triggered a new ffmpeg subprocess for each OPUS file.
@@ -126,6 +127,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 ### Optional dependencies
 
 **Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
+- `pip install lhotse[lilcom]` to enable lilcom-compressed feature and array storage backends.
 - `torchaudio` used to be a core dependency in Lhotse, but is now optional. Refer to [official PyTorch documentation for installation](https://pytorch.org/get-started/locally/).
 - `pip install lhotse[kaldi]` for a maximal feature set related to Kaldi compatibility. It includes libraries such as `kaldi_native_io` (a more efficient variant of `kaldi_io`) and `kaldifeat` that port some of Kaldi functionality into Python.
 - `pip install lhotse[orjson]` for up to 50% faster reading of JSONL manifests.

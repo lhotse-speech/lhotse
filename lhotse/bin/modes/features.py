@@ -13,7 +13,11 @@ from lhotse.features import (
     create_default_feature_extractor,
 )
 from lhotse.features.base import FEATURE_EXTRACTORS
-from lhotse.features.io import available_storage_backends, get_writer
+from lhotse.features.io import (
+    available_storage_backends,
+    default_features_storage_backend_name,
+    get_writer,
+)
 from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike, fastcopy
 
@@ -54,7 +58,7 @@ def write_default_config(output_config: Pathlike, feature_type: str):
 @click.option(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_chunky",
+    default=default_features_storage_backend_name(),
     help="Select a storage backend for the feature matrices.",
 )
 @click.option(
@@ -131,7 +135,7 @@ def extract(
 @click.option(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_chunky",
+    default=default_features_storage_backend_name(),
     help="Select a storage backend for the feature matrices.",
 )
 @click.option(
@@ -181,7 +185,7 @@ def extract_cuts(
 @click.option(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_chunky",
+    default=default_features_storage_backend_name(),
     help="Select a storage backend for the feature matrices.",
 )
 @click.option(
@@ -280,7 +284,12 @@ def upload(
 
 def _upload_one(item: Features, url: str) -> Features:
     feats_mat = item.load()
-    feats_writer = LilcomURLWriter(url)
+    default_backend = default_features_storage_backend_name()
+    writer_type = (
+        LilcomURLWriter if "lilcom" in default_backend else get_writer("numpy_files")
+    )
+    assert writer_type is not None
+    feats_writer = writer_type(url)
     new_key = feats_writer.write(key=item.storage_key, value=feats_mat)
     return fastcopy(
         item, storage_path=url, storage_key=new_key, storage_type=feats_writer.name

@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 import torch
 
+pytest.importorskip("lilcom", reason="Lilcom tests require lilcom.")
+
 from lhotse import (
     LilcomFilesWriter,
     MonoCut,

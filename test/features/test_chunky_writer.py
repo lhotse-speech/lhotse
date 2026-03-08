@@ -3,6 +3,8 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 import pytest
 
+pytest.importorskip("lilcom", reason="Lilcom tests require lilcom.")
+
 from lhotse import ChunkedLilcomHdf5Writer, LilcomChunkyWriter
 from lhotse.features.io import get_reader
 from lhotse.utils import is_module_available

@@ -29,9 +29,9 @@ def shar_dir(tmpdir, cuts):
         tmpdir,
         fields={
             "recording": "wav",
-            "features": "lilcom",
+            "features": "numpy",
             "custom_embedding": "numpy",
-            "custom_features": "lilcom",
+            "custom_features": "numpy",
             "custom_indexes": "numpy",
             "custom_recording": "wav",
         },
@@ -69,7 +69,7 @@ def multi_cut_shar_dir(tmpdir, multi_cuts):
         tmpdir,
         fields={
             "recording": "wav",
-            "features": "lilcom",
+            "features": "numpy",
             "custom_indexes": "numpy",
         },
         shard_size=10,
@@ -88,7 +88,7 @@ def multi_cut_multi_audio_source_shar_dir(tmpdir, multi_cuts_multi_audio_source)
         tmpdir,
         fields={
             "recording": "wav",
-            "features": "lilcom",
+            "features": "numpy",
             "custom_indexes": "numpy",
         },
         shard_size=10,

@@ -41,7 +41,11 @@ from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
+from lhotse.features.io import (
+    FeaturesWriter,
+    LilcomChunkyWriter,
+    default_features_storage_backend,
+)
 from lhotse.lazy import (
     AlgorithmMixin,
     Dillable,
@@ -1801,7 +1805,7 @@ class CutSet(Serializable, AlgorithmMixin):
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomChunkyWriter,
+        storage_type: Optional[Type[FW]] = None,
         executor: Optional[Executor] = None,
         mix_eagerly: bool = True,
         progress_bar: bool = True,
@@ -1896,6 +1900,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )  # does nothing, unless we overwrite it with an actual prog bar
         if num_jobs is None:
             num_jobs = 1
+        storage_type = ifnone(storage_type, default_features_storage_backend())
         if num_jobs == 1 and executor is not None:
             logging.warning(
                 "Executor argument was passed but num_jobs set to 1: "
@@ -1998,7 +2003,7 @@ class CutSet(Serializable, AlgorithmMixin):
         num_workers: int = 4,
         collate: bool = False,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomChunkyWriter,
+        storage_type: Optional[Type[FW]] = None,
         overwrite: bool = False,
     ) -> "CutSet":
         """
@@ -2061,6 +2066,11 @@ class CutSet(Serializable, AlgorithmMixin):
         from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
+        storage_type = ifnone(storage_type, default_features_storage_backend())
+        if storage_type.name == "numpy_files":
+            storage_path = Path(storage_path)
+            if storage_path.exists() and storage_path.is_file():
+                storage_path = storage_path.with_name(f"{storage_path.name}_storage")
         frame_shift = extractor.frame_shift
 
         # We're opening a sequential cuts writer that can resume previously interrupted
@@ -2174,6 +2184,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
                 futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
+
+        for future in futures:
+            future.result()
 
         # If ``manifest_path`` was provided, this is a lazy manifest;
         # otherwise everything is in memory.
@@ -2381,7 +2394,7 @@ class CutSet(Serializable, AlgorithmMixin):
         |   └── field2
         |       ├── arr2-1.npy
         |       └── ...
-        ├── features.lca
+        ├── features.lca or features/
         └── cuts.jsonl.gz
 
         :param output_dir: The root directory where we'll store the copied data.
@@ -2394,7 +2407,12 @@ class CutSet(Serializable, AlgorithmMixin):
         output_dir = Path(output_dir)
         audio_dir = output_dir / "audio"
         audio_dir.mkdir(exist_ok=True, parents=True)
-        feature_file = output_dir / "features.lca"
+        feature_writer_type = default_features_storage_backend()
+        if feature_writer_type is LilcomChunkyWriter:
+            feature_storage = output_dir / "features.lca"
+        else:
+            feature_storage = output_dir / "features"
+            feature_storage.mkdir(exist_ok=True, parents=True)
         custom_dir = output_dir / "custom"
         custom_dir.mkdir(exist_ok=True, parents=True)
 
@@ -2404,7 +2422,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
         with CutSet.open_writer(
             output_dir / "cuts.jsonl.gz"
-        ) as manifest_writer, LilcomChunkyWriter(feature_file) as feature_writer:
+        ) as manifest_writer, feature_writer_type(feature_storage) as feature_writer:
 
             def _copy_single(cut):
                 cut = fastcopy(cut)
