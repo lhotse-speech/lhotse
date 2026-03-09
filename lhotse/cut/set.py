@@ -1500,6 +1500,61 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         return result
 
+    def cut_into_overlapping_windows(
+        self,
+        min_duration: Seconds,
+        max_duration: Seconds,
+        overlap: Seconds = 0.0,
+        keep_excessive_supervisions: bool = True,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new :class:`.CutSet` by splitting every cut into overlapping windows whose
+        duration is chosen in ``[min_duration, max_duration]`` to maximise the last chunk length.
+
+        Each sub-cut has ``custom["source_cut_id"]`` and ``custom["source_cut_start"]`` set so
+        that :class:`~lhotse.dataset.sampling.GroupedCutSampler` (and downstream NeMo merging
+        logic) can group sub-cuts from the same parent into one batch.
+
+        Cuts whose duration is already ``<= max_duration`` are returned unchanged (as a single
+        element in the output stream).
+
+        :param min_duration: Minimum window duration in seconds.
+        :param max_duration: Maximum window duration in seconds.
+        :param overlap: Overlap between consecutive windows in seconds (default: 0).
+        :param keep_excessive_supervisions: Whether to keep supervisions that extend beyond the
+            window boundary.
+        :param num_jobs: Number of parallel workers (default: 1).
+        :return: a new :class:`.CutSet` with overlapping sub-cuts (flat, not grouped).
+        """
+        if num_jobs == 1:
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial[CutSet](
+                            _cut_into_overlapping_windows_single,
+                            min_duration=min_duration,
+                            max_duration=max_duration,
+                            overlap=overlap,
+                            keep_excessive_supervisions=keep_excessive_supervisions,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        return split_parallelize_combine(
+            num_jobs,
+            self,
+            _cut_into_overlapping_windows_single,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            overlap=overlap,
+            keep_excessive_supervisions=keep_excessive_supervisions,
+        )
+
     def load_audio(
         self,
         collate: bool = False,
@@ -3438,6 +3493,21 @@ def _cut_into_windows_single(
     return cuts.cut_into_windows(
         duration=duration,
         hop=hop,
+        keep_excessive_supervisions=keep_excessive_supervisions,
+    ).to_eager()
+
+
+def _cut_into_overlapping_windows_single(
+    cuts: CutSet,
+    min_duration,
+    max_duration,
+    overlap,
+    keep_excessive_supervisions,
+) -> CutSet:
+    return cuts.cut_into_overlapping_windows(
+        min_duration=min_duration,
+        max_duration=max_duration,
+        overlap=overlap,
         keep_excessive_supervisions=keep_excessive_supervisions,
     ).to_eager()
 

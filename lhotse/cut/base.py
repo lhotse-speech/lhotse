@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from typing import Callable, Dict, List, Literal, Optional, Set, Tuple
 
@@ -739,6 +740,73 @@ class Cut:
             f"original cut: {self},\n"
             f"new cuts: {new_cuts}"
         )
+        return CutSet.from_cuts(new_cuts)
+
+    def cut_into_overlapping_windows(
+        self,
+        min_duration: Seconds,
+        max_duration: Seconds,
+        overlap: Seconds = 0.0,
+        keep_excessive_supervisions: bool = True,
+    ) -> "CutSet":  # noqa: F821
+        """
+        Return a list of shorter cuts made by splitting this cut into overlapping windows whose
+        size is chosen within ``[min_duration, max_duration]`` to maximise the duration of the
+        final (potentially shorter) window, thereby minimising padding.
+
+        Each resulting sub-cut carries two extra entries in its ``custom`` dict:
+
+        * ``"source_cut_id"``    – the ``id`` of this (parent) cut.
+        * ``"source_cut_start"`` – the ``start`` time of this cut within its recording.
+          Downstream code can use this to detect whether the parent was the first window
+          of a recording (``source_cut_start == 0``) or a later continuation.
+
+        :param min_duration: Minimum desired window duration in seconds.
+        :param max_duration: Maximum desired window duration in seconds.
+        :param overlap: Overlap between consecutive windows in seconds (default: 0).
+        :param keep_excessive_supervisions: When a window is truncated mid-supervision,
+            should the supervision be kept.
+        :return: a :class:`~lhotse.cut.CutSet` of overlapping sub-cuts.
+        """
+        from .set import CutSet
+
+        if self.duration <= max_duration:
+            return CutSet.from_cuts([self])
+
+        # Find the window size in [min_duration, max_duration] (integer seconds) that
+        # maximises the length of the last chunk, minimising padding.
+        best_duration = min_duration
+        best_last_chunk = 0.0
+        for d in range(math.floor(min_duration), math.floor(max_duration) + 1):
+            hop = d - overlap
+            if hop <= 0 or d > self.duration:
+                continue
+            n_chunks = math.ceil((self.duration - overlap) / hop)
+            last_start = hop * (n_chunks - 1)
+            last_chunk_len = self.duration - last_start
+            if last_chunk_len > best_last_chunk:
+                best_last_chunk = last_chunk_len
+                best_duration = float(d)
+
+        hop = best_duration - overlap
+
+        new_cuts = []
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+        n_windows = compute_num_windows(self.duration, best_duration, hop)
+        extra_custom = {
+            "source_cut_id": self.id,
+            "source_cut_start": self.start,
+        }
+        for i in range(n_windows):
+            sub = self.truncate(
+                offset=hop * i,
+                duration=best_duration,
+                keep_excessive_supervisions=keep_excessive_supervisions,
+                _supervisions_index=supervisions_index,
+            ).with_id(f"{self.id}-{i}")
+            merged_custom = dict(sub.custom or {})
+            merged_custom.update(extra_custom)
+            new_cuts.append(fastcopy(sub, custom=merged_custom))
         return CutSet.from_cuts(new_cuts)
 
     def cut_into_windows(
