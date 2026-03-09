@@ -59,7 +59,10 @@ def write_default_config(output_config: Pathlike, feature_type: str):
     "--storage-type",
     type=click.Choice(available_storage_backends()),
     default=default_features_storage_backend_name(),
-    help="Select a storage backend for the feature matrices.",
+    help="Select a storage backend for the feature matrices. "
+    "The default is numpy_files; lilcom_chunky is preferred for smaller "
+    "on-disk storage when lilcom is installed. See also: "
+    "lhotse list-storage-backends.",
 )
 @click.option(
     "-t",
@@ -136,7 +139,10 @@ def extract(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
     default=default_features_storage_backend_name(),
-    help="Select a storage backend for the feature matrices.",
+    help="Select a storage backend for the feature matrices. "
+    "The default is numpy_files; lilcom_chunky is preferred for smaller "
+    "on-disk storage when lilcom is installed. See also: "
+    "lhotse list-storage-backends.",
 )
 @click.option(
     "-j", "--num-jobs", type=int, default=1, help="Number of parallel processes."
@@ -186,7 +192,10 @@ def extract_cuts(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
     default=default_features_storage_backend_name(),
-    help="Select a storage backend for the feature matrices.",
+    help="Select a storage backend for the feature matrices. "
+    "The default is numpy_files; lilcom_chunky is preferred for smaller "
+    "on-disk storage when lilcom is installed. See also: "
+    "lhotse list-storage-backends.",
 )
 @click.option(
     "-j", "--num-jobs", type=int, default=4, help="Number of dataloader workers."

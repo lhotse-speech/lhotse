@@ -21,3 +21,17 @@ def list_resampling_backends():
     from lhotse import available_resampling_backends
 
     click.echo(available_resampling_backends())
+
+
+@cli.command()
+def list_storage_backends():
+    """
+    List all known feature/array storage backends and mark unavailable ones.
+    """
+    from lhotse import storage_backend_statuses
+
+    for backend in storage_backend_statuses():
+        line = backend.name
+        if not backend.available:
+            line += f" (unavailable, requires: {backend.install_hint})"
+        click.echo(line)

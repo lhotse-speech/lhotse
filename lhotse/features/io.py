@@ -6,7 +6,7 @@ from functools import lru_cache
 from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
-from typing import Generator, List, Optional, Type, Union
+from typing import Generator, List, NamedTuple, Optional, Type, Union
 
 import numpy as np
 
@@ -182,13 +182,72 @@ LILCOM_STORAGE_BACKENDS = {
     "lilcom_url",
     "memory_lilcom",
 }
+HDF5_STORAGE_BACKENDS = {
+    "chunked_lilcom_hdf5",
+    "lilcom_hdf5",
+    "numpy_hdf5",
+}
+KALDI_NATIVE_IO_STORAGE_BACKENDS = {
+    "kaldiio",
+}
+
+
+class StorageBackendInfo(NamedTuple):
+    name: str
+    available: bool
+    install_hint: Optional[str] = None
+
+
+def _missing_packages_for_storage_backend(backend: str) -> List[str]:
+    missing_packages = []
+    if backend in HDF5_STORAGE_BACKENDS and not is_module_available("h5py"):
+        missing_packages.append("h5py")
+    if backend in LILCOM_STORAGE_BACKENDS and not is_module_available("lilcom"):
+        missing_packages.append("lilcom")
+    if backend in KALDI_NATIVE_IO_STORAGE_BACKENDS and not is_module_available(
+        "kaldi_native_io"
+    ):
+        missing_packages.append("kaldi_native_io")
+    return missing_packages
 
 
 def available_storage_backends() -> List[str]:
+    """
+    Return the names of all currently available feature/array storage backends.
+
+    The result depends on optional dependencies installed in the environment.
+    To inspect all known backends together with availability status and install
+    hints, call :func:`storage_backend_statuses` or run
+    ``lhotse list-storage-backends``.
+    """
+    return [
+        backend
+        for backend in sorted(set(READER_BACKENDS).intersection(WRITER_BACKENDS))
+        if not _missing_packages_for_storage_backend(backend)
+    ]
+
+
+def storage_backend_statuses() -> List[StorageBackendInfo]:
+    """
+    Return status information for all known feature/array storage backends.
+
+    Unavailable backends include a short install hint when one is known.
+    For a CLI equivalent, run ``lhotse list-storage-backends``.
+    """
     backends = sorted(set(READER_BACKENDS).intersection(WRITER_BACKENDS))
-    if not is_module_available("lilcom"):
-        backends = [b for b in backends if b not in LILCOM_STORAGE_BACKENDS]
-    return backends
+    return [
+        StorageBackendInfo(
+            name=backend,
+            available=not missing_packages,
+            install_hint=(
+                None
+                if not missing_packages
+                else f"pip install {' '.join(missing_packages)}"
+            ),
+        )
+        for backend in backends
+        for missing_packages in [_missing_packages_for_storage_backend(backend)]
+    ]
 
 
 def check_lilcom_installed() -> None:

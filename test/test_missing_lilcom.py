@@ -70,6 +70,9 @@ def test_lhotse_imports_and_loads_numpy_features_without_lilcom(tmp_path):
             import lhotse
 
             assert "lilcom_chunky" not in lhotse.available_storage_backends()
+            statuses = {item.name: item for item in lhotse.storage_backend_statuses()}
+            assert statuses["lilcom_chunky"].available is False
+            assert statuses["lilcom_chunky"].install_hint == "pip install lilcom"
             cut = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")[0]
             feats = cut.load_features()
             assert feats.shape == (1000, 40)
