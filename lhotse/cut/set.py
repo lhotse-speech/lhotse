@@ -1500,7 +1500,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         return result
 
-    def cut_into_overlapping_windows(
+    def cut_into_windows_balanced(
         self,
         min_duration: Seconds,
         max_duration: Seconds,
@@ -1533,7 +1533,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     LazyMapper(
                         self,
                         partial[CutSet](
-                            _cut_into_overlapping_windows_single,
+                            _cut_into_windows_balanced_single,
                             min_duration=min_duration,
                             max_duration=max_duration,
                             overlap=overlap,
@@ -1548,7 +1548,7 @@ class CutSet(Serializable, AlgorithmMixin):
         return split_parallelize_combine(
             num_jobs,
             self,
-            _cut_into_overlapping_windows_single,
+            _cut_into_windows_balanced_single,
             min_duration=min_duration,
             max_duration=max_duration,
             overlap=overlap,
@@ -3497,14 +3497,14 @@ def _cut_into_windows_single(
     ).to_eager()
 
 
-def _cut_into_overlapping_windows_single(
+def _cut_into_windows_balanced_single(
     cuts: CutSet,
     min_duration,
     max_duration,
     overlap,
     keep_excessive_supervisions,
 ) -> CutSet:
-    return cuts.cut_into_overlapping_windows(
+    return cuts.cut_into_windows_balanced(
         min_duration=min_duration,
         max_duration=max_duration,
         overlap=overlap,

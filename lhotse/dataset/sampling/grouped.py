@@ -25,7 +25,7 @@ class GroupedCutSampler(CutSampler):
     single mini-batch (a :class:`~lhotse.cut.CutSet`).
 
     This sampler is designed to be used after
-    :meth:`~lhotse.cut.CutSet.cut_into_overlapping_windows`, which tags every sub-cut
+    :meth:`~lhotse.cut.CutSet.cut_into_windows_balanced`, which tags every sub-cut
     with ``custom["source_cut_id"]``.  All sub-cuts originating from the same parent
     cut will appear consecutively in the stream and will be emitted as one batch, so
     the downstream :class:`~torch.utils.data.Dataset` receives all chunks of a single
@@ -35,14 +35,14 @@ class GroupedCutSampler(CutSampler):
 
         >>> cuts = CutSet.from_file("cuts.jsonl")
         >>> cuts = cuts.cut_into_windows(duration=3600, hop=3600)
-        >>> cuts = cuts.cut_into_overlapping_windows(min_duration=30, max_duration=40, overlap=1)
+        >>> cuts = cuts.cut_into_windows_balanced(min_duration=30, max_duration=40, overlap=1)
         >>> sampler = GroupedCutSampler(cuts, group_by="source_cut_id")
         >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
 
     .. note::
         The sampler relies on the assumption that all cuts belonging to the same group
         appear **consecutively** in the CutSet.  This is guaranteed when
-        ``cut_into_overlapping_windows`` is applied lazily (the default), because every
+        ``cut_into_windows_balanced`` is applied lazily (the default), because every
         parent cut's sub-cuts are emitted together before moving to the next parent.
 
     :param cuts: the :class:`~lhotse.cut.CutSet` to iterate over.

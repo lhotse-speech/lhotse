@@ -742,7 +742,7 @@ class Cut:
         )
         return CutSet.from_cuts(new_cuts)
 
-    def cut_into_overlapping_windows(
+    def cut_into_windows_balanced(
         self,
         min_duration: Seconds,
         max_duration: Seconds,
