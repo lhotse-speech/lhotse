@@ -161,12 +161,10 @@ install_requires = [
     "tqdm",
 ]
 
-# Workaround for lilcom cmake issue: https://github.com/danpovey/lilcom/issues/41
-# present in automatic documentation builds.
 if os.environ.get("READTHEDOCS", False):
-    install_requires.append("lilcom==1.1.0")
+    lilcom_requires = ["lilcom==1.1.0"]
 else:
-    install_requires.append("lilcom>=1.1.0")
+    lilcom_requires = ["lilcom>=1.1.0"]
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
@@ -180,7 +178,7 @@ tests_require = [
     "black==22.3.0",
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
-]
+] + lilcom_requires
 aistore_requires = ["aistore>=1.17.0"]
 orjson_requires = ["orjson>=3.6.6"]
 webdataset_requires = ["webdataset==0.2.5"]
@@ -233,6 +231,7 @@ setup(
         "webdataset": webdataset_requires,
         "h5py": h5py_requires,
         "kaldi": kaldi_requires,
+        "lilcom": lilcom_requires,
         "pillow": pillow_requires,
         "docs": docs_require,
         "tests": tests_require,

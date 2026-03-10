@@ -1,7 +1,18 @@
 from typing import List
 
-import lilcom
 import numpy as np
+
+from lhotse.utils import is_module_available
+
+
+def get_lilcom_module():
+    if not is_module_available("lilcom"):
+        raise ImportError(
+            "To use lilcom-compressed feature storage, please 'pip install lilcom' first."
+        )
+    import lilcom
+
+    return lilcom
 
 
 def lilcom_compress_chunked(
@@ -14,6 +25,7 @@ def lilcom_compress_chunked(
     assert temporal_dim < data.ndim
     num_frames = data.shape[temporal_dim]
     compressed = []
+    lilcom = get_lilcom_module()
     for begin in range(0, num_frames, chunk_size):
         compressed.append(
             lilcom.compress(

@@ -41,7 +41,11 @@ from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
+from lhotse.features.io import (
+    FeaturesWriter,
+    LilcomChunkyWriter,
+    default_features_storage_backend,
+)
 from lhotse.lazy import (
     AlgorithmMixin,
     Dillable,
@@ -238,6 +242,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
         >>> from lhotse import Fbank
         >>> cuts = CutSet()
+        >>> # This uses the default backend (numpy_files unless overridden with
+        >>> # LHOTSE_FEATURES_STORAGE_BACKEND). If lilcom is installed, prefer
+        >>> # storage_type=LilcomChunkyWriter for better storage efficiency.
         >>> cuts = cuts.compute_and_store_features(
         ...     extractor=Fbank(),
         ...     storage_path='/data/feats',
@@ -1801,7 +1808,7 @@ class CutSet(Serializable, AlgorithmMixin):
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomChunkyWriter,
+        storage_type: Optional[Type[FW]] = None,
         executor: Optional[Executor] = None,
         mix_eagerly: bool = True,
         progress_bar: bool = True,
@@ -1810,21 +1817,35 @@ class CutSet(Serializable, AlgorithmMixin):
         Extract features for all cuts, possibly in parallel,
         and store them using the specified storage object.
 
+        When ``storage_type`` is not provided, Lhotse uses the backend selected by
+        ``LHOTSE_FEATURES_STORAGE_BACKEND`` and falls back to ``numpy_files``.
+        If the optional ``lilcom`` dependency is installed, prefer
+        ``LilcomChunkyWriter`` for better storage efficiency.
+        To inspect the currently usable choices, call
+        ``lhotse.available_storage_backends()``. For a full list that also marks
+        unavailable backends with install hints, use
+        ``lhotse.storage_backend_statuses()`` or run
+        ``lhotse list-storage-backends``.
+
         Examples:
 
             Extract fbank features on one machine using 8 processes,
-            store arrays partitioned in 8 archive files with lilcom compression:
+            store arrays partitioned in 8 archive files with lilcom compression
+            (recommended when ``lilcom`` is installed):
 
+            >>> from lhotse import LilcomChunkyWriter
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
             ...     storage_path='feats',
             ...     num_jobs=8,
+            ...     storage_type=LilcomChunkyWriter,
             ... )
 
             Extract fbank features on one machine using 8 processes,
             store each array in a separate file with lilcom compression:
 
+            >>> from lhotse import LilcomFilesWriter
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
@@ -1837,12 +1858,14 @@ class CutSet(Serializable, AlgorithmMixin):
             with 80 jobs,
             store arrays partitioned in 80 archive files with lilcom compression:
 
+            >>> from lhotse import LilcomChunkyWriter
             >>> from distributed import Client
             ... cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
             ...     storage_path='feats',
             ...     num_jobs=80,
+            ...     storage_type=LilcomChunkyWriter,
             ...     executor=Client(...)
             ... )
 
@@ -1873,6 +1896,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+            When omitted, Lhotse uses ``LHOTSE_FEATURES_STORAGE_BACKEND`` or
+            ``numpy_files`` by default. If ``lilcom`` is installed,
+            ``LilcomChunkyWriter`` remains the preferred choice for storage efficiency.
         :param executor: when provided, will be used to parallelize the feature extraction process.
             By default, we will instantiate a ProcessPoolExecutor.
             Learn more about the ``Executor`` API at
@@ -1896,6 +1922,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )  # does nothing, unless we overwrite it with an actual prog bar
         if num_jobs is None:
             num_jobs = 1
+        storage_type = ifnone(storage_type, default_features_storage_backend())
         if num_jobs == 1 and executor is not None:
             logging.warning(
                 "Executor argument was passed but num_jobs set to 1: "
@@ -1998,7 +2025,7 @@ class CutSet(Serializable, AlgorithmMixin):
         num_workers: int = 4,
         collate: bool = False,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomChunkyWriter,
+        storage_type: Optional[Type[FW]] = None,
         overwrite: bool = False,
     ) -> "CutSet":
         """
@@ -2012,10 +2039,21 @@ class CutSet(Serializable, AlgorithmMixin):
         be much faster than :meth:`.CutSet.compute_and_store_features`.
         Otherwise, the speed will be comparable to single-threaded extraction.
 
+        When ``storage_type`` is not provided, Lhotse uses the backend selected by
+        ``LHOTSE_FEATURES_STORAGE_BACKEND`` and falls back to ``numpy_files``.
+        If the optional ``lilcom`` dependency is installed, prefer
+        ``LilcomChunkyWriter`` for better storage efficiency.
+        To inspect the currently usable choices, call
+        ``lhotse.available_storage_backends()``. For a full list that also marks
+        unavailable backends with install hints, use
+        ``lhotse.storage_backend_statuses()`` or run
+        ``lhotse list-storage-backends``.
+
         Example: extract fbank features on one GPU, using 4 dataloading workers
         for reading audio, and store the arrays in an archive file with
         lilcom compression::
 
+            >>> from lhotse import LilcomChunkyWriter
             >>> from lhotse import KaldifeatFbank, KaldifeatFbankConfig
             >>> extractor = KaldifeatFbank(KaldifeatFbankConfig(device='cuda'))
             >>> cuts = CutSet(...)
@@ -2024,6 +2062,7 @@ class CutSet(Serializable, AlgorithmMixin):
             ...     storage_path='feats',
             ...     batch_duration=500,
             ...     num_workers=4,
+            ...     storage_type=LilcomChunkyWriter,
             ... )
 
         :param extractor: A :class:`~lhotse.features.base.FeatureExtractor` instance,
@@ -2050,6 +2089,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+            When omitted, Lhotse uses ``LHOTSE_FEATURES_STORAGE_BACKEND`` or
+            ``numpy_files`` by default. If ``lilcom`` is installed,
+            ``LilcomChunkyWriter`` remains the preferred choice for storage efficiency.
         :param overwrite: should we overwrite the manifest, HDF5 files, etc.
             By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
@@ -2061,6 +2103,11 @@ class CutSet(Serializable, AlgorithmMixin):
         from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
+        storage_type = ifnone(storage_type, default_features_storage_backend())
+        if storage_type.name == "numpy_files":
+            storage_path = Path(storage_path)
+            if storage_path.exists() and storage_path.is_file():
+                storage_path = storage_path.with_name(f"{storage_path.name}_storage")
         frame_shift = extractor.frame_shift
 
         # We're opening a sequential cuts writer that can resume previously interrupted
@@ -2174,6 +2221,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
                 futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
+
+        for future in futures:
+            future.result()
 
         # If ``manifest_path`` was provided, this is a lazy manifest;
         # otherwise everything is in memory.
@@ -2381,7 +2431,7 @@ class CutSet(Serializable, AlgorithmMixin):
         |   └── field2
         |       ├── arr2-1.npy
         |       └── ...
-        ├── features.lca
+        ├── features.lca or features/
         └── cuts.jsonl.gz
 
         :param output_dir: The root directory where we'll store the copied data.
@@ -2394,7 +2444,12 @@ class CutSet(Serializable, AlgorithmMixin):
         output_dir = Path(output_dir)
         audio_dir = output_dir / "audio"
         audio_dir.mkdir(exist_ok=True, parents=True)
-        feature_file = output_dir / "features.lca"
+        feature_writer_type = default_features_storage_backend()
+        if feature_writer_type is LilcomChunkyWriter:
+            feature_storage = output_dir / "features.lca"
+        else:
+            feature_storage = output_dir / "features"
+            feature_storage.mkdir(exist_ok=True, parents=True)
         custom_dir = output_dir / "custom"
         custom_dir.mkdir(exist_ok=True, parents=True)
 
@@ -2404,7 +2459,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
         with CutSet.open_writer(
             output_dir / "cuts.jsonl.gz"
-        ) as manifest_writer, LilcomChunkyWriter(feature_file) as feature_writer:
+        ) as manifest_writer, feature_writer_type(feature_storage) as feature_writer:
 
             def _copy_single(cut):
                 cut = fastcopy(cut)

@@ -1,3 +1,4 @@
+import os
 import pickle
 from abc import ABCMeta, abstractmethod
 from contextlib import contextmanager
@@ -5,9 +6,8 @@ from functools import lru_cache
 from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
-from typing import Generator, List, Optional, Type, Union
+from typing import Generator, List, NamedTuple, Optional, Type, Union
 
-import lilcom
 import numpy as np
 
 from lhotse.array import Array, TemporalArray
@@ -174,10 +174,115 @@ class FeaturesReader(metaclass=ABCMeta):
 
 READER_BACKENDS = {}
 WRITER_BACKENDS = {}
+LILCOM_STORAGE_BACKENDS = {
+    "chunked_lilcom_hdf5",
+    "lilcom_chunky",
+    "lilcom_files",
+    "lilcom_hdf5",
+    "lilcom_url",
+    "memory_lilcom",
+}
+HDF5_STORAGE_BACKENDS = {
+    "chunked_lilcom_hdf5",
+    "lilcom_hdf5",
+    "numpy_hdf5",
+}
+KALDI_NATIVE_IO_STORAGE_BACKENDS = {
+    "kaldiio",
+}
+
+
+class StorageBackendInfo(NamedTuple):
+    name: str
+    available: bool
+    install_hint: Optional[str] = None
+
+
+def _missing_packages_for_storage_backend(backend: str) -> List[str]:
+    missing_packages = []
+    if backend in HDF5_STORAGE_BACKENDS and not is_module_available("h5py"):
+        missing_packages.append("h5py")
+    if backend in LILCOM_STORAGE_BACKENDS and not is_module_available("lilcom"):
+        missing_packages.append("lilcom")
+    if backend in KALDI_NATIVE_IO_STORAGE_BACKENDS and not is_module_available(
+        "kaldi_native_io"
+    ):
+        missing_packages.append("kaldi_native_io")
+    return missing_packages
 
 
 def available_storage_backends() -> List[str]:
-    return sorted(set(READER_BACKENDS).intersection(WRITER_BACKENDS))
+    """
+    Return the names of all currently available feature/array storage backends.
+
+    The result depends on optional dependencies installed in the environment.
+    To inspect all known backends together with availability status and install
+    hints, call :func:`storage_backend_statuses` or run
+    ``lhotse list-storage-backends``.
+    """
+    return [
+        backend
+        for backend in sorted(set(READER_BACKENDS).intersection(WRITER_BACKENDS))
+        if not _missing_packages_for_storage_backend(backend)
+    ]
+
+
+def storage_backend_statuses() -> List[StorageBackendInfo]:
+    """
+    Return status information for all known feature/array storage backends.
+
+    Unavailable backends include a short install hint when one is known.
+    For a CLI equivalent, run ``lhotse list-storage-backends``.
+    """
+    backends = sorted(set(READER_BACKENDS).intersection(WRITER_BACKENDS))
+    return [
+        StorageBackendInfo(
+            name=backend,
+            available=not missing_packages,
+            install_hint=(
+                None
+                if not missing_packages
+                else f"pip install {' '.join(missing_packages)}"
+            ),
+        )
+        for backend in backends
+        for missing_packages in [_missing_packages_for_storage_backend(backend)]
+    ]
+
+
+def check_lilcom_installed() -> None:
+    if not is_module_available("lilcom"):
+        raise ImportError(
+            "To read and write lilcom-compressed arrays, please 'pip install lilcom' "
+            "or select a numpy-based storage backend."
+        )
+
+
+@lru_cache(maxsize=1)
+def get_lilcom_module():
+    check_lilcom_installed()
+    import lilcom
+
+    return lilcom
+
+
+def default_features_storage_backend_name() -> str:
+    maybe_backend = os.environ.get("LHOTSE_FEATURES_STORAGE_BACKEND")
+    if maybe_backend is not None:
+        available = available_storage_backends()
+        assert maybe_backend in available, (
+            "The default feature storage backend requested via "
+            f"LHOTSE_FEATURES_STORAGE_BACKEND={maybe_backend!r} is unavailable. "
+            f"Available choices: {available}"
+        )
+        return maybe_backend
+    return "numpy_files"
+
+
+def default_features_storage_backend() -> Type["FeaturesWriter"]:
+    writer = get_writer(default_features_storage_backend_name())
+    assert writer is not None
+    return writer
 
 
 def register_reader(cls):
@@ -310,6 +415,7 @@ class LilcomFilesReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self.io = FileIO(storage_path)
 
     @dynamic_lru_cache
@@ -320,7 +426,7 @@ class LilcomFilesReader(FeaturesReader):
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         with self.io.open_fileobj(key, mode="r") as (f, input_path):
-            arr = lilcom.decompress(f.read())
+            arr = get_lilcom_module().decompress(f.read())
         return arr[left_offset_frames:right_offset_frames]
 
 
@@ -337,6 +443,7 @@ class LilcomFilesWriter(FeaturesWriter):
 
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self.io = FileIO(storage_path)
         self.tick_power = tick_power
 
@@ -347,7 +454,9 @@ class LilcomFilesWriter(FeaturesWriter):
     def write(self, key: str, value: np.ndarray) -> str:
         if not key.endswith(".llc"):
             key = key + ".llc"
-        serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
+        serialized_feats = get_lilcom_module().compress(
+            value, tick_power=self.tick_power
+        )
         with self.io.open_fileobj(key, "w", add_subdir=True) as (f, output_path):
             f.write(serialized_feats)
             if not self.io.is_url:
@@ -559,6 +668,7 @@ class LilcomHdf5Reader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self.hdf = lookup_cache_or_open(storage_path)
 
     @dynamic_lru_cache
@@ -572,7 +682,7 @@ class LilcomHdf5Reader(FeaturesReader):
         # that got deprecated with the following warning:
         # H5pyDeprecationWarning: dataset.value has been deprecated. Use dataset[()] instead.
         #     arr = lilcom.decompress(self.hdf[key].value.tobytes())
-        arr = lilcom.decompress(self.hdf[key][()].tobytes())
+        arr = get_lilcom_module().decompress(self.hdf[key][()].tobytes())
         return arr[left_offset_frames:right_offset_frames]
 
 
@@ -607,6 +717,7 @@ class LilcomHdf5Writer(FeaturesWriter):
         """
         super().__init__()
         check_h5py_installed()
+        check_lilcom_installed()
         import h5py
 
         p = Path(storage_path)
@@ -621,7 +732,9 @@ class LilcomHdf5Writer(FeaturesWriter):
         return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
-        serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
+        serialized_feats = get_lilcom_module().compress(
+            value, tick_power=self.tick_power
+        )
         self.hdf.create_dataset(key, data=np.void(serialized_feats))
         return key
 
@@ -659,6 +772,7 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self.hdf = lookup_cache_or_open(storage_path)
 
     @dynamic_lru_cache
@@ -677,6 +791,7 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
             right_chunk_idx = None
 
         # Read, decode, concat
+        lilcom = get_lilcom_module()
         decompressed_chunks = [
             lilcom.decompress(data.tobytes())
             for data in self.hdf[key][left_chunk_idx:right_chunk_idx]
@@ -735,6 +850,7 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
         """
         super().__init__()
         check_h5py_installed()
+        check_lilcom_installed()
         import h5py
 
         p = Path(storage_path)
@@ -814,6 +930,7 @@ class LilcomChunkyReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self.storage_path = storage_path
 
     @dynamic_lru_cache
@@ -842,6 +959,7 @@ class LilcomChunkyReader(FeaturesReader):
                 chunk_data.append(file.read(end - offset))
 
         # Read, decode, concat
+        lilcom = get_lilcom_module()
         decompressed_chunks = [lilcom.decompress(data) for data in chunk_data]
         if decompressed_chunks:
             arr = np.concatenate(decompressed_chunks, axis=0)
@@ -896,6 +1014,7 @@ class LilcomChunkyWriter(FeaturesWriter):
         :param mode: Modes, one of: "w" (write) or "a" (append); can be "wb" and "ab", "b" is implicit
         """
         super().__init__()
+        check_lilcom_installed()
 
         if "b" not in mode:
             mode = mode + "b"
@@ -962,6 +1081,7 @@ class LilcomURLReader(FeaturesReader):
 
     def __init__(self, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self._inner = LilcomFilesReader(*args, **kwargs)
 
     @dynamic_lru_cache
@@ -989,6 +1109,7 @@ class LilcomURLWriter(FeaturesWriter):
 
     def __init__(self, *args, **kwargs):
         super().__init__()
+        check_lilcom_installed()
         self._inner = LilcomFilesWriter(*args, **kwargs)
 
     @property
@@ -1163,7 +1284,7 @@ class MemoryLilcomReader(FeaturesReader):
     name = "memory_lilcom"
 
     def __init__(self, *args, **kwargs):
-        pass
+        check_lilcom_installed()
 
     @dynamic_lru_cache
     def read(
@@ -1172,7 +1293,7 @@ class MemoryLilcomReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        arr = lilcom.decompress(raw_data)
+        arr = get_lilcom_module().decompress(raw_data)
         return arr[left_offset_frames:right_offset_frames]
 
 
@@ -1188,6 +1309,7 @@ class MemoryLilcomWriter(FeaturesWriter):
         lilcom_tick_power: int = -5,
         **kwargs,
     ) -> None:
+        check_lilcom_installed()
         self.lilcom_tick_power = lilcom_tick_power
 
     @property
@@ -1198,7 +1320,7 @@ class MemoryLilcomWriter(FeaturesWriter):
         assert np.issubdtype(
             value.dtype, np.floating
         ), "Lilcom compression supports only floating-point arrays."
-        return lilcom.compress(value, tick_power=self.lilcom_tick_power)
+        return get_lilcom_module().compress(value, tick_power=self.lilcom_tick_power)
 
     def close(self) -> None:
         pass

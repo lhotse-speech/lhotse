@@ -63,9 +63,10 @@ exposed to the user through convenient Python classes.
 
 Lhotse introduces the notion of audio cuts, designed to ease the training data construction with operations such as
 mixing, truncation and padding that are performed on-the-fly to minimize the amount of storage required. Data
-augmentation and feature extraction are supported both in pre-computed mode, with highly-compressed feature matrices
-stored on disk, and on-the-fly mode that computes the transformations upon request. Additionally, Lhotse introduces
-feature-space cut mixing to make the best of both worlds.
+augmentation and feature extraction are supported both in pre-computed mode, with feature matrices stored on disk
+(optionally using lilcom-compressed backends for better storage efficiency), and on-the-fly mode that computes the
+transformations upon request. Additionally, Lhotse introduces feature-space cut mixing to make the best of both
+worlds.
 
 ![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/lhotse-cut-illustration.png)
 
@@ -109,6 +110,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 - `LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE` - used when we load audio from a file and receive a different number of samples than declared in `Recording.num_samples`. This is sometimes necessary because different codecs (or even different versions of the same codec) may use different padding when decoding compressed audio. Typically values up to 0.1, or even 0.3 (second) are still reasonable, and anything beyond that indicates a serious issue.
 - `LHOTSE_AUDIO_BACKEND` - may be set to any of the values returned from CLI `lhotse list-audio-backends` to override the default behavior of trial-and-error and always use a specific audio backend.
 - `LHOTSE_RESAMPLING_BACKEND` - may be set to any of the value returned from CLI `lhotse list-resampling-backends` to override the default behaviour.
+- `LHOTSE_FEATURES_STORAGE_BACKEND` - may be set to any valid feature storage backend name (e.g. `numpy_files`, `lilcom_chunky`) to override the default feature storage backend (which is `numpy_files`). Use `lhotse.available_storage_backends()` to inspect the currently usable choices, or `lhotse.storage_backend_statuses()` / CLI `lhotse list-storage-backends` for a full list that also marks unavailable backends with install hints. If you have `lilcom` installed and want smaller feature archives, `lilcom_chunky` is the preferred choice.
 - `LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE` - when set to `1` we'll emit full exception stack traces when every available audio backend fails to load a given file (they might be very large).
 - `LHOTSE_DILL_ENABLED` - when it's set to `1|True|true|yes`, we will enable `dill`-based serialization of `CutSet` and `Sampler` across processes (it's disabled by default even when `dill` is installed).
 - `LHOTSE_LEGACY_OPUS_LOADING` - (`=1`) reverts to a legacy OPUS loading mechanism that triggered a new ffmpeg subprocess for each OPUS file.
@@ -126,6 +128,7 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 ### Optional dependencies
 
 **Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
+- `pip install lhotse[lilcom]` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, `lilcom_chunky` is the preferred feature-storage backend once this dependency is installed.
 - `torchaudio` used to be a core dependency in Lhotse, but is now optional. Refer to [official PyTorch documentation for installation](https://pytorch.org/get-started/locally/).
 - `pip install lhotse[kaldi]` for a maximal feature set related to Kaldi compatibility. It includes libraries such as `kaldi_native_io` (a more efficient variant of `kaldi_io`) and `kaldifeat` that port some of Kaldi functionality into Python.
 - `pip install lhotse[orjson]` for up to 50% faster reading of JSONL manifests.

@@ -1458,6 +1458,8 @@ class MixedCut(Cut):
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
         :param storage: a ``FeaturesWriter`` instance used to store the features.
+            When the optional ``lilcom`` dependency is installed and on-disk size matters,
+            ``LilcomChunkyWriter`` is the preferred backend.
         :param augment_fn: an optional callable used for audio augmentation.
         :param mix_eagerly: when False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
