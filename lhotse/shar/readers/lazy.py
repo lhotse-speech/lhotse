@@ -4,14 +4,18 @@ from typing import (
     Callable,
     Dict,
     Generator,
+    Iterable,
     List,
     Literal,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Union,
 )
+from urllib.parse import urlparse
 
+from lhotse.ais.utils import list_aistore_objects
 from lhotse.cut import Cut
 from lhotse.dataset.dataloading import resolve_seed
 from lhotse.lazy import (
@@ -23,7 +27,7 @@ from lhotse.lazy import (
 )
 from lhotse.serialization import extension_contains
 from lhotse.shar.readers.tar import TarIterator
-from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
+from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, list_s3_objects
 
 
 class LazySharIterator(Dillable):
@@ -104,7 +108,9 @@ class LazySharIterator(Dillable):
         and values are lists of shards (either paths or shell commands).
         The field "cuts" pointing to CutSet shards always has to be present.
     :param in_dir: path to a directory created with ``SharWriter`` with
-        all the shards in a single place. Can be used instead of ``fields``.
+        all the shards in a single place, or a supported object store URI
+        prefix such as ``s3://bucket/shar`` or ``ais://bucket/shar``.
+        Can be used instead of ``fields``.
     :param split_for_dataloading: bool, by default ``False`` which does nothing.
         Setting it to ``True`` is intended for PyTorch training with multiple
         dataloader workers and possibly multiple DDP nodes.
@@ -197,24 +203,24 @@ class LazySharIterator(Dillable):
         self.streams = fields
 
     def _init_from_dir(self, in_dir: Pathlike):
+        scheme = urlparse(str(in_dir)).scheme.lower()
+        if scheme in _OBJECT_STORE_SCHEMES:
+            self.in_dir = str(in_dir)
+            self.fields, self.streams = _init_from_object_store_dir(self.in_dir)
+            return
+
+        if scheme:
+            raise ValueError(
+                f"Unsupported object store URI scheme '{scheme}' for Shar directory scanning: {in_dir}. "
+                "Please provide explicit 'fields' or use one of: ais://, s3://, s3a://, s3n://."
+            )
+
         self.in_dir = Path(in_dir)
-
-        all_paths = list(self.in_dir.glob("*"))
-        self.fields = set(p.stem.split(".")[0] for p in all_paths)
-        assert "cuts" in self.fields
-        self.fields.remove("cuts")
-
-        self.streams = {
-            "cuts": sorted(
-                p
-                for p in all_paths
-                if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
+        if not self.in_dir.is_dir():
+            raise ValueError(
+                f"Expected 'in_dir' to be an existing directory or a supported object store URI, got: {in_dir}"
             )
-        }
-        for field in self.fields:
-            self.streams[field] = sorted(
-                p for p in all_paths if p.name.split(".")[0] == field
-            )
+        self.fields, self.streams = _init_from_local_dir(self.in_dir)
 
     def _maybe_split_for_dataloading(self, shards: List) -> List:
         from .utils import split_by_node, split_by_worker
@@ -307,6 +313,55 @@ class LazySharIterator(Dillable):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+
+_OBJECT_STORE_SCHEMES = frozenset(("ais", "s3", "s3a", "s3n"))
+
+
+def _init_from_local_dir(in_dir: Path) -> Tuple[Set[str], Dict[str, List[Path]]]:
+    return _build_shar_streams(list(in_dir.glob("*")), source=in_dir)
+
+
+def _init_from_object_store_dir(
+    in_dir: Pathlike,
+) -> Tuple[Set[str], Dict[str, List[str]]]:
+    scheme = urlparse(str(in_dir)).scheme.lower()
+    if scheme not in _OBJECT_STORE_SCHEMES:
+        raise ValueError(
+            f"Unsupported object store URI scheme '{scheme}' for Shar directory scanning: {in_dir}. "
+            "Please provide explicit 'fields' or use one of: ais://, s3://, s3a://, s3n://."
+        )
+    if scheme == "ais":
+        all_paths = list_aistore_objects(in_dir)
+    else:
+        all_paths = list_s3_objects(in_dir)
+    return _build_shar_streams(all_paths, source=in_dir)
+
+
+def _build_shar_streams(
+    all_paths: Iterable[Pathlike], source: Pathlike
+) -> Tuple[Set[str], Dict[str, List[Pathlike]]]:
+    all_paths = list(all_paths)
+    fields = set(Path(p).stem.split(".")[0] for p in all_paths)
+    if "cuts" not in fields:
+        raise ValueError(f"Could not find any Shar 'cuts' shards under: {source}")
+
+    fields.remove("cuts")
+    streams = {
+        "cuts": sorted(
+            p
+            for p in all_paths
+            if Path(p).name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
+        )
+    }
+    if not streams["cuts"]:
+        raise ValueError(f"Could not find any Shar JSONL manifests under: {source}")
+
+    for field in fields:
+        streams[field] = sorted(
+            p for p in all_paths if Path(p).name.split(".")[0] == field
+        )
+    return fields, streams
 
 
 def _jsonl_tar_adaptor(

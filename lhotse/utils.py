@@ -138,6 +138,59 @@ def is_valid_url(value: str) -> bool:
         return False
 
 
+def split_object_store_url(url: Pathlike) -> Tuple[str, str, str]:
+    parsed = urlparse(str(url).rstrip("/"))
+    if not (parsed.scheme and parsed.netloc):
+        raise ValueError(f"Not a valid object store URI: {url}")
+    return (
+        parsed.scheme.lower(),
+        parsed.netloc,
+        parsed.path.lstrip("/").rstrip("/"),
+    )
+
+
+def list_s3_objects(url: Pathlike) -> List[str]:
+    try:
+        import boto3
+    except ImportError as e:
+        raise ImportError(
+            "Please run 'pip install boto3' or 'pip install smart_open[s3]' to scan Shar shards in S3."
+        ) from e
+
+    scheme, bucket, prefix = split_object_store_url(url)
+    listing_prefix = f"{prefix}/" if prefix else ""
+
+    paginator = boto3.client("s3").get_paginator("list_objects_v2")
+    keys = (
+        item["Key"]
+        for page in paginator.paginate(
+            Bucket=bucket, Prefix=listing_prefix, Delimiter="/"
+        )
+        for item in page.get("Contents", [])
+        if isinstance(item.get("Key"), str)
+    )
+    return top_level_object_store_uris(scheme, bucket, prefix, keys)
+
+
+def top_level_object_store_uris(
+    scheme: str, bucket: str, prefix: str, keys: Iterable[str]
+) -> List[str]:
+    listing_prefix = f"{prefix}/" if prefix else ""
+    return sorted(
+        f"{scheme}://{bucket}/{key}"
+        for key in keys
+        if _is_top_level_object_store_key(key, listing_prefix)
+    )
+
+
+def _is_top_level_object_store_key(key: str, listing_prefix: str) -> bool:
+    if listing_prefix:
+        if not key.startswith(listing_prefix):
+            return False
+        key = key[len(listing_prefix) :]
+    return bool(key) and not key.endswith("/") and "/" not in key
+
+
 def fix_random_seed(random_seed: int):
     """
     Set the same random seed for the libraries and modules that Lhotse interacts with.
