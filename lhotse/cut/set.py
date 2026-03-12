@@ -1513,8 +1513,7 @@ class CutSet(Serializable, AlgorithmMixin):
         duration is chosen in ``[min_duration, max_duration]`` to maximise the last chunk length.
 
         Each sub-cut has ``custom["source_cut_id"]`` and ``custom["source_cut_start"]`` set so
-        that :class:`~lhotse.dataset.sampling.GroupedCutSampler` (and downstream NeMo merging
-        logic) can group sub-cuts from the same parent into one batch.
+        that downstream merging logic can group sub-cuts from the same parent.
 
         Cuts whose duration is already ``<= max_duration`` are returned unchanged (as a single
         element in the output stream).
