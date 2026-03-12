@@ -781,7 +781,7 @@ class Cut:
             hop = d - overlap
             if hop <= 0 or d > self.duration:
                 continue
-            n_chunks = math.ceil((self.duration - overlap) / hop)
+            n_chunks = math.ceil(self.duration / hop)
             last_start = hop * (n_chunks - 1)
             last_chunk_len = self.duration - last_start
             if last_chunk_len > best_last_chunk:
