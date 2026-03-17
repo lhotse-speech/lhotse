@@ -100,8 +100,8 @@ def libri_cut():
             sampling_rate=16000,
             start=0.0,
             storage_path="test/fixtures/libri/storage",
-            storage_key="30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
-            storage_type="lilcom_files",
+            storage_key="30c2440c-93cb-4e83-b382-f2a59b3859b4.npy",
+            storage_type="numpy_files",
             type="fbank",
         ),
         recording=Recording(

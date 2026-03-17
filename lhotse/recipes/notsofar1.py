@@ -65,7 +65,10 @@ def download_notsofar1(
             download_patterns.append(
                 f"benchmark-datasets/{subset_name}/{version}/MTG/*/mc_*"
             )
-
+        elif mic == "ihm":
+            download_patterns.append(
+                f"benchmark-datasets/{subset_name}/{version}/MTG/*/close_talk*"
+            )
         snapshot_download(
             repo_id="microsoft/NOTSOFAR",
             repo_type="dataset",
@@ -97,7 +100,7 @@ def prepare_notsofar1(
 
         for version in _listdir_safe(part_dir):
             version_dir = part_dir / version / "MTG"
-            sc_cuts, mc_cuts = process_data(
+            sc_cuts, mc_cuts, ihm_cuts = process_data(
                 version_dir, word_level=False, create_word_alignment=True
             )
             manifests[part][version] = defaultdict(dict)
@@ -126,6 +129,17 @@ def prepare_notsofar1(
                     "supervisions": mc_sups,
                 }
 
+            if ihm_cuts:
+                ihm_recs, ihm_sups = fix_manifests(
+                    *CutSet.from_cuts(ihm_cuts).decompose()[:2]
+                )
+                tag = f"notsofar1_ihm_{part}_{version}"
+                ihm_recs.to_file(output_dir / f"{tag}_recordings.jsonl.gz")
+                ihm_sups.to_file(output_dir / f"{tag}_supervisions.jsonl.gz")
+                manifests[part][version]["close_talk"] = {
+                    "recordings": ihm_recs,
+                    "supervisions": ihm_sups,
+                }
     return manifests
 
 
@@ -139,6 +153,7 @@ def process_data(
     meetings = sorted(_listdir_safe(dataset_path))
     sc_cuts = []
     mc_cuts = []
+    ihm_cuts = []
 
     for meeting in tqdm(meetings):
         meeting_root = dataset_path / meeting
@@ -146,11 +161,19 @@ def process_data(
         devices = sorted(
             list(
                 filter(
-                    lambda x: x != "close_talk" and os.path.isdir(meeting_root / x),
+                    lambda x: os.path.isdir(meeting_root / x),
                     _listdir_safe(meeting_root),
                 )
             )
         )
+
+        metadata_path = meeting_root / "gt_meeting_metadata.json"
+        ct_device_to_speaker = {}
+        if metadata_path.exists():
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+            alias_to_ct = metadata.get("ParticipantAliasToCtDevice", {})
+            ct_device_to_speaker = {v: k for k, v in alias_to_ct.items()}
 
         with open(transcription_path, "r") as f:
             transcription_json = json.load(f)
@@ -159,6 +182,67 @@ def process_data(
             device_path = meeting_root / device
             device_id = f"{meeting}_{device}"
             is_multi_channel = "mc" in device
+            is_close_talk = "close_talk" in device
+
+            if is_close_talk:
+                ct_wav_files = sorted(
+                    f for f in _listdir_safe(device_path) if f.endswith(".wav")
+                )
+                for ct_wav in ct_wav_files:
+                    ct_device_id = Path(ct_wav).stem  # e.g. "CT_21"
+                    speaker = ct_device_to_speaker.get(ct_device_id, ct_device_id)
+                    ct_recording = Recording.from_file(device_path / ct_wav)
+                    ct_recording_id = f"{meeting}_close_talk_{ct_device_id}"
+                    ct_recording.id = ct_recording_id
+
+                    speaker_supervisions = []
+                    for segment in transcription_json:
+                        if segment["speaker_id"] != speaker:
+                            continue
+                        start_time = float(segment["start_time"])
+                        end_time = float(segment["end_time"])
+                        alignment = None
+
+                        if create_word_alignment:
+                            alignment = {"word": []}
+                            for alig_text, alig_start_time, alig_end_time in segment[
+                                "word_timing"
+                            ]:
+                                if "<" in alig_text or ">" in alig_text:
+                                    continue
+                                alignment["word"].append(
+                                    AlignmentItem(
+                                        symbol=alig_text,
+                                        start=float(alig_start_time),
+                                        duration=float(alig_end_time)
+                                        - float(alig_start_time),
+                                    )
+                                )
+
+                        speaker_supervisions.append(
+                            SupervisionSegment(
+                                id=f"{ct_recording_id}_{str(int(start_time * 100)).zfill(6)}_{str(int(end_time * 100)).zfill(6)}",
+                                recording_id=ct_recording_id,
+                                start=start_time,
+                                duration=end_time - start_time,
+                                channel=0,
+                                text=segment["text"],
+                                speaker=speaker,
+                                alignment=alignment,
+                            )
+                        )
+
+                    ihm_cuts.append(
+                        MonoCut(
+                            id=ct_recording_id,
+                            start=0,
+                            duration=ct_recording.duration,
+                            channel=0,
+                            supervisions=speaker_supervisions,
+                            recording=ct_recording,
+                        )
+                    )
+                continue  # skip sc/mc append logic for ihm devices
             if is_multi_channel:
                 # We assume the channel numbers range from 0 to num_channels - 1.
                 num_channels = len(_listdir_safe(device_path))
@@ -242,4 +326,4 @@ def process_data(
                     )
                 )
 
-    return sc_cuts, mc_cuts
+    return sc_cuts, mc_cuts, ihm_cuts

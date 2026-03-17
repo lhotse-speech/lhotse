@@ -18,10 +18,18 @@ from lhotse.audio.resampling_backend import (
 
 @pytest.fixture(autouse=True)
 def reload_module():
+    module = sys.modules.get("lhotse.tools.libsox")
+    if module is not None:
+        module.libsox_cleanup()
+
     if "lhotse.tools.libsox" in sys.modules:
         del sys.modules["lhotse.tools.libsox"]
 
     import lhotse.tools.libsox
+
+    yield
+
+    lhotse.tools.libsox.libsox_cleanup()
 
 
 def test_available_resampling_backends():

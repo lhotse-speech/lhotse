@@ -150,11 +150,16 @@ def libsox_import() -> None:
 
 
 def libsox_cleanup() -> None:
+    global libsox
+    global sox_free
     global LIBSOX_INITIALIZED
     if not LIBSOX_INITIALIZED:
         return
 
     libsox.sox_quit()
+    libsox = None
+    sox_free = None
+    LIBSOX_INITIALIZED = False
 
 
 atexit.register(libsox_cleanup)

@@ -24,8 +24,10 @@ from .io import (
     NumpyFilesWriter,
     NumpyHdf5Reader,
     NumpyHdf5Writer,
+    StorageBackendInfo,
     available_storage_backends,
     close_cached_file_handles,
+    storage_backend_statuses,
 )
 from .kaldi.extractors import (
     Fbank,

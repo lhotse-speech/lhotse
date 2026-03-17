@@ -42,7 +42,7 @@ def notsofar1(
 @click.option(
     "--mic",
     type=click.Choice(
-        ["sdm", "mdm"],
+        ["ihm", "sdm", "mdm"],
         case_sensitive=False,
     ),
     default="sdm",

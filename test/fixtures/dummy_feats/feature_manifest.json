@@ -9,8 +9,8 @@
     "sampling_rate": 16000,
     "start": 0.0,
     "storage_path": "test/fixtures/dummy_feats/storage",
-    "storage_key": "89739de9-308c-4487-9fa5-1c690d44e718.llc",
-    "storage_type": "lilcom_files",
+    "storage_key": "89739de9-308c-4487-9fa5-1c690d44e718.npy",
+    "storage_type": "numpy_files",
     "type": "fbank"
   },
   {
@@ -23,8 +23,8 @@
     "sampling_rate": 16000,
     "start": 0.0,
     "storage_path": "test/fixtures/dummy_feats/storage",
-    "storage_key": "25959652-8816-4810-a88a-0b022d6b9b6d.llc",
-    "storage_type": "lilcom_files",
+    "storage_key": "25959652-8816-4810-a88a-0b022d6b9b6d.npy",
+    "storage_type": "numpy_files",
     "type": "fbank"
   },
   {
@@ -37,8 +37,8 @@
     "sampling_rate": 16000,
     "start": 0.0,
     "storage_path": "test/fixtures/dummy_feats/storage",
-    "storage_key": "dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
-    "storage_type": "lilcom_files",
+    "storage_key": "dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.npy",
+    "storage_type": "numpy_files",
     "type": "fbank"
   },
   {
@@ -51,8 +51,8 @@
     "sampling_rate": 16000,
     "start": 0.0,
     "storage_path": "test/fixtures/dummy_feats/storage",
-    "storage_key": "d3466ce9-d604-48c3-8c1f-26480aaf07d1.llc",
-    "storage_type": "lilcom_files",
+    "storage_key": "d3466ce9-d604-48c3-8c1f-26480aaf07d1.npy",
+    "storage_type": "numpy_files",
     "type": "fbank"
   }
 ]

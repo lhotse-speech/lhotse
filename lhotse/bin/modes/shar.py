@@ -134,7 +134,7 @@ def export(
     "-c",
     "--compression",
     type=click.Choice(["lilcom", "numpy"]),
-    default="lilcom",
+    default="numpy",
     help="Which compression to use (lilcom is lossy, numpy is lossless).",
 )
 @click.option(

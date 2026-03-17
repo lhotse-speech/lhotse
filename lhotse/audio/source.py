@@ -19,14 +19,8 @@ from lhotse.audio.utils import (
     get_audio_duration_mismatch_tolerance,
 )
 from lhotse.caching import AudioCache
-from lhotse.utils import (
-    Pathlike,
-    Seconds,
-    SmartOpen,
-    asdict_nonull,
-    compute_num_samples,
-    fastcopy,
-)
+from lhotse.serialization import open_best
+from lhotse.utils import Pathlike, Seconds, asdict_nonull, compute_num_samples, fastcopy
 
 PathOrFilelike = Union[str, BytesIO, FileIO]
 
@@ -304,7 +298,7 @@ class AudioSource:
             # never a microphone-stream or a live-stream.
             audio_bytes = AudioCache.try_cache(self.source)
             if not audio_bytes:
-                with SmartOpen.open(self.source, "rb") as f:
+                with open_best(self.source, "rb") as f:
                     audio_bytes = f.read()
                 AudioCache.add_to_cache(self.source, audio_bytes)
             source = BytesIO(audio_bytes)
