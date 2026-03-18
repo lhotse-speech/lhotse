@@ -554,6 +554,11 @@ def test_pad_both_padding_cut(padding_cut):
     assert all(isinstance(t.cut, PaddingCut) for t in cut.tracks)
 
 
+def test_unmix_is_noop_for_padding_cut(padding_cut):
+    assert padding_cut.unmix() == [padding_cut]
+    assert padding_cut.unmix(tag="noise") == [padding_cut]
+
+
 def test_pad_both_mixed_cut(mixed_libri_cut, libri_cut):
     cut = mixed_libri_cut.pad(30, direction="both")
 

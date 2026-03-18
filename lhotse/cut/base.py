@@ -263,6 +263,18 @@ class Cut:
         right = self.truncate(offset=timestamp)
         return left, right
 
+    def unmix(self, tag: Optional[str] = None) -> List["Cut"]:
+        """
+        Return this cut as a single-item list.
+
+        This is a compatibility no-op for cut types that are not :class:`~lhotse.cut.MixedCut`,
+        so callers can uniformly invoke ``cut.unmix()`` regardless of the concrete cut type.
+
+        :param tag: Ignored for non-mixed cuts.
+        :return: A single-item list containing ``self``.
+        """
+        return [self]
+
     def mix(
         self,
         other: "Cut",
@@ -270,6 +282,7 @@ class Cut:
         allow_padding: bool = False,
         snr: Optional[Decibels] = None,
         preserve_id: Optional[str] = None,
+        tag: Optional[str] = None,
     ) -> "Cut":
         """Refer to :function:`~lhotse.cut.mix` documentation."""
         from .set import mix
@@ -281,6 +294,7 @@ class Cut:
             allow_padding=allow_padding,
             snr=snr,
             preserve_id=preserve_id,
+            tag=tag,
         )
 
     def append(

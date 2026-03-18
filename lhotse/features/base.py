@@ -134,6 +134,21 @@ class FeatureExtractor(metaclass=ABCMeta):
             "after, rather than before mixing the cuts."
         )
 
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        """
+        Scale a single feature matrix by the provided energy factor.
+
+        :param features: A feature matrix.
+        :param energy_scaling_factor: The energy scaling factor to apply.
+        :return: A scaled feature matrix.
+        """
+        raise ValueError(
+            'The feature extractor\'s "scale" operation is undefined. '
+            "It does not support feature-domain mix, consider computing the features "
+            "after, rather than before mixing the cuts."
+        )
+
     def extract_batch(
         self,
         samples: Union[

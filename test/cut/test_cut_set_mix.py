@@ -76,3 +76,19 @@ def test_cut_set_mixing_less_noise_cuts_than_speech_cuts_lazy_noise_cutset():
     mixed_cuts = speech_cuts.mix(noise_cuts)
     for c in mixed_cuts:
         assert isinstance(c, MixedCut)
+
+
+def test_cut_set_mixing_with_tag():
+    speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+    noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=102)
+    for cut in speech_cuts:
+        cut.duration = 10.0
+    for cut in noise_cuts:
+        cut.duration = 1.5
+
+    mixed_cuts = speech_cuts.mix(noise_cuts, tag="noise")
+    for cut in mixed_cuts:
+        assert isinstance(cut, MixedCut)
+        assert len(cut.tracks) > 2
+        assert cut.tracks[0].tag is None
+        assert all(track.tag == "noise" for track in cut.tracks[1:])
