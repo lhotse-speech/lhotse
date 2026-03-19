@@ -160,7 +160,7 @@ def prepare_librispeech(
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts, output_dir=output_dir
+            dataset_parts=dataset_parts, output_dir=output_dir, prefix="librispeech"
         )
 
     with ThreadPoolExecutor(num_jobs) as ex:
