@@ -25,7 +25,7 @@ from lhotse.lazy import (
     LazyManifestIterator,
     count_newlines_fast,
 )
-from lhotse.serialization import extension_contains
+from lhotse.serialization import AIStoreIOBackend, extension_contains
 from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, list_s3_objects
 
@@ -331,7 +331,7 @@ def _init_from_object_store_dir(
             f"Unsupported object store URI scheme '{scheme}' for Shar directory scanning: {in_dir}. "
             "Please provide explicit 'fields' or use one of: ais://, s3://, s3a://, s3n://."
         )
-    if scheme == "ais":
+    if AIStoreIOBackend.is_available():
         all_paths = list_aistore_objects(in_dir)
     else:
         all_paths = list_s3_objects(in_dir)
