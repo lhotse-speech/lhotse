@@ -13,12 +13,14 @@ from lhotse import AudioSource, Recording
 from lhotse.audio import suppress_audio_loading_errors
 from lhotse.audio.backend import (
     info,
+    read_audio,
     read_opus_ffmpeg,
     read_opus_torchaudio,
     save_audio,
     torchaudio_info,
     torchaudio_load,
 )
+from lhotse.serialization import IOBackend, io_backend
 from lhotse.utils import is_torchaudio_available
 
 
@@ -267,6 +269,21 @@ def test_set_audio_backend():
     )
     audio2 = recording.load_audio()
     np.testing.assert_array_almost_equal(audio1, audio2)
+
+
+def test_audio_source_url_uses_current_io_backend():
+    class DummyUrlIOBackend(IOBackend):
+        def open(self, identifier, mode):
+            assert identifier == "mock://mono_c0.wav"
+            return open("test/fixtures/mono_c0.wav", mode)
+
+    expected, _ = read_audio("test/fixtures/mono_c0.wav")
+    source = AudioSource(type="url", channels=[0], source="mock://mono_c0.wav")
+
+    with io_backend(DummyUrlIOBackend()):
+        restored = source.load_audio()
+
+    np.testing.assert_allclose(np.atleast_2d(restored), np.atleast_2d(expected))
 
 
 def test_fault_tolerant_audio_network_exception():

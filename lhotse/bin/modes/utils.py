@@ -14,6 +14,16 @@ def list_audio_backends():
 
 
 @cli.command()
+def list_io_backends():
+    """
+    List the names of all available IO backends.
+    """
+    from lhotse import available_io_backends
+
+    click.echo(available_io_backends())
+
+
+@cli.command()
 def list_resampling_backends():
     """
     List the names of all available resampling backends.

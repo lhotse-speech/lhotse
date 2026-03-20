@@ -295,6 +295,13 @@ def test_cli_list_storage_backends():
     assert result.output == "\n".join(expected) + "\n"
 
 
+def test_cli_list_io_backends():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list-io-backends"])
+    assert result.exit_code == 0
+    assert result.output == f"{lhotse.available_io_backends()}\n"
+
+
 def test_cli_list_storage_backends_marks_missing_optional_dependencies(monkeypatch):
     import lhotse.features.io as features_io
 
