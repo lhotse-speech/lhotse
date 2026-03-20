@@ -5,11 +5,11 @@ from lhotse.utils import Pathlike, split_object_store_url, top_level_object_stor
 
 
 def list_aistore_objects(url: Pathlike) -> List[str]:
-    _, bucket, prefix = split_object_store_url(url)
+    scheme, bucket, prefix = split_object_store_url(url)
     provider, bucket = _parse_aistore_url(url, fallback_bucket=bucket)
     listing = _list_bucket_objects(provider, bucket, prefix)
     keys = _iter_aistore_object_keys(listing)
-    return top_level_object_store_uris("ais", bucket, prefix, keys)
+    return top_level_object_store_uris(scheme, bucket, prefix, keys)
 
 
 def _parse_aistore_url(url: Pathlike, fallback_bucket: str) -> Tuple[str, str]:

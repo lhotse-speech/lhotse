@@ -28,6 +28,7 @@ from lhotse.lazy import (
 from lhotse.serialization import extension_contains
 from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, list_s3_objects
+from lhotse.serialization import AIStoreIOBackend
 
 
 class LazySharIterator(Dillable):
@@ -331,7 +332,7 @@ def _init_from_object_store_dir(
             f"Unsupported object store URI scheme '{scheme}' for Shar directory scanning: {in_dir}. "
             "Please provide explicit 'fields' or use one of: ais://, s3://, s3a://, s3n://."
         )
-    if scheme == "ais":
+    if AIStoreIOBackend().is_available():
         all_paths = list_aistore_objects(in_dir)
     else:
         all_paths = list_s3_objects(in_dir)
@@ -343,15 +344,15 @@ def _build_shar_streams(
 ) -> Tuple[Set[str], Dict[str, List[Pathlike]]]:
     all_paths = list(all_paths)
     fields = set(Path(p).stem.split(".")[0] for p in all_paths)
-    if "cuts" not in fields:
+    if not any(field.startswith("cuts") for field in fields):
         raise ValueError(f"Could not find any Shar 'cuts' shards under: {source}")
 
-    fields.remove("cuts")
+    fields = [field for field in fields if not field.startswith("cuts")]
     streams = {
         "cuts": sorted(
             p
             for p in all_paths
-            if Path(p).name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
+            if Path(p).name.split(".")[0].startswith("cuts") and extension_contains(".jsonl", p)
         )
     }
     if not streams["cuts"]:
@@ -359,7 +360,7 @@ def _build_shar_streams(
 
     for field in fields:
         streams[field] = sorted(
-            p for p in all_paths if Path(p).name.split(".")[0] == field
+            p for p in all_paths if Path(p).name.split(".")[0].startswith(field)
         )
     return fields, streams
 
