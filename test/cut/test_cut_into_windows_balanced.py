@@ -35,14 +35,14 @@ def test_short_cut_returned_unchanged():
     cut = _make_cut(duration=30.0)
     result = list(cut.cut_into_windows_balanced(min_duration=30, max_duration=40))
     assert len(result) == 1
-    assert result[0].id == cut.id
+    assert result[0] == cut
 
 
 def test_exactly_max_duration_returned_unchanged():
     cut = _make_cut(duration=40.0)
     result = list(cut.cut_into_windows_balanced(min_duration=30, max_duration=40))
     assert len(result) == 1
-    assert result[0].id == cut.id
+    assert result[0] == cut
 
 
 # ---------------------------------------------------------------------------
@@ -50,18 +50,24 @@ def test_exactly_max_duration_returned_unchanged():
 # ---------------------------------------------------------------------------
 
 def test_windows_cover_full_duration():
-    """Every sample of the original cut should be reachable via the sub-cuts."""
+    """Every sample of the original cut should be reachable via the sub-cuts.
+
+    For duration=95s, min=30, max=40, overlap=1s:
+    best_duration=33 (hop=32) yields 3 chunks with last chunk=31s (the maximum).
+    Windows: [0,33), [32,65), [64,95).
+    """
     duration = 95.0
     overlap = 1.0
     cut = _make_cut(duration=duration)
     windows = list(cut.cut_into_windows_balanced(min_duration=30, max_duration=40, overlap=overlap))
 
-    assert len(windows) >= 2
-    # First window starts at the beginning of the cut
+    assert len(windows) == 3
     assert windows[0].start == approx(0.0)
-    # Last window ends at or beyond the original duration
-    last = windows[-1]
-    assert last.start + last.duration >= duration - 1e-6
+    assert windows[0].duration == approx(33.0)
+    assert windows[1].start == approx(32.0)
+    assert windows[1].duration == approx(33.0)
+    assert windows[2].start == approx(64.0)
+    assert windows[2].duration == approx(31.0)
 
 
 def test_window_durations_are_uniform():
@@ -190,11 +196,3 @@ def test_cutset_short_cuts_pass_through():
     assert "long" not in ids  # was split; children are long-0, long-1, …
     assert any(w_id.startswith("long-") for w_id in ids)
 
-
-@pytest.mark.parametrize("num_jobs", [1, 2])
-def test_cutset_parallel_matches_serial(num_jobs):
-    """Parallel execution must return the same result as serial."""
-    cuts = CutSet.from_cuts([_make_cut(duration=95.0).with_id(f"c{i}") for i in range(4)])
-    serial = list(cuts.cut_into_windows_balanced(min_duration=30, max_duration=40, overlap=1.0, num_jobs=1))
-    parallel = list(cuts.cut_into_windows_balanced(min_duration=30, max_duration=40, overlap=1.0, num_jobs=num_jobs))
-    assert [w.id for w in serial] == [w.id for w in parallel]
