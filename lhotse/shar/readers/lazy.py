@@ -25,10 +25,9 @@ from lhotse.lazy import (
     LazyManifestIterator,
     count_newlines_fast,
 )
-from lhotse.serialization import extension_contains
+from lhotse.serialization import AIStoreIOBackend, extension_contains
 from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, list_s3_objects
-from lhotse.serialization import AIStoreIOBackend
 
 
 class LazySharIterator(Dillable):
