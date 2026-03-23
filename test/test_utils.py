@@ -8,6 +8,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
+import lhotse
+from lhotse.bin.lhotse import cli
 from lhotse.serialization import (
     load_json,
     load_jsonl,
@@ -278,3 +280,48 @@ def test_click_literal_option(value, expected):
     runner = CliRunner()
     result = runner.invoke(echo, ["-n", value])
     assert result.output == "Value: {}\n".format(expected)
+
+
+def test_cli_list_storage_backends():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list-storage-backends"])
+    assert result.exit_code == 0
+    expected = []
+    for backend in lhotse.storage_backend_statuses():
+        line = backend.name
+        if not backend.available:
+            line += f" (unavailable, requires: {backend.install_hint})"
+        expected.append(line)
+    assert result.output == "\n".join(expected) + "\n"
+
+
+def test_cli_list_io_backends():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list-io-backends"])
+    assert result.exit_code == 0
+    assert result.output == f"{lhotse.available_io_backends()}\n"
+
+
+def test_cli_list_storage_backends_marks_missing_optional_dependencies(monkeypatch):
+    import lhotse.features.io as features_io
+
+    original = features_io.is_module_available
+
+    def fake_is_module_available(name):
+        if name in ("lilcom", "h5py"):
+            return False
+        return original(name)
+
+    monkeypatch.setattr(features_io, "is_module_available", fake_is_module_available)
+
+    assert "numpy_hdf5" not in features_io.available_storage_backends()
+    assert "lilcom_chunky" not in features_io.available_storage_backends()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["list-storage-backends"])
+    assert result.exit_code == 0
+    assert "lilcom_chunky (unavailable, requires: pip install lilcom)" in result.output
+    assert "numpy_hdf5 (unavailable, requires: pip install h5py)" in result.output
+    assert (
+        "lilcom_hdf5 (unavailable, requires: pip install h5py lilcom)" in result.output
+    )

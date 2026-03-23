@@ -129,6 +129,8 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 
 * ``LHOTSE_AUDIO_BACKEND`` - may be set to any of the values returned from CLI ``lhotse list-audio-backends`` to override the default behavior of trial-and-error and always use a specific audio backend.
 
+* ``LHOTSE_IO_BACKEND`` - may be set to any of the values returned from CLI ``lhotse list-io-backends`` to override how Lhotse opens paths, URLs, and URIs via ``open_best()`` (for example when reading manifests or URL-backed ``AudioSource`` objects). The same list is also available in Python via ``lhotse.available_io_backends()``.
+
 * ``LHOTSE_RESAMPLING_BACKEND`` - may be set to any of the value returned from CLI ``lhotse list-resampling-backends`` to override the default behavior.
 
 * ``LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE`` - when set to 1 we'll emit full exception stack traces when every available audio backend fails to load a given file (they might be very large).
@@ -142,6 +144,10 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 * ``TORCHAUDIO_USE_BACKEND_DISPATCHER`` - when set to 1 and torchaudio version is below 2.1, we'll enable the experimental ffmpeg backend of torchaudio.
 
 * ``AIS_ENDPOINT`` is read by AIStore client to determine AIStore endpoint URL. Required for AIStore dataloading.
+
+* ``AIS_CONNECT_TIMEOUT`` - used by AIStore SDK to set the connection timeout (in seconds) for AIStore client requests. Set to ``0`` to disable (no timeout). If not set, the SDK default is used (3s).
+
+* ``AIS_READ_TIMEOUT`` - used by AIStore SDK to set the read timeout (in seconds) for AIStore client requests. Set to ``0`` to disable (no timeout). If not set, the SDK default is used (20s).
 
 * ``RANK``, ``WORLD_SIZE``, ``WORKER``, and ``NUM_WORKERS`` are internally used to inform Lhotse Shar dataloading subprocesses.
 

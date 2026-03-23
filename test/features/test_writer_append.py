@@ -3,6 +3,8 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import pytest
 
+pytest.importorskip("lilcom", reason="Lilcom tests require lilcom.")
+
 from lhotse import CutSet, LilcomChunkyReader, LilcomChunkyWriter
 
 

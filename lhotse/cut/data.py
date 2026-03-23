@@ -463,6 +463,8 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
         :param storage: a ``FeaturesWriter`` instance used to write the features to a storage.
+            When the optional ``lilcom`` dependency is installed and on-disk size matters,
+            ``LilcomChunkyWriter`` is the preferred backend.
         :param augment_fn: an optional callable used for audio augmentation.
         :return: a new ``MonoCut`` instance with a ``Features`` manifest attached to it.
         """

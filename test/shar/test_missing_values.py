@@ -21,9 +21,9 @@ def test_cut_set_from_shar(tmp_path, drop_everything):
         tmp_path,
         fields={
             "recording": "wav",
-            "features": "lilcom",
+            "features": "numpy",
             "custom_embedding": "numpy",
-            "custom_features": "lilcom",
+            "custom_features": "numpy",
             "custom_indexes": "numpy",
             "custom_recording": "wav",
         },

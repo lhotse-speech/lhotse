@@ -804,7 +804,15 @@ def torchaudio_ffmpeg_backend_available() -> bool:
     Returns ``True`` when torchaudio.load supports "ffmpeg" backend.
     This requires either version 2.1.x+
     """
-    return is_torchaudio_available() and check_torchaudio_version_gt("2.1.0")
+    if not is_torchaudio_available() or not check_torchaudio_version_gt("2.1.0"):
+        return False
+
+    try:
+        from torchaudio.io import StreamReader  # noqa: F401
+    except (ImportError, OSError):
+        return False
+
+    return True
 
 
 @lru_cache(maxsize=1)

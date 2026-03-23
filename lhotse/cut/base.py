@@ -97,7 +97,8 @@ class Cut:
         >>> feats = cut.compute_features(extractor=Fbank())
 
     It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
-    their manifest to a copy of the cut::
+    their manifest to a copy of the cut. For best storage efficiency, prefer
+    :class:`~lhotse.features.io.LilcomChunkyWriter` when the optional ``lilcom`` dependency is installed::
 
         >>> from lhotse import LilcomChunkyWriter
         >>> with LilcomChunkyWriter('feats.lca') as storage:

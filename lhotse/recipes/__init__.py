@@ -70,6 +70,7 @@ from .mobvoihotwords import download_mobvoihotwords, prepare_mobvoihotwords
 from .mtedx import download_mtedx, prepare_mtedx
 from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
+from .oto_speech import download_oto_speech, prepare_oto_speech
 from .peoples_speech import prepare_peoples_speech
 from .radio import prepare_radio
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech

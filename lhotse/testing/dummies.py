@@ -223,9 +223,9 @@ def dummy_features(
         num_features=23,
         frame_shift=0.01,
         sampling_rate=16000,
-        storage_type="lilcom_files",
+        storage_type="numpy_files",
         storage_path="test/fixtures/dummy_feats/storage",
-        storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
+        storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.npy",
     )
 
 
@@ -274,9 +274,9 @@ def dummy_multi_channel_features(
         num_features=23,
         frame_shift=0.01,
         sampling_rate=16000,
-        storage_type="lilcom_files",
+        storage_type="numpy_files",
         storage_path="test/fixtures/dummy_feats/storage",
-        storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
+        storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.npy",
     )
 
 

@@ -23,9 +23,9 @@
       "sampling_rate": 16000,
       "start": 0,
       "duration": 16.04,
-      "storage_type": "lilcom_files",
+      "storage_type": "numpy_files",
       "storage_path": "test/fixtures/libri/storage",
-      "storage_key": "30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
+      "storage_key": "30c2440c-93cb-4e83-b382-f2a59b3859b4.npy",
       "recording_id": "recording-1",
       "channels": 0
     },

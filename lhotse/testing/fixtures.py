@@ -12,7 +12,6 @@ from lhotse import (
     CutSet,
     Fbank,
     FbankConfig,
-    LilcomChunkyWriter,
     MonoCut,
     NumpyFilesWriter,
     Recording,
@@ -20,6 +19,7 @@ from lhotse import (
 )
 from lhotse.array import seconds_to_frames
 from lhotse.audio import save_audio
+from lhotse.features.io import default_features_storage_backend
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import Seconds, uuid4
 
@@ -138,7 +138,7 @@ class RandomCutTestCase:
         extractor = Fbank(
             config=FbankConfig(sampling_rate=sampling_rate, frame_shift=frame_shift)
         )
-        with LilcomChunkyWriter(d.name) as storage:
+        with default_features_storage_backend()(d.name) as storage:
             return cut.compute_and_store_features(extractor, storage=storage)
 
     def _with_alignment(
