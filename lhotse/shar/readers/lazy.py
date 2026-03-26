@@ -29,6 +29,11 @@ from lhotse.serialization import AIStoreIOBackend, extension_contains
 from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, list_s3_objects
 
+def fail_msg(field: str, expected: int, streams: Dict[str, List[Pathlike]]) -> str:
+    for i, cut in enumerate(streams["cuts"]):
+        print(cut)
+        print(streams[field][i])
+    return f"Expected {expected} shards available for field '{field}' but found {len(streams[field])}"
 
 class LazySharIterator(Dillable):
     """
@@ -185,7 +190,7 @@ class LazySharIterator(Dillable):
         for field in self.fields:
             assert (
                 len(self.streams[field]) == self.num_shards
-            ), f"Expected {self.num_shards} shards available for field '{field}' but found {len(self.streams[field])}: {self.streams[field]}"
+            ), fail_msg(field, self.num_shards, self.streams)
 
         self.shards = [
             {field: self.streams[field][shard_idx] for field in self.streams}
