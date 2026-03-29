@@ -29,11 +29,13 @@ from lhotse.serialization import AIStoreIOBackend, extension_contains
 from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, list_s3_objects
 
+
 def fail_msg(field: str, expected: int, streams: Dict[str, List[Pathlike]]) -> str:
     for i, cut in enumerate(streams["cuts"]):
         print(cut)
         print(streams[field][i])
     return f"Expected {expected} shards available for field '{field}' but found {len(streams[field])}"
+
 
 class LazySharIterator(Dillable):
     """
@@ -188,9 +190,9 @@ class LazySharIterator(Dillable):
 
         self.num_shards = len(self.streams["cuts"])
         for field in self.fields:
-            assert (
-                len(self.streams[field]) == self.num_shards
-            ), fail_msg(field, self.num_shards, self.streams)
+            assert len(self.streams[field]) == self.num_shards, fail_msg(
+                field, self.num_shards, self.streams
+            )
 
         self.shards = [
             {field: self.streams[field][shard_idx] for field in self.streams}
@@ -292,8 +294,7 @@ class LazySharIterator(Dillable):
 
                 # Filling shar placeholders with actual data from tar files etc.
                 for (field, (maybe_manifest, data_path)) in zip(
-                    field_iters.keys(),
-                    field_data,
+                    field_iters.keys(), field_data,
                 ):
                     if maybe_manifest is None:
                         continue  # No value available for the current field for this cut.
@@ -356,7 +357,8 @@ def _build_shar_streams(
         "cuts": sorted(
             p
             for p in all_paths
-            if Path(p).name.split(".")[0].startswith("cuts") and extension_contains(".jsonl", p)
+            if Path(p).name.split(".")[0].startswith("cuts")
+            and extension_contains(".jsonl", p)
         )
     }
     if not streams["cuts"]:

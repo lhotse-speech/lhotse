@@ -11,7 +11,6 @@ def list_aistore_objects(url: Pathlike) -> List[str]:
     return top_level_object_store_uris(scheme, bucket, prefix, keys)
 
 
-
 def _list_bucket_objects(provider: str, bucket: str, prefix: str) -> Any:
     client, _ = get_aistore_client()
     bucket_handle = client.bucket(bucket, provider)
