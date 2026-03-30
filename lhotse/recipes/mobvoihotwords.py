@@ -85,12 +85,12 @@ def prepare_mobvoihotwords(
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts, output_dir=output_dir
+            dataset_parts=dataset_parts, output_dir=output_dir, prefix="mobvoi"
         )
 
     for part in dataset_parts:
         logging.info(f"Preparing MobvoiHotwords subset: {part}")
-        if manifests_exist(part=part, output_dir=output_dir):
+        if manifests_exist(part=part, output_dir=output_dir, prefix="mobvoi"):
             logging.info(f"MobvoiHotwords subset: {part} already prepared - skipping.")
             continue
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)

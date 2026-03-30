@@ -10,12 +10,13 @@ from lhotse.audio.backend import (
     LibsndfileBackend,
     TorchaudioDefaultBackend,
     TorchaudioFFMPEGBackend,
+    TorchcodecBackend,
     check_torchaudio_version_gt,
     torchaudio_ffmpeg_backend_available,
     torchaudio_soundfile_supports_format,
 )
 from lhotse.testing.random import deterministic_rng
-from lhotse.utils import INT16MAX
+from lhotse.utils import INT16MAX, is_torchcodec_available
 
 
 def test_default_audio_backend():
@@ -35,6 +36,7 @@ def test_list_available_audio_backends():
         "Sph2pipeSubprocessBackend",
         "TorchaudioDefaultBackend",
         "TorchaudioFFMPEGBackend",
+        "TorchcodecBackend",
     ]
 
 
@@ -198,3 +200,70 @@ def test_audio_info_from_bytes_io(backend):
         assert meta.frames == 4000
         assert meta.samplerate == 8000
         assert meta.channels == 1
+
+
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+@pytest.mark.parametrize(
+    "path",
+    [
+        "test/fixtures/mono_c0.wav",
+        "test/fixtures/stereo.wav",
+        "test/fixtures/mono_c0.opus",
+        "test/fixtures/stereo.opus",
+        "test/fixtures/common_voice_en_651325.mp3",
+    ],
+)
+def test_torchcodec_info_and_read(path):
+    backend = TorchcodecBackend()
+
+    meta = backend.info(path)
+    assert meta.samplerate > 0
+    assert meta.channels > 0
+    assert meta.duration > 0
+
+    audio, sr = backend.read_audio(path)
+    assert sr == meta.samplerate
+    assert audio.shape[0] == meta.channels
+    assert audio.dtype == np.float32
+
+
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+@pytest.mark.parametrize(
+    "path", ["test/fixtures/mono_c0.wav", "test/fixtures/stereo.wav"]
+)
+@pytest.mark.parametrize("offset", [0, 0.1])
+@pytest.mark.parametrize("duration", [None, 0.1])
+def test_torchcodec_read_with_offset_duration(path, offset, duration):
+    backend = TorchcodecBackend()
+    audio, sr = backend.read_audio(path, offset=offset, duration=duration)
+    assert audio.ndim == 2
+    if duration is not None:
+        expected_samples = int(round(duration * sr))
+        # Allow 1 sample tolerance for rounding
+        assert abs(audio.shape[1] - expected_samples) <= 1
+
+
+def test_torchcodec_not_applicable_for_sph():
+    backend = TorchcodecBackend()
+    assert not backend.is_applicable("test/fixtures/stereo.sph")
+
+
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+@pytest.mark.parametrize("format", ["wav", "flac", "mp3", "m4a"])
+def test_torchcodec_save_and_load(tmp_path, format):
+    backend = TorchcodecBackend()
+    assert backend.supports_save()
+    audio = np.clip(np.random.randn(1, 16000).astype(np.float32) * 0.5, -1.0, 1.0)
+    path = tmp_path / f"test.{format}"
+    backend.save_audio(path, audio, sampling_rate=16000, format=format)
+    restored, sr = backend.read_audio(path)
+    assert sr == 16000
+    assert restored.shape[0] == 1
+    if format in ("wav", "flac"):
+        np.testing.assert_allclose(audio, restored, atol=1e-4)
+
+
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+def test_torchcodec_audio_backend_contextmanager():
+    with lhotse.audio_backend("TorchcodecBackend") as b:
+        assert isinstance(b, TorchcodecBackend)

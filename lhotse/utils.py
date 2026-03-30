@@ -1113,6 +1113,10 @@ def is_torchaudio_available() -> bool:
     return is_module_available("torchaudio")
 
 
+def is_torchcodec_available() -> bool:
+    return is_module_available("torchcodec")
+
+
 def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:
     if seed == "trng":
         return secrets.SystemRandom()
