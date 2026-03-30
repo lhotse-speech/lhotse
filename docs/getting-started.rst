@@ -161,7 +161,7 @@ Optional dependencies
 
 * ``pip install lhotse[lilcom]`` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, ``lilcom_chunky`` is the preferred feature-storage backend once this dependency is installed.
 
-* ``torchcodec`` (>= 0.5, requires torch >= 2.7) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
+* ``torchcodec`` (>= 0.9, requires torch >= 2.9) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
 
 * ``torchaudio`` used to be a core dependency in Lhotse, but is now optional. Refer to official PyTorch documentation for installation at `official Pytorch documentation for installation`_.
 
