@@ -294,7 +294,8 @@ class LazySharIterator(Dillable):
 
                 # Filling shar placeholders with actual data from tar files etc.
                 for (field, (maybe_manifest, data_path)) in zip(
-                    field_iters.keys(), field_data,
+                    field_iters.keys(),
+                    field_data,
                 ):
                     if maybe_manifest is None:
                         continue  # No value available for the current field for this cut.
