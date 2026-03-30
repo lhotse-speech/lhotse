@@ -159,6 +159,10 @@ Optional dependencies
 
 **Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
 
+* ``pip install lhotse[lilcom]`` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, ``lilcom_chunky`` is the preferred feature-storage backend once this dependency is installed.
+
+* ``torchcodec`` (>= 0.5, requires torch >= 2.7) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
+
 * ``torchaudio`` used to be a core dependency in Lhotse, but is now optional. Refer to official PyTorch documentation for installation at `official Pytorch documentation for installation`_.
 
 * ``pip install lhotse[kaldi]`` for a maximal feature set related to Kaldi compatibility. It includes libraries such as ``kaldi_native_io`` (a more efficient variant of ``kaldi_io``) and ``kaldifeat`` that port some of Kaldi functionality into Python.
