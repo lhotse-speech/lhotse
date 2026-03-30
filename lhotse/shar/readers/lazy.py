@@ -352,7 +352,7 @@ def _build_shar_streams(
     if not any(field.startswith("cuts") for field in fields):
         raise ValueError(f"Could not find any Shar 'cuts' shards under: {source}")
 
-    fields = [field for field in fields if not field.startswith("cuts")]
+    fields = {field for field in fields if not field.startswith("cuts")}
     streams = {
         "cuts": sorted(
             p

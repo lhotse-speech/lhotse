@@ -460,25 +460,29 @@ def test_shar_lazy_reader_from_aistore_dir_initializes_streams():
     client.bucket.return_value = bucket
 
     fake_aistore = types.ModuleType("aistore")
+    fake_aistore.__spec__ = types.SimpleNamespace(
+        name="aistore", origin=None, submodule_search_locations=[]
+    )
     fake_sdk = types.ModuleType("aistore.sdk")
     fake_utils = types.ModuleType("aistore.sdk.utils")
     fake_utils.parse_url = lambda url: ("ais", "test-bucket", "my-shar")
     fake_sdk.utils = fake_utils
     fake_aistore.sdk = fake_sdk
 
-    with patch.dict(
-        sys.modules,
-        {
-            "aistore": fake_aistore,
-            "aistore.sdk": fake_sdk,
-            "aistore.sdk.utils": fake_utils,
-        },
-    ):
-        with patch(
-            "lhotse.ais.utils.get_aistore_client",
-            return_value=(client, None),
+    with patch.dict(os.environ, {"AIS_ENDPOINT": "http://localhost:8080"}):
+        with patch.dict(
+            sys.modules,
+            {
+                "aistore": fake_aistore,
+                "aistore.sdk": fake_sdk,
+                "aistore.sdk.utils": fake_utils,
+            },
         ):
-            cuts_iter = LazySharIterator(in_dir="ais://test-bucket/my-shar")
+            with patch(
+                "lhotse.ais.utils.get_aistore_client",
+                return_value=(client, None),
+            ):
+                cuts_iter = LazySharIterator(in_dir="ais://test-bucket/my-shar")
 
     assert cuts_iter.fields == {"recording"}
     assert cuts_iter.streams == {

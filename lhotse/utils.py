@@ -188,7 +188,7 @@ def _is_top_level_object_store_key(key: str, listing_prefix: str) -> bool:
         if not key.startswith(listing_prefix):
             return False
         key = key[len(listing_prefix) :]
-    return bool(key) and not key.endswith("/")
+    return bool(key) and "/" not in key
 
 
 def fix_random_seed(random_seed: int):
