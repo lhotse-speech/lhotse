@@ -1,14 +1,14 @@
 from typing import Any, Iterable, List, Tuple
 
 from lhotse.serialization import get_aistore_client
-from lhotse.utils import Pathlike, split_object_store_url, top_level_object_store_uris
+from lhotse.utils import Pathlike, split_object_store_url, object_store_uris
 
 
 def list_aistore_objects(url: Pathlike) -> List[str]:
     scheme, bucket, prefix = split_object_store_url(url)
     listing = _list_bucket_objects(scheme, bucket, prefix)
     keys = _iter_aistore_object_keys(listing)
-    return top_level_object_store_uris(scheme, bucket, prefix, keys)
+    return object_store_uris(scheme, bucket, prefix, keys)
 
 
 def _list_bucket_objects(provider: str, bucket: str, prefix: str) -> Any:

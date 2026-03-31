@@ -164,31 +164,23 @@ def list_s3_objects(url: Pathlike) -> List[str]:
     keys = (
         item["Key"]
         for page in paginator.paginate(
-            Bucket=bucket, Prefix=listing_prefix, Delimiter="/"
+            Bucket=bucket, Prefix=listing_prefix,
         )
         for item in page.get("Contents", [])
         if isinstance(item.get("Key"), str)
     )
-    return top_level_object_store_uris(scheme, bucket, prefix, keys)
+    return object_store_uris(scheme, bucket, prefix, keys)
 
 
-def top_level_object_store_uris(
+def object_store_uris(
     scheme: str, bucket: str, prefix: str, keys: Iterable[str]
 ) -> List[str]:
     listing_prefix = f"{prefix}/" if prefix else ""
     return sorted(
         f"{scheme}://{bucket}/{key}"
         for key in keys
-        if _is_top_level_object_store_key(key, listing_prefix)
+        if key.startswith(listing_prefix) and key != listing_prefix
     )
-
-
-def _is_top_level_object_store_key(key: str, listing_prefix: str) -> bool:
-    if listing_prefix:
-        if not key.startswith(listing_prefix):
-            return False
-        key = key[len(listing_prefix) :]
-    return bool(key) and "/" not in key
 
 
 def fix_random_seed(random_seed: int):
