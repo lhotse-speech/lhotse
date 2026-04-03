@@ -395,12 +395,12 @@ def test_collate_cut_multi_channel_recording_and_custom_recording_diff_num_chann
 
     expected_lens = torch.tensor([16000, 32000], dtype=torch.int32)
 
-    audio, audio_lens = collate_audio(cuts)
+    audio, audio_lens = collate_audio(cuts, mono_downmix=False)
     assert audio.shape == (2, 4, 32000)  # batch x channel x time
     torch.testing.assert_close(audio_lens, expected_lens)
 
     target_audio, target_audio_lens = collate_audio(
-        cuts, recording_field="target_recording"
+        cuts, recording_field="target_recording", mono_downmix=False
     )
     assert target_audio.shape == (2, 2, 32000)  # batch x channel x time
     torch.testing.assert_close(audio_lens, expected_lens)
@@ -442,3 +442,88 @@ def test_collate_custom_audio_works_despite_non_unique_ids():
     audio, audio_lens = collate_audio(cuts, recording_field="custom_recording")
     assert audio_lens.tolist() == [32000, 16000]
     assert audio.shape == (2, 32000)
+
+
+# --- mono_downmix tests ---
+
+
+def test_collate_audio_mono_downmix_true_all_mono():
+    # Default behavior: all-mono batch stays (B, T)
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=2.0, with_data=True),
+            dummy_cut(1, duration=1.0, with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, mono_downmix=True)
+    assert audio.shape == (2, 32000)
+    assert audio_lens.tolist() == [32000, 16000]
+
+
+def test_collate_audio_mono_downmix_true_all_multichannel():
+    # Multichannel audio should be downmixed to mono -> (B, T)
+    cuts = CutSet(
+        [
+            dummy_multi_cut(0, channel=[0, 1, 2], with_data=True),
+            dummy_multi_cut(1, channel=[0, 1, 2], with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, mono_downmix=True)
+    assert audio.shape == (2, 16000)
+    assert audio_lens.tolist() == [16000, 16000]
+
+
+def test_collate_audio_mono_downmix_true_mixed_batch():
+    # Mixed batch: one mono, one multichannel -> downmix all to (B, T)
+    cut_mono = dummy_cut(0, duration=1.0, with_data=True)
+    cut_multi = dummy_multi_cut(1, channel=[0, 1], with_data=True)
+    cuts = CutSet([cut_mono, cut_multi])
+    audio, audio_lens = collate_audio(cuts, mono_downmix=True)
+    assert audio.shape == (2, 16000)
+    assert audio_lens.tolist() == [16000, 16000]
+
+
+def test_collate_audio_mono_downmix_false_all_mono():
+    # Mono-only batch: expand to (B, 1, T)
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=2.0, with_data=True),
+            dummy_cut(1, duration=1.0, with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, mono_downmix=False)
+    assert audio.shape == (2, 1, 32000)
+    assert audio_lens.tolist() == [32000, 16000]
+
+
+def test_collate_audio_mono_downmix_false_all_multichannel():
+    # All-multichannel batch collates as (B, C, T), same as existing behavior
+    cuts = CutSet(
+        [
+            dummy_multi_cut(0, duration=2.0, channel=[0, 1], with_data=True),
+            dummy_multi_cut(1, duration=1.0, channel=[0, 1], with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, mono_downmix=False)
+    assert audio.shape == (2, 2, 32000)
+    assert audio_lens.tolist() == [32000, 16000]
+
+
+def test_collate_audio_mono_downmix_false_mixed_batch():
+    # Mixed batch: mono is expanded to match max channels -> (B, C, T)
+    cut_mono = dummy_cut(0, duration=1.0, with_data=True)
+    cut_multi = dummy_multi_cut(1, channel=[0, 1], with_data=True)
+    cuts = CutSet([cut_mono, cut_multi])
+    audio, audio_lens = collate_audio(cuts, mono_downmix=False)
+    assert audio.shape == (2, 2, 16000)
+    assert audio_lens.tolist() == [16000, 16000]
+
+
+def test_collate_audio_mono_downmix_false_mono_zero_padded_channels():
+    # Mono is placed in channel 0; remaining channels are zero
+    cut_mono = dummy_cut(0, duration=1.0, with_data=True)
+    cut_multi = dummy_multi_cut(1, channel=[0, 1], with_data=True)
+    cuts = CutSet([cut_mono, cut_multi])
+    audio, _ = collate_audio(cuts, mono_downmix=False)
+    # audio[0] is from the mono cut: channel 1 must be all zeros
+    assert audio[0, 1, :].eq(0).all()
