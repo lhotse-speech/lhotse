@@ -223,7 +223,7 @@ class AudioSamples(BatchIO):
         fault_tolerant: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
         use_batch_loader: bool = False,
-        mono_downmix: bool = True,
+        mono_downmix: Optional[bool] = None,
     ) -> None:
         """
         AudioSamples constructor.
@@ -241,9 +241,10 @@ class AudioSamples(BatchIO):
         :param use_batch_loader: When ``True``, enables batch loading of audio data from AIStore.
             This allows all audio samples in the batch to be fetched in a single request for increased efficiency.
             Requires the input CutSet to be eager (not lazy).
-        :param mono_downmix: when ``True`` (default), multichannel audio is downmixed to mono by averaging
-            channels; output shape is ``(B, T)``. When ``False``, mono audio is placed in channel 0 with
-            remaining channels zero-padded to match the batch maximum; output shape is ``(B, C, T)``.
+        :param mono_downmix: controls channel handling (passed to :func:`collate_audio`).
+            ``None`` (default): auto-detect — downmix unless every cut is multichannel.
+            ``True``: always downmix to mono; output shape is ``(B, T)``.
+            ``False``: expand mono to channel 0 with zero-padded channels; output shape is ``(B, C, T)``.
         """
         super().__init__(num_workers=num_workers, executor_type=executor_type)
         self.fault_tolerant = fault_tolerant

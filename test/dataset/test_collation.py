@@ -519,6 +519,39 @@ def test_collate_audio_mono_downmix_false_mixed_batch():
     assert audio_lens.tolist() == [16000, 16000]
 
 
+def test_collate_audio_mono_downmix_none_mono_only():
+    # None + all-mono -> True semantics -> (B, T)
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=1.0, with_data=True),
+            dummy_cut(1, duration=1.0, with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, mono_downmix=None)
+    assert audio.shape == (2, 16000)
+
+
+def test_collate_audio_mono_downmix_none_mixed():
+    # None + mixed mono+multi -> True semantics -> (B, T)
+    cut_mono = dummy_cut(0, duration=1.0, with_data=True)
+    cut_multi = dummy_multi_cut(1, channel=[0, 1], with_data=True)
+    cuts = CutSet([cut_mono, cut_multi])
+    audio, audio_lens = collate_audio(cuts, mono_downmix=None)
+    assert audio.shape == (2, 16000)
+
+
+def test_collate_audio_mono_downmix_none_multi_only():
+    # None + all-multi -> False semantics -> (B, C, T)
+    cuts = CutSet(
+        [
+            dummy_multi_cut(0, channel=[0, 1], with_data=True),
+            dummy_multi_cut(1, channel=[0, 1], with_data=True),
+        ]
+    )
+    audio, audio_lens = collate_audio(cuts, mono_downmix=None)
+    assert audio.shape == (2, 2, 16000)
+
+
 def test_collate_audio_mono_downmix_false_mono_zero_padded_channels():
     # Mono is placed in channel 0; remaining channels are zero
     cut_mono = dummy_cut(0, duration=1.0, with_data=True)

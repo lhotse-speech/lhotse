@@ -83,6 +83,42 @@ def test_cut_set_load_audio_collate_false(libri_cut_set):
     assert isinstance(audio, list)
 
 
+def test_audio_samples_mono_downmix_none_mono_only():
+    # None + all-mono -> True semantics -> (B, T)
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=1.0, with_data=True),
+            dummy_cut(1, duration=1.0, with_data=True),
+        ]
+    )
+    audio, _ = AudioSamples(mono_downmix=None)(cuts)
+    assert audio.shape == (2, 16000)
+
+
+def test_audio_samples_mono_downmix_none_multi_only():
+    # None + all-multi -> False semantics -> (B, C, T)
+    cuts = CutSet(
+        [
+            dummy_multi_cut(0, channel=[0, 1], with_data=True),
+            dummy_multi_cut(1, channel=[0, 1], with_data=True),
+        ]
+    )
+    audio, _ = AudioSamples(mono_downmix=None)(cuts)
+    assert audio.shape == (2, 2, 16000)
+
+
+def test_audio_samples_mono_downmix_none_mixed():
+    # None + mixed -> True semantics -> (B, T)
+    cuts = CutSet(
+        [
+            dummy_cut(0, duration=1.0, with_data=True),
+            dummy_multi_cut(1, channel=[0, 1], with_data=True),
+        ]
+    )
+    audio, _ = AudioSamples(mono_downmix=None)(cuts)
+    assert audio.shape == (2, 16000)
+
+
 def test_audio_samples_mono_downmix_true_multichannel():
     # Multichannel batch downmixed to mono -> (B, T)
     cuts = CutSet(
