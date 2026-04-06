@@ -1,7 +1,10 @@
 import os
 import shutil
+import sys
+import types
 from functools import partial
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -402,3 +405,94 @@ def test_shar_slice_length(shar_dir: Path):
     # Works via CutSet too
     sliced_cuts2 = list(CutSet.from_shar(in_dir=shar_dir, slice_length=3, seed=6))
     assert sliced_cuts == sliced_cuts2
+
+
+def test_shar_lazy_reader_from_s3_dir_initializes_streams():
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {
+            "Contents": [
+                {"Key": "my-shar/cuts.000000.jsonl.gz"},
+                {"Key": "my-shar/recording.000000.tar"},
+                {"Key": "my-shar/nested/ignored.tar"},
+                {"Key": "my-shar/"},
+            ]
+        }
+    ]
+    s3_client = MagicMock()
+    s3_client.get_paginator.return_value = paginator
+
+    fake_boto3 = types.ModuleType("boto3")
+    fake_boto3.client = MagicMock(return_value=s3_client)
+
+    with patch.dict(sys.modules, {"boto3": fake_boto3}):
+        cuts_iter = LazySharIterator(in_dir="s3://test-bucket/my-shar")
+
+    assert cuts_iter.fields == {"recording"}
+    assert cuts_iter.streams == {
+        "cuts": ["s3://test-bucket/my-shar/cuts.000000.jsonl.gz"],
+        "recording": ["s3://test-bucket/my-shar/recording.000000.tar"],
+    }
+    fake_boto3.client.assert_called_once_with("s3")
+    s3_client.get_paginator.assert_called_once_with("list_objects_v2")
+    paginator.paginate.assert_called_once_with(
+        Bucket="test-bucket", Prefix="my-shar/", Delimiter="/"
+    )
+
+
+def test_shar_lazy_reader_from_aistore_dir_initializes_streams():
+    class FakeBucket:
+        def __init__(self):
+            self.calls = []
+
+        def list_objects(self, **kwargs):
+            self.calls.append(kwargs)
+            return types.SimpleNamespace(
+                entries=[
+                    types.SimpleNamespace(name="my-shar/cuts.000000.jsonl.gz"),
+                    types.SimpleNamespace(name="my-shar/recording.000000.tar"),
+                    types.SimpleNamespace(name="my-shar/nested/ignored.tar"),
+                ]
+            )
+
+    bucket = FakeBucket()
+    client = MagicMock()
+    client.bucket.return_value = bucket
+
+    fake_aistore = types.ModuleType("aistore")
+    fake_aistore.__spec__ = types.SimpleNamespace(
+        name="aistore", origin=None, submodule_search_locations=[]
+    )
+    fake_sdk = types.ModuleType("aistore.sdk")
+    fake_utils = types.ModuleType("aistore.sdk.utils")
+    fake_utils.parse_url = lambda url: ("ais", "test-bucket", "my-shar")
+    fake_sdk.utils = fake_utils
+    fake_aistore.sdk = fake_sdk
+
+    with patch.dict(os.environ, {"AIS_ENDPOINT": "http://localhost:8080"}):
+        with patch.dict(
+            sys.modules,
+            {
+                "aistore": fake_aistore,
+                "aistore.sdk": fake_sdk,
+                "aistore.sdk.utils": fake_utils,
+            },
+        ):
+            with patch(
+                "lhotse.ais.utils.get_aistore_client",
+                return_value=(client, None),
+            ):
+                cuts_iter = LazySharIterator(in_dir="ais://test-bucket/my-shar")
+
+    assert cuts_iter.fields == {"recording"}
+    assert cuts_iter.streams == {
+        "cuts": ["ais://test-bucket/my-shar/cuts.000000.jsonl.gz"],
+        "recording": ["ais://test-bucket/my-shar/recording.000000.tar"],
+    }
+    client.bucket.assert_called_once_with("test-bucket", "ais")
+    assert bucket.calls == [{"prefix": "my-shar/"}]
+
+
+def test_shar_lazy_reader_from_unsupported_object_store_dir():
+    with pytest.raises(ValueError, match="Unsupported object store URI scheme 'gs'"):
+        LazySharIterator(in_dir="gs://test-bucket/my-shar")
