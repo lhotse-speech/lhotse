@@ -5,8 +5,13 @@ import pytest
 
 from lhotse.audio import Recording
 from lhotse.cut import CutSet, MixedCut, MonoCut, MultiCut
+from lhotse.serialization import deserialize_item
 from lhotse.supervision import SupervisionSegment
-from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
+from lhotse.testing.dummies import (
+    DummyManifest,
+    dummy_multi_cut,
+    remove_spaces_from_segment_text,
+)
 from lhotse.utils import nullcontext as does_not_raise
 
 # Note:
@@ -203,6 +208,154 @@ def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
     assert audio[1].shape == (1, 230400)
 
 
+def test_mixed_cut_unmix_preserves_audio_gain():
+    speech = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    noise1 = DummyManifest(CutSet, begin_id=100, end_id=101, with_data=True)[0]
+    noise2 = DummyManifest(CutSet, begin_id=101, end_id=102, with_data=True)[0]
+
+    speech = speech.truncate(duration=1.0)
+    noise1 = noise1.truncate(duration=0.35)
+    noise2 = noise2.truncate(duration=0.4)
+
+    mixed = speech.mix(noise1, snr=10, tag="noise")
+    mixed = mixed.mix(noise2, offset_other_by=0.6, snr=10, tag="noise")
+
+    speech_only, noise_only = mixed.unmix(tag="noise")
+    constituents = mixed.unmix()
+
+    assert len(constituents) == 3
+    assert isinstance(noise_only, MixedCut)
+    assert any(track.is_snr_reference and track.mute for track in noise_only.tracks)
+    assert all(track.tag == "noise" for track in noise_only.tracks if not track.mute)
+
+    np.testing.assert_allclose(
+        mixed.load_audio(),
+        speech_only.load_audio() + noise_only.load_audio(),
+    )
+    np.testing.assert_allclose(
+        mixed.load_audio(),
+        sum(c.load_audio() for c in constituents),
+    )
+
+    noise_only_dict = noise_only.to_dict()
+    assert "snr_reference" not in noise_only_dict
+    hidden_track = next(
+        track for track in noise_only_dict["tracks"] if track.get("mute")
+    )
+    assert hidden_track["is_snr_reference"] is True
+
+    restored_noise = deserialize_item(noise_only_dict)
+    assert isinstance(restored_noise, MixedCut)
+    assert any(track.is_snr_reference and track.mute for track in restored_noise.tracks)
+    np.testing.assert_allclose(noise_only.load_audio(), restored_noise.load_audio())
+
+
+def test_mixed_cut_unmix_hides_muted_reference_from_public_views():
+    speech = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    noise1 = DummyManifest(CutSet, begin_id=100, end_id=101, with_data=True)[0]
+    noise2 = DummyManifest(CutSet, begin_id=101, end_id=102, with_data=True)[0]
+
+    speech = speech.truncate(duration=1.0)
+    noise1 = noise1.truncate(duration=0.35)
+    noise2 = noise2.truncate(duration=0.4)
+
+    mixed = speech.mix(noise1, snr=10, tag="noise")
+    mixed = mixed.mix(noise2, offset_other_by=0.6, snr=10, tag="noise")
+
+    _, noise_only = mixed.unmix(tag="noise")
+
+    assert len(noise_only.unmix()) == 2
+    assert len(noise_only.load_audio(mixed=False)) == 2
+    assert noise_only.load_features(mixed=False).shape[0] == 2
+    assert {sup.recording_id for sup in noise_only.supervisions} == {
+        noise1.recording_id,
+        noise2.recording_id,
+    }
+    assert noise_only.first_non_padding_track.tag == "noise"
+    assert not noise_only.first_non_padding_track.mute
+
+
+def test_mixed_cut_backward_compat_deserializes_top_level_snr_reference():
+    speech = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    noise1 = DummyManifest(CutSet, begin_id=100, end_id=101, with_data=True)[0]
+    noise2 = DummyManifest(CutSet, begin_id=101, end_id=102, with_data=True)[0]
+
+    speech = speech.truncate(duration=1.0)
+    noise1 = noise1.truncate(duration=0.35)
+    noise2 = noise2.truncate(duration=0.4)
+
+    mixed = speech.mix(noise1, snr=10, tag="noise")
+    mixed = mixed.mix(noise2, offset_other_by=0.6, snr=10, tag="noise")
+
+    _, noise_only = mixed.unmix(tag="noise")
+    new_dict = noise_only.to_dict()
+    old_hidden = next(track for track in new_dict["tracks"] if track.get("mute")).copy()
+    old_hidden.pop("mute")
+    old_hidden.pop("is_snr_reference")
+    old_style_dict = {
+        **new_dict,
+        "tracks": [track for track in new_dict["tracks"] if not track.get("mute")],
+        "snr_reference": old_hidden,
+    }
+
+    restored = deserialize_item(old_style_dict)
+
+    assert isinstance(restored, MixedCut)
+    assert any(track.is_snr_reference and track.mute for track in restored.tracks)
+    assert len(restored.load_audio(mixed=False)) == 2
+    assert "snr_reference" not in restored.to_dict()
+    np.testing.assert_allclose(restored.load_audio(), noise_only.load_audio())
+
+
+def test_unmix_is_noop_for_non_mixed_cuts():
+    mono_cut = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    multi_cut = dummy_multi_cut(1, duration=1.0, with_data=True)
+
+    assert mono_cut.unmix() == [mono_cut]
+    assert mono_cut.unmix(tag="noise") == [mono_cut]
+    assert multi_cut.unmix() == [multi_cut]
+    assert multi_cut.unmix(tag="noise") == [multi_cut]
+
+
+def test_mixed_cut_hidden_reference_does_not_affect_num_channels():
+    speech = dummy_multi_cut(0, duration=1.0, with_data=True)
+    noise = DummyManifest(CutSet, begin_id=100, end_id=101, with_data=True)[0]
+    noise = noise.truncate(duration=0.5)
+
+    mixed = speech.mix(noise, snr=10, tag="noise")
+    _, noise_only = mixed.unmix(tag="noise")
+
+    assert noise_only.num_channels == 1
+    assert noise_only.channel == 0
+    assert noise_only.load_audio().shape[0] == 1
+
+
+def test_mix_does_not_flatten_mixed_cut_with_hidden_reference():
+    speech = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    noise1 = DummyManifest(CutSet, begin_id=100, end_id=101, with_data=True)[0]
+    noise2 = DummyManifest(CutSet, begin_id=101, end_id=102, with_data=True)[0]
+    extra_noise = DummyManifest(CutSet, begin_id=102, end_id=103, with_data=True)[0]
+
+    speech = speech.truncate(duration=1.0)
+    noise1 = noise1.truncate(duration=0.35)
+    noise2 = noise2.truncate(duration=0.4)
+    extra_noise = extra_noise.truncate(duration=0.25)
+
+    mixed = speech.mix(noise1, snr=10, tag="noise")
+    mixed = mixed.mix(noise2, offset_other_by=0.6, snr=10, tag="noise")
+    _, noise_only = mixed.unmix(tag="noise")
+
+    mixed_left = noise_only.mix(extra_noise, snr=5, tag="noise")
+    assert len(mixed_left.tracks) == 2
+    assert mixed_left.tracks[0].is_snr_reference
+    assert isinstance(mixed_left.tracks[0].cut, MixedCut)
+
+    mixed_right = speech.mix(noise_only, snr=5, tag="noise")
+    assert len(mixed_right.tracks) == 2
+    assert isinstance(mixed_right.tracks[1].cut, MixedCut)
+    assert not mixed_right.tracks[1].is_snr_reference
+
+
 def test_mixed_cut_load_offseted_mixed(offseted_mixed_audio_cut):
     audio = offseted_mixed_audio_cut.load_audio()
     assert audio.shape == (1, 266560)
@@ -355,6 +508,10 @@ def test_mix_cut_snr_truncate_snr_reference(libri_cut):
 
     assert len(mixed.tracks) == 2
     assert len(mixed_snr.tracks) == 2
+    assert sum(track.is_snr_reference for track in mixed_snr.tracks) == 1
+    assert [track for track in mixed_snr.tracks if track.is_snr_reference][
+        0
+    ].snr is None
 
     audio = mixed.load_audio()
     audio_snr = mixed_snr.load_audio()

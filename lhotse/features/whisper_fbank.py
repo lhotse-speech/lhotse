@@ -179,3 +179,7 @@ class WhisperFbank(FeatureExtractor):
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
         return float(np.sum(np.exp(features)))
+
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        return features + np.log(energy_scaling_factor)
