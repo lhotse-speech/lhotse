@@ -151,12 +151,13 @@ def collate_audio(
     executor: Optional[Executor] = None,
     fault_tolerant: bool = False,
     recording_field: Optional[str] = None,
+    mono_downmix: Optional[bool] = None,
 ) -> Union[
     Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
 ]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
-    The output shape is ``(batch, time)``.
+    The output shape is ``(batch, time)`` or ``(batch, channels, time)``.
     The cuts will be padded with silence if necessary.
 
     :param cuts: a :class:`CutSet` used to load the audio samples.
@@ -168,6 +169,13 @@ def collate_audio(
         where the third element is a CutSet for which the audio data were sucessfully read.
     :param recording_field: when specified, we will try to load recordings from a custom field with this name
         (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
+    :param mono_downmix: controls channel handling.
+        ``None`` (default): auto-detect — uses downmix semantics unless every cut in the batch
+        is multichannel, in which case multichannel collation is used.
+        ``True``: multichannel audio is downmixed to mono by averaging channels; output shape
+        is ``(batch, time)``.
+        ``False``: mono audio is placed in channel 0 with remaining channels zero-padded to
+        match the batch maximum; output shape is ``(batch, channels, time)``.
     :return: a tuple of tensors ``(audio, audio_lens)``, or ``(audio, audio_lens, cuts)``.
     """
     for cut in cuts:
@@ -204,11 +212,32 @@ def collate_audio(
         filter_aux_iter=sample_counts,
     )
 
-    if len(audios[0].shape) == 1:
-        audios = collate_vectors(audios, padding_value=0.0)
+    if mono_downmix is None:
+        # Auto-detect: use False semantics only when every audio is multichannel
+        mono_downmix = not all(a.dim() == 2 for a in audios)
+
+    if mono_downmix:
+        # Downmix multichannel audio to mono by averaging channels
+        processed = []
+        for audio in audios:
+            if audio.dim() == 2:
+                audio = audio.mean(dim=0)  # (channels, time) -> (time,)
+            processed.append(audio)
+        audios = collate_vectors(processed, padding_value=0.0)
     else:
+        # Expand mono audio to match max channels in batch, then collate as multichannel
+        max_channels = max(
+            audio.shape[0] if audio.dim() == 2 else 1 for audio in audios
+        )
+        processed = []
+        for audio in audios:
+            if audio.dim() == 1:
+                expanded = audio.new_zeros(max_channels, audio.shape[0])
+                expanded[0] = audio
+                audio = expanded
+            processed.append(audio)
         audios = collate_matrices(
-            [a.transpose(0, 1) for a in audios], padding_value=0.0
+            [a.transpose(0, 1) for a in processed], padding_value=0.0
         ).transpose(1, 2)
     audio_lens = torch.tensor(sample_counts, dtype=torch.int32)
 

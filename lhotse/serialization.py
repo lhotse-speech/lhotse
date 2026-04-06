@@ -795,7 +795,7 @@ class AIStoreIOBackend(IOBackend):
         client, version = get_aistore_client()
         try:
             object = client.get_object_from_url(identifier)
-        except AttributeError: #  older AIStore client
+        except AttributeError:  # older AIStore client
             object = client.fetch_object_by_url(identifier)
         if "r" in mode:
             try:
