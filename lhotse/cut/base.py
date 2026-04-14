@@ -817,7 +817,7 @@ class Cut:
             self.id: IntervalTree(
                 Interval(s.start, s.end, s)
                 for s in self.supervisions
-                if s.id in keep_ids
+                if s.id in keep_ids and s.duration > 0
             )
         }
         if index_mixed_tracks:
@@ -826,7 +826,7 @@ class Cut:
                     indexed[track.cut.id] = IntervalTree(
                         Interval(s.start, s.end, s)
                         for s in track.cut.supervisions
-                        if s.id in keep_ids
+                        if s.id in keep_ids and s.duration > 0
                     )
         return indexed
 
