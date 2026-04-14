@@ -344,6 +344,57 @@ def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
     assert cut4.supervisions[0].duration == 2.5
 
 
+def test_index_supervisions_skips_zero_duration():
+    """Zero-duration supervisions should be silently skipped rather than
+    crashing IntervalTree. This can happen when cut_into_windows() produces
+    a supervision that falls exactly on a window boundary."""
+    cut = MonoCut(
+        id="cut-1",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        recording=dummy_recording(0, duration=10.0),
+        supervisions=[
+            SupervisionSegment(
+                id="normal", recording_id="irrelevant", start=1.0, duration=2.0
+            ),
+            SupervisionSegment(
+                id="zero-dur", recording_id="irrelevant", start=5.0, duration=0.0
+            ),
+        ],
+    )
+    indexed = cut.index_supervisions()
+    # The zero-duration supervision must be excluded from the tree
+    tree = indexed[cut.id]
+    ids = {iv.data.id for iv in tree}
+    assert "normal" in ids
+    assert "zero-dur" not in ids
+
+
+def test_cut_into_windows_with_zero_duration_supervision():
+    """Regression test: cut_into_windows must not crash when a supervision
+    has zero duration (as can happen with boundary-aligned segments)."""
+    cut = MonoCut(
+        id="cut-1",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        recording=dummy_recording(0, duration=10.0),
+        supervisions=[
+            SupervisionSegment(
+                id="normal", recording_id="irrelevant", start=1.0, duration=2.0
+            ),
+            SupervisionSegment(
+                id="zero-dur", recording_id="irrelevant", start=5.0, duration=0.0
+            ),
+        ],
+    )
+    # This must not raise ValueError from IntervalTree
+    cuts = CutSet.from_cuts([cut])
+    windows = cuts.cut_into_windows(duration=5.0).to_eager()
+    assert len(windows) == 2
+
+
 def test_known_issue_with_overlap():
     r = dummy_recording(0)
     rec = RecordingSet.from_recordings([r])
