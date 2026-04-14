@@ -4,6 +4,7 @@ Unit tests for AISBatchLoader.
 These tests use mocking to simulate AIStore client behavior,
 allowing them to run in CI environments without AIStore infrastructure.
 """
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -968,10 +969,10 @@ class TestAISBatchLoaderErrorHandling:
             loader(cuts)
 
     @patch("lhotse.ais.batch_loader.get_aistore_client")
-    def test_iterator_exhausted_raises_error(
+    def test_iterator_exhausted_falls_back_to_sequential(
         self, mock_get_client, cut_with_url_recording
     ):
-        """Test that iterator exhaustion raises AISBatchLoaderError."""
+        """Test that iterator exhaustion falls back to individual GET requests."""
         client = MagicMock()
         batch = MagicMock()
 
@@ -979,24 +980,34 @@ class TestAISBatchLoaderErrorHandling:
         add_count = []
         batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
 
-        # Mock batch.get() to return fewer items than expected
+        # Mock batch.get() to return fewer items than expected (empty iterator)
         def mock_batch_get():
-            # Return nothing even though we expect 1 item
             return iter([])
 
         batch.get.side_effect = lambda: mock_batch_get()
+        batch.requests_list = [
+            MagicMock(
+                obj_name="test.wav", bck="test-bucket", provider="ais", archpath=""
+            )
+        ]
         client.batch.return_value = batch
-        client.bucket.return_value = MagicMock()
+        mock_bucket = MagicMock()
+        mock_obj = MagicMock()
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = b"\x00" * 16000
+        mock_obj.get_reader.return_value = mock_reader
+        mock_bucket.object.return_value = mock_obj
+        client.bucket.return_value = mock_bucket
         mock_get_client.return_value = (client, None)
 
         loader = AISBatchLoader()
         cuts = CutSet.from_cuts([cut_with_url_recording])
 
-        # Should raise AISBatchLoaderError when iterator is exhausted
-        with pytest.raises(
-            AISBatchLoaderError, match="Batch result iterator exhausted prematurely"
-        ):
-            loader(cuts)
+        # Should NOT raise — falls back to individual GET
+        result = loader(cuts)
+        assert result is not None
+        # Verify the fallback GET was called
+        mock_obj.get_reader.assert_called()
 
     @patch("lhotse.ais.batch_loader.get_aistore_client")
     def test_multiple_cuts_with_fallback(self, mock_get_client, cut_with_url_recording):
