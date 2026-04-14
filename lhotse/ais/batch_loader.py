@@ -133,6 +133,7 @@ class AISBatchLoader:
             logger.warning(
                 f"AIStore batch.get() failed: {e}. Falling back to sequential GET requests."
             )
+
             # Fallback: make sequential GET requests for each object in the batch
             # Use a generator to maintain consistency with batch.get() which returns an iterator
             def sequential_get():
@@ -153,33 +154,49 @@ class AISBatchLoader:
 
         # Apply the received data back into each manifest that had a URL
         request_idx = 0
+        batch_stream_failed = False
         for manifest, has_url in manifest_list:
             if has_url:
                 info = None
                 content = None
 
-                try:
-                    info, content = next(batch_result)
-                except StopIteration:
-                    raise AISBatchLoaderError(
-                        "Batch result iterator exhausted prematurely. "
-                        f"Expected more objects for manifests with URLs."
-                    )
-                except TimeoutError as e:
-                    # Timeout occurred - recover the request info from saved_requests_list
-                    logger.warning(
-                        f"Timeout while fetching batch result at index {request_idx}: {e}. "
-                        f"Falling back to direct AIStore API call."
-                    )
-
-                    if request_idx < len(saved_requests_list):
-                        info = saved_requests_list[request_idx]
-                        content = b""  # Mark as empty to trigger retry
-                    else:
-                        raise AISBatchLoaderError(
-                            f"Timeout at request index {request_idx}, but cannot recover: "
-                            f"index out of range for saved_requests_list (len={len(saved_requests_list)})"
-                        ) from e
+                if batch_stream_failed:
+                    # Batch stream already broke — go straight to individual GET
+                    info = saved_requests_list[request_idx]
+                    content = b""  # trigger retry below
+                else:
+                    try:
+                        info, content = next(batch_result)
+                    except StopIteration:
+                        # Batch stream was truncated (e.g., connection reset mid-tar).
+                        # Fall back to individual GET for this and all remaining objects.
+                        batch_stream_failed = True
+                        logger.warning(
+                            f"Batch stream truncated at index {request_idx}/{len(saved_requests_list)}. "
+                            f"Falling back to direct AIStore API calls for remaining objects."
+                        )
+                        if request_idx < len(saved_requests_list):
+                            info = saved_requests_list[request_idx]
+                            content = b""  # trigger retry below
+                        else:
+                            raise AISBatchLoaderError(
+                                f"Batch stream truncated at index {request_idx}, but cannot recover: "
+                                f"index out of range for saved_requests_list (len={len(saved_requests_list)})"
+                            )
+                    except TimeoutError as e:
+                        # Timeout occurred - recover the request info from saved_requests_list
+                        logger.warning(
+                            f"Timeout while fetching batch result at index {request_idx}: {e}. "
+                            f"Falling back to direct AIStore API call."
+                        )
+                        if request_idx < len(saved_requests_list):
+                            info = saved_requests_list[request_idx]
+                            content = b""  # Mark as empty to trigger retry
+                        else:
+                            raise AISBatchLoaderError(
+                                f"Timeout at request index {request_idx}, but cannot recover: "
+                                f"index out of range for saved_requests_list (len={len(saved_requests_list)})"
+                            ) from e
 
                 # Retry with direct API call if content is empty (from timeout or actual empty response)
                 if content == b"":
