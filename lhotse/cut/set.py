@@ -35,7 +35,7 @@ from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
-from lhotse.cut.mixed import MixedCut, MixTrack
+from lhotse.cut.mixed import MixedCut, MixTrack, _ensure_explicit_snr_reference
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
@@ -1777,6 +1777,7 @@ class CutSet(Serializable, AlgorithmMixin):
         mix_prob: float = 1.0,
         seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
+        tag: Optional[str] = None,
     ) -> "CutSet":
         """
         Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
@@ -1808,6 +1809,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
              select a random sub-region from the to be mixed in cut.
+        :param tag: Optional label attached to the mixed-in tracks.
         :return: a new ``CutSet`` with mixed cuts.
         """
         return CutSet(
@@ -1821,6 +1823,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 mix_prob=mix_prob,
                 seed=seed,
                 random_mix_offset=random_mix_offset,
+                tag=tag,
             )
         )
 
@@ -2855,6 +2858,7 @@ def mix(
     allow_padding: bool = False,
     snr: Optional[Decibels] = None,
     preserve_id: Optional[str] = None,
+    tag: Optional[str] = None,
 ) -> MixedCut:
     """
     Overlay, or mix, two cuts. Optionally the ``mixed_in_cut`` may be shifted by ``offset`` seconds
@@ -2869,6 +2873,7 @@ def mix(
     :param snr: Desired SNR of the ``right_cut`` w.r.t. the ``left_cut`` in the mix.
     :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
         of the left- or right-hand side argument. otherwise, a new random id is generated.
+    :param tag: Optional label attached to the mixed-in tracks.
     :return: A :class:`~MixedCut` instance.
     """
 
@@ -2943,10 +2948,16 @@ def mix(
     if (
         isinstance(reference_cut, MixedCut)
         and len(ifnone(reference_cut.transforms, [])) == 0
+        and not any(track.mute for track in reference_cut.tracks)
     ):
-        old_tracks = reference_cut.tracks
+        old_tracks = _ensure_explicit_snr_reference(reference_cut.tracks.copy())
     elif isinstance(reference_cut, (DataCut, PaddingCut, MixedCut)):
-        old_tracks = [MixTrack(cut=reference_cut)]
+        old_tracks = [
+            MixTrack(
+                cut=reference_cut,
+                is_snr_reference=not isinstance(reference_cut, PaddingCut),
+            )
+        ]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
 
@@ -2955,8 +2966,10 @@ def mix(
     if isinstance(mixed_in_cut, MixedCut):
         # Similarly for mixed_in_cut, if it is a MixedCut and it does not have existing transforms,
         # take its existing tracks, otherwise create a new track.
-        if len(ifnone(mixed_in_cut.transforms, [])) > 0:
-            new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+        if len(ifnone(mixed_in_cut.transforms, [])) > 0 or any(
+            track.mute for track in mixed_in_cut.tracks
+        ):
+            new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr, tag=tag)]
         else:
             new_tracks = [
                 MixTrack(
@@ -2976,11 +2989,14 @@ def mix(
                         # When no SNR was specified whatsoever, use none.
                         else None
                     ),
+                    tag=track.tag if track.tag is not None else tag,
+                    is_snr_reference=False,
+                    mute=track.mute,
                 )
                 for track in mixed_in_cut.tracks
             ]
     elif isinstance(mixed_in_cut, (DataCut, PaddingCut)):
-        new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+        new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr, tag=tag)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(mixed_in_cut)}")
 
@@ -3825,6 +3841,7 @@ class LazyCutMixer(Dillable):
         seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
         stateful: bool = True,
+        tag: Optional[str] = None,
     ) -> None:
         self.source = cuts
         self.mix_in_cuts = mix_in_cuts
@@ -3836,6 +3853,7 @@ class LazyCutMixer(Dillable):
         self.seed = seed
         self.random_mix_offset = random_mix_offset
         self.stateful = stateful
+        self.tag = tag
         self.num_times_iterated = 0
 
         assert 0.0 <= self.mix_prob <= 1.0
@@ -3896,7 +3914,12 @@ class LazyCutMixer(Dillable):
             # Actual mixing
             to_mix = next(mix_in_cuts)
             to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
-            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
+            mixed = cut.mix(
+                other=to_mix,
+                snr=cut_snr,
+                preserve_id=self.preserve_id,
+                tag=self.tag,
+            )
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
@@ -3918,6 +3941,7 @@ class LazyCutMixer(Dillable):
                     offset_other_by=mixed_in_duration,
                     allow_padding=self.allow_padding,
                     preserve_id=self.preserve_id,
+                    tag=self.tag,
                 )
                 # Since we're adding floats, we can be off by an epsilon and trigger
                 # some assertions for exceeding duration; do precautionary rounding here.

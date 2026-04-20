@@ -147,6 +147,10 @@ class Fbank(FeatureExtractor):
     def compute_energy(features: np.ndarray) -> float:
         return float(np.sum(np.exp(features)))
 
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        return features + np.log(energy_scaling_factor)
+
 
 @dataclass
 class MfccConfig:
@@ -363,6 +367,10 @@ class Spectrogram(FeatureExtractor):
     def compute_energy(features: np.ndarray) -> float:
         return float(np.sum(features))
 
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        return energy_scaling_factor * features
+
 
 @dataclass
 class LogSpectrogramConfig:
@@ -468,6 +476,10 @@ class LogSpectrogram(FeatureExtractor):
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
         return float(np.sum(features))
+
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        return energy_scaling_factor * features
 
 
 def _extract_batch(

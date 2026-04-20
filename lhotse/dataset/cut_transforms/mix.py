@@ -22,6 +22,7 @@ class CutMix:
         preserve_id: bool = False,
         seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
+        tag: Optional[str] = None,
     ) -> None:
         """
         CutMix's constructor.
@@ -42,6 +43,7 @@ class CutMix:
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
             select a random sub-region from the to be mixed in cut.
+        :param tag: Optional label attached to the mixed-in tracks.
         """
         self.cuts = cuts
         if len(self.cuts) == 0:
@@ -55,6 +57,7 @@ class CutMix:
         self.seed = seed
         self.rng = None
         self.random_mix_offset = random_mix_offset
+        self.tag = tag
 
     def __call__(self, cuts: CutSet) -> CutSet:
 
@@ -75,6 +78,7 @@ class CutMix:
             preserve_id="left" if self.preserve_id else None,
             seed=self.rng,
             random_mix_offset=self.random_mix_offset,
+            tag=self.tag,
         ).to_eager()
 
     def _lazy_rng_init(self):
