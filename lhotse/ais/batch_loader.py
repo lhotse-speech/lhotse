@@ -118,6 +118,11 @@ class AISBatchLoader:
         # Execute batch request
         from aistore.sdk.errors import AISError
 
+        # No AIS-backed objects in this CutSet (e.g. all data lives on a non-AIS
+        # filesystem). Skip the batch call entirely to avoid spurious warnings.
+        if not any(has_url for _, has_url in manifest_list):
+            return cuts
+
         # Save requests list before calling batch.get() - it may be cleared after execution
         saved_requests_list = list(batch.requests_list)
 
