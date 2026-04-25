@@ -771,6 +771,57 @@ class TestAISBatchLoaderIntegration:
         # No URLs should be added for invalid feature paths
         assert batch.add.call_count == 0
 
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_empty_batch_skips_get_silently(self, mock_get_client, caplog):
+        """When no AIS-backed manifests are present (e.g. all data on a non-AIS
+        filesystem), batch.get() must not be invoked and no warnings/errors
+        should be emitted.
+        """
+        client = MagicMock()
+        batch = MagicMock()
+        batch.add.side_effect = lambda *args, **kwargs: None
+        # If batch.get() were ever called here, we'd want the test to fail loudly.
+        batch.get.side_effect = AssertionError(
+            "batch.get() should not be called when no objects were added"
+        )
+        client.batch.return_value = batch
+        client.bucket.return_value = MagicMock()
+        mock_get_client.return_value = (client, None)
+
+        recording = Recording(
+            id="rec-1",
+            sources=[
+                AudioSource(
+                    type="file",  # Local filesystem — no AIS URL
+                    channels=[0],
+                    source="/path/to/local/file.wav",
+                )
+            ],
+            sampling_rate=16000,
+            num_samples=160000,
+            duration=10.0,
+        )
+        cut = MonoCut(
+            id="cut-1",
+            start=0.0,
+            duration=10.0,
+            channel=0,
+            recording=recording,
+        )
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut])
+        result = loader(cuts)
+
+        # No batch ops, no warnings.
+        assert batch.add.call_count == 0
+        assert batch.get.call_count == 0
+        assert caplog.records == []
+
+        # Cut returned unchanged.
+        for c in result:
+            assert c.recording.sources[0].type == "file"
+
 
 class TestAISBatchLoaderVersionCompatibility:
     """Tests for backward compatibility with older AIStore versions."""
