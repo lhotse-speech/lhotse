@@ -34,6 +34,7 @@ from lhotse.utils import (
     Pathlike,
     Seconds,
     SetContainingAnything,
+    SmartOpen,
     asdict_nonull,
     compute_num_samples,
     fastcopy,
@@ -323,19 +324,21 @@ class Recording:
             return x
 
         # Case #1: no opts specified, read audio without decoding and move it in memory.
-        if all(opt is None for opt in (channels, offset, duration)) or (
+        if format is None and (all(opt is None for opt in (channels, offset, duration)) or (
             (channels is None or _aslist(channels) == self.channel_ids)
             and (offset is None or isclose(offset, 0.0))
-            and (duration is None or isclose(duration, self.duration))
+            and (duration is None or isclose(duration, self.duration)))
         ):
-            memory_sources = [
-                AudioSource(
-                    type="memory",
-                    channels=old_source.channels,
-                    source=open(old_source.source, "rb").read(),
+            memory_sources = []
+            for old_source in self.sources:
+                with SmartOpen.open(old_source.source, "rb") as f:
+                    source = f.read()
+                memory_sources.append(AudioSource(
+                        type="memory",
+                        channels=old_source.channels,
+                        source=source,
+                    )
                 )
-                for old_source in self.sources
-            ]
             return fastcopy(self, sources=memory_sources)
 
         # Case #2: user specified some subset of the recording, decode audio,
