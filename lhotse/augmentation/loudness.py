@@ -56,6 +56,7 @@ def normalize_loudness(
 
     assert audio.ndim == 2, f"Expected 2D audio shape, got: {audio.shape}"
 
+    dtype = audio.dtype
     duration = audio.shape[1] / sampling_rate
 
     # measure the loudness first
@@ -70,4 +71,4 @@ def normalize_loudness(
         warnings.simplefilter("ignore")
         loudness_normalized_audio = pyln.normalize.loudness(audio.T, loudness, target)
 
-    return loudness_normalized_audio.T
+    return loudness_normalized_audio.astype(dtype).T

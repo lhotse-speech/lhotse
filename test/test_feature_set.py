@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
+pytest.importorskip("lilcom", reason="Lilcom tests require lilcom.")
+
 from lhotse import FbankConfig, MfccConfig
 from lhotse.audio import RecordingSet
 from lhotse.features import (

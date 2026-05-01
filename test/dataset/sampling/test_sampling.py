@@ -1200,13 +1200,7 @@ def test_time_constraint_concatenate_cuts():
     [
         SimpleCutSampler,
         DynamicCutSampler,
-        pytest.param(
-            partial(BucketingSampler, num_buckets=2),
-            marks=pytest.mark.xfail(
-                reason="BucketingSampler will oversample cuts when world_size>1 and drop_last=False "
-                "more than other samplers due to its implementation."
-            ),
-        ),
+        partial(BucketingSampler, num_buckets=2),
         partial(DynamicBucketingSampler, num_buckets=2),
     ],
 )
@@ -1217,6 +1211,16 @@ def test_time_constraint_concatenate_cuts():
 def test_sampler_does_not_drop_cuts_with_multiple_ranks(
     sampler_fn, world_size, batch_duration
 ):
+    if (
+        isinstance(sampler_fn, partial)
+        and sampler_fn.func is BucketingSampler
+        and (world_size in {16, 32} or (world_size == 2 and batch_duration in {1, 2}))
+    ):
+        pytest.xfail(
+            "BucketingSampler will oversample cuts when world_size>1 and drop_last=False "
+            "more than other samplers due to its implementation."
+        )
+
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     num_input_cuts = len(cuts)
 

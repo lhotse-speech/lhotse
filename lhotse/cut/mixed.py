@@ -70,10 +70,13 @@ class MixTrack:
     how to mix it with other Cuts, relative to the first track in a mix.
     """
 
-    cut: Union[DataCut, PaddingCut]
+    cut: Cut
     type: str = None
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
+    tag: Optional[str] = None
+    is_snr_reference: bool = False
+    mute: bool = False
 
     def __post_init__(self):
         self.type = type(self.cut).__name__
@@ -95,6 +98,12 @@ class MixTrack:
         }
         if self.snr is not None:
             ans["snr"] = self.snr
+        if self.tag is not None:
+            ans["tag"] = self.tag
+        if self.is_snr_reference:
+            ans["is_snr_reference"] = self.is_snr_reference
+        if self.mute:
+            ans["mute"] = self.mute
         return ans
 
 
@@ -148,7 +157,7 @@ class MixedCut(Cut):
         """
         return [
             segment.with_offset(track.offset)
-            for track in self.tracks
+            for track in _get_audible_tracks(self)
             for segment in track.cut.supervisions
         ]
 
@@ -158,7 +167,9 @@ class MixedCut(Cut):
 
     @property
     def duration(self) -> Seconds:
-        track_durations = (track.offset + track.cut.duration for track in self.tracks)
+        track_durations = (
+            track.offset + track.cut.duration for track in _get_audible_tracks(self)
+        )
         return round(max(track_durations), ndigits=8)
 
     @property
@@ -180,7 +191,7 @@ class MixedCut(Cut):
 
     @property
     def is_in_memory(self) -> bool:
-        return any(track.cut.is_in_memory for track in self.tracks)
+        return any(track.cut.is_in_memory for track in _get_audible_tracks(self))
 
     def has(self, field: str) -> bool:
         return self._first_non_padding_cut.has(field)
@@ -197,11 +208,11 @@ class MixedCut(Cut):
 
     @property
     def frame_shift(self) -> Optional[Seconds]:
-        return self.tracks[0].cut.frame_shift
+        return self._first_non_padding_cut.frame_shift
 
     @property
     def sampling_rate(self) -> Optional[int]:
-        return self.tracks[0].cut.sampling_rate
+        return self._first_non_padding_cut.sampling_rate
 
     @property
     def num_samples(self) -> Optional[int]:
@@ -209,12 +220,12 @@ class MixedCut(Cut):
 
     @property
     def num_features(self) -> Optional[int]:
-        return self.tracks[0].cut.num_features
+        return self._first_non_padding_cut.num_features
 
     @property
     def num_channels(self) -> Optional[int]:
         # PaddingCut and MonoCut have 1 channel each, MultiCut has N. We don't support MixedCut with MixedCut tracks.
-        return max(track.cut.num_channels for track in self.tracks)
+        return max(track.cut.num_channels for track in _get_audible_tracks(self))
 
     @property
     def features_type(self) -> Optional[str]:
@@ -229,6 +240,37 @@ class MixedCut(Cut):
         if self.transforms:
             ans["transforms"] = [t.to_dict() for t in self.transforms]
         return ans
+
+    def unmix(self, tag: Optional[str] = None) -> List[Cut]:
+        """
+        Split this mixed cut into time-aligned constituent cuts.
+
+        When ``tag`` is ``None``, this returns one cut per non-padding audible track.
+        Each returned cut preserves the original offsets and overall duration, so the
+        loaded audio/features can be summed to reconstruct the original mix.
+
+        When ``tag`` is provided, this returns exactly two cuts in order:
+        ``[without_tag, with_tag]``. Tracks are grouped by whether their
+        :attr:`MixTrack.tag` matches ``tag``. For exact SNR preservation, the grouped
+        outputs may carry an internal muted SNR-reference track that is ignored by the
+        public track views but retained for mixing math.
+
+        :param tag: Optional track-group label to split on.
+        :return: A list of one cut per track, or two grouped cuts when ``tag`` is provided.
+        """
+        tracks = [
+            track
+            for track in _get_audible_tracks(self)
+            if not isinstance(track.cut, PaddingCut)
+        ]
+        if tag is None:
+            return [_to_unmixed_cut(self, [track]) for track in tracks]
+        without_tag = [track for track in tracks if track.tag != tag]
+        with_tag = [track for track in tracks if track.tag == tag]
+        return [
+            _to_unmixed_cut(self, without_tag),
+            _to_unmixed_cut(self, with_tag),
+        ]
 
     def iter_data(
         self,
@@ -297,7 +339,7 @@ class MixedCut(Cut):
         if name == "custom":
             # Merge custom dicts of underlying data.
             ans = {}
-            for t in self.tracks:
+            for t in _get_audible_tracks(self):
                 if cstm := t.cut.custom:
                     ans.update(cstm)
             return ans
@@ -462,6 +504,7 @@ class MixedCut(Cut):
             (idx, t.cut)
             for idx, t in enumerate(self.tracks)
             if isinstance(t.cut, DataCut)
+            and not t.mute
             and t.cut.custom is not None
             and attr_name in t.cut.custom
         ]
@@ -525,7 +568,7 @@ class MixedCut(Cut):
         return fastcopy(
             recording.to_cut(),
             supervisions=[fastcopy(s, channel=0) for s in self.supervisions],
-            custom=self.tracks[0].cut.custom,
+            custom=self._first_non_padding_track.cut.custom,
         )
 
     def truncate(
@@ -556,7 +599,6 @@ class MixedCut(Cut):
         assert (
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
-        new_tracks = []
         old_duration = self.duration
         new_mix_end = (
             add_durations(old_duration, -offset, sampling_rate=self.sampling_rate)
@@ -564,7 +606,7 @@ class MixedCut(Cut):
             else add_durations(offset, duration, sampling_rate=self.sampling_rate)
         )
 
-        for track in sorted(self.tracks, key=lambda t: t.offset):
+        def truncate_track(track: MixTrack) -> Optional[MixTrack]:
             # First, determine how much of the beginning of the current track we're going to truncate:
             # when the track offset is larger than the truncation offset, we are not truncating the cut;
             # just decreasing the track offset.
@@ -587,7 +629,7 @@ class MixedCut(Cut):
 
             if track_end < offset:
                 # Omit a Cut that ends before the truncation offset.
-                continue
+                return None
 
             cut_duration_decrease = 0
             if track_end > new_mix_end:
@@ -609,22 +651,31 @@ class MixedCut(Cut):
             )
             if new_duration <= 0:
                 # Omit a Cut that is completely outside the time span of the new truncated MixedCut.
-                continue
+                return None
 
-            new_tracks.append(
-                MixTrack(
-                    cut=track.cut.truncate(
-                        offset=cut_offset,
-                        duration=new_duration,
-                        keep_excessive_supervisions=keep_excessive_supervisions,
-                        preserve_id=preserve_id,
-                        _supervisions_index=_supervisions_index,
-                    ),
-                    offset=track_offset,
-                    snr=track.snr,
-                )
+            return MixTrack(
+                cut=track.cut.truncate(
+                    offset=cut_offset,
+                    duration=new_duration,
+                    keep_excessive_supervisions=keep_excessive_supervisions,
+                    preserve_id=preserve_id,
+                    _supervisions_index=_supervisions_index,
+                ),
+                offset=track_offset,
+                snr=track.snr,
+                tag=track.tag,
+                is_snr_reference=track.is_snr_reference,
+                mute=track.mute,
             )
 
+        new_tracks = [
+            new_track
+            for new_track in (
+                truncate_track(track)
+                for track in sorted(self.tracks, key=lambda t: t.offset)
+            )
+            if new_track is not None
+        ]
         # Edge case: no tracks with data left after truncation. This can happen if we truncated an offset region.
         # In this case, return a PaddingCut of the requested duration
         if len([t for t in new_tracks if not isinstance(t.cut, PaddingCut)]) == 0:
@@ -641,7 +692,8 @@ class MixedCut(Cut):
             return new_tracks[0].cut
 
         new_cut = MixedCut(
-            id=self.id if preserve_id else str(uuid4()), tracks=new_tracks
+            id=self.id if preserve_id else str(uuid4()),
+            tracks=new_tracks,
         )
 
         # Final edge-case check. Scenario:
@@ -650,7 +702,7 @@ class MixedCut(Cut):
         # - we are left only with PaddingCuts and MonoCuts that have specified SNR
         # Solution:
         # - find first non padding cut and reset its SNR to None (make it the new reference)
-        if all(
+        if not any(track.is_snr_reference for track in new_cut.tracks) and all(
             t.snr is not None or isinstance(t.cut, PaddingCut) for t in new_cut.tracks
         ):
             first_non_padding_track_idx = [
@@ -659,7 +711,9 @@ class MixedCut(Cut):
                 if not isinstance(t.cut, PaddingCut)
             ][0]
             new_cut.tracks[first_non_padding_track_idx] = fastcopy(
-                new_cut.tracks[first_non_padding_track_idx], snr=None
+                new_cut.tracks[first_non_padding_track_idx],
+                snr=None,
+                is_snr_reference=True,
             )
 
         return new_cut
@@ -1051,8 +1105,9 @@ class MixedCut(Cut):
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
 
+        audible_tracks = _get_audible_tracks(self)
         assert len(rir_channels) == 1 or len(rir_channels) == len(
-            self.tracks
+            audible_tracks
         ), "Invalid number of channels in `rir_channels`, must be either 1 or equal to the number of tracks."
 
         # There are 2 ways to apply RIRs:
@@ -1112,6 +1167,12 @@ class MixedCut(Cut):
 
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
+        else:
+            audible_channels = iter(rir_channels)
+            rir_channels = [
+                next(audible_channels) if not track.mute else rir_channels[0]
+                for track in self.tracks
+            ]
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
@@ -1150,15 +1211,22 @@ class MixedCut(Cut):
         """
         if not self.has_features:
             return None
-        first_cut = self.tracks[0].cut
+        tracks = _get_audible_tracks(self)
+        first_track = tracks[0]
+        first_cut = first_track.cut
 
         # First, check for a simple scenario: just a single cut with padding.
         # When that is the case, we don't have to instantiate a feature extractor,
         # because we are not performing any actual mixing.
         # That makes life simpler for the users who have a custom feature extractor,
         # but don't actually care about feature-domain mixing; just want to pad.
-        if mixed and all(isinstance(t.cut, PaddingCut) for t in self.tracks[1:]):
-            padding_val = self.tracks[1].cut.feat_value
+        if (
+            mixed
+            and first_track.snr is None
+            and tracks[1:]
+            and all(isinstance(t.cut, PaddingCut) for t in tracks[1:])
+        ):
+            padding_val = tracks[1].cut.feat_value
             first_cut_feats = first_cut.load_features()
             if first_cut_feats.ndim == 2:
                 # 2D features
@@ -1180,29 +1248,30 @@ class MixedCut(Cut):
         # They might not be if the first track is a padding track.
         reference_feats = None
         reference_energy = None
-        reference_pos, reference_cut = [
-            (idx, t.cut)
-            for idx, t in enumerate(self.tracks)
-            if not isinstance(t.cut, PaddingCut) and t.snr is None
-        ][0]
+        _, reference_track = _get_snr_reference_track(self)
         feature_extractor = create_default_feature_extractor(
-            reference_cut.features.type
+            reference_track.cut.features_type
         )
-        if first_cut.id != reference_cut.id:
-            reference_feats = reference_cut.load_features()
+        if reference_track is not first_track:
+            reference_feats = reference_track.cut.load_features()
             reference_energy = feature_extractor.compute_energy(reference_feats)
 
         # The mix itself.
+        first_cut_feats = first_cut.load_features()
+        first_cut_feats = _scale_features_for_snr(
+            first_cut_feats,
+            feature_extractor=feature_extractor,
+            snr=first_track.snr,
+            reference_energy=reference_energy,
+        )
         mixer = FeatureMixer(
-            feature_extractor=create_default_feature_extractor(
-                self._first_non_padding_cut.features.type
-            ),
-            base_feats=first_cut.load_features(),
+            feature_extractor=feature_extractor,
+            base_feats=first_cut_feats,
             frame_shift=first_cut.frame_shift,
             reference_energy=reference_energy,
         )
-        for pos, track in enumerate(self.tracks[1:], start=1):
-            if pos == reference_pos and reference_feats is not None:
+        for track in tracks[1:]:
+            if track is reference_track and reference_feats is not None:
                 feats = reference_feats  # manual caching to avoid duplicated I/O
             else:
                 feats = track.cut.load_features()
@@ -1261,30 +1330,33 @@ class MixedCut(Cut):
 
         if not self.has_recording:
             return None
-        first_cut = self.tracks[0].cut
+        tracks = _get_audible_tracks(self)
+        first_track = tracks[0]
+        first_cut = first_track.cut
 
         # First, we have to make sure that the reference energy levels are appropriate.
         # They might not be if the first track is a padding track.
         reference_audio = None
         reference_energy = None
-        reference_pos, reference_cut = [
-            (idx, t.cut)
-            for idx, t in enumerate(self.tracks)
-            if not isinstance(t.cut, PaddingCut) and t.snr is None
-        ][0]
-        if first_cut.id != reference_cut.id:
-            reference_audio = reference_cut.load_audio()
+        _, reference_track = _get_snr_reference_track(self)
+        if reference_track is not first_track:
+            reference_audio = reference_track.cut.load_audio()
             reference_energy = audio_energy(reference_audio)
 
-        mixer = AudioMixer(
-            self.tracks[0].cut.load_audio(),
-            sampling_rate=self.tracks[0].cut.sampling_rate,
+        first_cut_audio = _scale_audio_for_snr(
+            first_cut.load_audio(),
+            snr=first_track.snr,
             reference_energy=reference_energy,
-            base_offset=self.tracks[0].offset,
+        )
+        mixer = AudioMixer(
+            first_cut_audio,
+            sampling_rate=first_cut.sampling_rate,
+            reference_energy=reference_energy,
+            base_offset=first_track.offset,
         )
 
-        for pos, track in enumerate(self.tracks[1:], start=1):
-            if pos == reference_pos and reference_audio is not None:
+        for track in tracks[1:]:
+            if track is reference_track and reference_audio is not None:
                 audio = reference_audio  # manual caching to avoid duplicated I/O
             else:
                 audio = track.cut.load_audio()
@@ -1296,7 +1368,7 @@ class MixedCut(Cut):
 
         # Flattening a MixedCut without MultiCut tracks has no effect
         mono_downmix = mono_downmix and any(
-            track.type == "MultiCut" for track in self.tracks
+            track.type == "MultiCut" for track in tracks
         )
 
         # Flattening a MixedCut without mixed=True has no effect
@@ -1353,12 +1425,13 @@ class MixedCut(Cut):
         if not self.has_video:
             return None
 
+        tracks = _get_audible_tracks(self)
         mixer = VideoMixer(
-            self.tracks[0].cut.load_video(with_audio=False)[0],
+            tracks[0].cut.load_video(with_audio=False)[0],
             fps=self.video.fps,
-            base_offset=self.tracks[0].offset,
+            base_offset=tracks[0].offset,
         )
-        for pos, track in enumerate(self.tracks[1:], start=1):
+        for track in tracks[1:]:
             mixer.add_to_mix(
                 video=track.cut.load_video(with_audio=False)[0],
                 offset=track.offset,
@@ -1378,7 +1451,8 @@ class MixedCut(Cut):
         """
         import matplotlib.pyplot as plt
 
-        fig, axes = plt.subplots(len(self.tracks))
+        tracks = _get_audible_tracks(self)
+        fig, axes = plt.subplots(len(tracks))
         features = self.load_features(mixed=False)
         fmin, fmax = features.min(), features.max()
         for idx, ax in enumerate(axes):
@@ -1392,8 +1466,9 @@ class MixedCut(Cut):
         import matplotlib.pyplot as plt
 
         audio = self.load_audio(mixed=False)
-        fig, axes = plt.subplots(len(self.tracks), sharex=False, sharey=True)
-        for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
+        tracks = _get_audible_tracks(self)
+        fig, axes = plt.subplots(len(tracks), sharex=False, sharey=True)
+        for idx, (track, ax) in enumerate(zip(tracks, axes)):
             samples = audio[idx].squeeze(0)
             ax.plot(np.linspace(0, self.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
@@ -1412,7 +1487,8 @@ class MixedCut(Cut):
             self.has_recording
         ), f"Cannot detach features from a MixedCut with no Recording (cut ID = {self.id})."
         return fastcopy(
-            self, tracks=[fastcopy(t, cut=t.cut.drop_features()) for t in self.tracks]
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_features()) for t in self.tracks],
         )
 
     def drop_recording(self) -> "MixedCut":
@@ -1421,7 +1497,8 @@ class MixedCut(Cut):
             self.has_features
         ), f"Cannot detach recording from a MixedCut with no Features (cut ID = {self.id})."
         return fastcopy(
-            self, tracks=[fastcopy(t, cut=t.cut.drop_recording()) for t in self.tracks]
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_recording()) for t in self.tracks],
         )
 
     def drop_supervisions(self) -> "MixedCut":
@@ -1458,6 +1535,8 @@ class MixedCut(Cut):
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
         :param storage: a ``FeaturesWriter`` instance used to store the features.
+            When the optional ``lilcom`` dependency is installed and on-disk size matters,
+            ``LilcomChunkyWriter`` is the preferred backend.
         :param augment_fn: an optional callable used for audio augmentation.
         :param mix_eagerly: when False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
@@ -1500,10 +1579,16 @@ class MixedCut(Cut):
                     ),
                     offset=track.offset,
                     snr=track.snr,
+                    tag=track.tag,
+                    is_snr_reference=track.is_snr_reference,
+                    mute=track.mute,
                 )
                 for track in self.tracks
             ]
-            return MixedCut(id=self.id, tracks=new_tracks)
+            return MixedCut(
+                id=self.id,
+                tracks=new_tracks,
+            )
 
     def fill_supervision(
         self, add_empty: bool = True, shrink_ok: bool = False
@@ -1531,9 +1616,7 @@ class MixedCut(Cut):
         if n_sups == 0:
             if not add_empty:
                 return self
-            first_non_padding_idx = [
-                idx for idx, t in enumerate(self.tracks) if isinstance(t.cut, DataCut)
-            ][0]
+            first_non_padding_idx = self.tracks.index(self._first_non_padding_track)
             new_tracks = [
                 fastcopy(
                     t,
@@ -1560,6 +1643,9 @@ class MixedCut(Cut):
             ), f"Cannot expand more than one supervision (found {len(self.supervisions)}."
             new_tracks = []
             for t in self.tracks:
+                if t.mute:
+                    new_tracks.append(t)
+                    continue
                 if len(t.cut.supervisions) == 0:
                     new_tracks.append(t)
                 else:
@@ -1601,7 +1687,7 @@ class MixedCut(Cut):
         """
         new_mixed_cut = fastcopy(self)
         for track in new_mixed_cut.tracks:
-            if isinstance(track.cut, PaddingCut):
+            if isinstance(track.cut, PaddingCut) or track.mute:
                 continue
             track.cut.supervisions = [
                 segment.map(transform_fn) for segment in track.cut.supervisions
@@ -1748,9 +1834,18 @@ class MixedCut(Cut):
         transforms = None
         if "transforms" in data:
             transforms = [AudioTransform.from_dict(t) for t in data["transforms"]]
+        tracks = [MixTrack.from_dict(track) for track in data["tracks"]]
+        if "snr_reference" in data:
+            tracks.append(
+                fastcopy(
+                    MixTrack.from_dict(data["snr_reference"]),
+                    is_snr_reference=True,
+                    mute=True,
+                )
+            )
         return MixedCut(
             id=data["id"],
-            tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
+            tracks=tracks,
             transforms=transforms,
         )
 
@@ -1782,7 +1877,7 @@ class MixedCut(Cut):
 
     @property
     def first_non_padding_track(self) -> MixTrack:
-        return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
+        return _get_first_non_padding_track(self)
 
     # Note: the private properties below are kept for backward compatibility.
 
@@ -1793,3 +1888,101 @@ class MixedCut(Cut):
     @property
     def _first_non_padding_track(self) -> MixTrack:
         return self.first_non_padding_track
+
+
+def _get_audible_tracks(mixed_cut: "MixedCut") -> List[MixTrack]:
+    tracks = [track for track in mixed_cut.tracks if not track.mute]
+    return tracks if tracks else mixed_cut.tracks
+
+
+def _get_first_non_padding_track(mixed_cut: "MixedCut") -> MixTrack:
+    tracks = [
+        track
+        for track in _get_audible_tracks(mixed_cut)
+        if not isinstance(track.cut, PaddingCut)
+    ]
+    if tracks:
+        return tracks[0]
+    return _get_audible_tracks(mixed_cut)[0]
+
+
+def _get_snr_reference_track(mixed_cut: "MixedCut") -> Tuple[Optional[int], MixTrack]:
+    for idx, track in enumerate(mixed_cut.tracks):
+        if track.is_snr_reference:
+            return idx, track
+    for idx, track in enumerate(mixed_cut.tracks):
+        if not isinstance(track.cut, PaddingCut) and track.snr is None:
+            return idx, track
+    raise ValueError(
+        f"Cannot determine SNR reference track for MixedCut '{mixed_cut.id}'."
+    )
+
+
+def _ensure_explicit_snr_reference(tracks: List[MixTrack]) -> List[MixTrack]:
+    if any(track.is_snr_reference for track in tracks):
+        return tracks
+    for idx, track in enumerate(tracks):
+        if not isinstance(track.cut, PaddingCut) and track.snr is None:
+            tracks[idx] = fastcopy(track, is_snr_reference=True)
+            break
+    return tracks
+
+
+def _scale_audio_for_snr(
+    audio: np.ndarray,
+    snr: Optional[Decibels],
+    reference_energy: Optional[float],
+) -> np.ndarray:
+    if snr is None or reference_energy is None or reference_energy <= 0.0:
+        return audio
+    added_audio_energy = audio_energy(audio)
+    if added_audio_energy <= 0.0:
+        return audio
+    target_energy = reference_energy * (10.0 ** (-snr / 10))
+    return np.sqrt(target_energy / added_audio_energy) * audio
+
+
+def _scale_features_for_snr(
+    features: np.ndarray,
+    feature_extractor: FeatureExtractor,
+    snr: Optional[Decibels],
+    reference_energy: Optional[float],
+) -> np.ndarray:
+    if snr is None or reference_energy is None or reference_energy <= 0.0:
+        return features
+    added_features_energy = feature_extractor.compute_energy(features)
+    if added_features_energy <= 0.0:
+        return features
+    target_energy = reference_energy * (10.0 ** (-snr / 10))
+    return feature_extractor.scale(features, target_energy / added_features_energy)
+
+
+def _make_padding_cut(mixed_cut: "MixedCut") -> PaddingCut:
+    return PaddingCut(
+        id=str(uuid4()),
+        duration=mixed_cut.duration,
+        sampling_rate=mixed_cut.sampling_rate,
+        feat_value=LOG_EPSILON,
+        num_frames=mixed_cut.num_frames if mixed_cut.has_features else None,
+        num_features=mixed_cut.num_features if mixed_cut.has_features else None,
+        frame_shift=mixed_cut.frame_shift if mixed_cut.has_features else None,
+        num_samples=mixed_cut.num_samples if mixed_cut.has_recording else None,
+        video=mixed_cut.video if mixed_cut.has_video else None,
+    )
+
+
+def _to_unmixed_cut(mixed_cut: "MixedCut", tracks: List[MixTrack]) -> Cut:
+    if not tracks:
+        return _make_padding_cut(mixed_cut)
+    tracks = _ensure_explicit_snr_reference([fastcopy(track) for track in tracks])
+    needs_reference = all(track.snr is not None for track in tracks)
+    if needs_reference:
+        _, reference_track = _get_snr_reference_track(mixed_cut)
+        tracks.append(fastcopy(reference_track, is_snr_reference=True, mute=True))
+    cut = MixedCut(
+        id=str(uuid4()),
+        tracks=tracks,
+    )
+    if cut.duration < mixed_cut.duration:
+        cut = cut.pad(duration=mixed_cut.duration, preserve_id=True)
+    return cut

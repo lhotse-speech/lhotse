@@ -4,6 +4,7 @@ Unit tests for AISBatchLoader.
 These tests use mocking to simulate AIStore client behavior,
 allowing them to run in CI environments without AIStore infrastructure.
 """
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -770,6 +771,57 @@ class TestAISBatchLoaderIntegration:
         # No URLs should be added for invalid feature paths
         assert batch.add.call_count == 0
 
+    @patch("lhotse.ais.batch_loader.get_aistore_client")
+    def test_empty_batch_skips_get_silently(self, mock_get_client, caplog):
+        """When no AIS-backed manifests are present (e.g. all data on a non-AIS
+        filesystem), batch.get() must not be invoked and no warnings/errors
+        should be emitted.
+        """
+        client = MagicMock()
+        batch = MagicMock()
+        batch.add.side_effect = lambda *args, **kwargs: None
+        # If batch.get() were ever called here, we'd want the test to fail loudly.
+        batch.get.side_effect = AssertionError(
+            "batch.get() should not be called when no objects were added"
+        )
+        client.batch.return_value = batch
+        client.bucket.return_value = MagicMock()
+        mock_get_client.return_value = (client, None)
+
+        recording = Recording(
+            id="rec-1",
+            sources=[
+                AudioSource(
+                    type="file",  # Local filesystem — no AIS URL
+                    channels=[0],
+                    source="/path/to/local/file.wav",
+                )
+            ],
+            sampling_rate=16000,
+            num_samples=160000,
+            duration=10.0,
+        )
+        cut = MonoCut(
+            id="cut-1",
+            start=0.0,
+            duration=10.0,
+            channel=0,
+            recording=recording,
+        )
+
+        loader = AISBatchLoader()
+        cuts = CutSet.from_cuts([cut])
+        result = loader(cuts)
+
+        # No batch ops, no warnings.
+        assert batch.add.call_count == 0
+        assert batch.get.call_count == 0
+        assert caplog.records == []
+
+        # Cut returned unchanged.
+        for c in result:
+            assert c.recording.sources[0].type == "file"
+
 
 class TestAISBatchLoaderVersionCompatibility:
     """Tests for backward compatibility with older AIStore versions."""
@@ -968,10 +1020,10 @@ class TestAISBatchLoaderErrorHandling:
             loader(cuts)
 
     @patch("lhotse.ais.batch_loader.get_aistore_client")
-    def test_iterator_exhausted_raises_error(
+    def test_iterator_exhausted_falls_back_to_sequential(
         self, mock_get_client, cut_with_url_recording
     ):
-        """Test that iterator exhaustion raises AISBatchLoaderError."""
+        """Test that iterator exhaustion falls back to individual GET requests."""
         client = MagicMock()
         batch = MagicMock()
 
@@ -979,24 +1031,34 @@ class TestAISBatchLoaderErrorHandling:
         add_count = []
         batch.add.side_effect = lambda *args, **kwargs: add_count.append(1)
 
-        # Mock batch.get() to return fewer items than expected
+        # Mock batch.get() to return fewer items than expected (empty iterator)
         def mock_batch_get():
-            # Return nothing even though we expect 1 item
             return iter([])
 
         batch.get.side_effect = lambda: mock_batch_get()
+        batch.requests_list = [
+            MagicMock(
+                obj_name="test.wav", bck="test-bucket", provider="ais", archpath=""
+            )
+        ]
         client.batch.return_value = batch
-        client.bucket.return_value = MagicMock()
+        mock_bucket = MagicMock()
+        mock_obj = MagicMock()
+        mock_reader = MagicMock()
+        mock_reader.read_all.return_value = b"\x00" * 16000
+        mock_obj.get_reader.return_value = mock_reader
+        mock_bucket.object.return_value = mock_obj
+        client.bucket.return_value = mock_bucket
         mock_get_client.return_value = (client, None)
 
         loader = AISBatchLoader()
         cuts = CutSet.from_cuts([cut_with_url_recording])
 
-        # Should raise AISBatchLoaderError when iterator is exhausted
-        with pytest.raises(
-            AISBatchLoaderError, match="Batch result iterator exhausted prematurely"
-        ):
-            loader(cuts)
+        # Should NOT raise — falls back to individual GET
+        result = loader(cuts)
+        assert result is not None
+        # Verify the fallback GET was called
+        mock_obj.get_reader.assert_called()
 
     @patch("lhotse.ais.batch_loader.get_aistore_client")
     def test_multiple_cuts_with_fallback(self, mock_get_client, cut_with_url_recording):

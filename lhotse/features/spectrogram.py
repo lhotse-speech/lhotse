@@ -70,3 +70,7 @@ class TorchaudioSpectrogram(TorchaudioFeatureExtractor):
     def compute_energy(features: np.ndarray) -> float:
         # Torchaudio returns log-power spectrum, hence the need for exp before the sum
         return float(np.sum(np.exp(features)))
+
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        return features + np.log(energy_scaling_factor)

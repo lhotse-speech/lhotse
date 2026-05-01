@@ -21,7 +21,13 @@ from lhotse.audio.utils import (
     verbose_audio_loading_exceptions,
 )
 from lhotse.augmentation import Resample
-from lhotse.utils import Pathlike, Seconds, compute_num_samples, is_torchaudio_available
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    compute_num_samples,
+    is_torchaudio_available,
+    is_torchcodec_available,
+)
 
 _FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = is_torchaudio_available()
 CURRENT_AUDIO_BACKEND: Optional["AudioBackend"] = None
@@ -132,6 +138,8 @@ def get_default_audio_backend() -> "AudioBackend":
         Sph2pipeSubprocessBackend(),
         # Libsndfile seems to be the most stable backend in terms of covered formats and performance.
         LibsndfileBackend(),
+        # Torchcodec is a PyTorch-native decoder built on FFmpeg, fast and reliable.
+        TorchcodecBackend(),
         # New FFMPEG backend available only in torchaudio 2.0.x+
         TorchaudioFFMPEGBackend(),
         # Torchaudio should be able to deal with most audio types...
@@ -453,8 +461,10 @@ class TorchaudioFFMPEGBackend(AudioBackend):
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         # The only backend to support video.
         is_fileobj = not isinstance(path_or_fd, Path)
-        return not is_fileobj and any(
-            str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS
+        return (
+            is_torchaudio_available()
+            and not is_fileobj
+            and any(str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS)
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -578,6 +588,71 @@ class LibsndfileBackend(AudioBackend):
         force_opus_sampling_rate: Optional[int] = None,
     ):
         return soundfile_info(path_or_fd)
+
+
+class TorchcodecBackend(AudioBackend):
+    """
+    A backend that uses torchcodec (>= 0.5), a PyTorch-native audio decoder/encoder
+    built on FFmpeg. Supports reading and saving most audio formats.
+    """
+
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return torchcodec_load(
+            path_or_fd=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        if not is_torchcodec_available():
+            return False
+        if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+            ".sph"
+        ):
+            return False
+        return True
+
+    def supports_save(self) -> bool:
+        return True
+
+    def save_audio(
+        self,
+        dest: Union[str, Path, BytesIO],
+        src: Union[torch.Tensor, np.ndarray],
+        sampling_rate: int,
+        format: Optional[str] = None,
+        encoding: Optional[str] = None,
+    ) -> None:
+        from torchcodec.encoders import AudioEncoder
+
+        if isinstance(src, np.ndarray):
+            src = torch.from_numpy(src)
+        if src.ndim == 1:
+            src = src.unsqueeze(0)
+
+        encoder = AudioEncoder(src, sample_rate=sampling_rate)
+        if isinstance(dest, (str, Path)):
+            encoder.to_file(dest)
+        else:
+            if format is None:
+                format = "flac"
+            encoder.to_file_like(dest, format=format)
+
+    def supports_info(self) -> bool:
+        return True
+
+    def info(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        return torchcodec_info(path_or_fd)
 
 
 class AudioreadBackend(AudioBackend):
@@ -804,7 +879,15 @@ def torchaudio_ffmpeg_backend_available() -> bool:
     Returns ``True`` when torchaudio.load supports "ffmpeg" backend.
     This requires either version 2.1.x+
     """
-    return is_torchaudio_available() and check_torchaudio_version_gt("2.1.0")
+    if not is_torchaudio_available() or not check_torchaudio_version_gt("2.1.0"):
+        return False
+
+    try:
+        from torchaudio.io import StreamReader  # noqa: F401
+    except (ImportError, OSError):
+        return False
+
+    return True
 
 
 @lru_cache(maxsize=1)
@@ -1029,6 +1112,65 @@ def torchaudio_load(
         num_frames=num_frames,
     )
     return audio.numpy(), int(sampling_rate)
+
+
+def torchcodec_info(
+    path_or_fd: Union[Pathlike, FileObject],
+) -> "LibsndfileCompatibleAudioInfo":
+    from torchcodec.decoders import AudioDecoder
+
+    if isinstance(path_or_fd, Path):
+        path_or_fd = str(path_or_fd)
+
+    if isinstance(path_or_fd, str) and ".tar/" in path_or_fd:
+        from lhotse.serialization import TarAsDirBackend
+
+        path_or_fd = TarAsDirBackend().open(path_or_fd)
+
+    decoder = AudioDecoder(path_or_fd)
+    metadata = decoder.metadata
+    sample_rate = metadata.sample_rate
+    num_channels = metadata.num_channels
+    duration = metadata.duration_seconds
+    num_frames = round(duration * sample_rate)
+
+    return LibsndfileCompatibleAudioInfo(
+        channels=num_channels,
+        frames=num_frames,
+        samplerate=int(sample_rate),
+        duration=duration,
+    )
+
+
+def torchcodec_load(
+    path_or_fd: Union[Pathlike, FileObject],
+    offset: Seconds = 0,
+    duration: Optional[Seconds] = None,
+) -> Tuple[np.ndarray, int]:
+    from torchcodec.decoders import AudioDecoder
+
+    if isinstance(path_or_fd, Path):
+        path_or_fd = str(path_or_fd)
+
+    if isinstance(path_or_fd, str) and ".tar/" in path_or_fd:
+        from lhotse.serialization import TarAsDirBackend
+
+        path_or_fd = TarAsDirBackend().open(path_or_fd)
+
+    decoder = AudioDecoder(path_or_fd)
+    sample_rate = decoder.metadata.sample_rate
+
+    if offset > 0 or duration is not None:
+        stop_seconds = (offset + duration) if duration is not None else None
+        samples = decoder.get_samples_played_in_range(
+            start_seconds=offset,
+            stop_seconds=stop_seconds,
+        )
+    else:
+        samples = decoder.get_all_samples()
+
+    audio = samples.data.numpy()
+    return audio, int(sample_rate)
 
 
 def torchaudio_2_ffmpeg_load(

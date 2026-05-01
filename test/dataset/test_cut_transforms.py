@@ -177,6 +177,23 @@ def test_cutmix_random_mix_offset():
         assert not np.array_equal(a.load_audio(), b.load_audio())
 
 
+def test_cutmix_tag():
+    speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+    noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=102)
+    for cut in speech_cuts:
+        cut.duration = 10.0
+    for cut in noise_cuts:
+        cut.duration = 1.5
+
+    tfnm = CutMix(noise_cuts, snr=None, p=1.0, tag="noise")
+    tfnm_cuts = tfnm(speech_cuts)
+
+    for cut in tfnm_cuts:
+        assert isinstance(cut, MixedCut)
+        assert cut.tracks[0].tag is None
+        assert all(track.tag == "noise" for track in cut.tracks[1:])
+
+
 @pytest.mark.parametrize("randomized", [False, True])
 @pytest.mark.parametrize("preserve_id", [False, True])
 def test_extra_padding_frames(randomized: bool, preserve_id: bool):

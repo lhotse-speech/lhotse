@@ -36,13 +36,17 @@ from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
-from lhotse.cut.mixed import MixedCut, MixTrack
+from lhotse.cut.mixed import MixedCut, MixTrack, _ensure_explicit_snr_reference
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
+from lhotse.features.io import (
+    FeaturesWriter,
+    LilcomChunkyWriter,
+    default_features_storage_backend,
+)
 from lhotse.lazy import (
     AlgorithmMixin,
     IteratorNode,
@@ -246,6 +250,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
         >>> from lhotse import Fbank
         >>> cuts = CutSet()
+        >>> # This uses the default backend (numpy_files unless overridden with
+        >>> # LHOTSE_FEATURES_STORAGE_BACKEND). If lilcom is installed, prefer
+        >>> # storage_type=LilcomChunkyWriter for better storage efficiency.
         >>> cuts = cuts.compute_and_store_features(
         ...     extractor=Fbank(),
         ...     storage_path='/data/feats',
@@ -1616,6 +1623,60 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         return result
 
+    def cut_into_windows_balanced(
+        self,
+        min_duration: Seconds,
+        max_duration: Seconds,
+        overlap: Seconds = 0.0,
+        keep_excessive_supervisions: bool = True,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new :class:`.CutSet` by splitting every cut into overlapping windows whose
+        duration is chosen in ``[min_duration, max_duration]`` to maximise the last chunk length.
+
+        Each sub-cut has ``custom["source_cut_id"]`` and ``custom["source_cut_start"]`` set so
+        that downstream merging logic can group sub-cuts from the same parent.
+
+        Cuts whose duration is already ``<= max_duration`` are returned unchanged (as a single
+        element in the output stream).
+
+        :param min_duration: Minimum window duration in seconds.
+        :param max_duration: Maximum window duration in seconds.
+        :param overlap: Overlap between consecutive windows in seconds (default: 0).
+        :param keep_excessive_supervisions: Whether to keep supervisions that extend beyond the
+            window boundary.
+        :param num_jobs: Number of parallel workers (default: 1).
+        :return: a new :class:`.CutSet` with overlapping sub-cuts (flat, not grouped).
+        """
+        if num_jobs == 1:
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial[CutSet](
+                            _cut_into_windows_balanced_single,
+                            min_duration=min_duration,
+                            max_duration=max_duration,
+                            overlap=overlap,
+                            keep_excessive_supervisions=keep_excessive_supervisions,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        return split_parallelize_combine(
+            num_jobs,
+            self,
+            _cut_into_windows_balanced_single,
+            min_duration=min_duration,
+            max_duration=max_duration,
+            overlap=overlap,
+            keep_excessive_supervisions=keep_excessive_supervisions,
+        )
+
     def load_audio(
         self,
         collate: bool = False,
@@ -1832,6 +1893,7 @@ class CutSet(Serializable, AlgorithmMixin):
         mix_prob: float = 1.0,
         seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
+        tag: Optional[str] = None,
     ) -> "CutSet":
         """
         Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
@@ -1863,6 +1925,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param random_mix_offset: an optional bool.
             When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
              select a random sub-region from the to be mixed in cut.
+        :param tag: Optional label attached to the mixed-in tracks.
         :return: a new ``CutSet`` with mixed cuts.
         """
         return CutSet(
@@ -1876,6 +1939,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 mix_prob=mix_prob,
                 seed=seed,
                 random_mix_offset=random_mix_offset,
+                tag=tag,
             )
         )
 
@@ -1917,7 +1981,7 @@ class CutSet(Serializable, AlgorithmMixin):
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomChunkyWriter,
+        storage_type: Optional[Type[FW]] = None,
         executor: Optional[Executor] = None,
         mix_eagerly: bool = True,
         progress_bar: bool = True,
@@ -1926,21 +1990,35 @@ class CutSet(Serializable, AlgorithmMixin):
         Extract features for all cuts, possibly in parallel,
         and store them using the specified storage object.
 
+        When ``storage_type`` is not provided, Lhotse uses the backend selected by
+        ``LHOTSE_FEATURES_STORAGE_BACKEND`` and falls back to ``numpy_files``.
+        If the optional ``lilcom`` dependency is installed, prefer
+        ``LilcomChunkyWriter`` for better storage efficiency.
+        To inspect the currently usable choices, call
+        ``lhotse.available_storage_backends()``. For a full list that also marks
+        unavailable backends with install hints, use
+        ``lhotse.storage_backend_statuses()`` or run
+        ``lhotse list-storage-backends``.
+
         Examples:
 
             Extract fbank features on one machine using 8 processes,
-            store arrays partitioned in 8 archive files with lilcom compression:
+            store arrays partitioned in 8 archive files with lilcom compression
+            (recommended when ``lilcom`` is installed):
 
+            >>> from lhotse import LilcomChunkyWriter
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
             ...     storage_path='feats',
             ...     num_jobs=8,
+            ...     storage_type=LilcomChunkyWriter,
             ... )
 
             Extract fbank features on one machine using 8 processes,
             store each array in a separate file with lilcom compression:
 
+            >>> from lhotse import LilcomFilesWriter
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
@@ -1953,12 +2031,14 @@ class CutSet(Serializable, AlgorithmMixin):
             with 80 jobs,
             store arrays partitioned in 80 archive files with lilcom compression:
 
+            >>> from lhotse import LilcomChunkyWriter
             >>> from distributed import Client
             ... cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
             ...     storage_path='feats',
             ...     num_jobs=80,
+            ...     storage_type=LilcomChunkyWriter,
             ...     executor=Client(...)
             ... )
 
@@ -1989,6 +2069,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+            When omitted, Lhotse uses ``LHOTSE_FEATURES_STORAGE_BACKEND`` or
+            ``numpy_files`` by default. If ``lilcom`` is installed,
+            ``LilcomChunkyWriter`` remains the preferred choice for storage efficiency.
         :param executor: when provided, will be used to parallelize the feature extraction process.
             By default, we will instantiate a ProcessPoolExecutor.
             Learn more about the ``Executor`` API at
@@ -2012,6 +2095,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )  # does nothing, unless we overwrite it with an actual prog bar
         if num_jobs is None:
             num_jobs = 1
+        storage_type = ifnone(storage_type, default_features_storage_backend())
         if num_jobs == 1 and executor is not None:
             logging.warning(
                 "Executor argument was passed but num_jobs set to 1: "
@@ -2116,7 +2200,7 @@ class CutSet(Serializable, AlgorithmMixin):
         num_workers: int = 4,
         collate: bool = False,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomChunkyWriter,
+        storage_type: Optional[Type[FW]] = None,
         overwrite: bool = False,
     ) -> "CutSet":
         """
@@ -2130,10 +2214,21 @@ class CutSet(Serializable, AlgorithmMixin):
         be much faster than :meth:`.CutSet.compute_and_store_features`.
         Otherwise, the speed will be comparable to single-threaded extraction.
 
+        When ``storage_type`` is not provided, Lhotse uses the backend selected by
+        ``LHOTSE_FEATURES_STORAGE_BACKEND`` and falls back to ``numpy_files``.
+        If the optional ``lilcom`` dependency is installed, prefer
+        ``LilcomChunkyWriter`` for better storage efficiency.
+        To inspect the currently usable choices, call
+        ``lhotse.available_storage_backends()``. For a full list that also marks
+        unavailable backends with install hints, use
+        ``lhotse.storage_backend_statuses()`` or run
+        ``lhotse list-storage-backends``.
+
         Example: extract fbank features on one GPU, using 4 dataloading workers
         for reading audio, and store the arrays in an archive file with
         lilcom compression::
 
+            >>> from lhotse import LilcomChunkyWriter
             >>> from lhotse import KaldifeatFbank, KaldifeatFbankConfig
             >>> extractor = KaldifeatFbank(KaldifeatFbankConfig(device='cuda'))
             >>> cuts = CutSet(...)
@@ -2142,6 +2237,7 @@ class CutSet(Serializable, AlgorithmMixin):
             ...     storage_path='feats',
             ...     batch_duration=500,
             ...     num_workers=4,
+            ...     storage_type=LilcomChunkyWriter,
             ... )
 
         :param extractor: A :class:`~lhotse.features.base.FeatureExtractor` instance,
@@ -2168,6 +2264,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+            When omitted, Lhotse uses ``LHOTSE_FEATURES_STORAGE_BACKEND`` or
+            ``numpy_files`` by default. If ``lilcom`` is installed,
+            ``LilcomChunkyWriter`` remains the preferred choice for storage efficiency.
         :param overwrite: should we overwrite the manifest, HDF5 files, etc.
             By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
@@ -2179,6 +2278,11 @@ class CutSet(Serializable, AlgorithmMixin):
         from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
+        storage_type = ifnone(storage_type, default_features_storage_backend())
+        if storage_type.name == "numpy_files":
+            storage_path = Path(storage_path)
+            if storage_path.exists() and storage_path.is_file():
+                storage_path = storage_path.with_name(f"{storage_path.name}_storage")
         frame_shift = extractor.frame_shift
 
         # We're opening a sequential cuts writer that can resume previously interrupted
@@ -2292,6 +2396,9 @@ class CutSet(Serializable, AlgorithmMixin):
 
                 futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
+
+        for future in futures:
+            future.result()
 
         # If ``manifest_path`` was provided, this is a lazy manifest;
         # otherwise everything is in memory.
@@ -2499,7 +2606,7 @@ class CutSet(Serializable, AlgorithmMixin):
         |   └── field2
         |       ├── arr2-1.npy
         |       └── ...
-        ├── features.lca
+        ├── features.lca or features/
         └── cuts.jsonl.gz
 
         :param output_dir: The root directory where we'll store the copied data.
@@ -2512,7 +2619,12 @@ class CutSet(Serializable, AlgorithmMixin):
         output_dir = Path(output_dir)
         audio_dir = output_dir / "audio"
         audio_dir.mkdir(exist_ok=True, parents=True)
-        feature_file = output_dir / "features.lca"
+        feature_writer_type = default_features_storage_backend()
+        if feature_writer_type is LilcomChunkyWriter:
+            feature_storage = output_dir / "features.lca"
+        else:
+            feature_storage = output_dir / "features"
+            feature_storage.mkdir(exist_ok=True, parents=True)
         custom_dir = output_dir / "custom"
         custom_dir.mkdir(exist_ok=True, parents=True)
 
@@ -2522,7 +2634,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
         with CutSet.open_writer(
             output_dir / "cuts.jsonl.gz"
-        ) as manifest_writer, LilcomChunkyWriter(feature_file) as feature_writer:
+        ) as manifest_writer, feature_writer_type(feature_storage) as feature_writer:
 
             def _copy_single(cut):
                 cut = fastcopy(cut)
@@ -2911,6 +3023,7 @@ def mix(
     allow_padding: bool = False,
     snr: Optional[Decibels] = None,
     preserve_id: Optional[str] = None,
+    tag: Optional[str] = None,
 ) -> MixedCut:
     """
     Overlay, or mix, two cuts. Optionally the ``mixed_in_cut`` may be shifted by ``offset`` seconds
@@ -2925,6 +3038,7 @@ def mix(
     :param snr: Desired SNR of the ``right_cut`` w.r.t. the ``left_cut`` in the mix.
     :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
         of the left- or right-hand side argument. otherwise, a new random id is generated.
+    :param tag: Optional label attached to the mixed-in tracks.
     :return: A :class:`~MixedCut` instance.
     """
 
@@ -2999,10 +3113,16 @@ def mix(
     if (
         isinstance(reference_cut, MixedCut)
         and len(ifnone(reference_cut.transforms, [])) == 0
+        and not any(track.mute for track in reference_cut.tracks)
     ):
-        old_tracks = reference_cut.tracks
+        old_tracks = _ensure_explicit_snr_reference(reference_cut.tracks.copy())
     elif isinstance(reference_cut, (DataCut, PaddingCut, MixedCut)):
-        old_tracks = [MixTrack(cut=reference_cut)]
+        old_tracks = [
+            MixTrack(
+                cut=reference_cut,
+                is_snr_reference=not isinstance(reference_cut, PaddingCut),
+            )
+        ]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
 
@@ -3011,8 +3131,10 @@ def mix(
     if isinstance(mixed_in_cut, MixedCut):
         # Similarly for mixed_in_cut, if it is a MixedCut and it does not have existing transforms,
         # take its existing tracks, otherwise create a new track.
-        if len(ifnone(mixed_in_cut.transforms, [])) > 0:
-            new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+        if len(ifnone(mixed_in_cut.transforms, [])) > 0 or any(
+            track.mute for track in mixed_in_cut.tracks
+        ):
+            new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr, tag=tag)]
         else:
             new_tracks = [
                 MixTrack(
@@ -3032,11 +3154,14 @@ def mix(
                         # When no SNR was specified whatsoever, use none.
                         else None
                     ),
+                    tag=track.tag if track.tag is not None else tag,
+                    is_snr_reference=False,
+                    mute=track.mute,
                 )
                 for track in mixed_in_cut.tracks
             ]
     elif isinstance(mixed_in_cut, (DataCut, PaddingCut)):
-        new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+        new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr, tag=tag)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(mixed_in_cut)}")
 
@@ -3607,6 +3732,21 @@ def _cut_into_windows_single(
     ).to_eager()
 
 
+def _cut_into_windows_balanced_single(
+    cuts: CutSet,
+    min_duration,
+    max_duration,
+    overlap,
+    keep_excessive_supervisions,
+) -> CutSet:
+    return cuts.cut_into_windows_balanced(
+        min_duration=min_duration,
+        max_duration=max_duration,
+        overlap=overlap,
+        keep_excessive_supervisions=keep_excessive_supervisions,
+    ).to_eager()
+
+
 def _trim_to_supervisions_single(
     cuts: CutSet,
     keep_overlapping,
@@ -3870,6 +4010,7 @@ class LazyCutMixer(IteratorNode):
         seed: Union[int, Literal["trng", "randomized"], random.Random] = 42,
         random_mix_offset: bool = False,
         stateful: bool = True,
+        tag: Optional[str] = None,
     ) -> None:
         self.source = resolve_iterator_source(cuts)
         self._source_len_ref = cuts
@@ -3883,6 +4024,7 @@ class LazyCutMixer(IteratorNode):
         self.seed = seed
         self.random_mix_offset = random_mix_offset
         self.stateful = stateful
+        self.tag = tag
         self.num_times_iterated = 0
         self._restored = False
         self._rng_state = None
@@ -4032,7 +4174,7 @@ class LazyCutMixer(IteratorNode):
         # Actual mixing
         to_mix = self._next_mix_in_cut(rng)
         to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
-        mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id)
+        mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id, tag=self.tag)
         # Did the user specify a duration?
         # If yes, we will ensure that shorter cuts have more noise mixed in
         # to "pad" them with at the end.
@@ -4054,6 +4196,7 @@ class LazyCutMixer(IteratorNode):
                 offset_other_by=mixed_in_duration,
                 allow_padding=self.allow_padding,
                 preserve_id=self.preserve_id,
+                tag=self.tag,
             )
             # Since we're adding floats, we can be off by an epsilon and trigger
             # some assertions for exceeding duration; do precautionary rounding here.

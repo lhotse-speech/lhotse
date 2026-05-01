@@ -100,8 +100,8 @@ def libri_cut():
             sampling_rate=16000,
             start=0.0,
             storage_path="test/fixtures/libri/storage",
-            storage_key="30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
-            storage_type="lilcom_files",
+            storage_key="30c2440c-93cb-4e83-b382-f2a59b3859b4.npy",
+            storage_type="numpy_files",
             type="fbank",
         ),
         recording=Recording(
@@ -552,6 +552,11 @@ def test_pad_both_padding_cut(padding_cut):
     assert cut.duration == 30.0
     assert len(cut.tracks) == 3
     assert all(isinstance(t.cut, PaddingCut) for t in cut.tracks)
+
+
+def test_unmix_is_noop_for_padding_cut(padding_cut):
+    assert padding_cut.unmix() == [padding_cut]
+    assert padding_cut.unmix(tag="noise") == [padding_cut]
 
 
 def test_pad_both_mixed_cut(mixed_libri_cut, libri_cut):

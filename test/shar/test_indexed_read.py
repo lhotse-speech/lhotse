@@ -17,9 +17,9 @@ from lhotse.testing.dummies import DummyManifest
 
 ALL_FIELDS = {
     "recording": "wav",
-    "features": "lilcom",
+    "features": "numpy",
     "custom_embedding": "numpy",
-    "custom_features": "lilcom",
+    "custom_features": "numpy",
     "custom_indexes": "numpy",
     "custom_recording": "wav",
 }

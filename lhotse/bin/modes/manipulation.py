@@ -10,7 +10,7 @@ import click
 from lhotse import FeatureSet, available_storage_backends
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import CutSet
-from lhotse.features.io import get_writer
+from lhotse.features.io import default_features_storage_backend_name, get_writer
 from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike
 
@@ -42,7 +42,7 @@ def copy(input_manifest, output_manifest):
     "-t",
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_chunky",
+    default=default_features_storage_backend_name(),
     help="Which storage backend should we use for writing the copied features.",
 )
 @click.option(

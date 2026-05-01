@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import numpy as np
 import pytest
 
@@ -184,38 +186,44 @@ def test_cut_perturb_volume(cut_with_supervision, scale):
 
 
 @pytest.mark.parametrize(
-    "rir, rir_channels, expected_channels",
+    "rir, rir_channels, expected_channels, expectation",
     [
-        ("mono_rir", [0], [0, 1, 2, 3, 4, 5, 6, 7]),
-        pytest.param("mono_rir", [1], None, marks=pytest.mark.xfail),
-        ("multi_channel_rir", [0, 1, 2, 3, 4, 5, 6, 7], [0, 1, 2, 3, 4, 5, 6, 7]),
-        ("multi_channel_rir", [0], [0, 1, 2, 3, 4, 5, 6, 7]),
-        ("multi_channel_rir", [1], [0, 1, 2, 3, 4, 5, 6, 7]),
-        pytest.param("multi_channel_rir", [0, 1], None, marks=pytest.mark.xfail),
+        ("mono_rir", [0], [0, 1, 2, 3, 4, 5, 6, 7], nullcontext()),
+        ("mono_rir", [1], None, pytest.raises(AssertionError)),
+        (
+            "multi_channel_rir",
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            nullcontext(),
+        ),
+        ("multi_channel_rir", [0], [0, 1, 2, 3, 4, 5, 6, 7], nullcontext()),
+        ("multi_channel_rir", [1], [0, 1, 2, 3, 4, 5, 6, 7], nullcontext()),
+        ("multi_channel_rir", [0, 1], None, pytest.raises(AssertionError)),
     ],
 )
 def test_cut_reverb_rir(
-    cut_with_supervision, rir, rir_channels, expected_channels, request
+    cut_with_supervision, rir, rir_channels, expected_channels, expectation, request
 ):
     rir = request.getfixturevalue(rir)
     cut = cut_with_supervision
-    cut_rvb = cut.reverb_rir(rir, rir_channels=rir_channels)
-    assert cut_rvb.start == cut.start
-    assert cut_rvb.duration == cut.duration
-    assert cut_rvb.end == cut.end
-    assert cut_rvb.num_samples == cut.num_samples
+    with expectation:
+        cut_rvb = cut.reverb_rir(rir, rir_channels=rir_channels)
+        assert cut_rvb.start == cut.start
+        assert cut_rvb.duration == cut.duration
+        assert cut_rvb.end == cut.end
+        assert cut_rvb.num_samples == cut.num_samples
 
-    assert cut_rvb.recording.duration == cut.recording.duration
-    assert cut_rvb.recording.num_samples == cut.recording.num_samples
+        assert cut_rvb.recording.duration == cut.recording.duration
+        assert cut_rvb.recording.num_samples == cut.recording.num_samples
 
-    assert cut_rvb.supervisions[0].start == cut.supervisions[0].start
-    assert cut_rvb.supervisions[0].duration == cut.supervisions[0].duration
-    assert cut_rvb.supervisions[0].end == cut.supervisions[0].end
+        assert cut_rvb.supervisions[0].start == cut.supervisions[0].start
+        assert cut_rvb.supervisions[0].duration == cut.supervisions[0].duration
+        assert cut_rvb.supervisions[0].end == cut.supervisions[0].end
 
-    assert cut_rvb.load_audio().shape == cut.load_audio().shape
-    assert cut_rvb.recording.load_audio().shape == cut.recording.load_audio().shape
+        assert cut_rvb.load_audio().shape == cut.load_audio().shape
+        assert cut_rvb.recording.load_audio().shape == cut.recording.load_audio().shape
 
-    assert cut_rvb.channel == expected_channels
+        assert cut_rvb.channel == expected_channels
 
 
 def test_cut_reverb_fast_rir(cut_with_supervision):

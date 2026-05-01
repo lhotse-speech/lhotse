@@ -129,6 +129,8 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 
 * ``LHOTSE_AUDIO_BACKEND`` - may be set to any of the values returned from CLI ``lhotse list-audio-backends`` to override the default behavior of trial-and-error and always use a specific audio backend.
 
+* ``LHOTSE_IO_BACKEND`` - may be set to any of the values returned from CLI ``lhotse list-io-backends`` to override how Lhotse opens paths, URLs, and URIs via ``open_best()`` (for example when reading manifests or URL-backed ``AudioSource`` objects). The same list is also available in Python via ``lhotse.available_io_backends()``.
+
 * ``LHOTSE_RESAMPLING_BACKEND`` - may be set to any of the value returned from CLI ``lhotse list-resampling-backends`` to override the default behavior.
 
 * ``LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE`` - when set to 1 we'll emit full exception stack traces when every available audio backend fails to load a given file (they might be very large).
@@ -156,6 +158,10 @@ Optional dependencies
 *********************
 
 **Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
+
+* ``pip install lhotse[lilcom]`` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, ``lilcom_chunky`` is the preferred feature-storage backend once this dependency is installed.
+
+* ``torchcodec`` (>= 0.9, requires torch >= 2.9) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
 
 * ``torchaudio`` used to be a core dependency in Lhotse, but is now optional. Refer to official PyTorch documentation for installation at `official Pytorch documentation for installation`_.
 

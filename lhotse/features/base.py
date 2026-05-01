@@ -134,6 +134,21 @@ class FeatureExtractor(metaclass=ABCMeta):
             "after, rather than before mixing the cuts."
         )
 
+    @staticmethod
+    def scale(features: np.ndarray, energy_scaling_factor: float) -> np.ndarray:
+        """
+        Scale a single feature matrix by the provided energy factor.
+
+        :param features: A feature matrix.
+        :param energy_scaling_factor: The energy scaling factor to apply.
+        :return: A scaled feature matrix.
+        """
+        raise ValueError(
+            'The feature extractor\'s "scale" operation is undefined. '
+            "It does not support feature-domain mix, consider computing the features "
+            "after, rather than before mixing the cuts."
+        )
+
     def extract_batch(
         self,
         samples: Union[
@@ -231,6 +246,8 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param samples: a numpy ndarray with the audio samples.
         :param sampling_rate: integer sampling rate of ``samples``.
         :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
+            When the optional ``lilcom`` dependency is installed and on-disk size matters,
+            ``LilcomChunkyWriter`` is the preferred backend.
         :param offset: an offset in seconds for where to start reading the recording - when used for
             ``Cut`` feature extraction, must be equal to ``Cut.start``.
         :param channel: an optional channel number(s) to insert into ``Features`` manifest.
@@ -280,6 +297,8 @@ class FeatureExtractor(metaclass=ABCMeta):
 
         :param recording: a ``Recording`` that specifies what's the input audio.
         :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
+            When the optional ``lilcom`` dependency is installed and on-disk size matters,
+            ``LilcomChunkyWriter`` is the preferred backend.
         :param offset: an optional offset in seconds for where to start reading the recording.
         :param duration: an optional duration specifying how much audio to load from the recording.
         :param channels: an optional int or list of ints, specifying the channels;

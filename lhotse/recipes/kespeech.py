@@ -11,7 +11,6 @@ Full paper: https://openreview.net/forum?id=b3Zoeq2sCLq
 """
 
 import logging
-from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -20,7 +19,7 @@ from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import manifests_exist
+from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, compute_num_samples
@@ -50,17 +49,20 @@ def prepare_kespeech(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     subsets = KE_SPEECH_PARTS if "all" in dataset_parts else dataset_parts
-    manifests = defaultdict(dict)
     for sub in subsets:
         if sub not in KE_SPEECH_PARTS:
             raise ValueError(f"No such part of dataset in KeSpeech : {sub}")
-        manifests[sub] = {"recordings": [], "supervisions": []}
+    manifests = {}
+    if output_dir is not None:
+        manifests = read_manifests_if_cached(
+            dataset_parts=subsets, output_dir=output_dir, prefix="kespeech-asr"
+        )
 
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in tqdm(subsets, desc="Processing KeSpeech", unit="subset"):
             logging.info(f"Processing KeSpeech subset: {part}")
 
-            if manifests_exist(part=part, output_dir=output_dir):
+            if manifests_exist(part=part, output_dir=output_dir, prefix="kespeech-asr"):
                 logging.info(f"KeSpeech subset: {part} already prepared - skipping.")
                 continue
 
