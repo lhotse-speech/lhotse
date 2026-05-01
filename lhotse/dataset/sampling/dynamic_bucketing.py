@@ -202,9 +202,10 @@ class DynamicBucketingSampler(CutSampler):
             )
 
     def state_dict(self) -> Dict[str, Any]:
-        assert (
-            self.constraint is None
-        ), "state_dict() is not supported with samplers that use a custom constraint."
+        # The custom-constraint object itself is not serialized: constraints are
+        # reconstructed from config on each run. We still capture the iteration
+        # state (rng_state, bucketer_state, epoch, diagnostics) which is what
+        # actually drives exact resume.
         sd = super().state_dict()
         sd.update(
             {
@@ -935,7 +936,8 @@ class DynamicBucketer:
             except StopIteration:
                 self._source_exhausted = True
 
-        self._producer_thread = threading.Thread(target=producer)
+        # ``daemon=True`` so this background thread does not block process shutdown
+        self._producer_thread = threading.Thread(target=producer, daemon=True)
         self._producer_thread.start()
 
     def _maybe_wait_for_producer(self):

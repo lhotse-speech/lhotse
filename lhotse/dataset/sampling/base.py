@@ -171,6 +171,13 @@ class CutSampler(Sampler, Dillable):
 
         :param epoch: Epoch number.
         """
+        # When state was just restored from a checkpoint we must not let an external
+        # caller clobber the saved iteration state.
+        # Honor the saved epoch and keep the deferred fast-forward / restored buffers intact.
+        # Callers that explicitly want to discard restored
+        # progress can call ``allow_iter_to_reset_state()`` themselves first.
+        if self._just_restored_state or getattr(self, "_needs_fast_forward", False):
+            return
         if self.epoch != epoch:
             # Changing the epoch automatically tells the sampler to discard the progress
             # from a previously read state dict.

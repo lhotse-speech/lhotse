@@ -149,9 +149,10 @@ class DynamicCutSampler(CutSampler):
             )
 
     def state_dict(self) -> Dict[str, Any]:
-        assert (
-            self.constraint is None
-        ), "state_dict() is not supported with samplers that use a custom constraint."
+        # The custom-constraint object itself is not serialized: constraints are
+        # reconstructed from config on each run. We still capture the iteration
+        # state (epoch, diagnostics, source iterator graph) which is what drives
+        # exact resume.
         sd = super().state_dict()
         sd.update(
             {
