@@ -701,19 +701,43 @@ class IndexedTarReader:
     def _read_member(self, offset: int) -> Tuple[Optional[bytes], Path]:
         """Read a single tar member at the given byte offset."""
         self._fh.seek(offset)
-        header_buf = self._fh.read(_TAR_BLOCK_SIZE)
-        if len(header_buf) < _TAR_BLOCK_SIZE:
-            raise RuntimeError(f"Unexpected EOF reading tar header at offset {offset}")
-        info = tarfile.TarInfo.frombuf(header_buf, tarfile.ENCODING, "surrogateescape")
+        data, path, info = read_tar_member_at(self._fh, offset)
         self._last_member_size = info.size
-
-        path = Path(info.name)
-        if path.suffix in (".nodata", ".nometa"):
-            return None, path
-
-        data = self._fh.read(info.size)
         return data, path
+
+    def member_byte_range(self, idx: int) -> Tuple[int, int]:
+        """Return ``(offset, end_offset)`` for the *idx*-th sample-pair, where
+        ``end_offset`` is the first byte beyond this sample's contiguous block
+        (= the next sample's offset, or the file size for the last sample).
+        """
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError(
+                f"index {idx} out of range for IndexedTarReader with {len(self)} samples"
+            )
+        return int(self._offsets[idx]), int(self._offsets[idx + 1])
 
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
+
+
+def read_tar_member_at(fh, offset: int) -> Tuple[Optional[bytes], Path, tarfile.TarInfo]:
+    """Read a single tar member's header + payload at ``offset`` from an open
+    file handle. Returns ``(data_bytes, member_path, tar_info)``.
+
+    ``data_bytes`` is None for ``.nodata``/``.nometa`` placeholder members.
+    Does NOT validate type or skip non-regular members — pass an offset that
+    points at a regular file's header.
+    """
+    fh.seek(offset)
+    header_buf = fh.read(_TAR_BLOCK_SIZE)
+    if len(header_buf) < _TAR_BLOCK_SIZE:
+        raise RuntimeError(f"Unexpected EOF reading tar header at offset {offset}")
+    info = tarfile.TarInfo.frombuf(header_buf, tarfile.ENCODING, "surrogateescape")
+    path = Path(info.name)
+    if path.suffix in (".nodata", ".nometa"):
+        return None, path, info
+    data = fh.read(info.size)
+    return data, path, info

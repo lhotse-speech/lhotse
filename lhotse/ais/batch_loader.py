@@ -1,4 +1,6 @@
+import io
 import logging
+from functools import lru_cache
 from typing import Any, Optional
 
 from urllib3.exceptions import TimeoutError
@@ -11,6 +13,7 @@ from lhotse.audio.recording import Recording
 from lhotse.cut import CutSet
 from lhotse.features.base import Features
 from lhotse.image import Image
+from lhotse.indexing import read_tar_member_at
 from lhotse.serialization import get_aistore_client
 from lhotse.utils import is_module_available, is_valid_url
 
@@ -23,18 +26,12 @@ FILE_TO_MEMORY_TYPE = {
 
 ARCHIVE_EXTENSIONS = (".tar.gz", ".tar", ".tgz")
 
-_TAR_BLOCK_SIZE = 512
-
 
 def _extract_shar_pointer_payload(block: bytes) -> bytes:
     """Extract the data-member payload bytes out of a Shar lazy-pointer
     byte-range response (``[offset, end_offset)`` of the underlying tar)."""
-    import tarfile
-
-    info = tarfile.TarInfo.frombuf(
-        block[:_TAR_BLOCK_SIZE], tarfile.ENCODING, "surrogateescape"
-    )
-    return block[_TAR_BLOCK_SIZE : _TAR_BLOCK_SIZE + info.size]
+    data, _path, _info = read_tar_member_at(io.BytesIO(block), 0)
+    return data if data is not None else b""
 
 
 def _shar_ptr_payload_memory_type(payload: bytes) -> str:
@@ -305,36 +302,35 @@ class AISBatchLoader:
         return False
 
     @staticmethod
+    @lru_cache(maxsize=1)
     def _aistore_byte_range_supported() -> bool:
         """
-        Detect whether the installed aistore SDK supports byte-range fetch in
-        :meth:`aistore.sdk.batch.batch.BatchRequest.add`. The SDK currently
-        accepts ``start``/``length`` kwargs but raises ``NotImplementedError``
-        from the server side; this helper probes a no-op call to decide whether
-        it is safe to route Shar pointers through the batch path.
+        Detect whether the installed aistore SDK accepts byte-range fetch in
+        :meth:`aistore.sdk.batch.batch.BatchRequest.add` *without raising*.
+
+        Probe: instantiate a ``BatchRequest`` and call ``add(start=0,
+        length=0)`` against a sentinel object. If the SDK validates byte-range
+        usage eagerly with ``NotImplementedError`` (current behaviour, see
+        ``aistore/sdk/batch/batch.py``), this fails locally before any IO.
+        Cached for the process lifetime.
         """
         try:
             from aistore.sdk.batch.batch import BatchRequest
         except Exception:
             return False
-        # The SDK validates the kwargs eagerly and raises NotImplementedError
-        # before any network IO. We only need a static signature inspection.
-        import inspect
-
         try:
-            sig = inspect.signature(BatchRequest.add)
-        except (TypeError, ValueError):
+            req = BatchRequest()
+            req.add(object(), start=0, length=0)
+        except NotImplementedError:
             return False
-        if "start" not in sig.parameters or "length" not in sig.parameters:
+        except TypeError:
+            # ``start`` / ``length`` not in the signature on older SDKs.
             return False
-        # If the SDK raises NotImplementedError on byte-range usage we treat it
-        # as unsupported; the runtime check is cheap because it never sends a
-        # request — the SDK rejects the call locally.
-        try:
-            src = inspect.getsource(BatchRequest.add)
-        except (OSError, TypeError):
-            return True  # Cannot inspect source; assume supported.
-        return "Batch byte range support is not yet implemented" not in src
+        except Exception:
+            # Any other exception (e.g. invalid object stub) means the SDK
+            # got past byte-range validation, so the feature is supported.
+            return True
+        return True
 
     def _add_shar_ptr_to_batch(self, pointer: str, batch: Any) -> bool:
         """

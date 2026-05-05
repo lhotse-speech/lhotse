@@ -344,8 +344,7 @@ class LazyIndexedSharIterator(IteratorNode):
                     if self._lazy:
                         # Lazy mode: emit a Shar pointer derived purely from
                         # the .idx offset array — zero tar reads at iter time.
-                        offset = int(reader._offsets[pos])
-                        end_offset = int(reader._offsets[pos + 1])
+                        offset, end_offset = reader.member_byte_range(pos)
                         from lhotse.shar.utils import fill_shar_placeholder_lazy
 
                         fill_shar_placeholder_lazy(

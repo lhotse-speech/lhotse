@@ -150,6 +150,18 @@ def _try_restore_child_state(obj: Any, state: Optional[dict]) -> None:
         obj.load_state_dict(state)
 
 
+class GraphOriginDict(dict):
+    """``dict`` subclass that can carry runtime attributes (e.g. ``_graph_origin``).
+
+    Use as a thin wrapper when you need :func:`attach_graph_origin` to work on
+    raw dict items (e.g. JSONL lines decoded but not deserialized into Cut/etc.).
+    Plain dicts can't have attributes set on them, so :func:`attach_graph_origin`
+    silently no-ops on them.
+    """
+
+    __slots__ = ("_graph_origin",)
+
+
 def _attach_runtime_metadata(item: Any, name: str, value: Any) -> Any:
     """
     Attach iterator runtime metadata without routing through Cut.custom.
@@ -544,6 +556,12 @@ class LazyIndexedManifestIterator(IteratorNode):
     JSONL file (the binary ``.idx`` index is created automatically if missing).
 
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
+
+    :param decode: callable invoked on each raw JSONL dict to produce the
+        yielded item. Defaults to :func:`~lhotse.serialization.deserialize_item`
+        which materializes a Lhotse Cut / Recording / etc. Pass
+        :class:`GraphOriginDict` to keep raw dicts that can still carry
+        graph-restore metadata.
     """
 
     is_checkpointable = True
@@ -554,6 +572,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         shuffle: bool = False,
         seed: int = 0,
         index_path: Optional[Pathlike] = None,
+        decode: Optional[Callable[[dict], Any]] = None,
     ) -> None:
         from lhotse.indexing import IndexedJsonlReader, LazyShuffledRange
 
@@ -561,6 +580,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         self.shuffle = shuffle
         self.seed = seed
         self.index_path = index_path
+        self._decode = decode if decode is not None else deserialize_item
         self._reader = IndexedJsonlReader(path, index_path=index_path)
         self._range = (
             LazyShuffledRange(len(self._reader), seed=seed) if shuffle else None
@@ -577,9 +597,8 @@ class LazyIndexedManifestIterator(IteratorNode):
         return True
 
     def __getitem__(self, idx: int) -> Any:
-        """O(1) random access: deserializes the *idx*-th item."""
-        item = deserialize_item(self._reader[idx])
-        return attach_graph_origin(item, idx)
+        """O(1) random access: decodes the *idx*-th item."""
+        return attach_graph_origin(self._decode(self._reader[idx]), idx)
 
     def __iter__(self):
         if self._restored:
@@ -592,19 +611,10 @@ class LazyIndexedManifestIterator(IteratorNode):
         self._position = start
 
         n = len(self._reader)
-        if self._range is not None:
-            for i in range(start, n):
-                self._position = i + 1
-                phys_idx = self._range[i]
-                item = deserialize_item(self._reader[phys_idx])
-                attach_graph_origin(item, phys_idx)
-                yield item
-        else:
-            for i in range(start, n):
-                self._position = i + 1
-                item = deserialize_item(self._reader[i])
-                attach_graph_origin(item, i)
-                yield item
+        for i in range(start, n):
+            self._position = i + 1
+            phys_idx = self._range[i] if self._range is not None else i
+            yield attach_graph_origin(self._decode(self._reader[phys_idx]), phys_idx)
 
     def __len__(self) -> int:
         return len(self._reader)

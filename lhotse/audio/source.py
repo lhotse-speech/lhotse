@@ -344,9 +344,15 @@ class AudioSource:
             return format.lower()
         elif self.type in ("memory", "shar_ptr"):
             if self.type == "shar_ptr":
-                from lhotse.shar.lazy_pointer import read_payload
+                # Route through AudioCache to avoid a second tar read when
+                # load_audio() runs after _get_format() (common: format is
+                # queried during recording-level introspection).
+                payload = AudioCache.try_cache(self.source)
+                if not payload:
+                    from lhotse.shar.lazy_pointer import read_payload
 
-                payload = read_payload(self.source)
+                    payload = read_payload(self.source)
+                    AudioCache.add_to_cache(self.source, payload)
             else:
                 payload = self.source
             sf_info = sf.info(io.BytesIO(payload))

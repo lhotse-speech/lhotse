@@ -1411,7 +1411,8 @@ class SharPtrArrayReader(FeaturesReader):
     name = "shar_ptr_array"
 
     def __init__(self, *args, **kwargs):
-        pass
+        # Lazy-instantiated; we delegate decode to the memory readers below.
+        self._npy = MemoryNpyReader()
 
     def read(
         self,
@@ -1422,12 +1423,13 @@ class SharPtrArrayReader(FeaturesReader):
         from lhotse.shar.lazy_pointer import read_payload
 
         raw = read_payload(key)
-        if raw[:6] == b"\x93NUMPY":
-            arr = np.load(BytesIO(raw))
-        else:
-            check_lilcom_installed()
-            arr = get_lilcom_module().decompress(raw)
-        return arr[left_offset_frames:right_offset_frames]
+        # Dispatch by magic bytes; reuse existing in-memory readers.
+        delegate = self._npy if raw[:6] == b"\x93NUMPY" else MemoryLilcomReader()
+        return delegate.read(
+            raw,
+            left_offset_frames=left_offset_frames,
+            right_offset_frames=right_offset_frames,
+        )
 
 
 @register_reader

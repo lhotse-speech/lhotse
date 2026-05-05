@@ -15,8 +15,8 @@ last sample, taken from the ``.idx`` sentinel). The half-open interval
 meta_header(512) + meta_payload + pad``.
 
 At load time, :func:`read_payload` does a single ranged read of that interval,
-parses the leading 512 bytes as a :class:`tarfile.TarInfo` to learn the
-payload size, and returns just the payload bytes.
+parses the leading 512 bytes via :func:`lhotse.indexing.read_tar_member_at`,
+and returns just the payload bytes.
 
 The pointer never encodes the file extension or member name — formats are
 sniffed from the payload's magic bytes (audio: soundfile auto-detect from
@@ -25,23 +25,26 @@ sniffed from the payload's magic bytes (audio: soundfile auto-detect from
 
 from __future__ import annotations
 
+import os
 import re
-import tarfile
 import threading
 from typing import Any, Dict, Tuple
 
+from lhotse.indexing import read_tar_member_at
 from lhotse.serialization import open_best
 from lhotse.utils import Pathlike
-
-_TAR_BLOCK_SIZE = 512
 
 _POINTER_RE = re.compile(r"^(?P<tar>[^?]+)\?o=(?P<o>\d+)&e=(?P<e>\d+)$")
 
 # Process-local file-handle reuse for repeated payload fetches from the same
 # tar. Intentionally not an LRU — typical workloads have tens of shards in
 # flight; eviction is unnecessary. ``close_all()`` is exposed for tests.
-_HANDLES: Dict[str, Any] = {}
-_LOCK = threading.Lock()
+#
+# Each tar gets its own ``threading.Lock`` so concurrent readers on different
+# tars don't serialize against each other; the global ``_REGISTRY_LOCK``
+# only guards lookup/insertion in the registry itself.
+_HANDLES: Dict[str, Tuple[Any, threading.Lock]] = {}
+_REGISTRY_LOCK = threading.Lock()
 
 
 def encode_pointer(tar_path: Pathlike, offset: int, end_offset: int) -> str:
@@ -62,57 +65,42 @@ def is_shar_pointer(s: Any) -> bool:
     return isinstance(s, str) and _POINTER_RE.match(s) is not None
 
 
-def _get_handle(tar_path: str):
-    with _LOCK:
-        fh = _HANDLES.get(tar_path)
-        if fh is None:
-            fh = open_best(tar_path, "rb")
-            _HANDLES[tar_path] = fh
-        return fh
+def _get_handle(tar_path: str) -> Tuple[Any, threading.Lock]:
+    with _REGISTRY_LOCK:
+        entry = _HANDLES.get(tar_path)
+        if entry is None:
+            entry = (open_best(tar_path, "rb"), threading.Lock())
+            _HANDLES[tar_path] = entry
+        return entry
 
 
 def read_payload(pointer: str) -> bytes:
-    """
-    Resolve a Shar lazy pointer to the underlying data member's payload bytes.
-
-    Performs a single ranged read of ``[offset, end_offset)``, then parses the
-    leading 512 bytes as a :class:`tarfile.TarInfo` to extract the payload
-    portion.
-    """
-    tar_path, offset, end_offset = decode_pointer(pointer)
-    length = end_offset - offset
-    if length <= _TAR_BLOCK_SIZE:
+    """Resolve a Shar lazy pointer to the underlying data member's payload."""
+    tar_path, offset, _end_offset = decode_pointer(pointer)
+    fh, fh_lock = _get_handle(tar_path)
+    with fh_lock:
+        data, _path, _info = read_tar_member_at(fh, offset)
+    if data is None:
         raise RuntimeError(
-            f"Shar pointer {pointer!r} has window size {length} <= tar block "
-            f"size {_TAR_BLOCK_SIZE}; index is likely corrupted."
+            f"Shar pointer {pointer!r} points at a placeholder (.nodata/.nometa) member."
         )
-    fh = _get_handle(tar_path)
-    with _LOCK:
-        fh.seek(offset)
-        block = fh.read(length)
-    if len(block) < _TAR_BLOCK_SIZE:
-        raise RuntimeError(
-            f"Short read for Shar pointer {pointer!r}: expected at least "
-            f"{_TAR_BLOCK_SIZE} bytes, got {len(block)}."
-        )
-    info = tarfile.TarInfo.frombuf(
-        block[:_TAR_BLOCK_SIZE], tarfile.ENCODING, "surrogateescape"
-    )
-    payload_end = _TAR_BLOCK_SIZE + info.size
-    if payload_end > len(block):
-        raise RuntimeError(
-            f"Shar pointer {pointer!r} window is too small to contain the "
-            f"declared payload of {info.size} bytes."
-        )
-    return block[_TAR_BLOCK_SIZE:payload_end]
+    return data
 
 
 def close_all() -> None:
     """Close all cached tar file handles. Intended for tests / cleanup."""
-    with _LOCK:
-        for fh in _HANDLES.values():
+    with _REGISTRY_LOCK:
+        for fh, _lock in _HANDLES.values():
             try:
                 fh.close()
             except Exception:
                 pass
         _HANDLES.clear()
+
+
+# Worker processes inherit ``_HANDLES`` across ``fork()`` but inherit only
+# duplicated FDs from the parent — concurrent reads from parent + child against
+# the same FD will corrupt each other's seek positions. Reset the registry in
+# the child so each worker opens its own fresh handle on first use.
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=lambda: _HANDLES.clear())
