@@ -23,6 +23,24 @@ FILE_TO_MEMORY_TYPE = {
 
 ARCHIVE_EXTENSIONS = (".tar.gz", ".tar", ".tgz")
 
+_TAR_BLOCK_SIZE = 512
+
+
+def _extract_shar_pointer_payload(block: bytes) -> bytes:
+    """Extract the data-member payload bytes out of a Shar lazy-pointer
+    byte-range response (``[offset, end_offset)`` of the underlying tar)."""
+    import tarfile
+
+    info = tarfile.TarInfo.frombuf(
+        block[:_TAR_BLOCK_SIZE], tarfile.ENCODING, "surrogateescape"
+    )
+    return block[_TAR_BLOCK_SIZE : _TAR_BLOCK_SIZE + info.size]
+
+
+def _shar_ptr_payload_memory_type(payload: bytes) -> str:
+    """Pick the in-memory storage_type for a Shar-pointer Array payload."""
+    return "memory_npy" if payload[:6] == b"\x93NUMPY" else "memory_lilcom"
+
 
 class AISBatchLoaderError(Exception):
     """Base exception for AISBatchLoader operations."""
@@ -239,11 +257,22 @@ class AISBatchLoader:
                 if source.type == "url":
                     self._add_url_to_batch(source.source, batch)
                     return True
+                if source.type == "shar_ptr":
+                    # Forward-compat scaffold: when aistore SDK exposes
+                    # byte-range support in BatchRequest.add(start=, length=),
+                    # route through ``_add_shar_ptr_to_batch``. Until then,
+                    # the loader falls back to per-cut _prepare_for_reading.
+                    if self._add_shar_ptr_to_batch(source.source, batch):
+                        return True
             return False
 
         elif isinstance(manifest, TemporalArray):
             # TemporalArray wraps an Array, so we need to access the inner array
             inner_array = manifest.array
+            if inner_array.storage_type == "shar_ptr_array":
+                if self._add_shar_ptr_to_batch(inner_array.storage_key, batch):
+                    return True
+                return False
             if inner_array.storage_type not in FILE_TO_MEMORY_TYPE:
                 raise AISBatchLoaderError(
                     f"Unsupported storage type '{inner_array.storage_type}'. "
@@ -257,6 +286,10 @@ class AISBatchLoader:
             return False
 
         elif isinstance(manifest, (Array, Features, Image)):
+            if manifest.storage_type == "shar_ptr_array":
+                if self._add_shar_ptr_to_batch(manifest.storage_key, batch):
+                    return True
+                return False
             if manifest.storage_type not in FILE_TO_MEMORY_TYPE:
                 raise AISBatchLoaderError(
                     f"Unsupported storage type '{manifest.storage_type}'. "
@@ -270,6 +303,62 @@ class AISBatchLoader:
             return False
 
         return False
+
+    @staticmethod
+    def _aistore_byte_range_supported() -> bool:
+        """
+        Detect whether the installed aistore SDK supports byte-range fetch in
+        :meth:`aistore.sdk.batch.batch.BatchRequest.add`. The SDK currently
+        accepts ``start``/``length`` kwargs but raises ``NotImplementedError``
+        from the server side; this helper probes a no-op call to decide whether
+        it is safe to route Shar pointers through the batch path.
+        """
+        try:
+            from aistore.sdk.batch.batch import BatchRequest
+        except Exception:
+            return False
+        # The SDK validates the kwargs eagerly and raises NotImplementedError
+        # before any network IO. We only need a static signature inspection.
+        import inspect
+
+        try:
+            sig = inspect.signature(BatchRequest.add)
+        except (TypeError, ValueError):
+            return False
+        if "start" not in sig.parameters or "length" not in sig.parameters:
+            return False
+        # If the SDK raises NotImplementedError on byte-range usage we treat it
+        # as unsupported; the runtime check is cheap because it never sends a
+        # request — the SDK rejects the call locally.
+        try:
+            src = inspect.getsource(BatchRequest.add)
+        except (OSError, TypeError):
+            return True  # Cannot inspect source; assume supported.
+        return "Batch byte range support is not yet implemented" not in src
+
+    def _add_shar_ptr_to_batch(self, pointer: str, batch: Any) -> bool:
+        """
+        Add a Shar lazy pointer to an in-flight AIS batch using byte-range
+        fetch. Returns True iff the pointer was successfully scheduled
+        (requires the aistore SDK to support byte-range batch).
+        """
+        if not self._aistore_byte_range_supported():
+            return False
+        from aistore.sdk.utils import parse_url
+
+        from lhotse.shar.lazy_pointer import decode_pointer
+
+        tar_path, offset, end_offset = decode_pointer(pointer)
+        if not is_valid_url(tar_path):
+            return False
+        provider, bck_name, obj_name = parse_url(tar_path)
+        if not (provider and bck_name and obj_name):
+            return False
+        bucket = self.client.bucket(bck_name, provider)
+        batch.add(
+            bucket.object(obj_name), start=offset, length=end_offset - offset
+        )
+        return True
 
     def _add_url_to_batch(self, url: str, batch: Any) -> None:
         """Add a single AIStore URL to the batch request."""
@@ -292,20 +381,36 @@ class AISBatchLoader:
         """Replace manifest storage references with in-memory content."""
         if isinstance(manifest, Recording):
             for source in manifest.sources:
+                if source.type == "shar_ptr":
+                    content = _extract_shar_pointer_payload(content)
                 source.type = "memory"
                 source.source = content
 
         elif isinstance(manifest, TemporalArray):
             # TemporalArray wraps an Array, so update the inner array
             inner_array = manifest.array
-            inner_array.storage_type = FILE_TO_MEMORY_TYPE[inner_array.storage_type]
-            inner_array.storage_path = ""
-            inner_array.storage_key = content
+            if inner_array.storage_type == "shar_ptr_array":
+                payload = _extract_shar_pointer_payload(content)
+                inner_array.storage_type = _shar_ptr_payload_memory_type(payload)
+                inner_array.storage_path = ""
+                inner_array.storage_key = payload
+            else:
+                inner_array.storage_type = FILE_TO_MEMORY_TYPE[
+                    inner_array.storage_type
+                ]
+                inner_array.storage_path = ""
+                inner_array.storage_key = content
 
         elif isinstance(manifest, (Array, Features, Image)):
-            manifest.storage_type = FILE_TO_MEMORY_TYPE[manifest.storage_type]
-            manifest.storage_path = ""
-            manifest.storage_key = content
+            if manifest.storage_type == "shar_ptr_array":
+                payload = _extract_shar_pointer_payload(content)
+                manifest.storage_type = _shar_ptr_payload_memory_type(payload)
+                manifest.storage_path = ""
+                manifest.storage_key = payload
+            else:
+                manifest.storage_type = FILE_TO_MEMORY_TYPE[manifest.storage_type]
+                manifest.storage_path = ""
+                manifest.storage_key = content
 
     @staticmethod
     def _get_archive_extension(obj_name: str) -> Optional[str]:

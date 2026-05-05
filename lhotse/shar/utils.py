@@ -94,3 +94,61 @@ def fill_shar_placeholder(
 
     else:
         raise RuntimeError(f"Unknown manifest type: {type(manifest).__name__}")
+
+
+def fill_shar_placeholder_lazy(
+    manifest: Union[Cut, Recording, Features, Array, TemporalArray],
+    *,
+    tar_path: Pathlike,
+    offset: int,
+    end_offset: int,
+    field: Optional[str] = None,
+) -> None:
+    """
+    Lazy counterpart of :func:`fill_shar_placeholder`: rather than inlining
+    the data bytes into the manifest, encode a Shar lazy pointer
+    ``<tar_path>?o=<offset>&e=<end_offset>`` so the payload can be fetched
+    on demand at load time.
+
+    The format choice (lilcom vs numpy for arrays / features) is deferred to
+    the :class:`SharPtrArrayReader` reader, which sniffs the magic bytes of
+    the actual payload — so this function does not need a per-shard format
+    hint.
+    """
+    from lhotse.shar.lazy_pointer import encode_pointer
+
+    if isinstance(manifest, Cut):
+        assert (
+            field is not None
+        ), "'field' argument must be provided when filling a Shar placeholder in a Cut."
+        inner = getattr(manifest, field)
+        fill_shar_placeholder_lazy(
+            manifest=inner,
+            tar_path=tar_path,
+            offset=offset,
+            end_offset=end_offset,
+            field=field,
+        )
+        return
+
+    pointer = encode_pointer(str(tar_path), offset, end_offset)
+
+    if isinstance(manifest, Recording):
+        assert (
+            len(manifest.sources) == 1
+        ), "We expected a single (possibly multi-channel) AudioSource in Shar format."
+        manifest.sources[0].type = "shar_ptr"
+        manifest.sources[0].source = pointer
+
+    elif isinstance(manifest, (Features, Array)):
+        manifest.storage_type = "shar_ptr_array"
+        manifest.storage_path = str(tar_path)
+        manifest.storage_key = pointer
+
+    elif isinstance(manifest, TemporalArray):
+        manifest.array.storage_type = "shar_ptr_array"
+        manifest.array.storage_path = str(tar_path)
+        manifest.array.storage_key = pointer
+
+    else:
+        raise RuntimeError(f"Unknown manifest type: {type(manifest).__name__}")

@@ -728,7 +728,10 @@ class DynamicBucketer:
                     if self.restore_sources is not None:
                         source = self.restore_sources[cut_idx]
                     items.append(self._restore_item_token(token, source))
-                bucket.put(tuple(items) if len(items) > 1 else items[0])
+                # Match the runtime ingestion format (`zip(*sources)` always
+                # yields tuples, even for the 1-source case), so the queue is
+                # type-uniform across initial fill, refill, and restore.
+                bucket.put(tuple(items))
 
         # Create and restore BucketSelectionState
         selection_state = BucketSelectionState(

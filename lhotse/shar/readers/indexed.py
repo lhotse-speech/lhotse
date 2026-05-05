@@ -76,6 +76,7 @@ class LazyIndexedSharIterator(IteratorNode):
         seed: Union[int, str] = 42,
         split_for_dataloading: bool = False,
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
+        lazy: bool = False,
     ) -> None:
         self.in_dir = Path(in_dir) if in_dir is not None else None
         self.fields, self.streams = self._resolve_streams(fields=fields, in_dir=in_dir)
@@ -108,6 +109,7 @@ class LazyIndexedSharIterator(IteratorNode):
         self.shuffle = shuffle
         self.seed = seed
         self.split_for_dataloading = split_for_dataloading
+        self._lazy = lazy
         self.epoch = 0
         self._iteration_seed = None
 
@@ -339,13 +341,28 @@ class LazyIndexedSharIterator(IteratorNode):
             for field in self.fields:
                 reader = readers[field]
                 if isinstance(reader, IndexedTarReader):
-                    maybe_manifest, data_path = reader[pos]
-                    if maybe_manifest is not None:
-                        assert str(data_path.parent / data_path.stem) == cut.id, (
-                            f"Mismatched IDs: cut ID is '{cut.id}' but found "
-                            f"data with name '{data_path}' for field {field}"
+                    if self._lazy:
+                        # Lazy mode: emit a Shar pointer derived purely from
+                        # the .idx offset array — zero tar reads at iter time.
+                        offset = int(reader._offsets[pos])
+                        end_offset = int(reader._offsets[pos + 1])
+                        from lhotse.shar.utils import fill_shar_placeholder_lazy
+
+                        fill_shar_placeholder_lazy(
+                            cut,
+                            field=field,
+                            tar_path=str(reader.path),
+                            offset=offset,
+                            end_offset=end_offset,
                         )
-                        setattr(cut, field, maybe_manifest)
+                    else:
+                        maybe_manifest, data_path = reader[pos]
+                        if maybe_manifest is not None:
+                            assert str(data_path.parent / data_path.stem) == cut.id, (
+                                f"Mismatched IDs: cut ID is '{cut.id}' but found "
+                                f"data with name '{data_path}' for field {field}"
+                            )
+                            setattr(cut, field, maybe_manifest)
                 else:
                     item = reader[pos]
                     if field in item:
@@ -405,12 +422,16 @@ class LazyIndexedSharIterator(IteratorNode):
             "shuffle": self.shuffle,
             "seed": self.seed,
             "iteration_seed": self._iteration_seed,
+            "lazy": self._lazy,
         }
 
     def load_state_dict(self, sd: dict) -> None:
         self._position = sd["position"]
         self.epoch = sd["epoch"]
         self._iteration_seed = sd.get("iteration_seed")
+        # Backward-compat: older state dicts may not carry "lazy".
+        if "lazy" in sd:
+            self._lazy = bool(sd["lazy"])
         self._restored = True
 
     # ------------------------------------------------------------------

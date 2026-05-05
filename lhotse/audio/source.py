@@ -39,6 +39,8 @@ class AudioSource:
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
     - 'memory' (any format, read from a binary string attached to 'source' member of AudioSource)
     - 'shar' (indicates a placeholder that will be filled later when using Lhotse Shar data format)
+    - 'shar_ptr' (a lazy pointer into a Shar tar shard; resolved by seek+read at load time;
+                  ``source`` is a string of the form ``<tar_path>?o=<offset>&e=<end_offset>``)
     """
 
     channels: List[int]
@@ -262,6 +264,7 @@ class AudioSource:
             "url",
             "memory",
             "shar",
+            "shar_ptr",
         ), f"Unexpected AudioSource type: '{self.type}'"
 
         source = self.source
@@ -318,19 +321,35 @@ class AudioSource:
                 "that was not filled during deserialization."
             )
 
+        elif self.type == "shar_ptr":
+
+            audio_bytes = AudioCache.try_cache(self.source)
+            if not audio_bytes:
+                from lhotse.shar.lazy_pointer import read_payload
+
+                audio_bytes = read_payload(self.source)
+                AudioCache.add_to_cache(self.source, audio_bytes)
+            source = BytesIO(audio_bytes)
+
         return source
 
     def _get_format(self) -> str:
         """Get format for the audio source.
         If using 'file' or 'url' types, the format is inferred from the file extension, as in soundfile.
-        If using 'memory' type, the format is inferred from the binary data.
+        If using 'memory' or 'shar_ptr' types, the format is inferred from the binary data.
         """
         if self.type in ("file", "url"):
             # Resolve audio format based on the filename
             format = os.path.splitext(self.source)[-1][1:]
             return format.lower()
-        elif self.type == "memory":
-            sf_info = sf.info(io.BytesIO(self.source))
+        elif self.type in ("memory", "shar_ptr"):
+            if self.type == "shar_ptr":
+                from lhotse.shar.lazy_pointer import read_payload
+
+                payload = read_payload(self.source)
+            else:
+                payload = self.source
+            sf_info = sf.info(io.BytesIO(payload))
             if sf_info.format == "OGG" and sf_info.subtype == "OPUS":
                 # soundfile describes opus as ogg container with opus coding
                 return "opus"

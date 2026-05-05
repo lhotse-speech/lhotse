@@ -1400,6 +1400,37 @@ class MemoryNpyReader(FeaturesReader):
 
 
 @register_reader
+class SharPtrArrayReader(FeaturesReader):
+    """
+    Reads ``Array``/``Features`` payloads referenced via a Shar lazy pointer
+    (``<tar_path>?o=<offset>&e=<end_offset>``). The ``key`` is the pointer
+    string. The format (numpy NPY vs lilcom) is dispatched from the payload's
+    magic bytes — no per-shard format hint required.
+    """
+
+    name = "shar_ptr_array"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def read(
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        from lhotse.shar.lazy_pointer import read_payload
+
+        raw = read_payload(key)
+        if raw[:6] == b"\x93NUMPY":
+            arr = np.load(BytesIO(raw))
+        else:
+            check_lilcom_installed()
+            arr = get_lilcom_module().decompress(raw)
+        return arr[left_offset_frames:right_offset_frames]
+
+
+@register_reader
 class DummySharReader(FeaturesReader):
     """ """
 
