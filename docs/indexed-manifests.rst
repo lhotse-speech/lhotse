@@ -125,6 +125,45 @@ For example:
 * a repeater may use ``(repeat_idx, child_token)``
 * an indexed Shar iterator may use ``(global_idx, shar_epoch)``
 
+Property summary for built-in iterators
+---------------------------------------
+
+The following table summarizes the three properties for the iterator nodes
+shipped with Lhotse. ``checkpointable`` means ``state_dict`` /
+``load_state_dict`` work; ``indexed`` means the node is backed by
+random-access data; ``O(1)`` means ``__getitem__`` reconstructs the exact
+item directly from a graph token without replay.
+
+"delegates" means the property is a Python ``@property`` that returns the
+value of the same property on the wrapped source — so the answer depends on
+what you compose the transform with. To check at runtime, use
+``getattr(node, "is_indexed", False)`` etc., or the helper
+``supports_graph_restore(node)`` for a combined check.
+
+================================  ================  ===========  ===========
+Iterator                          Checkpointable    Indexed      O(1)
+================================  ================  ===========  ===========
+``LazyJsonlIterator``             no                no           no
+``LazyManifestIterator``          yes               no           no
+``LazyIndexedManifestIterator``   yes               delegates    delegates
+``LazySharIterator``              yes               no           no
+``LazyIndexedSharIterator``       yes               delegates    delegates
+``LazyIteratorChain``             yes               delegates    delegates
+``LazyIteratorMultiplexer``       yes               delegates    delegates
+``LazyMapper``                    yes               delegates    delegates
+``LazyFilter``                    yes               delegates    delegates
+``LazyShuffler``                  delegates         delegates    delegates
+``LazyFlattener``                 delegates         delegates    delegates
+``LazyCutMixer``                  delegates         delegates    delegates
+``LazyRepeater``                  yes               delegates    delegates
+================================  ================  ===========  ===========
+
+The leaf manifest iterators (``LazyJsonlIterator``, ``LazyManifestIterator``,
+``LazySharIterator``) are streaming-only. To get indexed / O(1) behavior,
+construct them via ``CutSet.from_file(..., indexed=True)`` /
+``CutSet.from_shar(..., indexed=True)``, which build
+``LazyIndexedManifestIterator`` / ``LazyIndexedSharIterator`` instead.
+
 Checkpointing: graph tokens
 ---------------------------
 
@@ -295,6 +334,41 @@ indexed outer sources by saving compact local state:
 * ``LazyShuffler`` saves its shuffle buffer and RNG state
 * ``LazyFlattener`` saves the outer token and the local offset inside the
   current inner collection
+
+Transforms that change cardinality
+**********************************
+
+Transforms whose output cardinality depends on the input data — i.e. one
+input row produces a variable number of output rows — *can* still preserve
+indexedness and O(1) restore, but only when they implement the composite-
+token contract.
+
+``LazyFlattener`` is the canonical example. Each input row contains a
+collection that may have anywhere between 0 and N items, and the flattener
+emits ``(outer_token, inner_token)`` pairs as graph tokens. Its
+``__getitem__((outer_token, inner_token))`` rebuilds the right inner item
+by indexing into the outer source first and then into the materialized
+collection. So a ``LazyFlattener`` over an indexed source remains indexed,
+checkpointable, and O(1) — there is no replay degradation.
+
+The pitfall is with **custom** cardinality-changing transforms that don't
+implement that contract. If your transform yields more than one item per
+input row but does not expose ``__getitem__`` taking a composite token (and
+does not propagate graph origins on yielded items), the resulting iterator
+can no longer reconstruct a specific output item from a saved token. In an
+indexed pipeline this surfaces as a hard error from Lhotse's strict
+graph-token contract above.
+
+Two safe patterns for custom cardinality-changing transforms:
+
+* **Materialize offline.** Run the transform once and write the expanded
+  manifest. Downstream iterators then see one row per output item and the
+  whole graph stays indexed end-to-end. This is the simplest option when
+  the expansion is deterministic and the storage cost is acceptable.
+* **Implement composite tokens** following the ``LazyFlattener`` pattern:
+  emit ``(outer_token, inner_token)`` graph origins from ``__iter__``,
+  implement ``__getitem__`` to dispatch on them, and delegate
+  ``is_indexed`` / ``has_constant_time_access`` to the source.
 
 Runtime metadata rules
 ----------------------

@@ -109,9 +109,28 @@ we can resume the training from where it left off like the following:
 
 .. note::
 
+    The ``constraint=`` argument of :class:`~lhotse.dataset.sampling.DynamicCutSampler`
+    and :class:`~lhotse.dataset.sampling.DynamicBucketingSampler` is **not** part of
+    ``state_dict``. The constraint object (e.g. ``TimeConstraint``, ``TokenConstraint``,
+    or a user-defined :class:`~lhotse.dataset.sampling.base.SamplingConstraint`)
+    must be reconstructed from your config when you instantiate the sampler before
+    calling ``load_state_dict``. Iteration state (RNG, bucketer, epoch, diagnostics)
+    is what drives exact resume and is independent of the constraint object.
+
+.. note::
+
     For replay-based sampler restore with a regular ``DataLoader``, the
     ``num_workers`` setting can differ after resuming. For exact per-worker
     restore with ``StatefulDataLoader``, it must match between save and restore.
+
+.. note::
+
+    Calling ``set_epoch`` after ``load_state_dict`` is safe — it is a no-op while
+    the restored state is still pending, so it will not wipe the saved RNG, cuts,
+    or bucketer buffers. PyTorch Lightning relies on this: its ``fit_loop``
+    calls ``set_epoch`` at the start of every (re)started epoch. To explicitly
+    discard the restored progress and start the epoch fresh, call
+    ``sampler.allow_iter_to_reset_state()`` instead.
 
 .. note::
 
@@ -211,6 +230,20 @@ Requirements and limitations
   it with ``compress_jsonl=False``.
 * ``num_workers`` and ``world_size`` must match between save and restore.
 * Non-indexed pipelines still use replay-based restore.
+
+Background-thread bucket fetching and clean shutdown
+****************************************************
+
+When :class:`~lhotse.dataset.sampling.DynamicBucketingSampler` is constructed
+with ``concurrent_bucketing=True`` (the default), a background thread fills
+the bucket buffers in parallel with iteration. That thread is created as a
+daemon, so it never blocks interpreter shutdown — useful when combining
+``concurrent_bucketing=True`` with ``persistent_workers=True``, where lingering
+references from FSDP / dataloader workers can otherwise prevent the sampler's
+``__del__`` from running before the main process tries to exit.
+
+If you maintain custom samplers with their own background threads, mark them
+``daemon=True`` for the same reason.
 
 Implementing custom iterators
 *****************************
