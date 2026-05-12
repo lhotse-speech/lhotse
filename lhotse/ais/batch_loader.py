@@ -55,23 +55,30 @@ class AISBatchLoader:
         >>> loader = AISBatchLoader()
         >>> cuts_with_data = loader(cuts)
 
-    Pass ``prefer_individual=True`` to skip the MOSS GetBatch call entirely and
+    Pass ``force_individual=True`` to skip the MOSS GetBatch call entirely and
     instead issue one AIStore ``Object.get_reader().read_all()`` per object
     (handling tar-member extraction via ``ArchiveConfig(archpath=…)``). This is
     the same per-object path the loader already takes when ``batch.get()``
     raises ``AISError`` or the batch stream truncates — exposed here so callers
     can opt out of MOSS GetBatch up-front when the deployment doesn't support
     it or its performance is degraded for the access pattern.
+
+    Shar lazy-pointer (``shar_ptr``) sources transparently fall back to
+    per-object byte-range ``get_reader(byte_range=…)`` calls when the installed
+    AIStore SDK / cluster doesn't support byte-range entries in
+    ``BatchRequest.add()`` (or when ``force_individual=True``). The MOSS
+    GetBatch path is preferred when available; the byte-range fallback exists
+    so non-gzipped lhotse-shar cuts on AIS work even on older deployments.
     """
 
     def __init__(
         self,
-        prefer_individual: bool = False,
+        force_individual: bool = False,
         skip_failed_fetches: bool = False,
     ) -> None:
         """Initialize the AISBatchLoader with an AIStore client and batch context.
 
-        :param prefer_individual: when True, every minibatch fetch goes through
+        :param force_individual: when True, every minibatch fetch goes through
             the per-object Get path, never attempting MOSS GetBatch.
         :param skip_failed_fetches: when True, per-object fetch failures (404,
             connection refused, etc.) drop the corresponding cut from the
@@ -85,7 +92,7 @@ class AISBatchLoader:
                 "Please run 'pip install aistore>=1.17.0' to use AISBatchLoader."
             )
         self.client, _ = get_aistore_client()
-        self.prefer_individual = prefer_individual
+        self.force_individual = force_individual
         self.skip_failed_fetches = skip_failed_fetches
 
     @staticmethod
@@ -189,6 +196,20 @@ class AISBatchLoader:
         except (ImportError, TypeError):
             # Fall back to creating batch without colocation parameter for older versions
             batch = self.client.batch()
+
+        # Decide once per call whether shar_ptr entries can go through MOSS
+        # GetBatch byte-range adds. If ``force_individual`` is on, or the SDK
+        # rejects byte-range BatchRequest.add() calls, route shar_ptr through
+        # the per-object byte-range fallback collected in ``shar_ptr_fallback``.
+        shar_ptr_uses_batch = (
+            not self.force_individual
+        ) and self._aistore_byte_range_supported()
+
+        # Per-call fallback queue: each entry is
+        # ``(manifest_idx_in_manifest_list, bck, provider, obj_name, offset, length)``.
+        # Drained below via per-object ``Object.get_reader(byte_range=…)``.
+        shar_ptr_fallback: list[tuple[int, str, str, str, int, int]] = []
+
         # Collect all URLs for get-batch and track which manifests have URLs
         # plus a parallel list of (cut_idx, has_url) so we can drop entire
         # cuts whose manifests failed to fetch when ``skip_failed_fetches``
@@ -197,7 +218,14 @@ class AISBatchLoader:
         manifest_cut_idx: list[int] = []
         for cut_idx, cut in enumerate(cuts):
             for _, manifest in cut.iter_data():
-                has_url = self._collect_manifest_urls(manifest, batch)
+                manifest_idx = len(manifest_list)
+                has_url = self._collect_manifest_urls(
+                    manifest,
+                    batch,
+                    shar_ptr_uses_batch=shar_ptr_uses_batch,
+                    shar_ptr_fallback=shar_ptr_fallback,
+                    manifest_idx=manifest_idx,
+                )
                 manifest_list.append((manifest, has_url))
                 manifest_cut_idx.append(cut_idx)
 
@@ -209,12 +237,48 @@ class AISBatchLoader:
         if not any(has_url for _, has_url in manifest_list):
             return cuts
 
+        # Index map for the fallback path: manifest_idx → content (or None on
+        # failure when ``skip_failed_fetches`` is on). Built before draining the
+        # batch so the main injection loop dispatches between the two sources
+        # by simple membership check.
+        shar_ptr_content: dict[int, Optional[bytes]] = {}
+        if shar_ptr_fallback:
+            for (
+                m_idx,
+                bck_,
+                provider_,
+                obj_name_,
+                offset,
+                length,
+            ) in shar_ptr_fallback:
+                end_inclusive = offset + length - 1
+                try:
+                    reader = (
+                        self.client.bucket(bck_name=bck_, provider=provider_)
+                        .object(obj_name_)
+                        .get_reader(byte_range=f"bytes={offset}-{end_inclusive}")
+                    )
+                    shar_ptr_content[m_idx] = reader.read_all()
+                except Exception as ex:
+                    logger.error(
+                        f"Byte-range fallback failed for {obj_name_} "
+                        f"[{offset}-{end_inclusive}] from bucket "
+                        f"{provider_}://{bck_}: {ex}"
+                    )
+                    if self.skip_failed_fetches:
+                        shar_ptr_content[m_idx] = None
+                    else:
+                        raise AISBatchLoaderError(
+                            f"Byte-range fallback failed for {obj_name_} "
+                            f"[{offset}-{end_inclusive}]"
+                        ) from ex
+
         # Save requests list before calling batch.get() - it may be cleared after execution
         saved_requests_list = list(batch.requests_list)
 
         # Generator that mimics ``batch.get()``'s ``(moss_in, content)`` yield
         # contract by issuing one per-object Get instead. Used both as an
-        # opt-in primary path (``prefer_individual=True``) and as the
+        # opt-in primary path (``force_individual=True``) and as the
         # AISError / truncation fallback below.
         #
         # When ``skip_failed_fetches`` is set, per-object errors yield
@@ -241,7 +305,10 @@ class AISBatchLoader:
                             f"Sequential GET fallback failed for {obj_name_}"
                         ) from ex
 
-        if self.prefer_individual:
+        if not saved_requests_list:
+            # Only shar_ptr fallback entries — nothing to ask MOSS for.
+            batch_result = iter(())
+        elif self.force_individual:
             batch_result = _individual_get()
         else:
             try:
@@ -267,6 +334,16 @@ class AISBatchLoader:
         batch_stream_failed = False
         for mi, (manifest, has_url) in enumerate(manifest_list):
             if has_url:
+                # shar_ptr entries that took the byte-range fallback don't
+                # consume from ``batch_result``; their content is already in
+                # ``shar_ptr_content``.
+                if mi in shar_ptr_content:
+                    content = shar_ptr_content[mi]
+                    if content is None:
+                        failed_cut_indices.add(manifest_cut_idx[mi])
+                    else:
+                        self._inject_data_into_manifest(manifest, content)
+                    continue
                 info = None
                 content = None
 
@@ -349,12 +426,27 @@ class AISBatchLoader:
 
     # ----------------------------- Internal Helpers -----------------------------
 
-    def _collect_manifest_urls(self, manifest: Any, batch: Any) -> bool:
+    def _collect_manifest_urls(
+        self,
+        manifest: Any,
+        batch: Any,
+        *,
+        shar_ptr_uses_batch: bool,
+        shar_ptr_fallback: list,
+        manifest_idx: int,
+    ) -> bool:
         """
         Add all URLs referenced in a manifest to the batch.
 
+        ``shar_ptr`` entries are routed to ``batch`` when the SDK supports
+        byte-range adds (``shar_ptr_uses_batch=True``); otherwise the request
+        is queued in ``shar_ptr_fallback`` so :meth:`__call__` can drain it via
+        per-object byte-range gets. Either way the manifest is reported as
+        having a URL (return value ``True``).
+
         Returns:
-            True if URLs were added to the batch, False otherwise.
+            True if the manifest's data was scheduled for fetch (batch or
+            fallback), False otherwise.
         """
         if isinstance(manifest, Recording):
             for source in manifest.sources:
@@ -362,11 +454,13 @@ class AISBatchLoader:
                     self._add_url_to_batch(source.source, batch)
                     return True
                 if source.type == "shar_ptr":
-                    # Forward-compat scaffold: when aistore SDK exposes
-                    # byte-range support in BatchRequest.add(start=, length=),
-                    # route through ``_add_shar_ptr_to_batch``. Until then,
-                    # the loader falls back to per-cut _prepare_for_reading.
-                    if self._add_shar_ptr_to_batch(source.source, batch):
+                    if self._add_shar_ptr_to_batch(
+                        source.source,
+                        batch,
+                        shar_ptr_uses_batch=shar_ptr_uses_batch,
+                        shar_ptr_fallback=shar_ptr_fallback,
+                        manifest_idx=manifest_idx,
+                    ):
                         return True
             return False
 
@@ -374,7 +468,13 @@ class AISBatchLoader:
             # TemporalArray wraps an Array, so we need to access the inner array
             inner_array = manifest.array
             if inner_array.storage_type == "shar_ptr_array":
-                if self._add_shar_ptr_to_batch(inner_array.storage_key, batch):
+                if self._add_shar_ptr_to_batch(
+                    inner_array.storage_key,
+                    batch,
+                    shar_ptr_uses_batch=shar_ptr_uses_batch,
+                    shar_ptr_fallback=shar_ptr_fallback,
+                    manifest_idx=manifest_idx,
+                ):
                     return True
                 return False
             if inner_array.storage_type not in FILE_TO_MEMORY_TYPE:
@@ -391,7 +491,13 @@ class AISBatchLoader:
 
         elif isinstance(manifest, (Array, Features, Image)):
             if manifest.storage_type == "shar_ptr_array":
-                if self._add_shar_ptr_to_batch(manifest.storage_key, batch):
+                if self._add_shar_ptr_to_batch(
+                    manifest.storage_key,
+                    batch,
+                    shar_ptr_uses_batch=shar_ptr_uses_batch,
+                    shar_ptr_fallback=shar_ptr_fallback,
+                    manifest_idx=manifest_idx,
+                ):
                     return True
                 return False
             if manifest.storage_type not in FILE_TO_MEMORY_TYPE:
@@ -439,14 +545,26 @@ class AISBatchLoader:
             return True
         return True
 
-    def _add_shar_ptr_to_batch(self, pointer: str, batch: Any) -> bool:
+    def _add_shar_ptr_to_batch(
+        self,
+        pointer: str,
+        batch: Any,
+        *,
+        shar_ptr_uses_batch: bool,
+        shar_ptr_fallback: list,
+        manifest_idx: int,
+    ) -> bool:
         """
-        Add a Shar lazy pointer to an in-flight AIS batch using byte-range
-        fetch. Returns True iff the pointer was successfully scheduled
-        (requires the aistore SDK to support byte-range batch).
+        Schedule a Shar lazy pointer fetch.
+
+        When ``shar_ptr_uses_batch`` is True the request is added to the MOSS
+        ``BatchRequest`` via ``batch.add(start=, length=)``. Otherwise the
+        ``(manifest_idx, bck, provider, obj_name, offset, length)`` tuple is
+        appended to ``shar_ptr_fallback`` so :meth:`__call__` can drain it via
+        per-object byte-range gets.
+
+        Returns True iff the pointer was successfully scheduled (either path).
         """
-        if not self._aistore_byte_range_supported():
-            return False
         from aistore.sdk.utils import parse_url
 
         from lhotse.shar.lazy_pointer import decode_pointer
@@ -457,10 +575,15 @@ class AISBatchLoader:
         provider, bck_name, obj_name = parse_url(tar_path)
         if not (provider and bck_name and obj_name):
             return False
-        bucket = self.client.bucket(bck_name, provider)
-        batch.add(
-            bucket.object(obj_name), start=offset, length=end_offset - offset
-        )
+
+        length = end_offset - offset
+        if shar_ptr_uses_batch:
+            bucket = self.client.bucket(bck_name, provider)
+            batch.add(bucket.object(obj_name), start=offset, length=length)
+        else:
+            shar_ptr_fallback.append(
+                (manifest_idx, bck_name, provider, obj_name, offset, length)
+            )
         return True
 
     def _add_url_to_batch(self, url: str, batch: Any) -> None:

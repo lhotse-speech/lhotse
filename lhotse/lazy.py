@@ -574,7 +574,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         index_path: Optional[Pathlike] = None,
         decode: Optional[Callable[[dict], Any]] = None,
     ) -> None:
-        from lhotse.indexing import IndexedJsonlReader, LazyShuffledRange
+        from lhotse.indexing import IndexedJsonlReader
 
         self.path = path
         self.shuffle = shuffle
@@ -582,9 +582,12 @@ class LazyIndexedManifestIterator(IteratorNode):
         self.index_path = index_path
         self._decode = decode if decode is not None else deserialize_item
         self._reader = IndexedJsonlReader(path, index_path=index_path)
-        self._range = (
-            LazyShuffledRange(len(self._reader), seed=seed) if shuffle else None
-        )
+        # LazyShuffledRange is constructed lazily in __iter__ so the
+        # (shard_id, num_shards) partition can be resolved inside the
+        # DataLoader worker subprocess where the env vars set by
+        # worker_init_fn are visible.
+        self._range = None
+        self._pending_range_state = None
         self._position = 0
         self._restored = False
 
@@ -601,19 +604,37 @@ class LazyIndexedManifestIterator(IteratorNode):
         return attach_graph_origin(self._decode(self._reader[idx]), idx)
 
     def __iter__(self):
+        from lhotse.dataset.dataloading import get_worker_partition
+        from lhotse.indexing import LazyShuffledRange
+
+        n = len(self._reader)
+        shard_id, num_shards = get_worker_partition()
+
+        if self.shuffle:
+            self._range = LazyShuffledRange(
+                n, seed=self.seed, shard_id=shard_id, num_shards=num_shards
+            )
+            if self._pending_range_state is not None:
+                self._range.load_state_dict(self._pending_range_state)
+                self._pending_range_state = None
+            shard_len = len(self._range)
+        else:
+            self._range = None
+            shard_len = max(0, (n - shard_id + num_shards - 1) // num_shards) if n > shard_id else 0
+
         if self._restored:
             self._restored = False
             start = self._position
         else:
             start = 0
-            if self._range is not None:
-                self._range.reset()
         self._position = start
 
-        n = len(self._reader)
-        for i in range(start, n):
+        for i in range(start, shard_len):
             self._position = i + 1
-            phys_idx = self._range[i] if self._range is not None else i
+            if self._range is not None:
+                phys_idx = self._range[i]
+            else:
+                phys_idx = shard_id + i * num_shards
             yield attach_graph_origin(self._decode(self._reader[phys_idx]), phys_idx)
 
     def __len__(self) -> int:
@@ -626,18 +647,23 @@ class LazyIndexedManifestIterator(IteratorNode):
         sd = {"position": self._position, "shuffle": self.shuffle, "seed": self.seed}
         if self._range is not None:
             sd["range"] = self._range.state_dict()
+        elif self._pending_range_state is not None:
+            sd["range"] = self._pending_range_state
         return sd
 
     def load_state_dict(self, sd: dict) -> None:
         self._position = sd["position"]
-        if self._range is not None:
+        if self.shuffle:
             if "range" not in sd:
                 raise ValueError(
                     "LazyIndexedManifestIterator with shuffle=True requires "
                     "'range' in state_dict, but it was not found. "
                     "The checkpoint may have been created without shuffling."
                 )
-            self._range.load_state_dict(sd["range"])
+            # Stash the range state; it will be applied (and topology-validated)
+            # in __iter__ once we know the current (shard_id, num_shards).
+            self._pending_range_state = sd["range"]
+            self._range = None
         self._restored = True
 
 
@@ -774,23 +800,45 @@ class LazyIteratorChain(IteratorNode):
     # ------------------------------------------------------------------
 
     def _iter_globally_shuffled(self):
+        from lhotse.dataset.dataloading import get_worker_partition
         from lhotse.indexing import LazyShuffledRange
 
         total = len(self)
+        shard_id, num_shards = get_worker_partition()
+
         if self._restored:
             self._restored = False
             start = self._global_position
             base_seed = self._global_seed
             if base_seed is None:
                 base_seed = resolve_iteration_seed(self.seed)
+            saved_shard_id = getattr(self, "_global_shard_id", None)
+            saved_num_shards = getattr(self, "_global_num_shards", None)
+            if saved_num_shards is not None and (
+                saved_shard_id != shard_id or saved_num_shards != num_shards
+            ):
+                raise ValueError(
+                    f"LazyIteratorChain global-shuffle partition mismatch on resume: "
+                    f"saved (shard_id={saved_shard_id}, num_shards={saved_num_shards}), "
+                    f"current (shard_id={shard_id}, num_shards={num_shards}). "
+                    f"Resuming with a different DP/worker topology is not supported."
+                )
         else:
             start = 0
             self._global_position = 0
             base_seed = resolve_iteration_seed(self.seed)
             self._global_seed = base_seed
+        self._global_shard_id = shard_id
+        self._global_num_shards = num_shards
 
-        shuffled = LazyShuffledRange(total, seed=base_seed + self.num_iters)
-        for i in range(start, total):
+        shuffled = LazyShuffledRange(
+            total,
+            seed=base_seed + self.num_iters,
+            shard_id=shard_id,
+            num_shards=num_shards,
+        )
+        shard_len = len(shuffled)
+        for i in range(start, shard_len):
             self._global_position = i + 1
             yield self[shuffled[i]]
         self.num_iters += 1
@@ -808,6 +856,8 @@ class LazyIteratorChain(IteratorNode):
             "iter_order": self._iter_order,
             "global_position": self._global_position,
             "global_seed": getattr(self, "_global_seed", None),
+            "global_shard_id": getattr(self, "_global_shard_id", None),
+            "global_num_shards": getattr(self, "_global_num_shards", None),
         }
         # Save inner states for stateful children
         inner_states = []
@@ -822,6 +872,8 @@ class LazyIteratorChain(IteratorNode):
         self._iter_order = sd.get("iter_order")
         self._global_position = sd.get("global_position", 0)
         self._global_seed = sd.get("global_seed")
+        self._global_shard_id = sd.get("global_shard_id")
+        self._global_num_shards = sd.get("global_num_shards")
         if self.shuffle_iters and self.is_indexed:
             # Globally-shuffled path: position + num_iters (+ stored per-epoch
             # resolved seed) are enough to reconstruct permutation deterministically.
@@ -906,7 +958,16 @@ class LazyIteratorMultiplexer(IteratorNode):
         return attach_graph_origin(self.sources[source_idx][source_token], token)
 
     def __iter__(self):
-        from lhotse.dataset.dataloading import resolve_seed
+        from lhotse.dataset.dataloading import get_worker_partition, resolve_seed
+
+        _, num_shards = get_worker_partition()
+        if num_shards > 1 and self.seed == "randomized":
+            raise ValueError(
+                "LazyIteratorMultiplexer cannot use seed='randomized' under multi-shard "
+                "(DP rank x DataLoader worker) iteration: each shard would draw a different "
+                "RNG state and pick a different source at the same step, causing the global "
+                "weighted source distribution to drift across ranks. Use a fixed integer seed."
+            )
 
         rng = random.Random(resolve_seed(self.seed))
         iters = [iter(it) for it in self.sources]

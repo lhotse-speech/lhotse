@@ -223,7 +223,7 @@ class AudioSamples(BatchIO):
         fault_tolerant: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
         use_batch_loader: bool = False,
-        ais_prefer_individual: bool = False,
+        ais_force_individual: bool = False,
         mono_downmix: Optional[bool] = None,
     ) -> None:
         """
@@ -245,7 +245,7 @@ class AudioSamples(BatchIO):
         :param use_batch_loader: When ``True``, enables batch loading of audio data from AIStore.
             This allows all audio samples in the batch to be fetched in a single request for increased efficiency.
             Requires the input CutSet to be eager (not lazy).
-        :param ais_prefer_individual: only meaningful when ``use_batch_loader=True``. When
+        :param ais_force_individual: only meaningful when ``use_batch_loader=True``. When
             ``True``, the underlying :class:`~lhotse.ais.AISBatchLoader` skips the MOSS
             GetBatch attempt and issues one ``Object.get_reader().read_all()`` per object
             instead — useful when the AIStore deployment doesn't support GetBatch or its
@@ -264,7 +264,7 @@ class AudioSamples(BatchIO):
             from lhotse.ais import AISBatchLoader
 
             self.ais_batch_loader = AISBatchLoader(
-                prefer_individual=ais_prefer_individual,
+                force_individual=ais_force_individual,
                 skip_failed_fetches=fault_tolerant,
             )
 

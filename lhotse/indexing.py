@@ -29,10 +29,12 @@ Usage
 """
 
 import hashlib
+import io
 import os
 import struct
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Union
 
@@ -158,15 +160,26 @@ def index_file_path(data_path: Pathlike) -> Pathlike:
 
 def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> bool:
     """
-    Return ``True`` when a ``.idx`` file exists.
+    Return ``True`` when a ``.idx`` file exists *and is usable*.
 
     When *index_path* is given, check that path instead of the conventional
     location next to *data_path*.
+
+    A 0-byte or non-uint64-aligned file is treated as "not present" so
+    callers re-trigger ``create_*_index`` instead of round-tripping an
+    empty ``np.fromfile`` array through ``len(self._offsets) - 1`` and
+    producing a negative ``__len__``. This guards against:
+      * a previous writer crashing after the ``open("wb")`` truncate but
+        before the payload write completed; and
+      * a concurrent ``auto_create_index`` racer observing another worker's
+        in-progress truncate (now also fixed at the write side via
+        :func:`_write_index`'s stage-and-rename, but the size check stays
+        as a belt-and-braces guard against stale 0-byte files on disk).
     """
     idx_path = index_path if index_path is not None else index_file_path(data_path)
     local_path = _as_local_path(idx_path)
     if local_path is not None:
-        return local_path.is_file()
+        return _is_valid_index_file(local_path)
     try:
         with open_best(idx_path, "rb") as f:
             f.read(1)
@@ -183,10 +196,43 @@ _OFFSET_DTYPE = np.dtype("<u8")  # little-endian uint64
 
 
 def _write_index(offsets: list, path: Pathlike) -> None:
+    """Atomically write ``offsets`` to *path*.
+
+    Stages bytes through a per-call tmp sibling and ``os.replace``s into
+    place so concurrent readers / racing writers never observe a
+    half-truncated 0-byte ``.idx``. The old non-atomic flow opened *path*
+    in ``"wb"`` (which truncates immediately) and only filled it after
+    walking the source — any reader that called ``index_exists +
+    read_index`` between those two steps got back an empty ``np.fromfile``
+    array and computed ``len(self._offsets) - 1 == -1``, crashing the
+    sampler deep inside ``__len__``.
+    """
     arr = np.array(offsets, dtype=_OFFSET_DTYPE)
     local_path = _as_local_path(path)
     if local_path is not None:
         local_path.parent.mkdir(parents=True, exist_ok=True)
+        # ``os.replace`` is atomic on POSIX when src and dst live on the
+        # same filesystem; placing the tmp file as a sibling guarantees
+        # that. The pid + monotonic-ns suffix avoids cross-process
+        # collisions when multiple ranks race to rebuild the same index.
+        tmp_path = local_path.with_name(
+            f"{local_path.name}.tmp.{os.getpid()}.{time.monotonic_ns()}"
+        )
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(arr.tobytes())
+            os.replace(tmp_path, local_path)
+        finally:
+            try:
+                tmp_path.unlink()
+            except FileNotFoundError:
+                pass
+        return
+    # Non-local destination (e.g. ais:// / s3:// mirror tree) — there's no
+    # atomic-rename primitive across most object stores, and concurrent
+    # racing writers aren't a concern in those workflows (the .idx mirror
+    # is built once by submit_build_indexes.py). Fall through to the
+    # original direct-write path.
     with open_best(path, "wb") as f:
         f.write(arr.tobytes())
 
@@ -330,18 +376,34 @@ def create_tar_index(
 
     offsets = []
     num_members = 0
+    # Sentinel needs to be ≥ "byte position past the last sample pair's
+    # data" so ``IndexedTarReader.member_byte_range`` can recover the upper
+    # bound for the final sample. Prefer ``f.tell()`` on the underlying
+    # handle when supported (= bytes consumed from storage, typically the
+    # file size since the tar record buffer reads in 10 KiB chunks) so the
+    # written .idx matches the historical "sentinel = file size" semantics.
+    # Non-seekable streams (e.g. AIS ``ObjectFileReader``) inherit
+    # ``BufferedIOBase.tell()``, which delegates to ``seek(0, SEEK_CUR)`` and
+    # raises ``UnsupportedOperation: seek``; fall back to ``tf.offset``,
+    # which ``tarfile`` itself tracks and which sits at the start of the
+    # trailing EOF-marker block once iteration stops on ``EOFHeaderError``.
     with open_best(tar_path, "rb") as f:
         with tarfile.open(fileobj=f, mode="r|") as tf:
             for member in tf:
                 if num_members % 2 == 0:
                     offsets.append(member.offset)
                 num_members += 1
+            sentinel_from_tarfile = tf.offset
         if num_members % 2 != 0:
             raise RuntimeError(
                 f"Expected an even number of tar members (data+meta pairs) "
                 f"in {tar_path}, got {num_members}."
             )
-        offsets.append(f.tell())  # sentinel
+        try:
+            sentinel = f.tell()
+        except (io.UnsupportedOperation, OSError, AttributeError):
+            sentinel = sentinel_from_tarfile
+        offsets.append(sentinel)
 
     idx_path = output_path if output_path is not None else index_file_path(tar_path)
     _write_index(offsets, idx_path)
@@ -401,6 +463,15 @@ class LazyShuffledRange:
     handle non-power-of-two domain sizes.  Every element of ``[0, n)``
     is produced exactly once in a deterministic, seed-dependent order.
 
+    When ``num_shards > 1``, this object yields only the subset of the
+    permutation belonging to shard ``shard_id``: it walks logical offsets
+    ``shard_id, shard_id + num_shards, shard_id + 2*num_shards, ...`` and
+    applies the Feistel permutation to each. Across all ``num_shards``
+    shards, every element of ``[0, n)`` is produced exactly once — making
+    this the single primitive for DP-rank / worker-id data partitioning
+    in the iterable-dataset path. Defaults ``(shard_id=0, num_shards=1)``
+    reproduce the un-sharded behaviour bitwise.
+
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
 
     Example::
@@ -411,9 +482,23 @@ class LazyShuffledRange:
         True
     """
 
-    def __init__(self, n: int, seed: int) -> None:
+    def __init__(
+        self,
+        n: int,
+        seed: int,
+        shard_id: int = 0,
+        num_shards: int = 1,
+    ) -> None:
+        if num_shards < 1:
+            raise ValueError(f"num_shards must be >= 1, got {num_shards}")
+        if not (0 <= shard_id < num_shards):
+            raise ValueError(
+                f"shard_id must be in [0, num_shards={num_shards}), got {shard_id}"
+            )
         self.n = n
         self.seed = seed
+        self.shard_id = shard_id
+        self.num_shards = num_shards
         self._pos = 0
 
         # Compute the number of bits for each half of the Feistel network.
@@ -438,43 +523,75 @@ class LazyShuffledRange:
         ]
 
     def __len__(self) -> int:
-        return self.n
+        if self.n <= self.shard_id:
+            return 0
+        return (self.n - self.shard_id + self.num_shards - 1) // self.num_shards
 
     def __getitem__(self, idx: int) -> int:
-        """Return the *idx*-th element of the permutation in O(1)."""
+        """Return the *idx*-th element of this shard's permutation in O(1)."""
+        shard_len = len(self)
         if idx < 0:
-            idx += self.n
-        if idx < 0 or idx >= self.n:
+            idx += shard_len
+        if idx < 0 or idx >= shard_len:
             raise IndexError(
-                f"index {idx} out of range for LazyShuffledRange(n={self.n})"
+                f"index {idx} out of range for LazyShuffledRange(n={self.n}, "
+                f"shard_id={self.shard_id}, num_shards={self.num_shards}) "
+                f"with shard length {shard_len}"
             )
-        return self._permute(idx)
+        logical_offset = self.shard_id + idx * self.num_shards
+        return self._permute(logical_offset)
 
     def __iter__(self) -> "LazyShuffledRange":
         return self
 
     def __next__(self) -> int:
-        if self._pos >= self.n:
+        logical_offset = self.shard_id + self._pos * self.num_shards
+        if logical_offset >= self.n:
             raise StopIteration
-        val = self._permute(self._pos)
+        val = self._permute(logical_offset)
         self._pos += 1
         return val
 
     def reset(self) -> None:
-        """Reset the iterator to the beginning."""
+        """Reset the iterator to the beginning of this shard."""
         self._pos = 0
 
     def state_dict(self) -> dict:
-        """Return checkpoint state: ``{"n", "seed", "pos"}``."""
-        return {"n": self.n, "seed": self.seed, "pos": self._pos}
+        """Return checkpoint state: ``{"n", "seed", "shard_id", "num_shards", "pos"}``."""
+        return {
+            "n": self.n,
+            "seed": self.seed,
+            "shard_id": self.shard_id,
+            "num_shards": self.num_shards,
+            "pos": self._pos,
+        }
 
     def load_state_dict(self, sd: dict) -> None:
-        """Restore from a checkpoint produced by :meth:`state_dict`."""
-        if sd["n"] != self.n or sd["seed"] != self.seed:
+        """Restore from a checkpoint produced by :meth:`state_dict`.
+
+        Validates the full topology — ``n``, ``seed``, ``shard_id``, and
+        ``num_shards`` must match the current instance. A mismatch is a
+        loud error (elastic resume with a different DP/worker topology
+        is out of scope; the user must drop dataloader state).
+        Legacy state_dicts without shard fields are interpreted as
+        ``(shard_id=0, num_shards=1)`` and load only into matching contexts.
+        """
+        saved_shard_id = sd.get("shard_id", 0)
+        saved_num_shards = sd.get("num_shards", 1)
+        if (
+            sd["n"] != self.n
+            or sd["seed"] != self.seed
+            or saved_shard_id != self.shard_id
+            or saved_num_shards != self.num_shards
+        ):
             raise ValueError(
                 f"LazyShuffledRange state mismatch: "
-                f"expected n={self.n}, seed={self.seed}; "
-                f"got n={sd['n']}, seed={sd['seed']}"
+                f"expected n={self.n}, seed={self.seed}, "
+                f"shard_id={self.shard_id}, num_shards={self.num_shards}; "
+                f"got n={sd['n']}, seed={sd['seed']}, "
+                f"shard_id={saved_shard_id}, num_shards={saved_num_shards}. "
+                f"Resuming with a different DP/worker topology is not supported — "
+                f"drop dataloader state if the topology changed."
             )
         self._pos = sd["pos"]
 

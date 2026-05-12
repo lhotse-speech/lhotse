@@ -12,6 +12,15 @@ from lhotse.utils import fix_random_seed
 
 LHOTSE_PROCESS_SEED = "LHOTSE_PROCESS_SEED"
 
+# Set by :func:`worker_init_fn` (called either by PyTorch's DataLoader in worker
+# subprocesses or eagerly in the main process for the ``num_workers=0`` iterable
+# path). Acts as the signal that :func:`get_worker_partition` should return a
+# non-trivial ``(shard_id, num_shards)`` partition, so that indexed lazy iterators
+# can split sample indices across DP rank x DataLoader worker. Map-style mode
+# never calls ``worker_init_fn``, so this stays unset and partition collapses to
+# ``(0, 1)`` — the sampler's own over-sample-and-discard handles DP dedup there.
+LHOTSE_USE_WORKER_PARTITION = "LHOTSE_USE_WORKER_PARTITION"
+
 
 def make_worker_init_fn(
     rank: Optional[int] = None,
@@ -67,6 +76,10 @@ def worker_init_fn(
     # because DataLoader workers did not initialize torch.distributed.
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+    # Signal that worker-level partition is active for indexed lazy iterators
+    # (consumed by get_worker_partition). Map-style mode never calls this function,
+    # so the flag stays unset and partition is (0, 1) there.
+    os.environ[LHOTSE_USE_WORKER_PARTITION] = "1"
 
 
 def resolve_seed(seed: Union[int, Literal["trng", "randomized"], None]) -> int:
@@ -121,6 +134,46 @@ def resolve_seed(seed: Union[int, Literal["trng", "randomized"], None]) -> int:
         f"Unexpected type or value of seed: {type(seed)=} {seed=}. "
         f"Supported values are: None, int, 'trng', and 'randomized'."
     )
+
+
+def get_worker_partition() -> tuple:
+    """
+    Resolve the global ``(shard_id, num_shards)`` partition for the calling
+    code, combining the DP rank with the DataLoader worker id.
+
+    Returns ``(shard_id, num_shards)`` where
+    ``shard_id = rank * num_workers + worker_id`` and
+    ``num_shards = world_size * max(num_workers, 1)``.
+
+    Returns the trivial ``(0, 1)`` partition when the ``LHOTSE_USE_WORKER_PARTITION``
+    env var is not set — i.e. when :func:`worker_init_fn` has not been called.
+    This keeps map-style mode (where the sampler runs in the main process and uses
+    its own over-sample-and-discard DP dedup) unaffected even when RANK/WORLD_SIZE
+    are already set in the environment (e.g. by torchrun).
+
+    Used by indexed-manifest iterators (via :class:`~lhotse.indexing.LazyShuffledRange`)
+    to deterministically split index ranges across DP ranks × DataLoader workers
+    so each tuple yields a disjoint, non-overlapping subset.
+
+    Reads DP info via :func:`get_rank` / :func:`get_world_size` (env-var aware;
+    populated by :func:`worker_init_fn` inside DataLoader worker subprocesses).
+    Reads the DataLoader worker info via :func:`torch.utils.data.get_worker_info`;
+    when called outside a DataLoader worker (e.g. ``num_workers=0``), treats
+    the caller as a single worker (``worker_id=0, num_workers=1``).
+    """
+    if os.environ.get(LHOTSE_USE_WORKER_PARTITION) != "1":
+        return 0, 1
+    rank = get_rank()
+    world_size = get_world_size()
+    worker_info = torch.utils.data.get_worker_info()
+    if worker_info is None:
+        worker_id, num_workers = 0, 1
+    else:
+        worker_id = worker_info.id
+        num_workers = max(worker_info.num_workers, 1)
+    shard_id = rank * num_workers + worker_id
+    num_shards = world_size * num_workers
+    return shard_id, num_shards
 
 
 def get_world_size() -> int:

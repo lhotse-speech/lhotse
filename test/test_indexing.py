@@ -135,6 +135,99 @@ def test_indexed_jsonl_reader_out_of_range(jsonl_file):
 
 
 # ---------------------------------------------------------------------------
+# Zero-byte .idx + concurrent auto-create
+#
+# Repro for the cluster crash where ``IndexedJsonlReader.__len__()`` returned
+# -1 → Python raised ``ValueError: __len__() should return >= 0``. The
+# underlying issue is that ``index_exists`` accepts any existing file
+# (including a 0-byte one a racing writer just truncated) and ``read_index``
+# happily returns an empty ``np.ndarray`` for it, so ``len(self._offsets) - 1``
+# underflows.
+# ---------------------------------------------------------------------------
+
+
+def test_indexed_jsonl_reader_recovers_from_zero_byte_idx(jsonl_file):
+    """A pre-existing 0-byte .idx file must not cause a silent negative __len__.
+
+    Simulates a previous writer that crashed between ``open("wb")`` truncating
+    the file and writing its bytes (or any concurrent writer's partial write
+    being observed mid-update). The reader should either recreate the index
+    on-the-fly or fail with a clear, actionable error — anything but the
+    confusing ``ValueError: __len__() should return >= 0`` deep inside the
+    sampler.
+    """
+    p, records = jsonl_file
+    idx_path = index_file_path(p)
+    idx_path.write_bytes(b"")  # 0-byte sentinel-of-doom
+    assert idx_path.is_file()
+    assert idx_path.stat().st_size == 0
+
+    # Build the reader; this used to load the empty .idx and produce a
+    # negative __len__.
+    reader = IndexedJsonlReader(p)
+    n = len(reader)  # must NOT raise ValueError("should return >= 0")
+    assert n == len(records), (
+        f"reader recovered length {n}; expected {len(records)} after the "
+        "stale 0-byte .idx was discarded and the index rebuilt."
+    )
+    assert list(reader) == records
+
+
+def test_indexed_jsonl_reader_concurrent_auto_create(tmp_path):
+    """N threads racing to auto-create the same .idx must never observe a
+    0-byte file via ``read_index`` (which would short-circuit __len__ to -1).
+
+    Reproduces the production scenario: 8 ranks × 4 workers each open
+    ``IndexedJsonlReader(<same_jsonl>)`` simultaneously when /tmp/idx is
+    empty. With a non-atomic ``open(path, "wb")``-then-write, the
+    ``index_exists → read_index`` interleaving from the second wave of
+    workers can see the first writer's truncated 0-byte file before its
+    payload write completes, and ``read_index`` returns an empty
+    ``np.ndarray``. The reader then yields ``len()=-1``.
+    """
+    import threading
+
+    # Large-ish JSONL so the index walk is non-trivial — gives the
+    # interleaving room to bite. 5000 lines is plenty without slowing
+    # the whole suite.
+    p = tmp_path / "race.jsonl"
+    n_records = 5000
+    with open(p, "w") as f:
+        for i in range(n_records):
+            f.write(json.dumps({"id": i, "k": "v" * 32}) + "\n")
+
+    lengths: list[int] = []
+    errors: list[BaseException] = []
+    barrier = threading.Barrier(16)
+
+    def worker():
+        try:
+            barrier.wait()
+            r = IndexedJsonlReader(p)
+            lengths.append(len(r))
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(16)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert not errors, f"workers raised: {errors[:3]}"
+    assert lengths, "no worker reported a length — barrier wait failed?"
+    assert all(L == n_records for L in lengths), (
+        f"workers saw inconsistent lengths {Counter(lengths)}; expected all == {n_records}"
+    )
+
+    # Final .idx must be non-empty + size-aligned to uint64.
+    idx_size = index_file_path(p).stat().st_size
+    assert idx_size > 0 and idx_size % 8 == 0, (
+        f"final .idx is {idx_size} bytes — not a clean uint64 array"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tar index
 # ---------------------------------------------------------------------------
 
@@ -308,6 +401,118 @@ def test_lazy_shuffled_range_edge_cases():
     """Test n=1."""
     perm = LazyShuffledRange(1, seed=0)
     assert list(perm) == [0]
+
+
+# ---------------------------------------------------------------------------
+# LazyShuffledRange — (shard_id, num_shards) partition
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("n", [1, 2, 7, 100, 256, 1000])
+@pytest.mark.parametrize("num_shards", [1, 2, 3, 4, 8, 16])
+def test_lazy_shuffled_range_partition_is_full_partition(n, num_shards):
+    """Union of all shards equals range(n) with no duplicates and no holes."""
+    seen = []
+    for shard_id in range(num_shards):
+        shard = LazyShuffledRange(n, seed=42, shard_id=shard_id, num_shards=num_shards)
+        seen.extend(list(shard))
+    assert sorted(seen) == list(range(n)), (
+        f"Failed for n={n}, num_shards={num_shards}: "
+        f"len(seen)={len(seen)}, n={n}, duplicates={len(seen) - len(set(seen))}"
+    )
+
+
+@pytest.mark.parametrize("n,num_shards", [(10, 3), (100, 7), (1000, 16)])
+def test_lazy_shuffled_range_partition_shard_lengths(n, num_shards):
+    """Shard lengths are ceil((n - shard_id) / num_shards) and sum to n."""
+    total = 0
+    for shard_id in range(num_shards):
+        shard = LazyShuffledRange(n, seed=42, shard_id=shard_id, num_shards=num_shards)
+        expected_len = max(0, (n - shard_id + num_shards - 1) // num_shards) if n > shard_id else 0
+        assert len(shard) == expected_len
+        total += len(shard)
+    assert total == n
+
+
+def test_lazy_shuffled_range_partition_deterministic():
+    """Same (n, seed, shard_id, num_shards) yields the same sequence."""
+    a = list(LazyShuffledRange(200, seed=7, shard_id=2, num_shards=5))
+    b = list(LazyShuffledRange(200, seed=7, shard_id=2, num_shards=5))
+    assert a == b
+
+
+def test_lazy_shuffled_range_partition_default_matches_unsharded():
+    """Defaults (shard_id=0, num_shards=1) reproduce un-sharded behaviour bitwise."""
+    unsharded = list(LazyShuffledRange(150, seed=123))
+    default_shard = list(LazyShuffledRange(150, seed=123, shard_id=0, num_shards=1))
+    assert unsharded == default_shard
+
+
+def test_lazy_shuffled_range_partition_state_dict_roundtrip():
+    """Interrupt mid-iteration on a shard, restore, get the same remaining elements."""
+    n, shard_id, num_shards = 500, 3, 8
+    shard = LazyShuffledRange(n, seed=99, shard_id=shard_id, num_shards=num_shards)
+    first_part = [next(shard) for _ in range(11)]
+    sd = shard.state_dict()
+    remaining = list(shard)
+
+    shard2 = LazyShuffledRange(n, seed=99, shard_id=shard_id, num_shards=num_shards)
+    shard2.load_state_dict(sd)
+    assert list(shard2) == remaining
+    assert sorted(first_part + remaining) == sorted(
+        list(LazyShuffledRange(n, seed=99, shard_id=shard_id, num_shards=num_shards))
+    )
+
+
+def test_lazy_shuffled_range_partition_load_topology_mismatch_raises():
+    """load_state_dict refuses mismatched shard_id or num_shards."""
+    shard = LazyShuffledRange(100, seed=42, shard_id=1, num_shards=4)
+    sd = shard.state_dict()
+
+    wrong_shard_id = LazyShuffledRange(100, seed=42, shard_id=2, num_shards=4)
+    with pytest.raises(ValueError, match="state mismatch"):
+        wrong_shard_id.load_state_dict(sd)
+
+    wrong_num_shards = LazyShuffledRange(100, seed=42, shard_id=1, num_shards=8)
+    with pytest.raises(ValueError, match="state mismatch"):
+        wrong_num_shards.load_state_dict(sd)
+
+
+def test_lazy_shuffled_range_partition_legacy_state_dict_compatible():
+    """A legacy state_dict without shard fields loads only into a single-shard context."""
+    legacy_sd = {"n": 50, "seed": 1, "pos": 7}
+    single_shard = LazyShuffledRange(50, seed=1)
+    single_shard.load_state_dict(legacy_sd)
+    assert single_shard._pos == 7
+
+    multi_shard = LazyShuffledRange(50, seed=1, shard_id=0, num_shards=2)
+    with pytest.raises(ValueError, match="state mismatch"):
+        multi_shard.load_state_dict(legacy_sd)
+
+
+def test_lazy_shuffled_range_partition_invalid_args():
+    with pytest.raises(ValueError, match="num_shards must be >= 1"):
+        LazyShuffledRange(10, seed=0, shard_id=0, num_shards=0)
+    with pytest.raises(ValueError, match="shard_id must be in"):
+        LazyShuffledRange(10, seed=0, shard_id=4, num_shards=4)
+    with pytest.raises(ValueError, match="shard_id must be in"):
+        LazyShuffledRange(10, seed=0, shard_id=-1, num_shards=4)
+
+
+def test_lazy_shuffled_range_partition_getitem_matches_iter():
+    n, shard_id, num_shards = 200, 5, 13
+    shard_a = LazyShuffledRange(n, seed=11, shard_id=shard_id, num_shards=num_shards)
+    indexed = [shard_a[i] for i in range(len(shard_a))]
+    shard_b = LazyShuffledRange(n, seed=11, shard_id=shard_id, num_shards=num_shards)
+    iterated = list(shard_b)
+    assert indexed == iterated
+
+
+def test_lazy_shuffled_range_partition_shard_id_beyond_n():
+    """A shard_id larger than n yields empty iteration (no error)."""
+    shard = LazyShuffledRange(3, seed=0, shard_id=5, num_shards=8)
+    assert len(shard) == 0
+    assert list(shard) == []
 
 
 # ---------------------------------------------------------------------------
