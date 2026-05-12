@@ -54,15 +54,76 @@ class AISBatchLoader:
     Example:
         >>> loader = AISBatchLoader()
         >>> cuts_with_data = loader(cuts)
+
+    Pass ``prefer_individual=True`` to skip the MOSS GetBatch call entirely and
+    instead issue one AIStore ``Object.get_reader().read_all()`` per object
+    (handling tar-member extraction via ``ArchiveConfig(archpath=…)``). This is
+    the same per-object path the loader already takes when ``batch.get()``
+    raises ``AISError`` or the batch stream truncates — exposed here so callers
+    can opt out of MOSS GetBatch up-front when the deployment doesn't support
+    it or its performance is degraded for the access pattern.
     """
 
-    def __init__(self) -> None:
-        """Initialize the AISBatchLoader with an AIStore client and batch context."""
+    def __init__(
+        self,
+        prefer_individual: bool = False,
+        skip_failed_fetches: bool = False,
+    ) -> None:
+        """Initialize the AISBatchLoader with an AIStore client and batch context.
+
+        :param prefer_individual: when True, every minibatch fetch goes through
+            the per-object Get path, never attempting MOSS GetBatch.
+        :param skip_failed_fetches: when True, per-object fetch failures (404,
+            connection refused, etc.) drop the corresponding cut from the
+            returned CutSet instead of raising AISBatchLoaderError. Use as a
+            safety net against transient AIS issues or per-shard data
+            corruption — every drop is logged at WARNING level so the
+            failure rate is observable.
+        """
         if not is_module_available("aistore"):
             raise ImportError(
                 "Please run 'pip install aistore>=1.17.0' to use AISBatchLoader."
             )
         self.client, _ = get_aistore_client()
+        self.prefer_individual = prefer_individual
+        self.skip_failed_fetches = skip_failed_fetches
+
+    @staticmethod
+    def _moss_attrs(info: Any) -> tuple[str, str, str, Optional[str]]:
+        """
+        Normalise an AIStore batch request/result entry into ``(bck, provider,
+        obj_name, archpath)``.
+
+        Verified empirically against ``aistore==1.23.0``:
+          * ``BatchRequest.requests_list`` items are ``aistore.sdk.batch.types.MossIn``
+            with the original short attribute names (``bck``, ``provider``,
+            ``obj_name``, ``archpath``).
+          * ``BatchRequest.get()`` yields ``(MossOut, content)`` tuples and
+            ``MossOut`` carries different attribute names. To stay robust
+            against further SDK churn, this helper falls back through every
+            naming convention we've seen in the wild
+            (``bck`` / ``bucket_name``; ``provider`` / ``bucket_provider``;
+            ``obj_name`` / ``object_name`` / ``name``).
+
+        Raises ``AttributeError`` only if NONE of the expected names exist —
+        a clearer failure than the original ``'MossOut' object has no
+        attribute 'bck'`` deep in the retry path.
+        """
+        def _first(o, *names):
+            for n in names:
+                v = getattr(o, n, None)
+                if v is not None:
+                    return v
+            raise AttributeError(
+                f"{type(o).__name__} object has none of the expected attributes "
+                f"{names!r} — AIStore SDK API may have changed again; "
+                f"available attrs: {[a for a in dir(o) if not a.startswith('_')][:20]}"
+            )
+        bck = _first(info, "bck", "bucket_name", "bucket")
+        provider = _first(info, "provider", "bucket_provider")
+        obj_name = _first(info, "obj_name", "object_name", "name")
+        archpath = getattr(info, "archpath", None)
+        return bck, provider, obj_name, archpath
 
     def _get_object_from_moss_in(self, moss_in: Any) -> bytes:
         """
@@ -72,7 +133,10 @@ class AISBatchLoader:
         It handles archive extraction if an archpath is specified.
 
         Args:
-            moss_in: AIStore ObjectNames request containing bucket, object, and optional archpath.
+            moss_in: AIStore ObjectNames request — accepts both ``MossIn`` (from
+                ``batch.requests_list``) and ``MossOut`` (from ``batch.get()``
+                iterator) shapes; attribute access goes through
+                :meth:`_moss_attrs` which handles both.
 
         Returns:
             The object content as bytes.
@@ -82,13 +146,15 @@ class AISBatchLoader:
         """
         from aistore.sdk.archive_config import ArchiveConfig
 
+        bck, provider, obj_name, archpath = self._moss_attrs(moss_in)
+
         config = None
-        if hasattr(moss_in, "archpath") and moss_in.archpath:
-            config = ArchiveConfig(archpath=moss_in.archpath)
+        if archpath:
+            config = ArchiveConfig(archpath=archpath)
 
         reader = (
-            self.client.bucket(bck_name=moss_in.bck, provider=moss_in.provider)
-            .object(moss_in.obj_name)
+            self.client.bucket(bck_name=bck, provider=provider)
+            .object(obj_name)
             .get_reader(archive_config=config)
         )
         return reader.read_all()
@@ -124,11 +190,16 @@ class AISBatchLoader:
             # Fall back to creating batch without colocation parameter for older versions
             batch = self.client.batch()
         # Collect all URLs for get-batch and track which manifests have URLs
+        # plus a parallel list of (cut_idx, has_url) so we can drop entire
+        # cuts whose manifests failed to fetch when ``skip_failed_fetches``
+        # is on.
         manifest_list = []
-        for cut in cuts:
+        manifest_cut_idx: list[int] = []
+        for cut_idx, cut in enumerate(cuts):
             for _, manifest in cut.iter_data():
                 has_url = self._collect_manifest_urls(manifest, batch)
                 manifest_list.append((manifest, has_url))
+                manifest_cut_idx.append(cut_idx)
 
         # Execute batch request
         from aistore.sdk.errors import AISError
@@ -141,41 +212,60 @@ class AISBatchLoader:
         # Save requests list before calling batch.get() - it may be cleared after execution
         saved_requests_list = list(batch.requests_list)
 
-        try:
-            batch_result = batch.get()
-        except ValueError as e:
-            # ValueError occurs when the batch request is invalid or empty
-            logger.warning(
-                f"ValueError during batch.get(): {e}. Returning unmodified cuts."
-            )
-            return cuts
-        except AISError as e:
-            logger.warning(
-                f"AIStore batch.get() failed: {e}. Falling back to sequential GET requests."
-            )
-
-            # Fallback: make sequential GET requests for each object in the batch
-            # Use a generator to maintain consistency with batch.get() which returns an iterator
-            def sequential_get():
-                for moss_in in saved_requests_list:
-                    try:
-                        content = self._get_object_from_moss_in(moss_in)
-                        yield (moss_in, content)
-                    except Exception as ex:
-                        logger.error(
-                            f"Failed to fetch object {moss_in.obj_name} from bucket "
-                            f"{moss_in.provider}://{moss_in.bck}: {ex}"
-                        )
+        # Generator that mimics ``batch.get()``'s ``(moss_in, content)`` yield
+        # contract by issuing one per-object Get instead. Used both as an
+        # opt-in primary path (``prefer_individual=True``) and as the
+        # AISError / truncation fallback below.
+        #
+        # When ``skip_failed_fetches`` is set, per-object errors yield
+        # ``(moss_in, None)`` instead of raising; the main loop below treats
+        # ``None`` as "drop this manifest's cut" and the affected cuts are
+        # filtered out before return. Without the flag, behavior is unchanged
+        # (raise AISBatchLoaderError on first failure).
+        def _individual_get():
+            for moss_in in saved_requests_list:
+                try:
+                    content = self._get_object_from_moss_in(moss_in)
+                    yield (moss_in, content)
+                except Exception as ex:
+                    bck_, provider_, obj_name_, archpath_ = self._moss_attrs(moss_in)
+                    logger.error(
+                        f"Failed to fetch object {obj_name_}"
+                        + (f" archpath={archpath_}" if archpath_ else "")
+                        + f" from bucket {provider_}://{bck_}: {ex}"
+                    )
+                    if self.skip_failed_fetches:
+                        yield (moss_in, None)
+                    else:
                         raise AISBatchLoaderError(
-                            f"Sequential GET fallback failed for {moss_in.obj_name}"
+                            f"Sequential GET fallback failed for {obj_name_}"
                         ) from ex
 
-            batch_result = sequential_get()
+        if self.prefer_individual:
+            batch_result = _individual_get()
+        else:
+            try:
+                batch_result = batch.get()
+            except ValueError as e:
+                # ValueError occurs when the batch request is invalid or empty
+                logger.warning(
+                    f"ValueError during batch.get(): {e}. Returning unmodified cuts."
+                )
+                return cuts
+            except AISError as e:
+                logger.warning(
+                    f"AIStore batch.get() failed: {e}. Falling back to sequential GET requests."
+                )
+                batch_result = _individual_get()
 
-        # Apply the received data back into each manifest that had a URL
+        # Apply the received data back into each manifest that had a URL.
+        # ``failed_cut_indices`` accumulates cuts whose manifests failed to
+        # fetch when ``skip_failed_fetches`` is on; they are removed from the
+        # returned CutSet (instead of raising).
+        failed_cut_indices: set[int] = set()
         request_idx = 0
         batch_stream_failed = False
-        for manifest, has_url in manifest_list:
+        for mi, (manifest, has_url) in enumerate(manifest_list):
             if has_url:
                 info = None
                 content = None
@@ -220,23 +310,40 @@ class AISBatchLoader:
 
                 # Retry with direct API call if content is empty (from timeout or actual empty response)
                 if content == b"":
+                    bck_, provider_, obj_name_, archpath_ = self._moss_attrs(info)
                     logger.warning(
-                        f"Object {info.obj_name}/{info.archpath} from bucket {info.provider}://{info.bck} "
+                        f"Object {obj_name_}/{archpath_} from bucket {provider_}://{bck_} "
                         f"returned empty content. Retrying with direct AIStore API call."
                     )
                     try:
                         content = self._get_object_from_moss_in(info)
                     except Exception as ex:
                         logger.error(
-                            f"Failed to fetch object {info.obj_name} from bucket "
-                            f"{info.provider}://{info.bck}: {ex}"
+                            f"Failed to fetch object {obj_name_} from bucket "
+                            f"{provider_}://{bck_}: {ex}"
                         )
-                        raise AISBatchLoaderError(
-                            f"Direct API fallback failed for {info.obj_name}"
-                        ) from ex
+                        if self.skip_failed_fetches:
+                            content = None  # signal "drop this cut"
+                        else:
+                            raise AISBatchLoaderError(
+                                f"Direct API fallback failed for {obj_name_}"
+                            ) from ex
 
-                self._inject_data_into_manifest(manifest, content)
+                if content is None:
+                    # Per-object fetch failed and skip_failed_fetches is on:
+                    # mark the parent cut for removal and skip injection.
+                    failed_cut_indices.add(manifest_cut_idx[mi])
+                else:
+                    self._inject_data_into_manifest(manifest, content)
                 request_idx += 1
+
+        if failed_cut_indices:
+            survivors = [c for i, c in enumerate(cuts) if i not in failed_cut_indices]
+            logger.warning(
+                f"AISBatchLoader dropping {len(failed_cut_indices)}/{len(cuts)} cuts "
+                f"due to per-object fetch failures (skip_failed_fetches=True)."
+            )
+            return CutSet(survivors)
 
         return cuts
 

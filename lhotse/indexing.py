@@ -96,7 +96,14 @@ def _is_compressed_path(path: Pathlike) -> bool:
 def indexed_path_kind(path: Pathlike) -> Optional[str]:
     if _is_pipe_path(path) or _is_compressed_path(path):
         return None
-    if extension_contains(".jsonl", path):
+    # Accept both ``.jsonl`` and ``.json`` for line-delimited manifests. NeMo
+    # ships many ASR/SLM manifests as ``*.json`` (one JSON object per line,
+    # despite the singular extension); ``create_jsonl_index`` and
+    # ``IndexedJsonlReader`` only rely on newline-separated records, so the
+    # storage layout is identical. A pretty-printed multi-line JSON would
+    # produce a bogus index, but that's not a supported lhotse / NeMo
+    # manifest layout in the first place.
+    if extension_contains(".jsonl", path) or extension_contains(".json", path):
         return "jsonl"
     if extension_contains(".tar", path):
         return "tar"
@@ -239,19 +246,25 @@ def read_index(idx_path: Pathlike) -> np.ndarray:
     """
     Read an index file and return a NumPy array of byte-offsets.
 
-    The array is memory-mapped (``np.memmap``) so that large index files
-    do not consume resident memory.  The last element is the sentinel
-    (file size); there are ``len(arr) - 1`` samples. Remote index files
-    are first cached under a deterministic local temp path and memory-mapped
-    from there.
+    Indexes are tiny (a uint64 per record + a sentinel; typical shards land
+    in the 1 KB – 100 KB range), so ``np.fromfile`` is preferred over
+    ``np.memmap``: at large fan-outs (NeMo blends with 80k+ shards), the per
+    -mmap address-space slot consumes the kernel's ``vm.max_map_count``
+    budget (~65k by default) and any subsequent ``mmap`` raises
+    ``OSError: [Errno 12] Cannot allocate memory``. Resident memory cost of
+    the alternative is negligible (a few hundred MB for the entire training
+    blend), and lookups are just integer indexing — no benefit from memmap
+    semantics. Remote index files are cached under a deterministic local
+    temp path and read from there. The last element is the sentinel
+    (file size); there are ``len(arr) - 1`` samples.
     """
     local_path = _as_local_path(idx_path)
     if local_path is not None:
         if not local_path.is_file():
             raise FileNotFoundError(f"Index file not found: {local_path}")
-        return np.memmap(local_path, dtype=_OFFSET_DTYPE, mode="r")
+        return np.fromfile(local_path, dtype=_OFFSET_DTYPE)
     cache_path = _materialize_remote_index(idx_path)
-    return np.memmap(cache_path, dtype=_OFFSET_DTYPE, mode="r")
+    return np.fromfile(cache_path, dtype=_OFFSET_DTYPE)
 
 
 # ---------------------------------------------------------------------------
@@ -273,15 +286,23 @@ def create_jsonl_index(
     :returns: the path of the newly created ``.idx`` file.
     """
     _assert_uncompressed(jsonl_path, "JSONL")
+    # Track the running byte offset by accumulating ``len(line)`` rather than
+    # calling ``f.tell()`` on every line. The latter raises
+    # ``io.UnsupportedOperation`` on non-seekable streams (AIStore's
+    # ``ObjectFileReader``, smart_open's S3 reader without seek support, …),
+    # which would make every ``s3://``/``ais://`` JSONL fail to index.
+    # ``readline()`` returns the bytes including the trailing newline, so the
+    # accumulated total exactly tracks the start-of-line byte offsets.
     offsets = []
+    pos = 0
     with open_best(jsonl_path, "rb") as f:
         while True:
-            pos = f.tell()
             line = f.readline()
             if not line:
                 break
             offsets.append(pos)
-        offsets.append(f.tell())  # sentinel = file size
+            pos += len(line)
+        offsets.append(pos)  # sentinel = file size
 
     idx_path = output_path if output_path is not None else index_file_path(jsonl_path)
     _write_index(offsets, idx_path)

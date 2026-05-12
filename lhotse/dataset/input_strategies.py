@@ -223,6 +223,7 @@ class AudioSamples(BatchIO):
         fault_tolerant: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
         use_batch_loader: bool = False,
+        ais_prefer_individual: bool = False,
         mono_downmix: Optional[bool] = None,
     ) -> None:
         """
@@ -235,12 +236,20 @@ class AudioSamples(BatchIO):
         :param fault_tolerant: when ``True``, the cuts for which audio loading failed
             will be skipped. It will make ``__call__`` return an additional item,
             which is the CutSet for which we successfully read the audio.
-            It may be a subset of the input CutSet.
+            It may be a subset of the input CutSet. When ``use_batch_loader=True``,
+            this also propagates to :class:`~lhotse.ais.AISBatchLoader` so per-object
+            AIS fetch failures (404, refused, etc.) drop the corresponding cut
+            instead of raising.
         :param executor_type: the type of executor used for parallel audio reads
             (only relevant when ``num_workers>0``).
         :param use_batch_loader: When ``True``, enables batch loading of audio data from AIStore.
             This allows all audio samples in the batch to be fetched in a single request for increased efficiency.
             Requires the input CutSet to be eager (not lazy).
+        :param ais_prefer_individual: only meaningful when ``use_batch_loader=True``. When
+            ``True``, the underlying :class:`~lhotse.ais.AISBatchLoader` skips the MOSS
+            GetBatch attempt and issues one ``Object.get_reader().read_all()`` per object
+            instead — useful when the AIStore deployment doesn't support GetBatch or its
+            performance is degraded for the access pattern.
         :param mono_downmix: controls channel handling (passed to :func:`collate_audio`).
             ``None`` (default): auto-detect — downmix unless every cut is multichannel.
             ``True``: always downmix to mono; output shape is ``(B, T)``.
@@ -254,7 +263,10 @@ class AudioSamples(BatchIO):
         if self.use_batch_loader:
             from lhotse.ais import AISBatchLoader
 
-            self.ais_batch_loader = AISBatchLoader()
+            self.ais_batch_loader = AISBatchLoader(
+                prefer_individual=ais_prefer_individual,
+                skip_failed_fetches=fault_tolerant,
+            )
 
     def __call__(
         self, cuts: CutSet, recording_field: Optional[str] = None
