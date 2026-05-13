@@ -21,6 +21,7 @@ import pytest
 from lhotse import CutSet
 from lhotse.dataset.dataloading import (
     LHOTSE_USE_WORKER_PARTITION,
+    PartitionedIndexedIterator,
     get_worker_partition,
     worker_init_fn,
 )
@@ -224,7 +225,7 @@ def test_indexed_manifest_iterator_partition_resume_topology_mismatch_raises(ind
     with _env_partition(rank=2, world_size=8):
         it2 = LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=99)
         it2.load_state_dict(sd)
-        with pytest.raises(ValueError, match="state mismatch"):
+        with pytest.raises(ValueError, match="topology mismatch"):
             list(it2)
 
 
@@ -865,3 +866,120 @@ def test_chain_mixed_indexed_non_indexed_only_indexed_partitions(tmp_path):
     # Non-indexed half: each rank sees all 8 items from p2 (no partition applied).
     assert sorted(per_rank_plain[0]) == sorted(per_rank_plain[1])
     assert len(per_rank_plain[0]) == 8
+
+
+# ---------------------------------------------------------------------------
+# PartitionedIndexedIterator helper.
+#
+# These tests pin the contract: full coverage at world_size=1, disjoint slices
+# under multi-rank, position-tracked resume, and a strict topology-mismatch
+# error on resume. Iterators that delegate to this helper inherit the contract.
+# ---------------------------------------------------------------------------
+
+
+def test_partitioned_iterator_single_rank_full_coverage():
+    """world_size=1: yields every global index 0..N-1 in order."""
+    it = PartitionedIndexedIterator()
+    assert list(it.iterate(10)) == list(range(10))
+    sd = it.state_dict()
+    assert sd["position"] == 10
+    assert sd["shard_id"] == 0
+    assert sd["num_shards"] == 1
+
+
+@pytest.mark.parametrize("world_size", [2, 3, 4, 7])
+def test_partitioned_iterator_multi_rank_disjoint_full_coverage(world_size):
+    """Every rank gets a disjoint slice; the union equals the full range."""
+    n = 50
+    per_rank = []
+    for rank in range(world_size):
+        with _env_partition(rank=rank, world_size=world_size):
+            it = PartitionedIndexedIterator()
+            per_rank.append(list(it.iterate(n)))
+    union = [idx for slc in per_rank for idx in slc]
+    assert sorted(union) == list(range(n))
+    for r in range(world_size):
+        for s in range(r + 1, world_size):
+            assert set(per_rank[r]).isdisjoint(per_rank[s])
+
+
+def test_partitioned_iterator_resume_from_middle():
+    """Save position mid-iteration, restore, finish — gets the tail intact."""
+    with _env_partition(rank=1, world_size=4):
+        it = PartitionedIndexedIterator()
+        gen = it.iterate(100)
+        first_half = [next(gen) for _ in range(6)]
+        sd = it.state_dict()
+
+        # Reload into a fresh iterator (simulating a process restart) and
+        # finish the iteration; the two halves should reconstruct the
+        # original rank-1 slice exactly.
+        it2 = PartitionedIndexedIterator()
+        it2.load_state_dict(sd)
+        second_half = list(it2.iterate(100))
+
+        ref = PartitionedIndexedIterator()
+        full = list(ref.iterate(100))
+        assert first_half + second_half == full
+
+
+def test_partitioned_iterator_resume_topology_mismatch_raises():
+    """Saving under (rank=0, world=4) then resuming under (rank=0, world=8)
+    must raise — the per-shard sequence would diverge silently otherwise."""
+    with _env_partition(rank=0, world_size=4):
+        it = PartitionedIndexedIterator()
+        gen = it.iterate(64)
+        for _ in range(3):
+            next(gen)
+        sd = it.state_dict()
+
+    with _env_partition(rank=0, world_size=8):
+        it2 = PartitionedIndexedIterator()
+        it2.load_state_dict(sd)
+        with pytest.raises(ValueError, match="topology mismatch"):
+            next(it2.iterate(64))
+
+
+def test_partitioned_iterator_map_style_path_yields_all():
+    """Map-style mode: RANK/WORLD_SIZE set but LHOTSE_USE_WORKER_PARTITION
+    unset. Partition collapses to (0, 1), helper yields the full range so
+    the sampler's own over-sample-and-discard handles DP dedup."""
+    with _env_map_style(rank=2, world_size=4):
+        it = PartitionedIndexedIterator()
+        assert list(it.iterate(25)) == list(range(25))
+
+
+@pytest.mark.parametrize("world_size", [2, 4, 8])
+def test_partitioned_iterator_empty_total_len_no_yields(world_size):
+    """total_len=0 yields nothing on every rank."""
+    for rank in range(world_size):
+        with _env_partition(rank=rank, world_size=world_size):
+            it = PartitionedIndexedIterator()
+            assert list(it.iterate(0)) == []
+
+
+def test_partitioned_iterator_n_smaller_than_world_size():
+    """If total_len < world_size, low ranks get one item, high ranks get none."""
+    n, world_size = 3, 8
+    per_rank = []
+    for rank in range(world_size):
+        with _env_partition(rank=rank, world_size=world_size):
+            it = PartitionedIndexedIterator()
+            per_rank.append(list(it.iterate(n)))
+    # First n ranks each get a single index = their rank; the rest are empty.
+    assert per_rank[:n] == [[0], [1], [2]]
+    assert all(slc == [] for slc in per_rank[n:])
+
+
+def test_partitioned_iterator_state_dict_before_iter_is_neutral():
+    """Initial state_dict carries None topology — a load+iterate cycle must
+    not raise on the first run because saved topology is None (= unknown)."""
+    src = PartitionedIndexedIterator()
+    sd = src.state_dict()
+    assert sd == {"position": 0, "shard_id": None, "num_shards": None}
+
+    dst = PartitionedIndexedIterator()
+    dst.load_state_dict(sd)
+    # No topology recorded → no mismatch error possible; iterates from 0.
+    with _env_partition(rank=0, world_size=2):
+        assert list(dst.iterate(8)) == [0, 2, 4, 6]

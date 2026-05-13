@@ -1294,10 +1294,11 @@ def test_indexed_tar_reader_remote_data_with_remote_index_path(
     assert str(data_path) == samples[1][0]
 
 
-def test_read_index_remote_path_is_cached_and_memmapped(
+def test_read_index_remote_path_is_cached_locally(
     tmp_path, jsonl_file, monkeypatch
 ):
-    """Remote index files are cached locally and then memory-mapped."""
+    """Remote index files are downloaded once, cached on disk, and reused
+    from the cache on subsequent calls (no second remote fetch)."""
     import lhotse.indexing as indexing_mod
 
     p, _ = jsonl_file
@@ -1322,9 +1323,7 @@ def test_read_index_remote_path_is_cached_and_memmapped(
     offsets1 = read_index(remote_idx)
     offsets2 = read_index(remote_idx)
 
-    assert isinstance(offsets1, np.memmap)
-    assert isinstance(offsets2, np.memmap)
-    assert np.array_equal(np.asarray(offsets1), np.asarray(offsets2))
+    assert np.array_equal(offsets1, offsets2)
     assert calls["remote_idx"] == 1
 
     cache_path = indexing_mod._remote_index_cache_path(remote_idx)
@@ -1363,7 +1362,8 @@ def test_read_index_remote_path_refreshes_invalid_cached_file(
 
     offsets = read_index(remote_idx)
 
-    assert isinstance(offsets, np.memmap)
+    expected = np.fromfile(local_idx, dtype=offsets.dtype)
+    assert np.array_equal(offsets, expected)
     assert calls["remote_idx"] == 1
     assert cache_path.stat().st_size == local_idx.stat().st_size
 

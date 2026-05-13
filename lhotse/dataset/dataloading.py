@@ -3,7 +3,7 @@ import random
 import secrets
 import sys
 from functools import partial
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, Generator, Literal, Optional, Union
 
 import torch
 from torch import distributed as dist
@@ -174,6 +174,156 @@ def get_worker_partition() -> tuple:
     shard_id = rank * num_workers + worker_id
     num_shards = world_size * num_workers
     return shard_id, num_shards
+
+
+class PartitionedIndexedIterator:
+    """Shared partition-aware iteration driver for indexed leaf iterators.
+
+    Encapsulates the (shard_id, num_shards) partition lookup, position
+    tracking across DataLoader worker subprocesses, and topology-validated
+    resume — the bits every indexed ``IteratorNode`` needs to repeat
+    correctly. Yields global indices into the leaf source; the caller is
+    responsible for decoding each index into the user-facing item.
+
+    Two iteration modes are supported and selected at construction time:
+
+    * **Stride** (``shuffle=False``, default): yields
+      ``[shard_id, shard_id + num_shards, shard_id + 2 * num_shards, …]``
+      — the simplest disjoint-per-rank partition.
+    * **Feistel-shuffled** (``shuffle=True``, with ``seed``): yields a
+      Feistel permutation of the full range restricted to this rank's
+      slice, via :class:`~lhotse.indexing.LazyShuffledRange`. Useful when
+      the underlying source is in a deterministic on-disk order but the
+      consumer wants item-level shuffling within each shard.
+
+    Typical wiring::
+
+        class MyIndexedIterator(IteratorNode):
+            def __init__(self, ...):
+                ...
+                self._iter_state = PartitionedIndexedIterator()
+
+            def __iter__(self):
+                for global_idx in self._iter_state.iterate(self._total_len):
+                    item = self._decode_at(global_idx)
+                    if item is None:
+                        continue
+                    yield item
+
+            def state_dict(self) -> dict:
+                return {**self._iter_state.state_dict(), "epoch": self.epoch}
+
+            def load_state_dict(self, sd: dict) -> None:
+                self._iter_state.load_state_dict(sd)
+                self.epoch = sd.get("epoch", 0)
+
+    Notes:
+        * The partition is ``shard_id = rank * num_workers + worker_id``,
+          ``num_shards = world_size * num_workers``. Outside DataLoader
+          workers (or when :data:`LHOTSE_USE_WORKER_PARTITION` is unset —
+          i.e. map-style mode) the partition collapses to ``(0, 1)`` and
+          iteration covers the full range, matching pre-partition behavior.
+        * ``state_dict`` stores the local-within-shard ``position`` plus
+          the ``(shard_id, num_shards)`` topology captured at save time;
+          on resume we refuse to continue under a different topology
+          because the per-shard index sequence would diverge.
+    """
+
+    def __init__(self, shuffle: bool = False, seed: int = 0) -> None:
+        self._shuffle = shuffle
+        self._seed = seed
+        self._position = 0
+        self._shard_id: Optional[int] = None
+        self._num_shards: Optional[int] = None
+        self._restored = False
+        # Constructed lazily inside :meth:`iterate` so the partition info
+        # is read in the same process that owns the DataLoader worker env.
+        self._range = None
+        self._pending_range_state = None
+
+    @property
+    def position(self) -> int:
+        """Local position within the current shard (0-indexed next element)."""
+        return self._position
+
+    def iterate(self, total_len: int) -> Generator[int, None, None]:
+        """Yield global indices for this rank's slice of ``range(total_len)``.
+
+        Raises:
+            ValueError: if resuming from a saved state under a different
+                ``(shard_id, num_shards)`` topology than the one recorded
+                at save time.
+        """
+        shard_id, num_shards = get_worker_partition()
+
+        if self._restored:
+            self._restored = False
+            if self._num_shards is not None and (
+                self._shard_id != shard_id or self._num_shards != num_shards
+            ):
+                raise ValueError(
+                    f"PartitionedIndexedIterator topology mismatch on resume: "
+                    f"saved (shard_id={self._shard_id}, num_shards={self._num_shards}), "
+                    f"current (shard_id={shard_id}, num_shards={num_shards}). "
+                    f"Resuming with a different DP rank / DataLoader worker count "
+                    f"is not supported (per-shard index sequence would diverge)."
+                )
+            start = self._position
+        else:
+            start = 0
+            self._position = 0
+
+        self._shard_id = shard_id
+        self._num_shards = num_shards
+
+        if self._shuffle:
+            from lhotse.indexing import LazyShuffledRange
+
+            self._range = LazyShuffledRange(
+                total_len, seed=self._seed, shard_id=shard_id, num_shards=num_shards
+            )
+            if self._pending_range_state is not None:
+                self._range.load_state_dict(self._pending_range_state)
+                self._pending_range_state = None
+            shard_len = len(self._range)
+        else:
+            self._range = None
+            if total_len > shard_id:
+                shard_len = (total_len - shard_id + num_shards - 1) // num_shards
+            else:
+                shard_len = 0
+
+        for i in range(start, shard_len):
+            self._position = i + 1
+            if self._range is not None:
+                yield self._range[i]
+            else:
+                yield shard_id + i * num_shards
+
+    def state_dict(self) -> dict:
+        sd = {
+            "position": self._position,
+            "shard_id": self._shard_id,
+            "num_shards": self._num_shards,
+        }
+        if self._range is not None:
+            sd["range"] = self._range.state_dict()
+        elif self._pending_range_state is not None:
+            sd["range"] = self._pending_range_state
+        return sd
+
+    def load_state_dict(self, sd: dict) -> None:
+        self._position = sd.get("position", 0)
+        self._shard_id = sd.get("shard_id")
+        self._num_shards = sd.get("num_shards")
+        if self._shuffle:
+            # Stash the LazyShuffledRange state; it gets applied in iterate()
+            # once the current (shard_id, num_shards) is known so the
+            # topology-mismatch check there can fire first with a clearer
+            # error than what LazyShuffledRange itself would raise.
+            self._pending_range_state = sd.get("range")
+            self._range = None
+        self._restored = True
 
 
 def get_world_size() -> int:

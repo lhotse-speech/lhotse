@@ -574,6 +574,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         index_path: Optional[Pathlike] = None,
         decode: Optional[Callable[[dict], Any]] = None,
     ) -> None:
+        from lhotse.dataset.dataloading import PartitionedIndexedIterator
         from lhotse.indexing import IndexedJsonlReader
 
         self.path = path
@@ -582,14 +583,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         self.index_path = index_path
         self._decode = decode if decode is not None else deserialize_item
         self._reader = IndexedJsonlReader(path, index_path=index_path)
-        # LazyShuffledRange is constructed lazily in __iter__ so the
-        # (shard_id, num_shards) partition can be resolved inside the
-        # DataLoader worker subprocess where the env vars set by
-        # worker_init_fn are visible.
-        self._range = None
-        self._pending_range_state = None
-        self._position = 0
-        self._restored = False
+        self._iter_state = PartitionedIndexedIterator(shuffle=shuffle, seed=seed)
 
     @property
     def is_indexed(self) -> bool:
@@ -604,37 +598,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         return attach_graph_origin(self._decode(self._reader[idx]), idx)
 
     def __iter__(self):
-        from lhotse.dataset.dataloading import get_worker_partition
-        from lhotse.indexing import LazyShuffledRange
-
-        n = len(self._reader)
-        shard_id, num_shards = get_worker_partition()
-
-        if self.shuffle:
-            self._range = LazyShuffledRange(
-                n, seed=self.seed, shard_id=shard_id, num_shards=num_shards
-            )
-            if self._pending_range_state is not None:
-                self._range.load_state_dict(self._pending_range_state)
-                self._pending_range_state = None
-            shard_len = len(self._range)
-        else:
-            self._range = None
-            shard_len = max(0, (n - shard_id + num_shards - 1) // num_shards) if n > shard_id else 0
-
-        if self._restored:
-            self._restored = False
-            start = self._position
-        else:
-            start = 0
-        self._position = start
-
-        for i in range(start, shard_len):
-            self._position = i + 1
-            if self._range is not None:
-                phys_idx = self._range[i]
-            else:
-                phys_idx = shard_id + i * num_shards
+        for phys_idx in self._iter_state.iterate(len(self._reader)):
             yield attach_graph_origin(self._decode(self._reader[phys_idx]), phys_idx)
 
     def __len__(self) -> int:
@@ -644,26 +608,19 @@ class LazyIndexedManifestIterator(IteratorNode):
         return LazyIteratorChain(self, other)
 
     def state_dict(self) -> dict:
-        sd = {"position": self._position, "shuffle": self.shuffle, "seed": self.seed}
-        if self._range is not None:
-            sd["range"] = self._range.state_dict()
-        elif self._pending_range_state is not None:
-            sd["range"] = self._pending_range_state
-        return sd
+        # ``shuffle`` and ``seed`` are surfaced in the dict for inspection
+        # and forward-compat — they are not consumed on load (the iterator
+        # is reconstructed with the same constructor args).
+        return {**self._iter_state.state_dict(), "shuffle": self.shuffle, "seed": self.seed}
 
     def load_state_dict(self, sd: dict) -> None:
-        self._position = sd["position"]
-        if self.shuffle:
-            if "range" not in sd:
-                raise ValueError(
-                    "LazyIndexedManifestIterator with shuffle=True requires "
-                    "'range' in state_dict, but it was not found. "
-                    "The checkpoint may have been created without shuffling."
-                )
-            # Stash the range state; it will be applied (and topology-validated)
-            # in __iter__ once we know the current (shard_id, num_shards).
-            self._pending_range_state = sd["range"]
-            self._range = None
+        if self.shuffle and "range" not in sd:
+            raise ValueError(
+                "LazyIndexedManifestIterator with shuffle=True requires "
+                "'range' in state_dict, but it was not found. "
+                "The checkpoint may have been created without shuffling."
+            )
+        self._iter_state.load_state_dict(sd)
         self._restored = True
 
 
