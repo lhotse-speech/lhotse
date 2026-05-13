@@ -523,3 +523,78 @@ class TestIndexedSamplerStateCapture:
             match="indexed datasets should never use O\\(N\\) fast-forward",
         ):
             iter(sampler2)
+
+
+class TestMixedSourceConstantTimeAccessRaises:
+    """Regression test for the silent-swallow bug.
+
+    When the iterator graph mixes O(1)-restorable leaves with non-O(1) ones,
+    LazyIteratorMultiplexer.has_constant_time_access is False (it requires
+    ALL children), so the bucketer never attaches _graph_origin and
+    `DynamicBucketer.get_state()` raises RuntimeError. Previously this was
+    silently swallowed because the outer top-level CutSet also reported
+    has_constant_time_access=False. We now walk to the leaves and re-raise
+    when at least one leaf is O(1) — that's evidence of mis-configuration.
+    """
+
+    def _make_streaming_leaf(self):
+        # A "leaf" with has_constant_time_access=False, no __getitem__.
+        class _StreamingLeaf(IteratorNode):
+            is_checkpointable = True
+            has_constant_time_access = False
+
+            def __init__(self, cuts):
+                self.cuts = list(cuts)
+
+            def __iter__(self):
+                yield from self.cuts
+
+            def __len__(self):
+                return len(self.cuts)
+
+            def state_dict(self):
+                return {}
+
+            def load_state_dict(self, sd):
+                pass
+
+        return _StreamingLeaf
+
+    def test_mixed_raises(self, cuts):
+        from lhotse.lazy import LazyIteratorMultiplexer
+
+        streaming_leaf = self._make_streaming_leaf()(list(cuts)[:50])
+        indexed_leaf = _IndexedCutsWithoutGraphOrigin(list(cuts)[50:])  # has_constant_time_access=True per definition above
+        mux = LazyIteratorMultiplexer(streaming_leaf, indexed_leaf, seed=0)
+        cs = CutSet(mux)
+
+        sampler = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
+        iter(sampler)
+        for _ in range(3):
+            next(sampler)
+
+        # Now state_dict() must raise — one of the muxed sources is O(1) but
+        # the other isn't, so we shouldn't silently degrade to O(N) replay.
+        with pytest.raises(RuntimeError):
+            sampler.state_dict()
+
+    def test_all_streaming_falls_back_to_replay(self, cuts):
+        from lhotse.lazy import LazyIteratorMultiplexer
+
+        leaf_cls = self._make_streaming_leaf()
+        l1 = leaf_cls(list(cuts)[:50])
+        l2 = leaf_cls(list(cuts)[50:])
+        mux = LazyIteratorMultiplexer(l1, l2, seed=0)
+        cs = CutSet(mux)
+
+        sampler = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
+        iter(sampler)
+        for _ in range(3):
+            next(sampler)
+
+        # All leaves are non-O(1) — there's no way to do O(1) restore, so
+        # falling back to O(N) replay is the only option. state_dict() must
+        # succeed (just without rng_state / bucketer_state populated).
+        sd = sampler.state_dict()
+        assert "rng_state" not in sd
+        assert "bucketer_state" not in sd

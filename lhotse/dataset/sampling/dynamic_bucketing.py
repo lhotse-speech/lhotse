@@ -37,6 +37,7 @@ from lhotse.dataset.sampling.checkpoint_backends import (
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
 from lhotse.lazy import (
+    IteratorNode,
     require_graph_origin,
     resolve_iterator_source,
     supports_graph_restore,
@@ -232,9 +233,14 @@ class DynamicBucketingSampler(CutSampler):
                 sd["rng_state"] = self.rng.getstate()
                 sd["bucketer_state"] = bucketer_state
             except RuntimeError:
-                if all(
-                    getattr(cs, "has_constant_time_access", False) for cs in self.cuts
-                ):
+                # Allow the O(N) replay fallback only when EVERY leaf source in
+                # the cuts graph reports has_constant_time_access=False (i.e. an
+                # all-streaming pipeline that fundamentally cannot do O(1) restore).
+                # If any leaf is graph-restorable, the failure is a wiring bug —
+                # one mixed-in non-restorable source silently disables the O(1)
+                # path for the whole pipeline; raise so the misconfiguration is
+                # visible at checkpoint time rather than degrading to O(N) replay.
+                if any(_leaf_constant_time_flags(self.cuts)):
                     raise
             except (AttributeError, TypeError):
                 pass  # Fall back to O(N) on load
@@ -1006,3 +1012,40 @@ def _emit_shuffle_buffer_size_warning():
         "This argument will be deprecated in a future Lhotse version.",
         category=DeprecationWarning,
     )
+
+
+def _leaf_constant_time_flags(cuts) -> List[bool]:
+    """Walk the iterator graph of ``cuts`` (the sampler's input cutsets) and
+    return one ``has_constant_time_access`` flag per leaf data source.
+
+    A "leaf" is any node with no further ``source`` / ``sources`` to descend
+    into (i.e. the actual data readers — ``LazyNeMoTarredIterator``,
+    ``LazySharIterator``, ``LazyIndexedSharIterator``, ``LazyManifestIterator``,
+    …). Wrapper nodes like ``LazyFilter`` / ``LazyMapper`` / ``LazyShuffler``
+    delegate ``has_constant_time_access`` to their child, so they're not
+    informative — recurse through them.
+    """
+    flags: List[bool] = []
+
+    def _walk(node):
+        # Unwrap CutSet (and similar manifest wrappers) to its underlying iterator.
+        if hasattr(node, "data") and not callable(getattr(node, "data")):
+            node = node.data
+        children = None
+        if isinstance(node, IteratorNode):
+            srcs = getattr(node, "sources", None)
+            if isinstance(srcs, (list, tuple)) and srcs:
+                children = list(srcs)
+            else:
+                src = getattr(node, "source", None)
+                if src is not None and not callable(src):
+                    children = [src]
+        if children:
+            for c in children:
+                _walk(c)
+        else:
+            flags.append(bool(getattr(node, "has_constant_time_access", False)))
+
+    for cs in cuts:
+        _walk(cs)
+    return flags

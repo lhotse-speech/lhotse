@@ -31,6 +31,7 @@ Usage
 import hashlib
 import io
 import os
+import re
 import struct
 import tarfile
 import tempfile
@@ -143,19 +144,37 @@ def validate_indexed_access(
     return path_kind
 
 
-def index_file_path(data_path: Pathlike) -> Pathlike:
+def index_file_path(
+    data_path: Pathlike, indexes_root: Optional[Pathlike] = None
+) -> Pathlike:
     """
     Return the conventional index file path for a given data file.
 
-    Example::
+    When ``indexes_root`` is ``None`` (the default), the index sits next to
+    the data file::
 
         >>> index_file_path("cuts.000000.jsonl")
         PosixPath('cuts.000000.jsonl.idx')
+
+    When ``indexes_root`` is set, return a path under that root that mirrors
+    the data file's directory structure. URL schemes are stripped (so the
+    bucket/key remains as the relative key); leading separators on local
+    paths are dropped. The ``indexes_root`` itself can be local or a URL —
+    joining respects URL semantics. Examples::
+
+        index_file_path("/data/foo/bar.jsonl",          indexes_root="/cache/idx")
+            -> Path("/cache/idx/data/foo/bar.jsonl.idx")
+        index_file_path("ais://bucket/key/m.jsonl",     indexes_root="/cache/idx")
+            -> Path("/cache/idx/bucket/key/m.jsonl.idx")
+        index_file_path("s3://b/path/data.tar",         indexes_root="ais://cache/idx")
+            -> "ais://cache/idx/b/path/data.tar.idx"
     """
-    local_path = _as_local_path(data_path)
-    if local_path is not None:
-        return Path(str(local_path) + ".idx")
-    return str(data_path) + ".idx"
+    if indexes_root is None:
+        local_path = _as_local_path(data_path)
+        if local_path is not None:
+            return Path(str(local_path) + ".idx")
+        return str(data_path) + ".idx"
+    return _join_indexes_root(data_path, indexes_root)
 
 
 def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> bool:
@@ -879,3 +898,22 @@ def read_tar_member_at(fh, offset: int) -> Tuple[Optional[bytes], Path, tarfile.
         return None, path, info
     data = fh.read(info.size)
     return data, path, info
+
+
+_URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://")
+
+
+def _join_indexes_root(data_path: Pathlike, indexes_root: Pathlike) -> Pathlike:
+    """Mirror *data_path*'s directory structure under *indexes_root* and append ".idx".
+
+    URL schemes on *data_path* are stripped; leading separators and Windows
+    drive-letter prefixes are removed so the result is a clean relative key
+    under *indexes_root*. *indexes_root* itself may be local or a URL.
+    """
+    rel = _URL_SCHEME_RE.sub("", str(data_path)).lstrip("/\\")
+    if len(rel) >= 2 and rel[1] == ":":  # Windows drive prefix, e.g. "C:/..."
+        rel = rel[2:].lstrip("/\\")
+    root_str = str(indexes_root).rstrip("/\\")
+    if _URL_SCHEME_RE.match(root_str):
+        return f"{root_str}/{rel}.idx"
+    return Path(root_str) / (rel + ".idx")

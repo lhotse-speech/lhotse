@@ -1017,3 +1017,37 @@ def test_cutset_from_shar_index_path_with_indexed_false_raises(tmp_path, cuts):
 
     with pytest.raises(ValueError, match="contradictory"):
         CutSet.from_shar(in_dir=data_dir, indexed=False, index_path=idx_dir)
+
+
+def test_indexed_shar_with_indexes_root_fields(tmp_path, cuts):
+    """``LazyIndexedSharIterator(..., indexes_root=...)`` mirrors data layout under root."""
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+    # ``indexes_root`` should mirror the data dir's structure: e.g. for a data
+    # file at ``<data_dir>/cuts.000000.jsonl`` the .idx must live at
+    # ``<indexes_root>/<data_dir-without-leading-slash>/cuts.000000.jsonl.idx``.
+    indexes_root = tmp_path / "mirror"
+    rel = str(data_dir).lstrip("/")
+    mirror_data = indexes_root / rel
+    mirror_data.mkdir(parents=True)
+    for idx_file in idx_dir.iterdir():
+        (mirror_data / idx_file.name).write_bytes(idx_file.read_bytes())
+
+    cuts_paths = sorted(data_dir.glob("cuts.*.jsonl"))
+    recording_paths = sorted(data_dir.glob("recording.*.tar"))
+    shar = LazyIndexedSharIterator(
+        fields={"cuts": cuts_paths, "recording": recording_paths},
+        indexes_root=indexes_root,
+    )
+    assert shar.has_constant_time_access is True
+    assert len(list(shar)) == len(cuts)
+
+
+def test_indexes_root_and_index_path_are_mutually_exclusive(tmp_path, cuts):
+    data_dir, idx_dir = _write_shar_and_move_indexes(tmp_path, cuts)
+    cuts_paths = sorted(data_dir.glob("cuts.*.jsonl"))
+    with pytest.raises(ValueError, match="not both"):
+        LazyIndexedSharIterator(
+            fields={"cuts": cuts_paths},
+            index_path={"cuts": [str(idx_dir / p.name) + ".idx" for p in cuts_paths]},
+            indexes_root=tmp_path / "mirror",
+        )

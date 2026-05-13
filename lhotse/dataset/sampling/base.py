@@ -282,10 +282,16 @@ class CutSampler(Sampler, Dillable):
             f"attempted restoring to {world_size}). Changing the world_size would result in different batches "
             f"being returned from the sampler."
         )
-        # We are explicitly discarding the "rank" argument to support restoring multi-GPU training
-        # without too much hassle.
-        # We assume that if the world_size is OK, the samplers local ranks are fine.
-        del state_dict["rank"]
+        # Each rank must receive its own saved state — cross-rank loads desynchronise
+        # per-rank data partitions. In iterable-dataset mode the sampler is constructed
+        # with world_size=1, rank=0 so this check passes trivially; the
+        # PartitionedIndexedIterator topology check covers that path.
+        saved_rank = state_dict.pop("rank")
+        if saved_rank != self.rank:
+            raise RuntimeError(
+                f"CutSampler.load_state_dict: state was saved on rank={saved_rank} but is "
+                f"being loaded on rank={self.rank} (world_size={self.world_size})."
+            )
         assert self.seed == state_dict.pop("seed")
         shuffle = state_dict.pop("shuffle")
         if self.shuffle != shuffle:

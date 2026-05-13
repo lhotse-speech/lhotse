@@ -492,6 +492,7 @@ class CutSet(Serializable, AlgorithmMixin):
         slice_length: Optional[int] = None,
         indexed: Optional[bool] = None,
         index_path=None,
+        indexes_root: Optional[Pathlike] = None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -638,10 +639,10 @@ class CutSet(Serializable, AlgorithmMixin):
 
         use_indexed = indexed
 
-        if index_path is not None and indexed is False:
+        if (index_path is not None or indexes_root is not None) and indexed is False:
             raise ValueError(
-                "index_path is set but indexed=False — this is contradictory. "
-                "Either set indexed=True (or None) or remove index_path."
+                "index_path/indexes_root is set but indexed=False — this is contradictory. "
+                "Either set indexed=True (or None) or remove index_path/indexes_root."
             )
 
         if use_indexed is None:
@@ -649,6 +650,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 fields=fields,
                 in_dir=in_dir,
                 index_path=index_path,
+                indexes_root=indexes_root,
             )
 
         if use_indexed:
@@ -672,6 +674,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     seed=seed,
                     split_for_dataloading=split_for_dataloading,
                     index_path=index_path,
+                    indexes_root=indexes_root,
                 )
             )
 

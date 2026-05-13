@@ -349,3 +349,19 @@ def test_epoch_diagnostics_reset_on_start_of_iteration(create_samplers, advance_
         assert sampler.diagnostics.current_epoch == 0
         assert sampler.diagnostics.total_cuts == total_cuts_pass1
         assert sampler.diagnostics.total_batches == total_batches_pass1
+
+
+def test_load_state_dict_rejects_cross_rank_state():
+    """Loading rank-M state on rank-N must raise — see DataModule per-rank gather."""
+    src = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=0)
+    dst = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
+    state = src.state_dict()
+    with pytest.raises(RuntimeError, match="state was saved on rank=0 but is being loaded on rank=2"):
+        dst.load_state_dict(state)
+
+
+def test_load_state_dict_same_rank_still_works():
+    """Same-rank restore (the legitimate per-rank-correct case) is unaffected."""
+    src = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
+    dst = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
+    dst.load_state_dict(src.state_dict())  # no raise

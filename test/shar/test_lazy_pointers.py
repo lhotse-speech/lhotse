@@ -45,6 +45,7 @@ ALL_FIELDS_NUMPY = {
 @pytest.fixture
 def shar_dir_lilcom(tmp_path, cuts):
     """An indexed Shar dir using lilcom for ``features`` (numpy for arrays)."""
+    pytest.importorskip("lilcom")
     writer = SharWriter(
         tmp_path,
         fields=ALL_FIELDS_LILCOM,
@@ -249,9 +250,12 @@ def test_ais_byte_range_disabled_today():
     assert AISBatchLoader._aistore_byte_range_supported() is False
 
 
-def test_ais_collect_returns_false_for_shar_ptr_when_unsupported():
-    """When the SDK can't do byte ranges, collect_manifest_urls returns False
-    so the caller falls back to the per-cut _prepare_for_reading path."""
+def test_ais_collect_queues_shar_ptr_fallback_when_byte_range_unsupported():
+    """When the SDK can't do byte ranges, the Shar pointer is queued in
+    ``shar_ptr_fallback`` (drained by :meth:`AISBatchLoader.__call__` via
+    per-object byte-range gets) — the batch itself stays untouched, and
+    :meth:`_collect_manifest_urls` reports success because the pointer was
+    scheduled (just on the fallback leg, not the batch leg)."""
     pytest.importorskip("aistore")
     from lhotse.ais.batch_loader import AISBatchLoader
     from lhotse import AudioSource, Recording
@@ -276,10 +280,24 @@ def test_ais_collect_returns_false_for_shar_ptr_when_unsupported():
         loader = AISBatchLoader.__new__(AISBatchLoader)  # bypass __init__
         loader.client = None  # not touched on this code path
         batch = []
-        result = loader._collect_manifest_urls(rec, batch)
+        shar_ptr_fallback = []
+        result = loader._collect_manifest_urls(
+            rec,
+            batch,
+            shar_ptr_uses_batch=False,
+            shar_ptr_fallback=shar_ptr_fallback,
+            manifest_idx=0,
+        )
 
-    assert result is False
+    assert result is True
     assert batch == []
+    assert len(shar_ptr_fallback) == 1
+    manifest_idx, bck_name, provider, obj_name, offset, length = shar_ptr_fallback[0]
+    assert manifest_idx == 0
+    assert bck_name == "b"
+    assert obj_name == "recording.000000.tar"
+    assert offset == 1024
+    assert length == 8192 - 1024
 
 
 def test_ais_byte_range_path_when_sdk_supports_it():
@@ -327,7 +345,13 @@ def test_ais_byte_range_path_when_sdk_supports_it():
         loader = AISBatchLoader.__new__(AISBatchLoader)
         loader.client = FakeClient()
         batch = FakeBatch()
-        result = loader._collect_manifest_urls(rec, batch)
+        result = loader._collect_manifest_urls(
+            rec,
+            batch,
+            shar_ptr_uses_batch=True,
+            shar_ptr_fallback=[],
+            manifest_idx=0,
+        )
 
     assert result is True
     assert len(captured) == 1

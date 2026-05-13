@@ -76,8 +76,14 @@ class LazyIndexedSharIterator(IteratorNode):
         seed: Union[int, str] = 42,
         split_for_dataloading: bool = False,
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
+        indexes_root: Optional[Pathlike] = None,
         lazy: bool = False,
     ) -> None:
+        if index_path is not None and indexes_root is not None:
+            raise ValueError(
+                "Pass either 'index_path' (explicit per-shard paths or directory) "
+                "or 'indexes_root' (a root that mirrors data layout), not both."
+            )
         self.in_dir = Path(in_dir) if in_dir is not None else None
         self.fields, self.streams = self._resolve_streams(fields=fields, in_dir=in_dir)
 
@@ -93,6 +99,8 @@ class LazyIndexedSharIterator(IteratorNode):
         ]
 
         # ----- Resolve index_path into per-shard per-field index paths -----
+        if indexes_root is not None:
+            index_path = _index_path_from_indexes_root(self.streams, indexes_root)
         self._index_streams: Optional[Dict[str, List[Optional[Pathlike]]]] = None
         self._raw_index_path = index_path  # kept for pickling
         self._index_streams = self._resolve_index_streams(
@@ -249,9 +257,14 @@ class LazyIndexedSharIterator(IteratorNode):
         fields: Optional[Dict[str, Sequence[Pathlike]]] = None,
         in_dir: Optional[Pathlike] = None,
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
+        indexes_root: Optional[Pathlike] = None,
     ) -> bool:
+        if index_path is not None and indexes_root is not None:
+            return False
         try:
             _, streams = cls._resolve_streams(fields=fields, in_dir=in_dir)
+            if indexes_root is not None:
+                index_path = _index_path_from_indexes_root(streams, indexes_root)
             index_streams = cls._resolve_index_streams(
                 streams=streams,
                 index_path=index_path,
@@ -470,3 +483,23 @@ class LazyIndexedSharIterator(IteratorNode):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+
+def _index_path_from_indexes_root(
+    streams: Dict[str, Sequence[Pathlike]], indexes_root: Pathlike
+) -> Dict[str, List[Pathlike]]:
+    """Build the per-field, per-shard ``index_path`` dict that
+    :meth:`LazyIndexedSharIterator._resolve_index_streams` expects, by
+    mirroring each shard's data path under ``indexes_root``.
+
+    Equivalent to ``{field: [index_file_path(p, indexes_root) for p in shards]
+    for field, shards in streams.items()}`` — produces e.g.
+    ``s3://AMI/lhotse_shar/cuts.000000.jsonl`` →
+    ``/tmp/idx/AMI/lhotse_shar/cuts.000000.jsonl.idx``.
+    """
+    from lhotse.indexing import index_file_path
+
+    return {
+        field: [index_file_path(p, indexes_root) for p in shard_paths]
+        for field, shard_paths in streams.items()
+    }

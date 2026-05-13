@@ -651,6 +651,9 @@ def test_shar_writer_pipe(tmp_path: Path):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
 
     # Prepare system under test
+    # Pipe outputs can't carry .idx sidecars (the SharWriter validates that
+    # ``create_index=True`` is only meaningful for local outputs), so we
+    # explicitly opt out here. Indexed reads aren't part of this test.
     writer = SharWriter(
         f"pipe:cat >{tmp_path}",
         fields={
@@ -662,6 +665,7 @@ def test_shar_writer_pipe(tmp_path: Path):
             "custom_recording": "wav",
         },
         shard_size=10,
+        create_index=False,
     )
 
     # Actual test
