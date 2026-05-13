@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from lhotse.cut import Cut
-from lhotse.dataset.dataloading import resolve_seed
+from lhotse.dataset.dataloading import PartitionedIndexedIterator, resolve_seed
 from lhotse.indexing import (
     create_jsonl_index,
     create_tar_index,
@@ -116,10 +116,20 @@ class LazyIndexedSharIterator(IteratorNode):
 
         self.shuffle = shuffle
         self.seed = seed
+        # ``split_for_dataloading`` is preserved for backwards-compat with
+        # ``CutSet.from_shar(split_for_dataloading=...)`` callers, but is
+        # no longer load-bearing: partitioning is delegated to
+        # ``PartitionedIndexedIterator`` which reads ``(rank, world_size,
+        # worker_id)`` via ``get_worker_partition()``. The old per-cut
+        # stride partition (split_by_node + split_by_worker) is replaced
+        # because it didn't track topology in state_dict, causing silent
+        # divergence on resume under a different (world_size, num_workers).
         self.split_for_dataloading = split_for_dataloading
         self._lazy = lazy
         self.epoch = 0
-        self._iteration_seed = None
+        self._iter_state = PartitionedIndexedIterator(
+            shuffle=self.shuffle, seed=resolve_seed(self.seed) if isinstance(self.seed, int) else 0
+        )
 
         # Build indexed readers for cuts JSONL shards and compute lengths.
         from lhotse.indexing import IndexedJsonlReader
@@ -146,10 +156,6 @@ class LazyIndexedSharIterator(IteratorNode):
 
         # Lazily-created indexed readers for non-cuts fields.
         self._indexed_readers: Optional[Dict[int, dict]] = None
-
-        # Iteration state
-        self._position = 0
-        self._restored = False
 
     @staticmethod
     def _join_index_dir(index_dir: Pathlike, filename: str) -> Pathlike:
@@ -386,65 +392,26 @@ class LazyIndexedSharIterator(IteratorNode):
         attach_graph_origin(cut, (global_idx, item_epoch))
         return cut
 
-    def _get_worker_indices(self) -> List[int]:
-        """Return the global indices assigned to this worker/node."""
-        indices = list(range(self._total_len))
-        if self.split_for_dataloading:
-            from lhotse.shar.readers.utils import split_by_node, split_by_worker
-
-            indices = split_by_node(indices)
-            indices = split_by_worker(indices)
-        return indices
-
     def __iter__(self):
-        from lhotse.indexing import LazyShuffledRange
-
-        indices = self._get_worker_indices()
-        n = len(indices)
-
-        if self._restored:
-            self._restored = False
-            start = self._position
-            iteration_seed = self._iteration_seed
-        else:
-            start = 0
-            self._position = 0
-            iteration_seed = None
-
-        if self.shuffle:
-            if iteration_seed is None:
-                iteration_seed = resolve_seed(self.seed) + self.epoch
-            self._iteration_seed = iteration_seed
-            shuffled = LazyShuffledRange(n, seed=iteration_seed)
-            for i in range(start, n):
-                self._position = i + 1
-                yield self[indices[shuffled[i]]]
-        else:
-            for i in range(start, n):
-                self._position = i + 1
-                yield self[indices[i]]
-
+        for global_idx in self._iter_state.iterate(self._total_len):
+            yield self[global_idx]
         self.epoch += 1
-        self._iteration_seed = None
 
     def state_dict(self) -> dict:
         return {
-            "position": self._position,
+            **self._iter_state.state_dict(),
             "epoch": self.epoch,
             "shuffle": self.shuffle,
             "seed": self.seed,
-            "iteration_seed": self._iteration_seed,
             "lazy": self._lazy,
         }
 
     def load_state_dict(self, sd: dict) -> None:
-        self._position = sd["position"]
-        self.epoch = sd["epoch"]
-        self._iteration_seed = sd.get("iteration_seed")
+        self._iter_state.load_state_dict(sd)
+        self.epoch = sd.get("epoch", 0)
         # Backward-compat: older state dicts may not carry "lazy".
         if "lazy" in sd:
             self._lazy = bool(sd["lazy"])
-        self._restored = True
 
     # ------------------------------------------------------------------
     # Pickling — exclude non-picklable caches
