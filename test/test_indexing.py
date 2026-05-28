@@ -1176,6 +1176,33 @@ def test_indexed_tar_reader_custom_index_path(tmp_path, tar_file):
         assert str(data_path) == samples[i][0]
 
 
+def _patch_indexed_open_to_local(monkeypatch, indexing_mod, redirects):
+    """Helper: monkeypatch ``_open_for_indexed_read`` so URI data paths
+    redirect to local fixture files (mapping in ``redirects``). All other
+    paths fall through to the real opener. Also patches ``open_best`` so
+    URI index paths redirect through ``read_index``'s remote-index cache
+    plumbing (which still calls ``open_best``).
+    """
+
+    original_open_for_indexed_read = indexing_mod._open_for_indexed_read
+    original_open_best = indexing_mod.open_best
+
+    def fake_open_for_indexed_read(path):
+        target = redirects.get(str(path))
+        if target is not None:
+            return original_open_best(target, "rb")
+        return original_open_for_indexed_read(path)
+
+    def fake_open_best(path, mode="r"):
+        target = redirects.get(str(path))
+        if target is not None:
+            return original_open_best(target, mode)
+        return original_open_best(path, mode)
+
+    monkeypatch.setattr(indexing_mod, "_open_for_indexed_read", fake_open_for_indexed_read)
+    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+
+
 def test_indexed_jsonl_reader_remote_data_with_local_index_path(
     tmp_path, jsonl_file, monkeypatch
 ):
@@ -1187,14 +1214,7 @@ def test_indexed_jsonl_reader_remote_data_with_local_index_path(
     create_jsonl_index(p, output_path=custom_idx)
 
     remote_path = "s3://bucket/data.jsonl"
-    original_open_best = indexing_mod.open_best
-
-    def fake_open_best(path, mode="r"):
-        if path == remote_path:
-            return original_open_best(p, mode)
-        return original_open_best(path, mode)
-
-    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+    _patch_indexed_open_to_local(monkeypatch, indexing_mod, {remote_path: p})
 
     reader = IndexedJsonlReader(
         remote_path, auto_create_index=False, index_path=custom_idx
@@ -1206,7 +1226,8 @@ def test_indexed_jsonl_reader_remote_data_with_local_index_path(
 def test_indexed_tar_reader_remote_data_with_local_index_path(
     tmp_path, tar_file, monkeypatch
 ):
-    """IndexedTarReader keeps URI paths intact and opens them via open_best()."""
+    """IndexedTarReader keeps URI paths intact and opens them through the
+    seekable indexed-open layer."""
     import lhotse.indexing as indexing_mod
 
     p, samples = tar_file
@@ -1214,14 +1235,7 @@ def test_indexed_tar_reader_remote_data_with_local_index_path(
     create_tar_index(p, output_path=custom_idx)
 
     remote_path = "s3://bucket/data.tar"
-    original_open_best = indexing_mod.open_best
-
-    def fake_open_best(path, mode="r"):
-        if path == remote_path:
-            return original_open_best(p, mode)
-        return original_open_best(path, mode)
-
-    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+    _patch_indexed_open_to_local(monkeypatch, indexing_mod, {remote_path: p})
 
     reader = IndexedTarReader(
         remote_path, auto_create_index=False, index_path=custom_idx
@@ -1244,16 +1258,11 @@ def test_indexed_jsonl_reader_remote_data_with_remote_index_path(
 
     remote_path = "s3://bucket/data.jsonl"
     remote_idx = "s3://bucket/data.jsonl.idx"
-    original_open_best = indexing_mod.open_best
-
-    def fake_open_best(path, mode="r"):
-        if path == remote_path:
-            return original_open_best(p, mode)
-        if path == remote_idx:
-            return original_open_best(local_idx, mode)
-        return original_open_best(path, mode)
-
-    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+    _patch_indexed_open_to_local(
+        monkeypatch,
+        indexing_mod,
+        {remote_path: p, remote_idx: local_idx},
+    )
 
     reader = IndexedJsonlReader(
         remote_path, auto_create_index=False, index_path=remote_idx
@@ -1274,16 +1283,11 @@ def test_indexed_tar_reader_remote_data_with_remote_index_path(
 
     remote_path = "s3://bucket/data.tar"
     remote_idx = "s3://bucket/data.tar.idx"
-    original_open_best = indexing_mod.open_best
-
-    def fake_open_best(path, mode="r"):
-        if path == remote_path:
-            return original_open_best(p, mode)
-        if path == remote_idx:
-            return original_open_best(local_idx, mode)
-        return original_open_best(path, mode)
-
-    monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
+    _patch_indexed_open_to_local(
+        monkeypatch,
+        indexing_mod,
+        {remote_path: p, remote_idx: local_idx},
+    )
 
     reader = IndexedTarReader(
         remote_path, auto_create_index=False, index_path=remote_idx

@@ -76,7 +76,13 @@ class AISBatchLoader:
         force_individual: bool = False,
         skip_failed_fetches: bool = False,
     ) -> None:
-        """Initialize the AISBatchLoader with an AIStore client and batch context.
+        """Initialize the AISBatchLoader.
+
+        Construction itself is a no-op w.r.t. AIStore — neither the ``aistore``
+        package nor a valid ``AIS_ENDPOINT`` is required here. Both are checked
+        lazily on the first AIS access (see :pyattr:`client`), so a CutSet that
+        doesn't reference AIStore can flow through :meth:`__call__` unchanged
+        even on hosts where AIS isn't configured.
 
         :param force_individual: when True, every minibatch fetch goes through
             the per-object Get path, never attempting MOSS GetBatch.
@@ -87,13 +93,27 @@ class AISBatchLoader:
             corruption — every drop is logged at WARNING level so the
             failure rate is observable.
         """
-        if not is_module_available("aistore"):
-            raise ImportError(
-                "Please run 'pip install aistore>=1.17.0' to use AISBatchLoader."
-            )
-        self.client, _ = get_aistore_client()
         self.force_individual = force_individual
         self.skip_failed_fetches = skip_failed_fetches
+        self._client = None
+
+    @property
+    def client(self):
+        """Lazily resolve the AIStore client on first access.
+
+        Deferring this lets AISBatchLoader be instantiated unconditionally
+        (e.g. by ``AudioSamples(use_batch_loader=True)``) even when the
+        current data blend never touches AIS — the ``aistore`` import and
+        ``AIS_ENDPOINT`` checks only fire if a CutSet actually contains
+        AIS-backed manifests.
+        """
+        if self._client is None:
+            if not is_module_available("aistore"):
+                raise ImportError(
+                    "Please run 'pip install aistore>=1.17.0' to use AISBatchLoader."
+                )
+            self._client, _ = get_aistore_client()
+        return self._client
 
     @staticmethod
     def _moss_attrs(info: Any) -> tuple[str, str, str, Optional[str]]:
@@ -185,6 +205,14 @@ class AISBatchLoader:
                 "Lazy CutSets cannot be used with AISBatchLoader. "
                 "Convert to eager via `cuts.to_eager()` before loading."
             )
+
+        # Pre-scan: if no manifest in this batch references AIStore, skip the
+        # entire fetch path. This makes AISBatchLoader a no-op on non-AIS data
+        # blends and lets it coexist with hosts where ``aistore`` isn't
+        # installed or ``AIS_ENDPOINT`` is unset — the lazy client init below
+        # only fires when there's actually AIS data to fetch.
+        if not self._cuts_have_ais_data(cuts):
+            return cuts
 
         # Try to use Colocation if available (aistore >= 1.20.0)
         # Colocation optimizes batch requests by grouping objects from the same storage target,
@@ -426,6 +454,49 @@ class AISBatchLoader:
 
     # ----------------------------- Internal Helpers -----------------------------
 
+    @staticmethod
+    def _cuts_have_ais_data(cuts: CutSet) -> bool:
+        """Return True iff any manifest in ``cuts`` is served from AIStore.
+
+        Mirrors the detection conditions in :meth:`_collect_manifest_urls` but
+        without touching ``self.client`` or a ``BatchRequest`` — used to short-
+        circuit :meth:`__call__` when the CutSet has no AIS-backed data, so
+        loaders constructed in environments where AIStore isn't configured
+        still pass cuts through unchanged.
+        """
+        from lhotse.shar.lazy_pointer import decode_pointer
+
+        def _shar_ptr_is_url(pointer: str) -> bool:
+            tar_path, _, _ = decode_pointer(pointer)
+            return is_valid_url(tar_path)
+
+        for cut in cuts:
+            for _, manifest in cut.iter_data():
+                if isinstance(manifest, Recording):
+                    for source in manifest.sources:
+                        if source.type == "url" and is_valid_url(source.source):
+                            return True
+                        if source.type == "shar_ptr" and _shar_ptr_is_url(
+                            source.source
+                        ):
+                            return True
+                elif isinstance(manifest, TemporalArray):
+                    inner = manifest.array
+                    if inner.storage_type == "shar_ptr_array":
+                        if _shar_ptr_is_url(inner.storage_key):
+                            return True
+                    elif is_valid_url(f"{inner.storage_path}/{inner.storage_key}"):
+                        return True
+                elif isinstance(manifest, (Array, Features, Image)):
+                    if manifest.storage_type == "shar_ptr_array":
+                        if _shar_ptr_is_url(manifest.storage_key):
+                            return True
+                    elif is_valid_url(
+                        f"{manifest.storage_path}/{manifest.storage_key}"
+                    ):
+                        return True
+        return False
+
     def _collect_manifest_urls(
         self,
         manifest: Any,
@@ -558,10 +629,11 @@ class AISBatchLoader:
         Schedule a Shar lazy pointer fetch.
 
         When ``shar_ptr_uses_batch`` is True the request is added to the MOSS
-        ``BatchRequest`` via ``batch.add(start=, length=)``. Otherwise the
-        ``(manifest_idx, bck, provider, obj_name, offset, length)`` tuple is
-        appended to ``shar_ptr_fallback`` so :meth:`__call__` can drain it via
-        per-object byte-range gets.
+        ``BatchRequest`` via direct ``MossIn.model_construct`` append (see
+        :meth:`_append_moss_in` for why we bypass ``BatchRequest.add``).
+        Otherwise the ``(manifest_idx, bck, provider, obj_name, offset, length)``
+        tuple is appended to ``shar_ptr_fallback`` so :meth:`__call__` can
+        drain it via per-object byte-range gets.
 
         Returns True iff the pointer was successfully scheduled (either path).
         """
@@ -578,8 +650,14 @@ class AISBatchLoader:
 
         length = end_offset - offset
         if shar_ptr_uses_batch:
-            bucket = self.client.bucket(bck_name, provider)
-            batch.add(bucket.object(obj_name), start=offset, length=length)
+            self._append_moss_in(
+                batch,
+                bck=bck_name,
+                provider=provider,
+                obj_name=obj_name,
+                start=offset,
+                length=length,
+            )
         else:
             shar_ptr_fallback.append(
                 (manifest_idx, bck_name, provider, obj_name, offset, length)
@@ -600,8 +678,89 @@ class AISBatchLoader:
             prefix, _, suffix = obj_name.partition(f"{arch_ext}/")
             obj_name, archpath = prefix + arch_ext, suffix
 
-        bucket = self.client.bucket(bck_name, provider)
-        batch.add(bucket.object(obj_name), archpath=archpath)
+        self._append_moss_in(
+            batch, bck=bck_name, provider=provider, obj_name=obj_name, archpath=archpath
+        )
+
+    def _append_moss_in(
+        self,
+        batch: Any,
+        *,
+        bck: str,
+        provider: str,
+        obj_name: str,
+        archpath: Optional[str] = None,
+        start: Optional[int] = None,
+        length: Optional[int] = None,
+    ) -> None:
+        """Append one MossIn entry to the batch request, bypassing the SDK's
+        ``BatchRequest.add(bucket.object(obj_name), ...)`` path.
+
+        Why this bypass exists
+        ----------------------
+        ``BatchRequest.add`` builds a fresh ``Bucket`` + ``BucketDetails``
+        (Pydantic v2) + ``Object`` + ``MossIn`` (Pydantic v2 with field
+        aliases) per call. With ~45 manifests per minibatch in a Granary
+        blend, profiling (nsys 2026-05-15, NVTX scope ``ais.collect_urls``)
+        showed this loop spends **~1.58 s mean / 4.31 s max per batch on
+        pure CPU**, which is ~2/3 of the AIS GetBatch wall time and the
+        single biggest hotspot in the worker.
+
+        ``MossIn.model_construct(...)`` skips validation entirely — the
+        downstream HTTP serialization only consumes the field values.
+        Construction reduces to one dict write into ``batch.request.moss_in``,
+        which empirically drops ``ais.collect_urls`` by ~20-50×.
+
+        Risks
+        -----
+        - Skipping Pydantic validation means a future ``aistore`` SDK that
+          adds a required ``MossIn`` field will silently produce invalid
+          requests. Pinned to ``aistore<2.0`` at the call site below; the
+          unit test in ``test/test_ais_batch_loader_collect_urls.py``
+          round-trips ``model_construct`` vs the validating constructor
+          and asserts ``model_dump`` equality.
+        - ``batch.request.moss_in`` is a non-public attribute. Stable
+          through 1.20.0 → 1.23.0; bumping the SDK major version requires
+          re-verifying that the field still exists with the same shape.
+        """
+        # Local imports kept local: aistore is an optional dependency and
+        # the module top-level is intentionally aistore-free so AISBatchLoader
+        # can be constructed on hosts without the SDK installed (see
+        # :pyattr:`client` doc and ``_cuts_have_ais_data`` short-circuit).
+        from aistore.sdk.batch.types import MossIn
+
+        # Construct kwargs sparsely so optional fields that the SDK's MossIn
+        # schema may not accept (e.g. older versions without start/length)
+        # don't surface as model_construct kwargs.
+        kwargs = {"bck": bck, "provider": provider, "obj_name": obj_name}
+        if archpath is not None:
+            kwargs["archpath"] = archpath
+        if start is not None:
+            kwargs["start"] = start
+        if length is not None:
+            kwargs["length"] = length
+
+        # Fast path. ``Batch.requests_list`` is the public property accessor
+        # for ``Batch.request.moss_in`` (the underlying ``List[MossIn]``);
+        # mutating the returned list is equivalent to mutating the field
+        # in-place. If the SDK shape ever drifts (rename, restructure), fall
+        # back to ``Batch.add(bucket.object(...))`` so we degrade in
+        # performance rather than crash. The fast path is exercised by the
+        # unit test which round-trips ``model_construct`` against the
+        # validating constructor.
+        try:
+            batch.requests_list.append(MossIn.model_construct(**kwargs))
+            return
+        except AttributeError:
+            pass
+        # Fallback: original aistore client path. Reaches client.bucket and
+        # bucket.object, both of which validate; this is the pre-optimization
+        # behavior preserved for forward compatibility.
+        bucket = self.client.bucket(bck, provider)
+        if start is not None or length is not None:
+            batch.add(bucket.object(obj_name), start=start, length=length)
+        else:
+            batch.add(bucket.object(obj_name), archpath=archpath)
 
     def _inject_data_into_manifest(self, manifest: Any, content: bytes) -> None:
         """Replace manifest storage references with in-memory content."""

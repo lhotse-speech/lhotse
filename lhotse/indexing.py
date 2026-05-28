@@ -646,6 +646,27 @@ class LazyShuffledRange:
 
 
 # ---------------------------------------------------------------------------
+# Seekable open for indexed readers (local files; AIS byte-range for URLs)
+# ---------------------------------------------------------------------------
+
+
+def _open_for_indexed_read(path: Pathlike):
+    """Open *path* in a way that supports ``seek()``.
+
+    * Local files: regular binary file via :func:`open_best`.
+    * Remote URLs (``ais://`` / ``s3://`` / etc.):
+      :class:`lhotse.ais.AISRangeReader` backed by AIStore HTTP byte-range
+      GETs. Required because the ``AIStoreIOBackend.open(..., "rb")`` path
+      returns a non-seekable stream, which breaks the indexed readers below.
+    """
+    if is_valid_url(str(path)):
+        from lhotse.ais import AISRangeReader
+
+        return AISRangeReader(str(path))
+    return open_best(path, "rb")
+
+
+# ---------------------------------------------------------------------------
 # IndexedJsonlReader — O(1) random-access JSONL reader
 # ---------------------------------------------------------------------------
 
@@ -700,7 +721,7 @@ class IndexedJsonlReader:
 
     def _ensure_open(self):
         if self._fh is None:
-            self._fh = open_best(self.path, "rb")
+            self._fh = _open_for_indexed_read(self.path)
 
     def __del__(self):
         self.close()
@@ -805,7 +826,7 @@ class IndexedTarReader:
 
     def _ensure_open(self):
         if self._fh is None:
-            self._fh = open_best(self.path, "rb")
+            self._fh = _open_for_indexed_read(self.path)
 
     def __del__(self):
         self.close()

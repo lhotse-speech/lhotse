@@ -918,12 +918,21 @@ class LazyIteratorMultiplexer(IteratorNode):
         from lhotse.dataset.dataloading import get_worker_partition, resolve_seed
 
         _, num_shards = get_worker_partition()
-        if num_shards > 1 and self.seed == "randomized":
+        # Only enforce against `seed='randomized'` when all child sources are indexed.
+        # Indexed sources use `LazyShuffledRange(shard_id, num_shards)` to slice their
+        # index ranges per-shard, so the multiplexer MUST pick the same source at each
+        # step across shards or the global per-source proportions drift. Streaming
+        # (non-indexed) sources don't partition their index ranges — each shard reads
+        # its DDP-derived dedup slice in full regardless of how the multiplexer routes,
+        # so per-shard RNG drift just shuffles the order within the expected ratio.
+        # ``self.is_indexed`` is True iff every child source is indexed.
+        if num_shards > 1 and self.seed == "randomized" and self.is_indexed:
             raise ValueError(
                 "LazyIteratorMultiplexer cannot use seed='randomized' under multi-shard "
-                "(DP rank x DataLoader worker) iteration: each shard would draw a different "
-                "RNG state and pick a different source at the same step, causing the global "
-                "weighted source distribution to drift across ranks. Use a fixed integer seed."
+                "(DP rank x DataLoader worker) iteration with indexed sources: each "
+                "shard would draw a different RNG state and pick a different source at the "
+                "same step, causing the global weighted source distribution to drift across "
+                "ranks. Use a fixed integer seed."
             )
 
         rng = random.Random(resolve_seed(self.seed))

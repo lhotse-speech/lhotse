@@ -31,6 +31,7 @@ from lhotse.lazy import (
     LazyIndexedManifestIterator,
     LazyIteratorChain,
     LazyIteratorMultiplexer,
+    LazyJsonlIterator,
     LazyMapper,
     LazyRepeater,
     LazyShuffler,
@@ -367,6 +368,39 @@ def test_multiplexer_allows_randomized_seed_single_shard(two_indexed_jsonls):
         for k, v in saved.items():
             if v is not None:
                 os.environ[k] = v
+
+
+def test_multiplexer_allows_randomized_seed_under_multishard_when_sources_not_indexed(
+    two_indexed_jsonls,
+):
+    """Streaming sources under iterable+multi-shard env must NOT trigger the
+    assertion: non-indexed sources don't use ``LazyShuffledRange`` partitioning,
+    so per-shard RNG-driven source picks just reshuffle within the same
+    expected per-source ratio. Regression test for the issue caught by
+    ``repro-en-newcode-4node`` (2026-05-14) where the assertion fired under
+    a streaming YAML (``indexed: false``, ``use_stateful_dataloader: false``)
+    against the new lhotse_resumable code, but did not fire under the old
+    container lhotse for the same YAML. ``LazyJsonlIterator`` reports
+    ``is_indexed = False`` (class default), which is the gate.
+    """
+    p1, p2 = two_indexed_jsonls
+    # Wrap the same files in the *streaming* iterator class (not indexed).
+    # Same file contents — only the iterator class differs from the rejected
+    # case in ``test_multiplexer_rejects_randomized_seed_under_multishard``.
+    with _env_partition(rank=0, world_size=4):
+        mux = LazyIteratorMultiplexer(
+            LazyJsonlIterator(p1),
+            LazyJsonlIterator(p2),
+            seed="randomized",
+        )
+        # Should iterate without raising — sources are non-indexed, so the
+        # assertion is gated off.
+        items = []
+        for i, item in enumerate(mux):
+            items.append(item)
+            if i >= 4:  # enough to confirm no raise on first/second pick
+                break
+        assert len(items) == 5
 
 
 def test_multiplexer_partition_two_sources_equal_size_small(tmp_path):
