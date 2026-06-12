@@ -6,6 +6,7 @@ and the supporting ``shar_ptr`` / ``shar_ptr_array`` storage types.
 from __future__ import annotations
 
 import pickle
+import re
 from pathlib import Path
 
 # Reuse the standard shar test fixture which specifies all fields
@@ -243,12 +244,19 @@ def test_audio_format_inferred_from_payload(shar_dir_numpy):
 # ---------------------------------------------------------------------------
 
 
-def test_ais_byte_range_disabled_today():
-    """With the currently-installed aistore SDK, byte-range batch is unsupported."""
-    pytest.importorskip("aistore")
+def _aistore_at_least(aistore, version: tuple[int, int, int]) -> bool:
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)", getattr(aistore, "__version__", ""))
+    return m is not None and tuple(map(int, m.groups())) >= version
+
+
+def test_ais_byte_range_support_follows_sdk_schema():
+    """``aistore>=1.25.0`` exposes byte ranges through the MOSS request schema."""
+    aistore = pytest.importorskip("aistore")
     from lhotse.ais.batch_loader import AISBatchLoader
 
-    assert AISBatchLoader._aistore_byte_range_supported() is False
+    assert AISBatchLoader._aistore_byte_range_supported() is _aistore_at_least(
+        aistore, (1, 25, 0)
+    )
 
 
 def test_ais_collect_queues_shar_ptr_fallback_when_byte_range_unsupported():
@@ -302,8 +310,7 @@ def test_ais_collect_queues_shar_ptr_fallback_when_byte_range_unsupported():
 
 
 def test_ais_byte_range_path_when_sdk_supports_it():
-    """Future-proof: when the SDK exposes byte-range batch, the loader routes
-    Shar pointers through ``batch.add(start=, length=)``."""
+    """When supported, Shar pointers are added as byte-range MOSS requests."""
     pytest.importorskip("aistore")
     from lhotse import AudioSource, Recording
     from lhotse.ais.batch_loader import AISBatchLoader
@@ -322,29 +329,14 @@ def test_ais_byte_range_path_when_sdk_supports_it():
         duration=1.0,
     )
 
-    captured = []
-
     class FakeBatch:
-        def add(self, obj, *, start=None, length=None, archpath=None):
-            captured.append((obj, start, length, archpath))
-
-    class FakeObject:
-        def __init__(self, name):
-            self.name = name
-
-    class FakeBucket:
-        def object(self, obj_name):
-            return FakeObject(obj_name)
-
-    class FakeClient:
-        def bucket(self, bck_name, provider):
-            return FakeBucket()
+        def __init__(self):
+            self.requests_list = []
 
     with patch.object(
         AISBatchLoader, "_aistore_byte_range_supported", staticmethod(lambda: True)
     ):
         loader = AISBatchLoader.__new__(AISBatchLoader)
-        loader._client = FakeClient()
         batch = FakeBatch()
         result = loader._collect_manifest_urls(
             rec,
@@ -355,12 +347,62 @@ def test_ais_byte_range_path_when_sdk_supports_it():
         )
 
     assert result is True
-    assert len(captured) == 1
-    obj, start, length, archpath = captured[0]
-    assert obj.name == "recording.000000.tar"
-    assert start == 1024
-    assert length == 8192 - 1024
-    assert archpath is None
+    assert len(batch.requests_list) == 1
+    moss_in = batch.requests_list[0]
+    assert moss_in.obj_name == "recording.000000.tar"
+    assert moss_in.start == 1024
+    assert moss_in.length == 8192 - 1024
+    assert moss_in.archpath is None
+
+
+def test_ais_individual_get_preserves_mossin_byte_range():
+    """If ranged MOSS fails, direct fallback must retry the same byte range."""
+    pytest.importorskip("aistore")
+    from aistore.sdk.batch.types import MossIn
+
+    from lhotse.ais.batch_loader import AISBatchLoader
+
+    captured = {}
+
+    class FakeReader:
+        def read_all(self):
+            return b"payload"
+
+    class FakeObject:
+        def get_reader(self, *, byte_range=None, archive_config=None):
+            captured["byte_range"] = byte_range
+            captured["archive_config"] = archive_config
+            return FakeReader()
+
+    class FakeBucket:
+        def object(self, obj_name):
+            captured["obj_name"] = obj_name
+            return FakeObject()
+
+    class FakeClient:
+        def bucket(self, bck_name, provider):
+            captured["bck_name"] = bck_name
+            captured["provider"] = provider
+            return FakeBucket()
+
+    loader = AISBatchLoader.__new__(AISBatchLoader)
+    loader._client = FakeClient()
+    moss_in = MossIn.model_construct(
+        obj_name="recording.000000.tar",
+        bck="b",
+        provider="ais",
+        start=1024,
+        length=8192 - 1024,
+    )
+
+    assert loader._get_object_from_moss_in(moss_in) == b"payload"
+    assert captured == {
+        "bck_name": "b",
+        "provider": "ais",
+        "obj_name": "recording.000000.tar",
+        "byte_range": "bytes=1024-8191",
+        "archive_config": None,
+    }
 
 
 # ---------------------------------------------------------------------------

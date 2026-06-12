@@ -66,7 +66,7 @@ class AISBatchLoader:
     Shar lazy-pointer (``shar_ptr``) sources transparently fall back to
     per-object byte-range ``get_reader(byte_range=…)`` calls when the installed
     AIStore SDK / cluster doesn't support byte-range entries in
-    ``BatchRequest.add()`` (or when ``force_individual=True``). The MOSS
+    MOSS GetBatch requests (or when ``force_individual=True``). The MOSS
     GetBatch path is preferred when available; the byte-range fallback exists
     so non-gzipped lhotse-shar cuts on AIS work even on older deployments.
     """
@@ -121,11 +121,11 @@ class AISBatchLoader:
         Normalise an AIStore batch request/result entry into ``(bck, provider,
         obj_name, archpath)``.
 
-        Verified empirically against ``aistore==1.23.0``:
-          * ``BatchRequest.requests_list`` items are ``aistore.sdk.batch.types.MossIn``
+        Verified empirically against ``aistore==1.23.0`` and ``1.25.0``:
+          * ``Batch.requests_list`` items are ``aistore.sdk.batch.types.MossIn``
             with the original short attribute names (``bck``, ``provider``,
             ``obj_name``, ``archpath``).
-          * ``BatchRequest.get()`` yields ``(MossOut, content)`` tuples and
+          * ``Batch.get()`` yields ``(MossOut, content)`` tuples and
             ``MossOut`` carries different attribute names. To stay robust
             against further SDK churn, this helper falls back through every
             naming convention we've seen in the wild
@@ -159,7 +159,8 @@ class AISBatchLoader:
         Fetch a single object from AIStore using the ObjectNames request info.
 
         This method is used as a fallback when batch operations fail or return empty content.
-        It handles archive extraction if an archpath is specified.
+        It handles archive extraction if an archpath is specified, and preserves
+        ``start`` / ``length`` byte-range requests used by Shar lazy pointers.
 
         Args:
             moss_in: AIStore ObjectNames request — accepts both ``MossIn`` (from
@@ -173,20 +174,50 @@ class AISBatchLoader:
         Raises:
             Exception: If the object cannot be fetched from AIStore.
         """
-        from aistore.sdk.archive_config import ArchiveConfig
-
         bck, provider, obj_name, archpath = self._moss_attrs(moss_in)
+        start, length = self._moss_range(moss_in)
+
+        obj = self.client.bucket(bck_name=bck, provider=provider).object(obj_name)
+
+        if start is not None or length is not None:
+            if archpath:
+                raise AISBatchLoaderError(
+                    "Cannot fall back to direct GET for a request that combines "
+                    f"byte range and archive extraction: {obj_name}/{archpath}"
+                )
+            if start is None or length is None:
+                raise AISBatchLoaderError(
+                    f"Invalid byte-range request for {obj_name}: "
+                    f"start={start!r}, length={length!r}"
+                )
+            if length <= 0:
+                return b""
+            end_inclusive = start + length - 1
+            return obj.get_reader(
+                byte_range=f"bytes={start}-{end_inclusive}"
+            ).read_all()
+
+        from aistore.sdk.archive_config import ArchiveConfig
 
         config = None
         if archpath:
             config = ArchiveConfig(archpath=archpath)
 
-        reader = (
-            self.client.bucket(bck_name=bck, provider=provider)
-            .object(obj_name)
-            .get_reader(archive_config=config)
-        )
+        reader = obj.get_reader(archive_config=config)
         return reader.read_all()
+
+    @staticmethod
+    def _moss_range(info: Any) -> tuple[Optional[int], Optional[int]]:
+        """Return ``(start, length)`` byte-range fields from a MOSS request."""
+        from numbers import Integral
+
+        def _int_or_none(name: str) -> Optional[int]:
+            value = getattr(info, name, None)
+            if isinstance(value, Integral) and not isinstance(value, bool):
+                return int(value)
+            return None
+
+        return _int_or_none("start"), _int_or_none("length")
 
     def __call__(self, cuts: CutSet) -> CutSet:
         """
@@ -229,8 +260,8 @@ class AISBatchLoader:
 
         # Decide once per call whether shar_ptr entries can go through MOSS
         # GetBatch byte-range adds. If ``force_individual`` is on, or the SDK
-        # rejects byte-range BatchRequest.add() calls, route shar_ptr through
-        # the per-object byte-range fallback collected in ``shar_ptr_fallback``.
+        # predates byte-range MOSS support, route shar_ptr through the per-object
+        # byte-range fallback collected in ``shar_ptr_fallback``.
         shar_ptr_uses_batch = (
             not self.force_individual
         ) and self._aistore_byte_range_supported()
@@ -434,13 +465,20 @@ class AISBatchLoader:
 
                 # Retry with direct API call if content is empty (from timeout or actual empty response)
                 if content == b"":
-                    bck_, provider_, obj_name_, archpath_ = self._moss_attrs(info)
+                    direct_info = (
+                        saved_requests_list[request_idx]
+                        if request_idx < len(saved_requests_list)
+                        else info
+                    )
+                    bck_, provider_, obj_name_, archpath_ = self._moss_attrs(
+                        direct_info
+                    )
                     logger.warning(
                         f"Object {obj_name_}/{archpath_} from bucket {provider_}://{bck_} "
                         f"returned empty content. Retrying with direct AIStore API call."
                     )
                     try:
-                        content = self._get_object_from_moss_in(info)
+                        content = self._get_object_from_moss_in(direct_info)
                     except Exception as ex:
                         logger.error(
                             f"Failed to fetch object {obj_name_} from bucket "
@@ -478,8 +516,8 @@ class AISBatchLoader:
         """Return True iff any manifest in ``cuts`` is served from AIStore.
 
         Mirrors the detection conditions in :meth:`_collect_manifest_urls` but
-        without touching ``self.client`` or a ``BatchRequest`` — used to short-
-        circuit :meth:`__call__` when the CutSet has no AIS-backed data, so
+        without touching ``self.client`` or a ``Batch`` — used to short-circuit
+        :meth:`__call__` when the CutSet has no AIS-backed data, so
         loaders constructed in environments where AIStore isn't configured
         still pass cuts through unchanged.
         """
@@ -608,32 +646,50 @@ class AISBatchLoader:
     @lru_cache(maxsize=1)
     def _aistore_byte_range_supported() -> bool:
         """
-        Detect whether the installed aistore SDK accepts byte-range fetch in
-        :meth:`aistore.sdk.batch.batch.BatchRequest.add` *without raising*.
+        Detect whether the installed aistore SDK/cluster generation supports
+        byte-range MOSS entries.
 
-        Probe: instantiate a ``BatchRequest`` and call ``add(start=0,
-        length=0)`` against a sentinel object. If the SDK validates byte-range
-        usage eagerly with ``NotImplementedError`` (current behaviour, see
-        ``aistore/sdk/batch/batch.py``), this fails locally before any IO.
-        Cached for the process lifetime.
+        ``aistore==1.25.0`` removed the older ``BatchRequest`` class and still
+        has ``Batch.add(..., start=, length=)`` guarded by ``NotImplementedError``.
+        The supported API is the lower-level MOSS request schema:
+        ``Batch.requests_list`` exposes ``MossReq.moss_in`` and ``MossIn``
+        serializes ``start`` / ``length`` in the GetBatch JSON body. Older SDKs
+        had partial client-side fields before server support existed, so keep a
+        conservative version gate and schema check here.
         """
         try:
-            from aistore.sdk.batch.batch import BatchRequest
+            import re
+
+            import aistore
+            from aistore.sdk.batch.batch import Batch
+            from aistore.sdk.batch.types import MossIn, MossReq
         except Exception:
             return False
+
+        m = re.match(r"^(\d+)\.(\d+)\.(\d+)", getattr(aistore, "__version__", ""))
+        if m is None or tuple(map(int, m.groups())) < (1, 25, 0):
+            return False
+
         try:
-            req = BatchRequest()
-            req.add(object(), start=0, length=0)
-        except NotImplementedError:
-            return False
-        except TypeError:
-            # ``start`` / ``length`` not in the signature on older SDKs.
-            return False
+            descriptor = vars(Batch).get("requests_list")
+            if not isinstance(descriptor, property):
+                return False
+            if "moss_in" not in MossReq.model_fields:
+                return False
+            if not {"start", "length"}.issubset(MossIn.model_fields):
+                return False
+            probe = MossIn.model_construct(
+                obj_name="__lhotse_probe__.tar",
+                bck="__lhotse_probe__",
+                provider="ais",
+                start=0,
+                length=1,
+            )
+            dumped = probe.model_dump(by_alias=True, exclude_defaults=True)
         except Exception:
-            # Any other exception (e.g. invalid object stub) means the SDK
-            # got past byte-range validation, so the feature is supported.
-            return True
-        return True
+            return False
+
+        return dumped.get("start") == 0 and dumped.get("length") == 1
 
     def _add_shar_ptr_to_batch(
         self,
@@ -648,8 +704,8 @@ class AISBatchLoader:
         Schedule a Shar lazy pointer fetch.
 
         When ``shar_ptr_uses_batch`` is True the request is added to the MOSS
-        ``BatchRequest`` via direct ``MossIn.model_construct`` append (see
-        :meth:`_append_moss_in` for why we bypass ``BatchRequest.add``).
+        ``Batch`` via direct ``MossIn.model_construct`` append (see
+        :meth:`_append_moss_in` for why we bypass ``Batch.add``).
         Otherwise the ``(manifest_idx, bck, provider, obj_name, offset, length)``
         tuple is appended to ``shar_ptr_fallback`` so :meth:`__call__` can
         drain it via per-object byte-range gets.
@@ -713,11 +769,11 @@ class AISBatchLoader:
         length: Optional[int] = None,
     ) -> None:
         """Append one MossIn entry to the batch request, bypassing the SDK's
-        ``BatchRequest.add(bucket.object(obj_name), ...)`` path.
+        ``Batch.add(bucket.object(obj_name), ...)`` path.
 
         Why this bypass exists
         ----------------------
-        ``BatchRequest.add`` builds a fresh ``Bucket`` + ``BucketDetails``
+        ``Batch.add`` builds a fresh ``Bucket`` + ``BucketDetails``
         (Pydantic v2) + ``Object`` + ``MossIn`` (Pydantic v2 with field
         aliases) per call. With ~45 manifests per minibatch in a Granary
         blend, profiling (nsys 2026-05-15, NVTX scope ``ais.collect_urls``)
@@ -739,7 +795,7 @@ class AISBatchLoader:
           round-trips ``model_construct`` vs the validating constructor
           and asserts ``model_dump`` equality.
         - ``batch.request.moss_in`` is a non-public attribute. Stable
-          through 1.20.0 → 1.23.0; bumping the SDK major version requires
+          through 1.20.0 → 1.25.0; bumping the SDK major version requires
           re-verifying that the field still exists with the same shape.
         """
         # Local imports kept local: aistore is an optional dependency and
