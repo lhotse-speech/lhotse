@@ -4,16 +4,18 @@ E2E test: resumable multi-node training with StatefulDataLoader.
 Simulates the typical Lhotse training setup:
 
 - Two CutSets are made infinite via ``.repeat()`` and blended 70/30 with
-  ``CutSet.mux(weights=[0.7, 0.3], seed="randomized")``.  Epochs are
+  ``CutSet.mux(weights=[0.7, 0.3], seed=0)``.  Epochs are
   undefined — the pipeline produces a weighted infinite stream.
 - The sampler uses ``rank=0, world_size=1`` (defaults) because Lhotse
   relies on shuffled indexed iterators for high-quality randomization,
   not the sampler's batch-deduplication mechanism.  Every worker iterates
   over the full data independently.
-- ``seed="randomized"`` is resolved lazily inside each DataLoader worker
-  process via ``make_worker_init_fn(rank=..., world_size=...)``.  This
-  gives every ``(dp_rank, worker_id)`` tuple a unique seed, ensuring
-  different shuffle orders without explicit coordination.
+- The sampler's ``seed="randomized"`` is resolved lazily inside each
+  DataLoader worker process via
+  ``make_worker_init_fn(rank=..., world_size=...)``.  This gives every
+  ``(dp_rank, worker_id)`` tuple a unique seed, ensuring different shuffle
+  orders without explicit coordination. The mux seed stays fixed because
+  indexed sources need all shards to choose the same source at each step.
 - We stop after a fixed step budget, checkpoint with
   ``StatefulDataLoader.state_dict()``, and verify that restoration
   produces exactly the same continuation.
@@ -61,13 +63,13 @@ def _make_pipeline(cuts_a_path, cuts_b_path):
     """
     Build a fresh infinite mux pipeline.
 
-    ``seed="randomized"`` means each (dp_rank, worker_id) will resolve to
-    a different integer seed inside the DataLoader worker subprocess,
-    provided ``make_worker_init_fn`` is used.
+    The mux seed is fixed so all indexed shards choose the same source at
+    each step. The sampler seed remains randomized per (dp_rank, worker_id)
+    via ``make_worker_init_fn``.
     """
     a = CutSet.from_file(cuts_a_path, indexed=True).repeat()
     b = CutSet.from_file(cuts_b_path, indexed=True).repeat()
-    pipeline = CutSet.mux(a, b, weights=[0.7, 0.3], seed="randomized")
+    pipeline = CutSet.mux(a, b, weights=[0.7, 0.3], seed=0)
     sampler = DynamicBucketingSampler(
         pipeline,
         max_cuts=4,

@@ -704,6 +704,7 @@ class IndexedJsonlReader:
         self.path = path
         self.index_path = index_path
         self._fh: Optional[object] = None
+        self._fh_pid: Optional[int] = None
         idx_path = (
             self.index_path
             if self.index_path is not None
@@ -720,8 +721,14 @@ class IndexedJsonlReader:
         self._offsets = read_index(idx_path)
 
     def _ensure_open(self):
-        if self._fh is None:
+        current_pid = os.getpid()
+        # Forked DataLoader workers inherit the parent's file descriptor and
+        # can otherwise race on its shared seek offset. Reopen per process.
+        if self._fh is None or self._fh_pid != current_pid:
+            if self._fh is not None:
+                self._fh.close()
             self._fh = _open_for_indexed_read(self.path)
+            self._fh_pid = current_pid
 
     def __del__(self):
         self.close()
@@ -730,13 +737,16 @@ class IndexedJsonlReader:
         if self._fh is not None:
             self._fh.close()
             self._fh = None
+            self._fh_pid = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
         state["_fh"] = None  # file handles are not picklable
+        state["_fh_pid"] = None
         return state
 
     def __setstate__(self, state):
+        state.setdefault("_fh_pid", None)
         self.__dict__.update(state)
 
     def __len__(self) -> int:
@@ -809,6 +819,7 @@ class IndexedTarReader:
         self.path = path
         self.index_path = index_path
         self._fh: Optional[object] = None
+        self._fh_pid: Optional[int] = None
         idx_path = (
             self.index_path
             if self.index_path is not None
@@ -825,8 +836,14 @@ class IndexedTarReader:
         self._offsets = read_index(idx_path)
 
     def _ensure_open(self):
-        if self._fh is None:
+        current_pid = os.getpid()
+        # Forked DataLoader workers inherit the parent's file descriptor and
+        # can otherwise race on its shared seek offset. Reopen per process.
+        if self._fh is None or self._fh_pid != current_pid:
+            if self._fh is not None:
+                self._fh.close()
             self._fh = _open_for_indexed_read(self.path)
+            self._fh_pid = current_pid
 
     def __del__(self):
         self.close()
@@ -835,13 +852,16 @@ class IndexedTarReader:
         if self._fh is not None:
             self._fh.close()
             self._fh = None
+            self._fh_pid = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
         state["_fh"] = None  # file handles are not picklable
+        state["_fh_pid"] = None
         return state
 
     def __setstate__(self, state):
+        state.setdefault("_fh_pid", None)
         self.__dict__.update(state)
 
     def __len__(self) -> int:
@@ -901,7 +921,9 @@ class IndexedTarReader:
             yield self[i]
 
 
-def read_tar_member_at(fh, offset: int) -> Tuple[Optional[bytes], Path, tarfile.TarInfo]:
+def read_tar_member_at(
+    fh, offset: int
+) -> Tuple[Optional[bytes], Path, tarfile.TarInfo]:
     """Read a single tar member's header + payload at ``offset`` from an open
     file handle. Returns ``(data_bytes, member_path, tar_info)``.
 

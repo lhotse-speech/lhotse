@@ -2,14 +2,15 @@
 Tests for the Lhotse Shar lazy-pointer mode (``LazyIndexedSharIterator(lazy=True)``)
 and the supporting ``shar_ptr`` / ``shar_ptr_array`` storage types.
 """
+
 from __future__ import annotations
 
 import pickle
 from pathlib import Path
-from unittest.mock import patch
 
 # Reuse the standard shar test fixture which specifies all fields
 from test.shar.conftest import cuts  # noqa: F401
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -257,8 +258,8 @@ def test_ais_collect_queues_shar_ptr_fallback_when_byte_range_unsupported():
     :meth:`_collect_manifest_urls` reports success because the pointer was
     scheduled (just on the fallback leg, not the batch leg)."""
     pytest.importorskip("aistore")
-    from lhotse.ais.batch_loader import AISBatchLoader
     from lhotse import AudioSource, Recording
+    from lhotse.ais.batch_loader import AISBatchLoader
 
     rec = Recording(
         id="x",
@@ -278,7 +279,7 @@ def test_ais_collect_queues_shar_ptr_fallback_when_byte_range_unsupported():
         AISBatchLoader, "_aistore_byte_range_supported", staticmethod(lambda: False)
     ):
         loader = AISBatchLoader.__new__(AISBatchLoader)  # bypass __init__
-        loader.client = None  # not touched on this code path
+        loader._client = None  # not touched on this code path
         batch = []
         shar_ptr_fallback = []
         result = loader._collect_manifest_urls(
@@ -304,8 +305,8 @@ def test_ais_byte_range_path_when_sdk_supports_it():
     """Future-proof: when the SDK exposes byte-range batch, the loader routes
     Shar pointers through ``batch.add(start=, length=)``."""
     pytest.importorskip("aistore")
-    from lhotse.ais.batch_loader import AISBatchLoader
     from lhotse import AudioSource, Recording
+    from lhotse.ais.batch_loader import AISBatchLoader
 
     rec = Recording(
         id="x",
@@ -343,7 +344,7 @@ def test_ais_byte_range_path_when_sdk_supports_it():
         AISBatchLoader, "_aistore_byte_range_supported", staticmethod(lambda: True)
     ):
         loader = AISBatchLoader.__new__(AISBatchLoader)
-        loader.client = FakeClient()
+        loader._client = FakeClient()
         batch = FakeBatch()
         result = loader._collect_manifest_urls(
             rec,

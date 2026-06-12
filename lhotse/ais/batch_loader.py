@@ -136,6 +136,7 @@ class AISBatchLoader:
         a clearer failure than the original ``'MossOut' object has no
         attribute 'bck'`` deep in the retry path.
         """
+
         def _first(o, *names):
             for n in names:
                 v = getattr(o, n, None)
@@ -146,6 +147,7 @@ class AISBatchLoader:
                 f"{names!r} — AIStore SDK API may have changed again; "
                 f"available attrs: {[a for a in dir(o) if not a.startswith('_')][:20]}"
             )
+
         bck = _first(info, "bck", "bucket_name", "bucket")
         provider = _first(info, "provider", "bucket_provider")
         obj_name = _first(info, "obj_name", "object_name", "name")
@@ -301,8 +303,20 @@ class AISBatchLoader:
                             f"[{offset}-{end_inclusive}]"
                         ) from ex
 
-        # Save requests list before calling batch.get() - it may be cleared after execution
-        saved_requests_list = list(batch.requests_list)
+        # Save requests list before calling batch.get() - it may be cleared
+        # after execution. Older/mocked Batch objects may not expose a useful
+        # requests_list; the normal MOSS path can still stream from batch.get(),
+        # but direct-GET fallback requires this metadata.
+        try:
+            saved_requests_list = list(batch.requests_list)
+        except (AttributeError, TypeError):
+            saved_requests_list = []
+
+        moss_manifest_indices = {
+            mi
+            for mi, (_, has_url) in enumerate(manifest_list)
+            if has_url and mi not in shar_ptr_content
+        }
 
         # Generator that mimics ``batch.get()``'s ``(moss_in, content)`` yield
         # contract by issuing one per-object Get instead. Used both as an
@@ -315,6 +329,11 @@ class AISBatchLoader:
         # filtered out before return. Without the flag, behavior is unchanged
         # (raise AISBatchLoaderError on first failure).
         def _individual_get():
+            if not saved_requests_list:
+                raise AISBatchLoaderError(
+                    "Cannot fall back to sequential AIStore GET: "
+                    "batch.requests_list is unavailable or empty."
+                )
             for moss_in in saved_requests_list:
                 try:
                     content = self._get_object_from_moss_in(moss_in)
@@ -333,7 +352,7 @@ class AISBatchLoader:
                             f"Sequential GET fallback failed for {obj_name_}"
                         ) from ex
 
-        if not saved_requests_list:
+        if not moss_manifest_indices:
             # Only shar_ptr fallback entries — nothing to ask MOSS for.
             batch_result = iter(())
         elif self.force_individual:
@@ -749,13 +768,20 @@ class AISBatchLoader:
         # unit test which round-trips ``model_construct`` against the
         # validating constructor.
         try:
-            batch.requests_list.append(MossIn.model_construct(**kwargs))
-            return
+            requests_list = batch.requests_list
+            if isinstance(requests_list, list):
+                requests_list.append(MossIn.model_construct(**kwargs))
+                return
+            raise AttributeError
         except AttributeError:
             pass
         # Fallback: original aistore client path. Reaches client.bucket and
         # bucket.object, both of which validate; this is the pre-optimization
-        # behavior preserved for forward compatibility.
+        # behavior preserved for forward compatibility and for tests/mocks
+        # that don't provide a real Batch.requests_list list.
+        if not hasattr(self, "_client"):
+            batch.add(obj_name, start=start, length=length, archpath=archpath)
+            return
         bucket = self.client.bucket(bck, provider)
         if start is not None or length is not None:
             batch.add(bucket.object(obj_name), start=start, length=length)
@@ -780,9 +806,7 @@ class AISBatchLoader:
                 inner_array.storage_path = ""
                 inner_array.storage_key = payload
             else:
-                inner_array.storage_type = FILE_TO_MEMORY_TYPE[
-                    inner_array.storage_type
-                ]
+                inner_array.storage_type = FILE_TO_MEMORY_TYPE[inner_array.storage_type]
                 inner_array.storage_path = ""
                 inner_array.storage_key = content
 
