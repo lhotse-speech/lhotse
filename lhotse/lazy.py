@@ -611,7 +611,11 @@ class LazyIndexedManifestIterator(IteratorNode):
         # ``shuffle`` and ``seed`` are surfaced in the dict for inspection
         # and forward-compat — they are not consumed on load (the iterator
         # is reconstructed with the same constructor args).
-        return {**self._iter_state.state_dict(), "shuffle": self.shuffle, "seed": self.seed}
+        return {
+            **self._iter_state.state_dict(),
+            "shuffle": self.shuffle,
+            "seed": self.seed,
+        }
 
     def load_state_dict(self, sd: dict) -> None:
         if self.shuffle and "range" not in sd:

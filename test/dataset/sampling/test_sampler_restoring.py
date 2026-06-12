@@ -356,7 +356,9 @@ def test_load_state_dict_rejects_cross_rank_state():
     src = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=0)
     dst = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
     state = src.state_dict()
-    with pytest.raises(RuntimeError, match="state was saved on rank=0 but is being loaded on rank=2"):
+    with pytest.raises(
+        RuntimeError, match="state was saved on rank=0 but is being loaded on rank=2"
+    ):
         dst.load_state_dict(state)
 
 

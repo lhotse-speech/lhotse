@@ -38,7 +38,6 @@ from lhotse.lazy import (
 )
 from lhotse.testing.dummies import DummyManifest
 
-
 _PARTITION_ENV_KEYS = ("RANK", "WORLD_SIZE", LHOTSE_USE_WORKER_PARTITION)
 
 
@@ -178,7 +177,9 @@ def test_indexed_manifest_iterator_partition_non_shuffled(indexed_jsonl, world_s
     assert sorted(seen_ids) == sorted(_all_expected_ids(0, 50))
 
 
-def test_indexed_manifest_iterator_partition_default_matches_unpartitioned(indexed_jsonl):
+def test_indexed_manifest_iterator_partition_default_matches_unpartitioned(
+    indexed_jsonl,
+):
     """Without env vars (single-shard default), behaviour matches the un-sharded path."""
     saved = {k: os.environ.pop(k, None) for k in _PARTITION_ENV_KEYS}
     try:
@@ -203,7 +204,9 @@ def test_indexed_manifest_iterator_partition_state_dict_roundtrip(indexed_jsonl)
         it_full = LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=99)
         all_items = [item.id for item in it_full]
 
-        it_interrupted = LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=99)
+        it_interrupted = LazyIndexedManifestIterator(
+            indexed_jsonl, shuffle=True, seed=99
+        )
         gen = iter(it_interrupted)
         first_part = [next(gen).id for _ in range(min(4, len(all_items) // 2))]
         sd = it_interrupted.state_dict()
@@ -215,7 +218,9 @@ def test_indexed_manifest_iterator_partition_state_dict_roundtrip(indexed_jsonl)
         assert first_part + remaining == all_items
 
 
-def test_indexed_manifest_iterator_partition_resume_topology_mismatch_raises(indexed_jsonl):
+def test_indexed_manifest_iterator_partition_resume_topology_mismatch_raises(
+    indexed_jsonl,
+):
     """Saving at one shard topology and restoring at another raises ValueError."""
     with _env_partition(rank=1, world_size=4):
         it = LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=99)
@@ -283,7 +288,10 @@ def test_chain_globally_shuffled_no_double_partition_small(tmp_path):
             rank_items = [item.id for item in chain]
             per_rank_counts.append(len(rank_items))
             seen.extend(rank_items)
-    assert per_rank_counts == [4, 4], f"Expected each rank to see 4 items, got {per_rank_counts}"
+    assert per_rank_counts == [
+        4,
+        4,
+    ], f"Expected each rank to see 4 items, got {per_rank_counts}"
     assert sorted(seen) == sorted(expected)
     assert len(seen) == len(set(seen)) == 8
 
@@ -430,7 +438,10 @@ def test_multiplexer_partition_two_sources_equal_size_small(tmp_path):
             rank_items = [item.id for item in mux]
             per_rank_counts.append(len(rank_items))
             seen.extend(rank_items)
-    assert per_rank_counts == [4, 4], f"Expected each rank to see 4 items, got {per_rank_counts}"
+    assert per_rank_counts == [
+        4,
+        4,
+    ], f"Expected each rank to see 4 items, got {per_rank_counts}"
     assert sorted(seen) == sorted(expected)
     assert len(seen) == len(set(seen)) == 8
 
@@ -485,8 +496,12 @@ def test_multiplexer_partition_uneven_shard_sizes(tmp_path):
             per_rank_counts.append(len(rank_items))
             seen.extend(rank_items)
     # Each rank yields its full share of items from each source.
-    assert per_rank_counts[0] == 3 + 4, f"rank 0 expected 7 items, got {per_rank_counts[0]}"
-    assert per_rank_counts[1] == 2 + 3, f"rank 1 expected 5 items, got {per_rank_counts[1]}"
+    assert (
+        per_rank_counts[0] == 3 + 4
+    ), f"rank 0 expected 7 items, got {per_rank_counts[0]}"
+    assert (
+        per_rank_counts[1] == 2 + 3
+    ), f"rank 1 expected 5 items, got {per_rank_counts[1]}"
     assert sorted(seen) == sorted(expected)
     assert len(seen) == len(set(seen)) == 12
 
@@ -703,7 +718,9 @@ def test_lazy_filter_over_partitioned_indexed(indexed_jsonl):
     def even_index(cut):
         return int(cut.id.split("-")[-1]) % 2 == 0
 
-    expected = sorted(c for c in _all_expected_ids(0, 50) if int(c.split("-")[-1]) % 2 == 0)
+    expected = sorted(
+        c for c in _all_expected_ids(0, 50) if int(c.split("-")[-1]) % 2 == 0
+    )
     seen = []
     for rank in range(4):
         with _env_partition(rank=rank, world_size=4):
@@ -743,7 +760,10 @@ def test_lazy_repeater_over_partitioned_indexed(indexed_jsonl):
             repeated = [strip_repeat(item.id) for item in rep]
             assert len(repeated) == times * shard_len_expected
             for k in range(times):
-                assert repeated[k * shard_len_expected : (k + 1) * shard_len_expected] == single_pass
+                assert (
+                    repeated[k * shard_len_expected : (k + 1) * shard_len_expected]
+                    == single_pass
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -755,8 +775,18 @@ def test_partition_determinism_across_runs(indexed_jsonl):
     """Same (rank, world_size, seed) yields the same partition + order across calls."""
     for rank in range(3):
         with _env_partition(rank=rank, world_size=3):
-            a = [item.id for item in LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=33)]
-            b = [item.id for item in LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=33)]
+            a = [
+                item.id
+                for item in LazyIndexedManifestIterator(
+                    indexed_jsonl, shuffle=True, seed=33
+                )
+            ]
+            b = [
+                item.id
+                for item in LazyIndexedManifestIterator(
+                    indexed_jsonl, shuffle=True, seed=33
+                )
+            ]
             assert a == b
 
 
@@ -770,8 +800,22 @@ def test_partition_different_seeds_different_orders(indexed_jsonl):
     b_per_rank = []
     for rank in range(2):
         with _env_partition(rank=rank, world_size=2):
-            a_per_rank.append([item.id for item in LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=1)])
-            b_per_rank.append([item.id for item in LazyIndexedManifestIterator(indexed_jsonl, shuffle=True, seed=2)])
+            a_per_rank.append(
+                [
+                    item.id
+                    for item in LazyIndexedManifestIterator(
+                        indexed_jsonl, shuffle=True, seed=1
+                    )
+                ]
+            )
+            b_per_rank.append(
+                [
+                    item.id
+                    for item in LazyIndexedManifestIterator(
+                        indexed_jsonl, shuffle=True, seed=2
+                    )
+                ]
+            )
     # Rank 0 with seed 1 differs from rank 0 with seed 2.
     assert a_per_rank[0] != b_per_rank[0]
     # But each seed individually still produces a full partition of the manifest.
@@ -842,7 +886,11 @@ def test_get_worker_partition_full_coverage_rank_x_worker(tmp_path, monkeypatch)
     for rank in range(2):
         for worker_id in range(3):
             with _env_partition(rank=rank, world_size=2):
-                monkeypatch.setattr(tud, "get_worker_info", lambda wid=worker_id: _FakeWorkerInfo(wid, 3))
+                monkeypatch.setattr(
+                    tud,
+                    "get_worker_info",
+                    lambda wid=worker_id: _FakeWorkerInfo(wid, 3),
+                )
                 it = LazyIndexedManifestIterator(p, shuffle=True, seed=21)
                 seen.extend(item.id for item in it)
     assert sorted(seen) == sorted(_all_expected_ids(0, 30))
@@ -883,20 +931,28 @@ def test_chain_mixed_indexed_non_indexed_only_indexed_partitions(tmp_path):
                 shuffle_iters=False,
             )
             ids = [item.id for item in chain]
-            per_rank_indexed.append([i for i in ids if i.startswith("dummy-mono-cut-0000")
-                                                       or i.startswith("dummy-mono-cut-0001")
-                                                       or i.startswith("dummy-mono-cut-0002")
-                                                       or i.startswith("dummy-mono-cut-0003")
-                                                       or i.startswith("dummy-mono-cut-0004")
-                                                       or i.startswith("dummy-mono-cut-0005")
-                                                       or i.startswith("dummy-mono-cut-0006")
-                                                       or i.startswith("dummy-mono-cut-0007")])
+            per_rank_indexed.append(
+                [
+                    i
+                    for i in ids
+                    if i.startswith("dummy-mono-cut-0000")
+                    or i.startswith("dummy-mono-cut-0001")
+                    or i.startswith("dummy-mono-cut-0002")
+                    or i.startswith("dummy-mono-cut-0003")
+                    or i.startswith("dummy-mono-cut-0004")
+                    or i.startswith("dummy-mono-cut-0005")
+                    or i.startswith("dummy-mono-cut-0006")
+                    or i.startswith("dummy-mono-cut-0007")
+                ]
+            )
             per_rank_plain.append([i for i in ids if int(i.split("-")[-1]) >= 100])
     # Indexed source: each rank gets 4 of 8. Non-indexed source: each rank gets all 8.
     assert len(per_rank_indexed[0]) == 4
     assert len(per_rank_indexed[1]) == 4
     indexed_first_eight = [f"dummy-mono-cut-{i:04d}" for i in range(8)]
-    assert sorted(per_rank_indexed[0] + per_rank_indexed[1]) == sorted(indexed_first_eight)
+    assert sorted(per_rank_indexed[0] + per_rank_indexed[1]) == sorted(
+        indexed_first_eight
+    )
     # Non-indexed half: each rank sees all 8 items from p2 (no partition applied).
     assert sorted(per_rank_plain[0]) == sorted(per_rank_plain[1])
     assert len(per_rank_plain[0]) == 8

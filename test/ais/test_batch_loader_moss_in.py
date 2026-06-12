@@ -20,7 +20,6 @@ aistore = pytest.importorskip("aistore")
 
 from aistore.sdk.batch.types import MossIn, MossReq
 
-
 # ---------------------------------------------------------------------------
 # Field presence: the fast path passes specific kwargs to MossIn — assert
 # they're all real fields on the current SDK so a rename surfaces here.
@@ -44,9 +43,7 @@ def test_mossin_obj_name_is_required():
     """``obj_name`` is the only required field today; if more get added,
     the fast path's kwargs-sparse build silently produces an invalid request."""
     required = [
-        name
-        for name, info in MossIn.model_fields.items()
-        if info.is_required()
+        name for name, info in MossIn.model_fields.items() if info.is_required()
     ]
     assert set(required) <= {"obj_name"}, (
         f"MossIn introduced new required fields {set(required) - {'obj_name'}} "
@@ -65,18 +62,39 @@ def test_mossin_obj_name_is_required():
 
 _FAST_KWARG_COMBOS = [
     # (description, kwargs)
-    ("url-only (e.g. recording.source.type='url')",
-     {"obj_name": "audio.wav", "bck": "bkt", "provider": "ais"}),
-    ("url with archpath (tar member)",
-     {"obj_name": "shard.tar", "bck": "bkt", "provider": "ais", "archpath": "rec1.wav"}),
-    ("shar_ptr (byte-range)",
-     {"obj_name": "shard.tar", "bck": "bkt", "provider": "ais", "start": 4096, "length": 65536}),
-    ("aws provider variant",
-     {"obj_name": "shard.tar", "bck": "bkt", "provider": "aws"}),
+    (
+        "url-only (e.g. recording.source.type='url')",
+        {"obj_name": "audio.wav", "bck": "bkt", "provider": "ais"},
+    ),
+    (
+        "url with archpath (tar member)",
+        {
+            "obj_name": "shard.tar",
+            "bck": "bkt",
+            "provider": "ais",
+            "archpath": "rec1.wav",
+        },
+    ),
+    (
+        "shar_ptr (byte-range)",
+        {
+            "obj_name": "shard.tar",
+            "bck": "bkt",
+            "provider": "ais",
+            "start": 4096,
+            "length": 65536,
+        },
+    ),
+    (
+        "aws provider variant",
+        {"obj_name": "shard.tar", "bck": "bkt", "provider": "aws"},
+    ),
 ]
 
 
-@pytest.mark.parametrize("desc,kwargs", _FAST_KWARG_COMBOS, ids=[c[0] for c in _FAST_KWARG_COMBOS])
+@pytest.mark.parametrize(
+    "desc,kwargs", _FAST_KWARG_COMBOS, ids=[c[0] for c in _FAST_KWARG_COMBOS]
+)
 def test_model_construct_matches_validating_constructor(desc: str, kwargs: dict):
     """``MossIn.model_construct(**kwargs)`` must serialize identically to
     ``MossIn(**kwargs)`` — same field values, same defaults for omitted
@@ -119,6 +137,7 @@ def test_mossreq_has_moss_in_list_field():
     annotation = MossReq.model_fields["moss_in"].annotation
     # typing.List[MossIn] subscripts; check origin is list-like.
     import typing as _t
+
     assert _t.get_origin(annotation) is list, (
         f"MossReq.moss_in type changed from List[MossIn] to {annotation} "
         f"on aistore {aistore.__version__}. Fast path's append() may break."
@@ -141,6 +160,7 @@ def test_batch_requests_list_is_public_accessor():
     # Most robust check is source inspection (kept lenient — only flag a hard
     # rename of 'moss_in', anything else gets caught by the round-trip tests).
     import inspect
+
     src = inspect.getsource(descriptor.fget)
     assert "moss_in" in src, (
         f"Batch.requests_list source no longer references moss_in on "

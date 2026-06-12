@@ -4177,7 +4177,9 @@ class LazyCutMixer(IteratorNode):
         # Actual mixing
         to_mix = self._next_mix_in_cut(rng)
         to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
-        mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=self.preserve_id, tag=self.tag)
+        mixed = cut.mix(
+            other=to_mix, snr=cut_snr, preserve_id=self.preserve_id, tag=self.tag
+        )
         # Did the user specify a duration?
         # If yes, we will ensure that shorter cuts have more noise mixed in
         # to "pad" them with at the end.

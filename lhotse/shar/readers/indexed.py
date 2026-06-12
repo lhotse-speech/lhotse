@@ -128,7 +128,8 @@ class LazyIndexedSharIterator(IteratorNode):
         self._lazy = lazy
         self.epoch = 0
         self._iter_state = PartitionedIndexedIterator(
-            shuffle=self.shuffle, seed=resolve_seed(self.seed) if isinstance(self.seed, int) else 0
+            shuffle=self.shuffle,
+            seed=resolve_seed(self.seed) if isinstance(self.seed, int) else 0,
         )
 
         # Build indexed readers for cuts JSONL shards and compute lengths.

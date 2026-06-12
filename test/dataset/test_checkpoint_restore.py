@@ -564,7 +564,9 @@ class TestMixedSourceConstantTimeAccessRaises:
         from lhotse.lazy import LazyIteratorMultiplexer
 
         streaming_leaf = self._make_streaming_leaf()(list(cuts)[:50])
-        indexed_leaf = _IndexedCutsWithoutGraphOrigin(list(cuts)[50:])  # has_constant_time_access=True per definition above
+        indexed_leaf = _IndexedCutsWithoutGraphOrigin(
+            list(cuts)[50:]
+        )  # has_constant_time_access=True per definition above
         mux = LazyIteratorMultiplexer(streaming_leaf, indexed_leaf, seed=0)
         cs = CutSet(mux)
 

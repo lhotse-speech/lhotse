@@ -32,7 +32,6 @@ from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.writers import SharWriter
 from lhotse.testing.dummies import DummyManifest
 
-
 _PARTITION_ENV_KEYS = ("RANK", "WORLD_SIZE", LHOTSE_USE_WORKER_PARTITION)
 
 
@@ -91,9 +90,9 @@ def test_indexed_shar_partition_disjoint_and_complete(indexed_shar_dir, world_si
         with _env_partition(rank=rank, world_size=world_size):
             ids = {c.id for c in LazyIndexedSharIterator(in_dir=indexed_shar_dir)}
         for prev in per_rank:
-            assert prev.isdisjoint(ids), (
-                f"rank {rank} slice overlaps prior rank: {sorted(prev & ids)}"
-            )
+            assert prev.isdisjoint(
+                ids
+            ), f"rank {rank} slice overlaps prior rank: {sorted(prev & ids)}"
         per_rank.append(ids)
 
     union: set = set()
@@ -172,11 +171,16 @@ def test_indexed_shar_partition_works_with_shuffle(indexed_shar_dir, shuffle):
     union: set = set()
     for rank in range(world_size):
         with _env_partition(rank=rank, world_size=world_size):
-            ids = {c.id for c in LazyIndexedSharIterator(
-                in_dir=indexed_shar_dir, shuffle=shuffle, seed=42,
-            )}
-        assert union.isdisjoint(ids), (
-            f"rank {rank} overlaps: {sorted(union & ids)} (shuffle={shuffle})"
-        )
+            ids = {
+                c.id
+                for c in LazyIndexedSharIterator(
+                    in_dir=indexed_shar_dir,
+                    shuffle=shuffle,
+                    seed=42,
+                )
+            }
+        assert union.isdisjoint(
+            ids
+        ), f"rank {rank} overlaps: {sorted(union & ids)} (shuffle={shuffle})"
         union |= ids
     assert union == expected

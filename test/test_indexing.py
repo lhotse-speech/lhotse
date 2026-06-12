@@ -216,15 +216,15 @@ def test_indexed_jsonl_reader_concurrent_auto_create(tmp_path):
 
     assert not errors, f"workers raised: {errors[:3]}"
     assert lengths, "no worker reported a length — barrier wait failed?"
-    assert all(L == n_records for L in lengths), (
-        f"workers saw inconsistent lengths {Counter(lengths)}; expected all == {n_records}"
-    )
+    assert all(
+        L == n_records for L in lengths
+    ), f"workers saw inconsistent lengths {Counter(lengths)}; expected all == {n_records}"
 
     # Final .idx must be non-empty + size-aligned to uint64.
     idx_size = index_file_path(p).stat().st_size
-    assert idx_size > 0 and idx_size % 8 == 0, (
-        f"final .idx is {idx_size} bytes — not a clean uint64 array"
-    )
+    assert (
+        idx_size > 0 and idx_size % 8 == 0
+    ), f"final .idx is {idx_size} bytes — not a clean uint64 array"
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +428,9 @@ def test_lazy_shuffled_range_partition_shard_lengths(n, num_shards):
     total = 0
     for shard_id in range(num_shards):
         shard = LazyShuffledRange(n, seed=42, shard_id=shard_id, num_shards=num_shards)
-        expected_len = max(0, (n - shard_id + num_shards - 1) // num_shards) if n > shard_id else 0
+        expected_len = (
+            max(0, (n - shard_id + num_shards - 1) // num_shards) if n > shard_id else 0
+        )
         assert len(shard) == expected_len
         total += len(shard)
     assert total == n
@@ -1199,7 +1201,9 @@ def _patch_indexed_open_to_local(monkeypatch, indexing_mod, redirects):
             return original_open_best(target, mode)
         return original_open_best(path, mode)
 
-    monkeypatch.setattr(indexing_mod, "_open_for_indexed_read", fake_open_for_indexed_read)
+    monkeypatch.setattr(
+        indexing_mod, "_open_for_indexed_read", fake_open_for_indexed_read
+    )
     monkeypatch.setattr(indexing_mod, "open_best", fake_open_best)
 
 
@@ -1298,9 +1302,7 @@ def test_indexed_tar_reader_remote_data_with_remote_index_path(
     assert str(data_path) == samples[1][0]
 
 
-def test_read_index_remote_path_is_cached_locally(
-    tmp_path, jsonl_file, monkeypatch
-):
+def test_read_index_remote_path_is_cached_locally(tmp_path, jsonl_file, monkeypatch):
     """Remote index files are downloaded once, cached on disk, and reused
     from the cache on subsequent calls (no second remote fetch)."""
     import lhotse.indexing as indexing_mod
