@@ -92,6 +92,16 @@ class Array:
         """
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
+    def copy_with(self, **kwargs) -> "Array":
+        """
+        Return a copy of this manifest with the selected fields overwritten.
+
+        This is a convenience wrapper around :func:`lhotse.utils.fastcopy`, e.g.::
+
+            >>> array2 = array.copy_with(storage_key="new-key")
+        """
+        return fastcopy(self, **kwargs)
+
     def move_to_memory(self, lilcom: bool = False) -> "Array":
         from lhotse.features.io import get_memory_writer
 
@@ -260,6 +270,16 @@ class TemporalArray:
         to the ``storage_path`` member.
         """
         return fastcopy(self, array=self.array.with_path_prefix(path))
+
+    def copy_with(self, **kwargs) -> "TemporalArray":
+        """
+        Return a copy of this manifest with the selected fields overwritten.
+
+        This is a convenience wrapper around :func:`lhotse.utils.fastcopy`, e.g.::
+
+            >>> array2 = temporal_array.copy_with(start=5.0)
+        """
+        return fastcopy(self, **kwargs)
 
     def move_to_memory(
         self,

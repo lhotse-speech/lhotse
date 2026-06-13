@@ -220,6 +220,20 @@ class Cut:
         """
         return type(self)(**{**self.__dict__, **replace_attrs})
 
+    def copy_with(self, **kwargs) -> "Cut":
+        """
+        Return a copy of this cut with the selected fields overwritten.
+
+        Alias for :meth:`copy`, provided for API consistency with other Lhotse
+        manifests (e.g. :class:`~lhotse.supervision.SupervisionSegment` or
+        :class:`~lhotse.audio.Recording`) that also expose ``copy_with``.
+
+        Example::
+
+            >>> cut2 = cut.copy_with(start=5.0)
+        """
+        return self.copy(**kwargs)
+
     @property
     def has_overlapping_supervisions(self) -> bool:
         if len(self.supervisions) < 2:
