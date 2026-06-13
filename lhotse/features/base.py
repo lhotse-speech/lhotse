@@ -558,6 +558,16 @@ class Features:
     def with_path_prefix(self, path: Pathlike) -> "Features":
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
+    def copy_with(self, **kwargs) -> "Features":
+        """
+        Return a copy of this manifest with the selected fields overwritten.
+
+        This is a convenience wrapper around :func:`lhotse.utils.fastcopy`, e.g.::
+
+            >>> features2 = features.copy_with(start=5.0)
+        """
+        return fastcopy(self, **kwargs)
+
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 

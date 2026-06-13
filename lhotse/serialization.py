@@ -491,11 +491,50 @@ def load_manifest_lazy_or_eager(
     """
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.
+
+    .. note::
+        When ``path`` is ``"-"`` (stdin), the manifest is always loaded eagerly,
+        because stdin is a one-shot stream and the lazy reader needs to re-open
+        the input to iterate over it (see GitHub issue #810).
     """
-    if extension_contains(".jsonl", path) or str(path) == "-":
+    if str(path) == "-":
+        # stdin cannot be re-opened or seeked, so lazy iteration (which
+        # reopens the input on every pass) does not work for it. Eagerly
+        # consume stdin into a list and build the manifest from it.
+        return _load_manifest_from_stdin(manifest_cls=manifest_cls)
+    if extension_contains(".jsonl", path):
         return load_manifest_lazy(path)
     else:
         return load_manifest(path, manifest_cls=manifest_cls)
+
+
+def _load_manifest_from_stdin(manifest_cls=None) -> Optional[Manifest]:
+    """
+    Read a JSONL manifest from standard input and build it eagerly.
+
+    Stdin is a one-shot stream that cannot be re-opened, which is incompatible
+    with Lhotse's lazy iterators. We therefore slurp every line once and then
+    dispatch to the same ``from_dicts`` logic used by :func:`load_manifest`.
+    """
+    from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet
+
+    raw_data = list(load_jsonl("-"))
+    if not raw_data:
+        return None  # empty manifest
+
+    if manifest_cls is not None:
+        candidates = [manifest_cls]
+    else:
+        candidates = [RecordingSet, SupervisionSet, FeatureSet, CutSet]
+    for manifest_type in candidates:
+        try:
+            data_set = manifest_type.from_dicts(raw_data)
+            if len(data_set) == 0:
+                raise RuntimeError()
+            return data_set
+        except Exception:
+            pass
+    raise ValueError("Unknown type of manifest read from stdin.")
 
 
 def resolve_manifest_set_class(item):

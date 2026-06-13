@@ -679,6 +679,16 @@ class Recording:
     def with_path_prefix(self, path: Pathlike) -> "Recording":
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
+    def copy_with(self, **kwargs) -> "Recording":
+        """
+        Return a copy of this recording with the selected fields overwritten.
+
+        This is a convenience wrapper around :func:`lhotse.utils.fastcopy`, e.g.::
+
+            >>> recording2 = recording.copy_with(id="new-id")
+        """
+        return fastcopy(self, **kwargs)
+
     def with_video_resolution(self, width: int, height: int) -> "Recording":
         return fastcopy(
             self,
