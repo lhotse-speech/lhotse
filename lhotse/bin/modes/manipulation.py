@@ -168,14 +168,22 @@ def split(
 
     output_dir = Path(output_dir)
     manifest = Path(manifest)
-    suffix = "".join(manifest.suffixes)
+    is_stdin = str(manifest) == "-"
+    if is_stdin:
+        # The "-" placeholder for stdin has no useful stem or suffix to derive
+        # output filenames from, so fall back to sensible defaults.
+        stem = "manifest"
+        suffix = ".jsonl.gz"
+    else:
+        stem = manifest.stem
+        suffix = "".join(manifest.suffixes)
     any_set = load_manifest_lazy_or_eager(manifest)
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
     num_digits = len(str(num_splits))
     for idx, part in enumerate(parts, start=start_idx):
         idx = f"{idx}".zfill(num_digits) if pad else str(idx)
-        part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
+        part.to_file((output_dir / stem).with_suffix(f".{idx}{suffix}"))
 
 
 @cli.command()
@@ -206,11 +214,12 @@ def split_lazy(
 
     output_dir = Path(output_dir)
     manifest = Path(manifest)
+    prefix = "manifest" if str(manifest) == "-" else manifest.stem
     any_set = load_manifest_lazy_or_eager(manifest)
     any_set.split_lazy(
         output_dir=output_dir,
         chunk_size=chunk_size,
-        prefix=manifest.stem,
+        prefix=prefix,
         start_idx=start_idx,
     )
 
