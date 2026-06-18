@@ -16,6 +16,7 @@ Welcome to lhotse's documentation!
    features.rst
    parallelism.rst
    datasets.rst
+   indexed-manifests.rst
    kaldi.rst
    cli.rst
    api.rst

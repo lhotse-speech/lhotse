@@ -167,6 +167,7 @@ else:
     lilcom_requires = ["lilcom>=1.1.0"]
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
+checkpoint_requires = ["torchdata"]
 tests_require = [
     "pytest",
     "pytest-forked",
@@ -187,6 +188,7 @@ h5py_requires = ["h5py"]
 kaldi_requires = ["kaldi_native_io", "kaldifeat"]
 workflow_requires = ["scipy"]
 pillow_requires = ["pillow"]
+tests_require = tests_require + checkpoint_requires
 dev_requires = sorted(
     docs_require
     + tests_require
@@ -229,6 +231,7 @@ setup(
         "dill": dill_requires,
         "orjson": orjson_requires,
         "webdataset": webdataset_requires,
+        "checkpoint": checkpoint_requires,
         "h5py": h5py_requires,
         "kaldi": kaldi_requires,
         "lilcom": lilcom_requires,

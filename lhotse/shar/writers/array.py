@@ -1,7 +1,7 @@
 import codecs
 import json
 from io import BytesIO
-from typing import List, Literal, Optional, Union
+from typing import Callable, List, Literal, Optional, Union
 
 import numpy as np
 
@@ -45,6 +45,7 @@ class ArrayTarWriter:
         compression: Literal["numpy", "lilcom"] = "numpy",
         lilcom_tick_power: int = -5,
         shard_offset: int = 0,
+        on_shard_complete: Optional[Callable[[str], None]] = None,
     ):
         if compression == "lilcom" and not is_module_available("lilcom"):
             raise ImportError(
@@ -52,7 +53,12 @@ class ArrayTarWriter:
                 "Install it or use compression='numpy'."
             )
         self.compression = compression
-        self.tar_writer = TarWriter(pattern, shard_size, shard_offset=shard_offset)
+        self.tar_writer = TarWriter(
+            pattern,
+            shard_size,
+            shard_offset=shard_offset,
+            on_shard_complete=on_shard_complete,
+        )
         self.lilcom_tick_power = lilcom_tick_power
 
     def __enter__(self):
