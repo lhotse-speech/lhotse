@@ -92,6 +92,17 @@ class CustomFieldMixin:
         cpy.custom[name] = value
         return cpy
 
+    def copy_with(self, **kwargs):
+        """
+        Return a copy of this manifest with the selected fields overwritten.
+
+        This is a convenience wrapper around :func:`lhotse.utils.fastcopy` that
+        does not require importing it and reads naturally, e.g.::
+
+            >>> supervision2 = supervision.copy_with(text="new text")
+        """
+        return fastcopy(self, **kwargs)
+
     def load_custom(self, name: str, **kwargs) -> np.ndarray:
         """
         Load custom data as numpy array. The custom data is expected to have
