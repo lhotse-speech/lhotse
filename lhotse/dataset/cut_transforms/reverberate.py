@@ -2,6 +2,7 @@ import random
 from typing import List, Optional
 
 from lhotse import CutSet, RecordingSet
+from lhotse.utils import load_rng_state, save_rng_state
 
 
 class ReverbWithImpulseResponse:
@@ -48,3 +49,9 @@ class ReverbWithImpulseResponse:
             else cut
             for cut in cuts
         )
+
+    def state_dict(self) -> dict:
+        return {"rng_state": save_rng_state(self.random)}
+
+    def load_state_dict(self, sd: dict) -> None:
+        self.random = load_rng_state(sd["rng_state"], self.random)

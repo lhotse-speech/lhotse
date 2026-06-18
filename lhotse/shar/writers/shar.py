@@ -48,9 +48,11 @@ class SharWriter:
         It is advisable to use the same audio backend for saving and loading audio data in Shar and other formats.
         See: :class:`lhotse.audio.recording.Recording`.
 
-    It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
-    ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
-    and then the same names but numbered with ``000001``, etc.
+    By default it creates a directory ``some_dir`` with files such as
+    ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
+    ``some_dir/features.000000.tar``, and then the same names but numbered with
+    ``000001``, etc. Set ``compress_jsonl=False`` to write uncompressed
+    ``cuts.*.jsonl`` shards that can be indexed for exact indexed restore.
     The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
@@ -76,12 +78,29 @@ class SharWriter:
         include_cuts: bool = True,
         shard_suffix: Optional[str] = None,
         shard_offset: int = 0,
+        compress_jsonl: bool = True,
+        create_index: bool = True,
     ) -> None:
         self.output_dir = str(output_dir)
         self.shard_size = shard_size
         self.fields = fields
         self.warn_unused_fields = warn_unused_fields
         self.include_cuts = include_cuts
+        self.compress_jsonl = compress_jsonl
+        self.create_index = create_index
+        if self.create_index and _is_non_local_output(self.output_dir):
+            raise ValueError(
+                "create_index=True is only supported for local output paths. "
+                f"Got output_dir='{self.output_dir}'. "
+                "Set create_index=False for pipe/URL/cloud outputs."
+            )
+        if self.create_index and self.compress_jsonl:
+            warnings.warn(
+                "create_index=True with compress_jsonl=True creates only a partially "
+                "indexed Shar: compressed cuts.*.jsonl.gz shards cannot be indexed. "
+                "Use compress_jsonl=False to enable exact indexed Shar restore.",
+                stacklevel=2,
+            )
         if self.sharding_enabled:
             assert (
                 shard_suffix is None
@@ -91,19 +110,27 @@ class SharWriter:
             self.shard_suffix = ifnone(shard_suffix, "")
         self.initial_shard_offset = shard_offset
 
+        callback = self._index_shard if self.create_index else None
+
         self.writers = {}
         if include_cuts:
             self.writers["cuts"] = JsonlShardWriter(
-                pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
+                pattern=_create_cuts_output_url(
+                    self.output_dir, self.shard_suffix, compress=self.compress_jsonl
+                ),
                 shard_size=self.shard_size,
                 shard_offset=self.initial_shard_offset,
+                on_shard_complete=callback,
             )
         for field, writer_type in self.fields.items():
-            make_writer_fn, ext = resolve_writer(writer_type)
+            make_writer_fn, ext = resolve_writer(
+                writer_type, compress_jsonl=self.compress_jsonl
+            )
             self.writers[field] = make_writer_fn(
                 pattern=f"{self.output_dir}/{field}{self.shard_suffix}{ext}",
                 shard_size=self.shard_size,
                 shard_offset=self.initial_shard_offset,
+                on_shard_complete=callback,
             )
 
     @property
@@ -125,6 +152,35 @@ class SharWriter:
     def close(self):
         for w in self.writers.values():
             w.close()
+
+    def _index_shard(self, path_str: str) -> None:
+        """Index a single completed shard file.
+
+        Called as an ``on_shard_complete`` callback by sub-writers so that
+        indexes are created per-shard as soon as each shard is finalized.
+        Skips non-local paths (pipes, URLs, compressed files).
+        """
+        from lhotse.indexing import create_jsonl_index, create_tar_index
+
+        path_str = str(path_str)
+        if path_str.startswith("pipe:"):
+            return  # pipes are not seekable — indexing is impossible
+        if path_str.startswith(("http://", "https://", "s3://", "gs://")):
+            raise ValueError(
+                "create_index=True is only supported for local output paths. "
+                f"Got remote shard path '{path_str}'. "
+                "Set create_index=False for pipe/URL/cloud outputs."
+            )
+        if path_str.endswith(".jsonl"):
+            try:
+                create_jsonl_index(path_str)
+            except (RuntimeError, OSError):
+                pass
+        elif path_str.endswith(".tar"):
+            try:
+                create_tar_index(path_str)
+            except (RuntimeError, OSError):
+                pass
 
     def write(self, cut: Cut) -> None:
 
@@ -227,7 +283,8 @@ class SharWriter:
             self.writers["cuts"].write(cut)
 
 
-def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
+def resolve_writer(name: str, compress_jsonl: bool = True) -> Tuple[FieldWriter, str]:
+    jsonl_ext = ".jsonl.gz" if compress_jsonl else ".jsonl"
     opts = {
         "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
         "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
@@ -236,7 +293,7 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
         "original": (partial(AudioTarWriter, format="original"), ".tar"),
         "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
         "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
-        "jsonl": (JsonlShardWriter, ".jsonl.gz"),
+        "jsonl": (JsonlShardWriter, jsonl_ext),
     }
     assert (
         name in opts
@@ -244,13 +301,21 @@ def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
     return opts[name]
 
 
-def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:
+def _create_cuts_output_url(
+    base_output_url: str, shard_suffix: str, compress: bool = True
+) -> str:
+
+    ext = ".jsonl.gz" if compress else ".jsonl"
 
     # special case where we want to ensure the CutSet actually gets gzipped
-    if base_output_url.startswith("pipe:"):
+    if base_output_url.startswith("pipe:") and compress:
         base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
 
-    return f"{base_output_url}/cuts{shard_suffix}.jsonl.gz"
+    return f"{base_output_url}/cuts{shard_suffix}{ext}"
+
+
+def _is_non_local_output(path: str) -> bool:
+    return path.startswith("pipe:") or "://" in path
 
 
 def _aslist(x):

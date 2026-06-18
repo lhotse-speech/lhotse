@@ -15,7 +15,7 @@ from typing import (
 from lhotse.cut import Cut
 from lhotse.dataset.dataloading import resolve_seed
 from lhotse.lazy import (
-    Dillable,
+    IteratorNode,
     LazyIteratorChain,
     LazyJsonlIterator,
     LazyManifestIterator,
@@ -26,7 +26,41 @@ from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
 
 
-class LazySharIterator(Dillable):
+def _is_local_uncompressed(path) -> bool:
+    """True if *path* is a local, uncompressed file (not pipe/URL/gz)."""
+    p = str(path)
+    if p.startswith("pipe:") or "://" in p:
+        return False
+    return not extension_contains(".gz", p)
+
+
+def _discover_fields(in_dir: Path) -> Tuple[set, dict]:
+    """Discover shard fields from an ``in_dir``.
+
+    Returns ``(fields, streams)`` where *fields* is a set of non-cuts
+    field names and *streams* maps each field (plus ``"cuts"``) to a
+    sorted list of shard paths.
+
+    Index files (``.idx``) are excluded from discovery.
+    """
+    all_paths = [p for p in in_dir.glob("*") if p.suffix != ".idx"]
+    fields = set(p.stem.split(".")[0] for p in all_paths)
+    assert "cuts" in fields, f"No cuts JSONL shards found in {in_dir}"
+    fields.remove("cuts")
+
+    streams: Dict[str, list] = {
+        "cuts": sorted(
+            p
+            for p in all_paths
+            if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
+        )
+    }
+    for field in fields:
+        streams[field] = sorted(p for p in all_paths if p.name.split(".")[0] == field)
+    return fields, streams
+
+
+class LazySharIterator(IteratorNode):
     """
     LazySharIterator reads cuts and their corresponding data from multiple shards,
     also recognized as the Lhotse Shar format.
@@ -142,6 +176,8 @@ class LazySharIterator(Dillable):
     See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
 
+    is_checkpointable = True
+
     def __init__(
         self,
         fields: Optional[Dict[str, Sequence[Pathlike]]] = None,
@@ -171,7 +207,8 @@ class LazySharIterator(Dillable):
 
         self._len = None
         if in_dir is not None:
-            self._init_from_dir(in_dir)
+            self.in_dir = Path(in_dir)
+            self.fields, self.streams = _discover_fields(self.in_dir)
         else:
             self._init_from_inputs(fields)
 
@@ -187,6 +224,7 @@ class LazySharIterator(Dillable):
         ]
 
         self.cut_map_fns = ifnone(cut_map_fns, [None] * self.num_shards)
+        self._restored = False
 
     def _init_from_inputs(self, fields: Optional[Dict[str, Sequence[str]]] = None):
         assert (
@@ -196,25 +234,10 @@ class LazySharIterator(Dillable):
         self.fields.remove("cuts")
         self.streams = fields
 
-    def _init_from_dir(self, in_dir: Pathlike):
-        self.in_dir = Path(in_dir)
-
-        all_paths = list(self.in_dir.glob("*"))
-        self.fields = set(p.stem.split(".")[0] for p in all_paths)
-        assert "cuts" in self.fields
-        self.fields.remove("cuts")
-
-        self.streams = {
-            "cuts": sorted(
-                p
-                for p in all_paths
-                if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
-            )
-        }
-        for field in self.fields:
-            self.streams[field] = sorted(
-                p for p in all_paths if p.name.split(".")[0] == field
-            )
+    @property
+    def is_indexed(self) -> bool:
+        """Always ``False`` — ``LazySharIterator`` is the streaming reader."""
+        return False
 
     def _maybe_split_for_dataloading(self, shards: List) -> List:
         from .utils import split_by_node, split_by_worker
@@ -237,16 +260,37 @@ class LazySharIterator(Dillable):
         return shards
 
     def __iter__(self):
-        shards, map_fns = self.shards, self.cut_map_fns
-        rng = self._get_rng()
-        shards = self._maybe_shuffle_shards(shards)
-        shards = self._maybe_split_for_dataloading(shards)
-        if map_fns is not None:
-            # The functions also need to be shuffled/split, if present.
-            map_fns = self._maybe_shuffle_shards(map_fns)
-            map_fns = self._maybe_split_for_dataloading(map_fns)
+        restored = self._restored
+        self._restored = False
 
-        for shard, cut_map_fn in zip(shards, map_fns):
+        shards = self.shards
+        map_fns = self.cut_map_fns
+        rng = self._get_rng()
+
+        if restored:
+            # Use the saved shard order and resume positions.
+            shard_order = self._shard_order
+            start_shard = self._current_shard_idx
+            skip_in_shard = self._position_in_shard
+        else:
+            # Normal path: shuffle/split indices into self.shards.
+            indices = list(range(len(shards)))
+            indices = self._maybe_shuffle_shards(indices)
+            indices = self._maybe_split_for_dataloading(indices)
+            shard_order = indices
+            start_shard = 0
+            skip_in_shard = 0
+
+        self._shard_order = shard_order
+
+        for i in range(start_shard, len(shard_order)):
+            orig_idx = shard_order[i]
+            shard = shards[orig_idx]
+            cut_map_fn = map_fns[orig_idx] if map_fns is not None else None
+
+            self._current_shard_idx = i
+            self._position_in_shard = 0
+
             # Iterate over cuts for the current shard
             cuts = LazyManifestIterator(shard["cuts"])
             if self.slice_length is not None:
@@ -279,6 +323,12 @@ class LazySharIterator(Dillable):
                 elif yielded_cntr == self.slice_length:
                     break
 
+                # Skip already-consumed items when restoring
+                if i == start_shard and yielded_cntr < skip_in_shard:
+                    yielded_cntr += 1
+                    self._position_in_shard = yielded_cntr
+                    continue
+
                 # Filling shar placeholders with actual data from tar files etc.
                 for (field, (maybe_manifest, data_path)) in zip(
                     field_iters.keys(),
@@ -295,10 +345,26 @@ class LazySharIterator(Dillable):
                 cut.shar_epoch = self.epoch
                 if cut_map_fn is not None:
                     cut = cut_map_fn(cut)
-                yield cut
                 yielded_cntr += 1
+                self._position_in_shard = yielded_cntr
+                yield cut
 
         self.epoch += 1
+
+    def state_dict(self) -> dict:
+        return {
+            "epoch": self.epoch,
+            "current_shard_idx": getattr(self, "_current_shard_idx", 0),
+            "position_in_shard": getattr(self, "_position_in_shard", 0),
+            "shard_order": getattr(self, "_shard_order", None),
+        }
+
+    def load_state_dict(self, sd: dict) -> None:
+        self.epoch = sd["epoch"]
+        self._current_shard_idx = sd["current_shard_idx"]
+        self._position_in_shard = sd["position_in_shard"]
+        self._shard_order = sd["shard_order"]
+        self._restored = True
 
     def __len__(self) -> int:
         if self._len is None:

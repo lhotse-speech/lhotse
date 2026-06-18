@@ -109,7 +109,202 @@ we can resume the training from where it left off like the following:
 
 .. note::
 
-    The ``DataLoader``'s ``num_workers`` can be different after resuming.
+    The ``constraint=`` argument of :class:`~lhotse.dataset.sampling.DynamicCutSampler`
+    and :class:`~lhotse.dataset.sampling.DynamicBucketingSampler` is **not** part of
+    ``state_dict``. The constraint object (e.g. ``TimeConstraint``, ``TokenConstraint``,
+    or a user-defined :class:`~lhotse.dataset.sampling.base.SamplingConstraint`)
+    must be reconstructed from your config when you instantiate the sampler before
+    calling ``load_state_dict``. Iteration state (RNG, bucketer, epoch, diagnostics)
+    is what drives exact resume and is independent of the constraint object.
+
+.. note::
+
+    For replay-based sampler restore with a regular ``DataLoader``, the
+    ``num_workers`` setting can differ after resuming. For exact per-worker
+    restore with ``StatefulDataLoader``, it must match between save and restore.
+
+.. note::
+
+    Calling ``set_epoch`` after ``load_state_dict`` is safe — it is a no-op while
+    the restored state is still pending, so it will not wipe the saved RNG, cuts,
+    or bucketer buffers. PyTorch Lightning relies on this: its ``fit_loop``
+    calls ``set_epoch`` at the start of every (re)started epoch. To explicitly
+    discard the restored progress and start the epoch fresh, call
+    ``sampler.allow_iter_to_reset_state()`` instead.
+
+.. note::
+
+    The approach described above relies on ``_fast_forward()`` which re-iterates
+    from the start and skips N batches (O(N) time). For a faster O(1) alternative
+    using binary index files, see the section below.
+
+
+Resumable Stateful Dataloading (Indexed)
+----------------------------------------
+
+Lhotse supports O(1) checkpoint/restore of the entire dataloading pipeline when
+binary index files are available. This eliminates the slow ``_fast_forward()``
+re-iteration on training resumption.
+
+Indexed checkpointing relies on iterator nodes that can reconstruct their own
+outputs directly from graph-local restore tokens. This is what makes exact
+worker-process restore possible without replaying earlier batches.
+
+For the full guide, see :doc:`indexed-manifests`.
+
+Quick start
+***********
+
+Plain manifests:
+
+.. code-block:: python
+
+    cuts = CutSet.from_file("cuts.jsonl", indexed=True)
+
+Shar:
+
+.. code-block:: python
+
+    cuts = CutSet.from_shar(in_dir="data/", indexed=True)
+
+Create indexes for existing data with:
+
+.. code-block:: bash
+
+    lhotse index jsonl /path/to/cuts.jsonl
+    lhotse index tar /path/to/recording.tar
+    lhotse index shar /path/to/shar_dir/
+
+Using StatefulDataLoader for checkpointing
+******************************************
+
+For full per-worker checkpointing with ``num_workers > 0``, use
+``torchdata.stateful_dataloader.StatefulDataLoader`` (from the ``torchdata``
+package, ``pip install torchdata``). It is a drop-in replacement for
+``torch.utils.data.DataLoader`` that automatically collects per-worker state:
+
+.. code-block::
+
+    from torchdata.stateful_dataloader import StatefulDataLoader
+    from lhotse import CutSet
+    from lhotse.dataset import (
+        K2SpeechRecognitionDataset,
+        DynamicCutSampler,
+        IterableDatasetWrapper,
+    )
+
+    cuts = CutSet.from_shar(in_dir="data/")
+    dataset = K2SpeechRecognitionDataset()
+    sampler = DynamicCutSampler(cuts, max_duration=200, shuffle=True)
+    iter_dset = IterableDatasetWrapper(dataset, sampler)
+
+    # Use StatefulDataLoader instead of regular DataLoader
+    dloader = StatefulDataLoader(iter_dset, batch_size=None, num_workers=2)
+
+    # Training loop with checkpointing
+    for batch in dloader:
+        loss = train_step(batch)
+        if should_checkpoint:
+            dl_state = dloader.state_dict()
+            torch.save({
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "dataloader": dl_state,
+            }, "checkpoint.pt")
+
+    # Resumption -- exact continuation from checkpoint
+    ckpt = torch.load("checkpoint.pt")
+    model.load_state_dict(ckpt["model"])
+    optimizer.load_state_dict(ckpt["optimizer"])
+    dloader = StatefulDataLoader(iter_dset, batch_size=None, num_workers=2)
+    dloader.load_state_dict(ckpt["dataloader"])
+    for batch in dloader:  # continues exactly where we left off
+        train_step(batch)
+
+Requirements and limitations
+****************************
+
+* Requires ``torchdata`` package (``pip install torchdata``) for
+  ``StatefulDataLoader``.
+* Exact indexed restore requires **uncompressed** data files. For Shar, write
+  it with ``compress_jsonl=False``.
+* ``num_workers`` and ``world_size`` must match between save and restore.
+* Non-indexed pipelines still use replay-based restore.
+
+Background-thread bucket fetching and clean shutdown
+****************************************************
+
+When :class:`~lhotse.dataset.sampling.DynamicBucketingSampler` is constructed
+with ``concurrent_bucketing=True`` (the default), a background thread fills
+the bucket buffers in parallel with iteration. That thread is created as a
+daemon, so it never blocks interpreter shutdown — useful when combining
+``concurrent_bucketing=True`` with ``persistent_workers=True``, where lingering
+references from FSDP / dataloader workers can otherwise prevent the sampler's
+``__del__`` from running before the main process tries to exit.
+
+If you maintain custom samplers with their own background threads, mark them
+``daemon=True`` for the same reason.
+
+Implementing custom iterators
+*****************************
+
+Custom lazy iterators should derive from :class:`~lhotse.lazy.IteratorNode`.
+The complete implementation guide, including how graph tokens work and how to
+propagate them through composed transforms, lives in :doc:`indexed-manifests`.
+
+Stateful batch transforms
+*************************
+
+Batch transforms applied via ``sampler.map(transform)`` run inside
+:meth:`~lhotse.dataset.sampling.base.CutSampler.__next__`.  When a
+transform has RNG state (e.g. for deciding whether to apply augmentation),
+it should implement ``state_dict()`` and ``load_state_dict()`` so the
+sampler can save/restore it alongside the iterator graph state.
+
+Use the helpers :func:`~lhotse.utils.save_rng_state` and
+:func:`~lhotse.utils.load_rng_state` for convenience:
+
+.. code-block:: python
+
+    import random
+    from lhotse import CutSet
+    from lhotse.utils import save_rng_state, load_rng_state
+
+    class MyAugmentation:
+        def __init__(self, p=0.5, randgen=None):
+            self.p = p
+            self.random = randgen  # random.Random instance or None
+
+        def __call__(self, cuts: CutSet) -> CutSet:
+            if self.random is None:
+                self.random = random.Random()
+            return CutSet.from_cuts(
+                self._augment(cut) if self.random.random() < self.p else cut
+                for cut in cuts
+            )
+
+        def _augment(self, cut):
+            ...  # your augmentation logic
+
+        def state_dict(self) -> dict:
+            return {"rng_state": save_rng_state(self.random)}
+
+        def load_state_dict(self, sd: dict) -> None:
+            self.random = load_rng_state(sd["rng_state"], self.random)
+
+The sampler automatically checks for ``state_dict``/``load_state_dict``
+on each registered transform. If your transform is stateless (no RNG),
+you don't need to add these methods.
+
+All built-in Lhotse transforms (:class:`~lhotse.dataset.cut_transforms.PerturbSpeed`,
+:class:`~lhotse.dataset.cut_transforms.PerturbVolume`,
+:class:`~lhotse.dataset.cut_transforms.PerturbTempo`,
+:class:`~lhotse.dataset.cut_transforms.ReverbWithImpulseResponse`,
+:class:`~lhotse.dataset.cut_transforms.CutMix`,
+:class:`~lhotse.dataset.cut_transforms.ClippingTransform`,
+:class:`~lhotse.dataset.cut_transforms.Compress`, and
+:class:`~lhotse.dataset.cut_transforms.LowpassUsingResampling`) already
+implement this protocol.
 
 
 Batch I/O: pre-computed vs. on-the-fly features

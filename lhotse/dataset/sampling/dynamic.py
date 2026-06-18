@@ -19,12 +19,17 @@ from lhotse.cut import Cut
 from lhotse.dataset.dataloading import resolve_seed
 from lhotse.dataset.sampling.base import (
     CutSampler,
-    EpochDiagnostics,
     SamplingConstraint,
     SamplingDiagnostics,
     TimeConstraint,
+    capture_sources_state,
+    restore_sources_state,
 )
-from lhotse.utils import ifnone, streaming_shuffle
+from lhotse.dataset.sampling.checkpoint_backends import (
+    build_dynamic_cut_checkpoint_backend,
+)
+from lhotse.lazy import LazyShuffler, resolve_iterator_source
+from lhotse.utils import ifnone
 
 
 class DynamicCutSampler(CutSampler):
@@ -134,6 +139,7 @@ class DynamicCutSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
+        self._active_cuts = None
 
         if strict is not None:
             warnings.warn(
@@ -143,9 +149,10 @@ class DynamicCutSampler(CutSampler):
             )
 
     def state_dict(self) -> Dict[str, Any]:
-        assert (
-            self.constraint is None
-        ), "state_dict() is not supported with samplers that use a custom constraint."
+        # The custom-constraint object itself is not serialized: constraints are
+        # reconstructed from config on each run. We still capture the iteration
+        # state (epoch, diagnostics, source iterator graph) which is what drives
+        # exact resume.
         sd = super().state_dict()
         sd.update(
             {
@@ -166,7 +173,9 @@ class DynamicCutSampler(CutSampler):
         self.quadratic_duration = sd.pop("quadratic_duration")
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
-        self._fast_forward()
+        # Defer _fast_forward to __iter__ so the sampler remains picklable
+        # for DataLoader with num_workers > 0.
+        self._needs_fast_forward = True
 
     def _fast_forward(self):
         current_epoch = self.diagnostics.current_epoch
@@ -174,47 +183,49 @@ class DynamicCutSampler(CutSampler):
 
         # Set the right epoch
         self.set_epoch(current_epoch)
-        # Reset diagnostics for this epoch as we're about to re-iterate
-        self.diagnostics.stats_per_epoch[current_epoch] = EpochDiagnostics(
-            epoch=current_epoch
+        backend = build_dynamic_cut_checkpoint_backend(
+            self,
+            current_epoch=current_epoch,
+            num_batches_to_iter=num_batches_to_iter,
         )
+        backend.restore()
 
+    def _initialize_replay_iterator(self) -> None:
+        self._cuts_state = None
         self._just_restored_state = False
-        iter(self)
-        for _ in range(num_batches_to_iter):
-            next(self)
-        self._just_restored_state = True
+        self._active_cuts = None
+        self._initialize_epoch_iterator(rebuild_sources=True)
 
-    def __iter__(self) -> "DynamicCutSampler":
-        if self._just_restored_state:
-            return self
-        # Why reset the current epoch?
-        # Either we are iterating the epoch for the first time and it's a no-op,
-        # or we are iterating the same epoch again, in which case setting more steps
-        # than are actually available per epoch would have broken the checkpoint restoration.
-        self.diagnostics.reset_current_epoch()
+    def _replay_step(self) -> None:
+        next(self)
+
+    def _make_epoch_sources(self):
+        if not self.shuffle:
+            return list(self.cuts)
+
         seed = resolve_seed(self.seed)
-        # Initiate iteration
-        self.cuts_iter = [iter(cs) for cs in self.cuts]
-        # Optionally shuffle
-        if self.shuffle:
-            self.cuts_iter = [
-                # Important -- every shuffler has a copy of RNG seeded in the same way,
-                # so that they are reproducible.
-                streaming_shuffle(
-                    cs,
-                    rng=random.Random(seed + self.epoch),
-                    bufsize=self.shuffle_buffer_size,
-                )
-                for cs in self.cuts_iter
-            ]
-        # Apply filter predicate
+        epoch_sources = []
+        for src in self.cuts:
+            shuffler = LazyShuffler(
+                resolve_iterator_source(src),
+                buffer_size=self.shuffle_buffer_size,
+                rng=random.Random(seed + self.epoch),
+            )
+            if isinstance(src, CutSet):
+                epoch_sources.append(CutSet(shuffler))
+            else:
+                epoch_sources.append(shuffler)
+        return epoch_sources
+
+    def _initialize_epoch_iterator(self, *, rebuild_sources: bool) -> None:
+        if rebuild_sources or self._active_cuts is None:
+            self._active_cuts = self._make_epoch_sources()
+        self.cuts_iter = [iter(resolve_iterator_source(cs)) for cs in self._active_cuts]
         self.cuts_iter = Filter(
             iterator=zip(*self.cuts_iter),
             predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
             diagnostics=self.diagnostics,
         )
-        # Convert Iterable[Cut] -> Iterable[CutSet]
         self.cuts_iter = DurationBatcher(
             self.cuts_iter,
             max_duration=self.max_duration,
@@ -225,6 +236,31 @@ class DynamicCutSampler(CutSampler):
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(self.cuts_iter)
+
+    def _capture_cuts_state(self) -> Optional[list]:
+        sources = self._active_cuts if self._active_cuts is not None else self.cuts
+        return capture_sources_state(sources)
+
+    def _restore_cuts_state(self, cuts_state: list) -> None:
+        self._active_cuts = self._make_epoch_sources()
+        restore_sources_state(self._active_cuts, cuts_state)
+
+    def __iter__(self) -> "DynamicCutSampler":
+        if getattr(self, "_needs_fast_forward", False):
+            self._needs_fast_forward = False
+            self._fast_forward()
+            return self
+        if self._just_restored_state:
+            return self
+        # Why reset the current epoch?
+        # Either we are iterating the epoch for the first time and it's a no-op,
+        # or we are iterating the same epoch again, in which case setting more steps
+        # than are actually available per epoch would have broken the checkpoint restoration.
+        if getattr(self, "_skip_diagnostics_reset_once", False):
+            self._skip_diagnostics_reset_once = False
+        else:
+            self.diagnostics.reset_current_epoch()
+        self._initialize_epoch_iterator(rebuild_sources=True)
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:

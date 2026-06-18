@@ -1,7 +1,7 @@
 import codecs
 import json
 from io import BytesIO
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Callable, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -50,9 +50,15 @@ class AudioTarWriter:
         shard_size: Optional[int] = 1000,
         format: Literal["wav", "flac", "mp3", "opus"] = "flac",
         shard_offset: int = 0,
+        on_shard_complete: Optional[Callable[[str], None]] = None,
     ):
         self.format = format
-        self.tar_writer = TarWriter(pattern, shard_size, shard_offset=shard_offset)
+        self.tar_writer = TarWriter(
+            pattern,
+            shard_size,
+            shard_offset=shard_offset,
+            on_shard_complete=on_shard_complete,
+        )
 
     def __enter__(self):
         self.tar_writer.__enter__()

@@ -7,6 +7,27 @@ from lhotse.dataset.dataloading import get_rank, get_world_size
 from lhotse.dataset.sampling.base import CutSampler
 
 
+class IdentityDataset(torch.utils.data.Dataset):
+    """
+    A trivial dataset that returns its input unchanged.
+
+    Useful as a pass-through when you only need the sampler's batching
+    behaviour and don't want to apply any transforms (e.g. feature
+    extraction).  The ``__getitem__`` method receives a
+    :class:`~lhotse.CutSet` mini-batch from the sampler and returns it
+    as-is.
+
+    Example::
+
+        >>> from lhotse.dataset import DynamicBucketingSampler, IdentityDataset
+        >>> from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
+        >>> wrapper = IterableDatasetWrapper(IdentityDataset(), sampler)
+    """
+
+    def __getitem__(self, item):
+        return item
+
+
 class IterableDatasetWrapper(torch.utils.data.IterableDataset):
     """
     A wrapper that creates an iterable-style dataset out of a map-style dataset and a
@@ -89,11 +110,21 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
                     cs.data.set_epoch(epoch)
 
     def __iter__(self):
-        if self._sampler_iter is None or self.reset_on_iter:
+        if (
+            self._sampler_iter is None
+            or self.reset_on_iter
+            or getattr(self, "_needs_sampler_reiter", False)
+        ):
+            self._needs_sampler_reiter = False
             self._sampler_iter = iter(self.sampler)
         return self
 
     def __next__(self) -> dict:
+        # Handle torchdata's StatefulDataLoader which calls load_state_dict
+        # after iter(dataset), so __iter__ won't see the flag.
+        if getattr(self, "_needs_sampler_reiter", False):
+            self._needs_sampler_reiter = False
+            self._sampler_iter = iter(self.sampler)
         try:
             sampled = next(self._sampler_iter)
             self._update_dataloading_info(sampled)
@@ -103,6 +134,35 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
                 self.set_epoch(self.epoch + 1)
             self._sampler_iter = None
             raise
+
+    def state_dict(self) -> dict:
+        """
+        Return checkpoint state for this dataset wrapper.
+
+        This implements the ``Stateful`` protocol expected by
+        ``torchdata.stateful_dataloader.StatefulDataLoader``, enabling
+        automatic per-worker checkpointing of the dataloading pipeline.
+        """
+        return {
+            "epoch": self.epoch,
+            "sampler_state": self.sampler.state_dict(),
+        }
+
+    def load_state_dict(self, sd: dict) -> None:
+        """
+        Restore checkpoint state for this dataset wrapper.
+
+        This implements the ``Stateful`` protocol expected by
+        ``torchdata.stateful_dataloader.StatefulDataLoader``.
+        """
+        self.epoch = sd["epoch"]
+        self.sampler.load_state_dict(sd["sampler_state"])
+        # Defer iter(self.sampler) so the wrapper remains picklable for
+        # DataLoader with num_workers > 0.  The sampler iter will be
+        # created in __iter__ (regular DataLoader) or __next__
+        # (torchdata StatefulDataLoader, which calls load_state_dict
+        # after iter(dataset) has already been called).
+        self._needs_sampler_reiter = True
 
     def _update_dataloading_info(self, cuts: CutSet) -> None:
         rank = get_rank()

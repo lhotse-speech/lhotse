@@ -5,6 +5,7 @@ from typing import List, Literal, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.dataset.dataloading import resolve_seed
+from lhotse.utils import load_rng_state, save_rng_state
 
 
 @dataclass
@@ -49,3 +50,9 @@ class LowpassUsingResampling:
                 lowpassed_cuts.append(cut)
 
         return CutSet(lowpassed_cuts)
+
+    def state_dict(self) -> dict:
+        return {"rng_state": save_rng_state(self.rng)}
+
+    def load_state_dict(self, sd: dict) -> None:
+        self.rng = load_rng_state(sd["rng_state"], self.rng)

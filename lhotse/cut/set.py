@@ -1,3 +1,4 @@
+import hashlib
 import itertools
 import logging
 import pickle
@@ -48,13 +49,20 @@ from lhotse.features.io import (
 )
 from lhotse.lazy import (
     AlgorithmMixin,
-    Dillable,
+    IteratorNode,
     LazyFlattener,
     LazyIteratorChain,
     LazyManifestIterator,
     LazyMapper,
     LazySlicer,
     T,
+    _try_collect_child_state,
+    _try_restore_child_state,
+    attach_graph_origin,
+    get_graph_origin,
+    normalize_graph_token,
+    resolve_iterator_source,
+    supports_graph_restore,
 )
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -292,7 +300,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
     @staticmethod
     def from_files(
-        paths: List[Pathlike], shuffle_iters: bool = True, seed: Optional[int] = None
+        paths: List[Pathlike],
+        shuffle_iters: bool = True,
+        seed: Optional[int] = None,
+        indexed: Optional[bool] = None,
+        index_path: Optional[List[Pathlike]] = None,
     ) -> "CutSet":
         """
         Constructor that creates a single CutSet out of many manifest files.
@@ -302,17 +314,54 @@ class CutSet(Serializable, AlgorithmMixin):
         This is intended primarily for large datasets which are split into many small manifests,
         to ensure that the order in which data is seen during training can be properly randomized.
 
+        When ``shuffle_iters=True`` and all files are indexed (i.e. backed by
+        O(1) random-access readers), the shuffling is automatically upgraded
+        from shard-level to item-level: a Feistel-cipher permutation over the
+        combined index range produces true cross-file-boundary shuffled
+        iteration.
+
         :param paths: a list of paths to cut manifests.
-        :param shuffle_iters: bool, should we shuffle `paths` each time we iterate the returned
-            CutSet (enabled by default).
+        :param shuffle_iters: bool, should we shuffle each time we iterate the
+            returned CutSet (enabled by default).  For non-indexed files this
+            shuffles the file order; for indexed files this shuffles globally
+            across file boundaries.
         :param seed: int, random seed controlling the shuffling RNG.
             By default, we'll use Python's global RNG so the order
             will be different on each script execution.
+        :param indexed: controls whether to use indexed random-access reading
+            for each JSONL file.  ``True`` forces indexed mode (requires
+            uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
+            ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
+            file already exists alongside each JSONL file.
+        :param index_path: optional list of custom ``.idx`` file paths,
+            one per path in *paths*.  When an entry is not ``None`` and
+            ``indexed`` is ``None``, auto-detection resolves to ``True``
+            for that file.
         :return: a lazy CutSet instance.
         """
+        from lhotse.indexing import index_exists
+        from lhotse.lazy import LazyIndexedManifestIterator
+        from lhotse.serialization import extension_contains
+
+        if index_path is not None and len(index_path) != len(paths):
+            raise ValueError(
+                f"index_path has {len(index_path)} entries but paths has "
+                f"{len(paths)} entries — they must match."
+            )
+
+        def _make_iter(i, p):
+            ip = index_path[i] if index_path is not None else None
+            if indexed is True or (indexed is None and ip is not None):
+                return LazyIndexedManifestIterator(p, index_path=ip)
+            elif indexed is None:
+                use_idx = not extension_contains(".gz", p) and index_exists(p)
+                if use_idx:
+                    return LazyIndexedManifestIterator(p)
+            return LazyManifestIterator(p)
+
         return CutSet(
             LazyIteratorChain(
-                *(LazyManifestIterator(p) for p in paths),
+                *(_make_iter(i, p) for i, p in enumerate(paths)),
                 shuffle_iters=shuffle_iters,
                 seed=seed,
             )
@@ -438,9 +487,12 @@ class CutSet(Serializable, AlgorithmMixin):
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         stateful_shuffle: bool = True,
-        seed: Union[int, Literal["randomized"]] = 42,
+        seed: Union[int, Literal["randomized"], Literal["trng"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
         slice_length: Optional[int] = None,
+        indexed: Optional[bool] = None,
+        index_path=None,
+        indexes_root: Optional[Pathlike] = None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -550,10 +602,11 @@ class CutSet(Serializable, AlgorithmMixin):
             ``trng`` mode is mostly useful when the user has limited control over the training loop
             and may not be able to guarantee internal Shar epoch is being incremented, but needs
             randomness on each iteration (e.g. useful with PyTorch Lightning).
-        :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+        :param stateful_shuffle: bool, by default ``True``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
             Doesn't have any effect when ``shuffle_shards`` is ``False``.
+            Only applies to streaming mode (``indexed=False``).
         :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
             It's expected to have the same length as the number of shards, so each function
             corresponds to a specific shard.
@@ -562,11 +615,68 @@ class CutSet(Serializable, AlgorithmMixin):
             may improve sampling randomness for many-dataset-with-many-large-shards setups
             at the cost of efficiency. In this mode, we randomly select K to skip first K examples
             and read only ``slice_length`` examples from each shard, then move to the next one.
+        :param indexed: optional bool. If ``True``, uses
+            :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator` for O(1)
+            random access (requires uncompressed indexed Shar shards for every
+            requested field).
+            If ``False``, uses the streaming :class:`~lhotse.shar.readers.lazy.LazySharIterator`.
+            If ``None`` (default), auto-detects: uses indexed mode when every
+            requested field is readable through indexed readers and has a matching
+            ``.idx`` file.
+        :param index_path: optional location of ``.idx`` files stored
+            separately from the data.  Accepts a directory path (when
+            ``in_dir`` is used) or a dict mapping field names to lists
+            of ``.idx`` paths (when ``fields`` is used).  When set and
+            ``indexed`` is ``None``, auto-detection checks the provided
+            index paths for every requested field.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
+            :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
-        from lhotse.shar import LazySharIterator
+        from lhotse.shar.readers.indexed import LazyIndexedSharIterator
+        from lhotse.shar.readers.lazy import LazySharIterator
+
+        use_indexed = indexed
+
+        if (index_path is not None or indexes_root is not None) and indexed is False:
+            raise ValueError(
+                "index_path/indexes_root is set but indexed=False — this is contradictory. "
+                "Either set indexed=True (or None) or remove index_path/indexes_root."
+            )
+
+        if use_indexed is None:
+            use_indexed = LazyIndexedSharIterator.supports_configuration(
+                fields=fields,
+                in_dir=in_dir,
+                index_path=index_path,
+                indexes_root=indexes_root,
+            )
+
+        if use_indexed:
+            # Validate that streaming-only params are not set.
+            if cut_map_fns:
+                raise ValueError(
+                    "'cut_map_fns' is not supported with indexed=True. "
+                    "Use indexed=False for streaming mode."
+                )
+            if slice_length is not None:
+                raise ValueError(
+                    "'slice_length' is not supported with indexed=True. "
+                    "Use indexed=False for streaming mode."
+                )
+
+            return CutSet(
+                cuts=LazyIndexedSharIterator(
+                    fields=fields,
+                    in_dir=in_dir,
+                    shuffle=shuffle_shards,
+                    seed=seed,
+                    split_for_dataloading=split_for_dataloading,
+                    index_path=index_path,
+                    indexes_root=indexes_root,
+                )
+            )
 
         return CutSet(
             cuts=LazySharIterator(
@@ -592,6 +702,8 @@ class CutSet(Serializable, AlgorithmMixin):
         num_jobs: int = 1,
         fault_tolerant: bool = False,
         verbose: bool = False,
+        compress_jsonl: bool = True,
+        create_index: bool = True,
     ) -> Dict[str, List[str]]:
         """
         Writes cuts and their corresponding data into multiple shards,
@@ -619,9 +731,12 @@ class CutSet(Serializable, AlgorithmMixin):
             ...     "some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"}
             ... )
 
-        It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
-        ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
-        and then the same names but numbered with ``000001``, etc.
+        By default it creates a directory ``some_dir`` with files such as
+        ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
+        ``some_dir/features.000000.tar``, and then the same names but numbered
+        with ``000001``, etc. Set ``compress_jsonl=False`` together with
+        ``create_index=True`` to produce fully indexed Shar data that supports
+        exact indexed restore.
         The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
         The function returns a dict that maps field names to lists of saved shard paths.
 
@@ -665,6 +780,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 shard_suffix=None,
                 fault_tolerant=fault_tolerant,
                 verbose=verbose,
+                compress_jsonl=compress_jsonl,
+                create_index=create_index,
             )
 
         progbar = partial(tqdm, desc="Shard progress") if verbose else lambda x: x
@@ -693,6 +810,8 @@ class CutSet(Serializable, AlgorithmMixin):
                         fault_tolerant=fault_tolerant,
                         verbose=False,
                         preload=True,
+                        compress_jsonl=compress_jsonl,
+                        create_index=create_index,
                     )
                 )
             for f in progbar(as_completed(futures)):
@@ -1080,7 +1199,7 @@ class CutSet(Serializable, AlgorithmMixin):
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
-                        self,
+                        self.data,
                         partial(
                             _trim_to_supervisions_single,
                             keep_overlapping=keep_overlapping,
@@ -1137,7 +1256,7 @@ class CutSet(Serializable, AlgorithmMixin):
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
-                        self,
+                        self.data,
                         partial(
                             _trim_to_alignments_single,
                             type=type,
@@ -1230,7 +1349,7 @@ class CutSet(Serializable, AlgorithmMixin):
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
-                        self,
+                        self.data,
                         partial(
                             _trim_to_supervision_groups_single,
                             max_pause=max_pause,
@@ -1484,7 +1603,7 @@ class CutSet(Serializable, AlgorithmMixin):
             return CutSet(
                 LazyFlattener(
                     LazyMapper(
-                        self,
+                        self.data,
                         partial(
                             _cut_into_windows_single,
                             duration=duration,
@@ -2036,7 +2155,9 @@ class CutSet(Serializable, AlgorithmMixin):
         # Parallel execution: prepare the CutSet splits
         # We use LazySlicer to pick every k element out of n
         # (e.g. with 2 jobs, job 1 picks every 0th elem, job 2 picks every 1st elem)
-        cut_sets = [CutSet(LazySlicer(self, k=i, n=num_jobs)) for i in range(num_jobs)]
+        cut_sets = [
+            CutSet(LazySlicer(self.data, k=i, n=num_jobs)) for i in range(num_jobs)
+        ]
 
         # Initialize the default executor if None was given
         if executor is None:
@@ -2813,6 +2934,53 @@ class CutSet(Serializable, AlgorithmMixin):
                 **dataset_kwargs,
             )
         )
+
+    @property
+    def is_indexed(self) -> bool:
+        """
+        Return ``True`` when the underlying iterator is backed by indexed data.
+        """
+        return getattr(self.data, "is_indexed", False)
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        """
+        Return ``True`` when every element can be retrieved in O(1) via
+        ``__getitem__`` (i.e., the underlying data supports indexed access).
+        """
+        return getattr(self.data, "has_constant_time_access", False)
+
+    def state_dict(self) -> dict:
+        """
+        Collect the full checkpoint state from the underlying lazy iterator
+        graph.  Raises :class:`RuntimeError` for eager CutSets.
+
+        See :func:`~lhotse.checkpoint.collect_state_dict`.
+        """
+        if not self.is_lazy:
+            raise RuntimeError(
+                "state_dict() is only supported for lazy CutSets. "
+                "Convert to lazy mode first (e.g., use from_jsonl_lazy or from_file)."
+            )
+        from lhotse.checkpoint import collect_state_dict
+
+        return collect_state_dict(self.data)
+
+    def load_state_dict(self, sd: dict) -> None:
+        """
+        Restore the checkpoint state into the underlying lazy iterator graph.
+        Raises :class:`RuntimeError` for eager CutSets.
+
+        See :func:`~lhotse.checkpoint.restore_state_dict`.
+        """
+        if not self.is_lazy:
+            raise RuntimeError(
+                "load_state_dict() is only supported for lazy CutSets. "
+                "Convert to lazy mode first (e.g., use from_jsonl_lazy or from_file)."
+            )
+        from lhotse.checkpoint import restore_state_dict
+
+        restore_state_dict(self.data, sd)
 
     def __repr__(self) -> str:
         try:
@@ -3757,6 +3925,8 @@ def _export_to_shar_single(
     verbose: bool,
     fault_tolerant: bool,
     preload: bool = False,
+    compress_jsonl: bool = True,
+    create_index: bool = True,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
 
@@ -3775,6 +3945,8 @@ def _export_to_shar_single(
         warn_unused_fields=warn_unused_fields,
         include_cuts=include_cuts,
         shard_suffix=shard_suffix,
+        compress_jsonl=compress_jsonl,
+        create_index=create_index,
     ) as writer:
         for cut in cuts:
             try:
@@ -3792,7 +3964,7 @@ def _export_to_shar_single(
     return writer.output_paths
 
 
-class LazyCutMixer(Dillable):
+class LazyCutMixer(IteratorNode):
     """
     Iterate over cuts from ``cuts`` CutSet while mixing randomly sampled ``mix_in_cuts`` into them.
     A typical application would be data augmentation with noise, music, babble, etc.
@@ -3843,8 +4015,10 @@ class LazyCutMixer(Dillable):
         stateful: bool = True,
         tag: Optional[str] = None,
     ) -> None:
-        self.source = cuts
+        self.source = resolve_iterator_source(cuts)
+        self._source_len_ref = cuts
         self.mix_in_cuts = mix_in_cuts
+        self._mix_in_source = resolve_iterator_source(mix_in_cuts)
         self.duration = duration
         self.allow_padding = allow_padding
         self.snr = snr
@@ -3855,6 +4029,11 @@ class LazyCutMixer(Dillable):
         self.stateful = stateful
         self.tag = tag
         self.num_times_iterated = 0
+        self._restored = False
+        self._rng_state = None
+        self._rng = None
+        self._iteration_seed = None
+        self._mix_in_iter = None
 
         assert 0.0 <= self.mix_prob <= 1.0
         assert self.duration is None or self.duration > 0
@@ -3865,97 +4044,233 @@ class LazyCutMixer(Dillable):
         else:
             assert isinstance(self.snr, (type(None), int, float))
 
+    @property
+    def is_checkpointable(self) -> bool:
+        return (
+            self.stateful
+            and self._noise_is_indexed()
+            and isinstance(self.source, IteratorNode)
+            and self.source.is_checkpointable
+        )
+
+    @property
+    def is_indexed(self) -> bool:
+        return getattr(self.source, "is_indexed", False) and getattr(
+            self._mix_in_source, "is_indexed", False
+        )
+
+    @property
+    def has_constant_time_access(self) -> bool:
+        return (
+            not isinstance(self.seed, random.Random)
+            and supports_graph_restore(self.source)
+            and self._noise_is_indexed()
+        )
+
     def __iter__(self):
         from lhotse.dataset.dataloading import resolve_seed
 
-        if isinstance(self.seed, random.Random):
+        restored = self._restored
+        self._restored = False
+
+        if self.has_constant_time_access:
+            if restored:
+                iteration_seed = self._iteration_seed
+                if iteration_seed is None:
+                    iteration_seed = self._resolve_iteration_seed(
+                        self.num_times_iterated
+                    )
+            else:
+                iteration_seed = self._resolve_iteration_seed(self.num_times_iterated)
+                self._iteration_seed = iteration_seed
+
+        if self.has_constant_time_access:
+            rng = None
+        elif restored and self._rng_state is not None:
+            rng = random.Random()
+            rng.setstate(self._rng_state)
+        elif isinstance(self.seed, random.Random):
             rng = self.seed
         else:
             rng = random.Random(resolve_seed(self.seed) + self.num_times_iterated)
-        if self.stateful:
+        self._rng = rng
+
+        if self.stateful and not restored:
             self.num_times_iterated += 1
 
-        if self.mix_in_cuts.is_lazy:
-            # If the noise input is lazy, we'll shuffle it approximately.
-            # We set the shuffling buffer size to 2000 because that's the size of MUSAN,
-            # so even if the user forgets to convert MUSAN to an eager manifest, they will
-            # get roughly the same quality of noise randomness.
-            # Note: we can't just call .to_eager() as the noise CutSet can technically be
-            #       very large, or even hold data in-memory in case of webdataset/Lhotse Shar sources.
-            def noise_gen():
-                yield from self.mix_in_cuts.repeat().shuffle(rng=rng, buffer_size=2000)
+        if not self._noise_is_indexed():
+            if self.mix_in_cuts.is_lazy:
+                # For non-indexed noise we keep the approximate-shuffle behavior.
+                def noise_gen():
+                    yield from self.mix_in_cuts.repeat().shuffle(
+                        rng=rng, buffer_size=2000
+                    )
 
-        else:
-            # Eager nose cuts are just fully reshuffled in a different order on each noise "epoch".
-            def noise_gen():
-                #
-                while True:
-                    yield from self.mix_in_cuts.shuffle(rng=rng)
+            else:
+                # Eager noise cuts are reshuffled every full pass.
+                def noise_gen():
+                    while True:
+                        yield from self.mix_in_cuts.shuffle(rng=rng)
 
-        mix_in_cuts = iter(noise_gen())
+            self._mix_in_iter = iter(noise_gen())
+
         for cut in self.source:
-            # Check whether we're going to mix something into the current cut
-            # or pass it through unchanged.
-            if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
-                yield cut
-                continue
-            # Determine the SNR - either it's specified or we need to sample one.
-            cut_snr = (
-                rng.uniform(*self.snr)
-                if isinstance(self.snr, (list, tuple))
-                else self.snr
+            if self.has_constant_time_access:
+                source_token = get_graph_origin(cut)
+                if source_token is None:
+                    raise RuntimeError(
+                        "LazyCutMixer requires '_graph_origin' on indexed source items "
+                        "to support constant-time reconstruction."
+                    )
+                item_rng = self._make_item_rng(source_token, iteration_seed)
+                cut = attach_graph_origin(self._mix_one(cut, item_rng), source_token)
+            else:
+                cut = self._mix_one(cut, rng)
+            yield cut
+
+    def _noise_is_indexed(self) -> bool:
+        return getattr(
+            self._mix_in_source, "is_indexed", False
+        ) and supports_graph_restore(self._mix_in_source, require_length=True)
+
+    def _next_mix_in_cut(self, rng: random.Random) -> Cut:
+        if self._noise_is_indexed():
+            idx = rng.randrange(len(self._mix_in_source))
+            return self._mix_in_source[idx]
+        return next(self._mix_in_iter)
+
+    def _resolve_iteration_seed(self, iteration_idx: int) -> int:
+        from lhotse.dataset.dataloading import resolve_seed
+
+        if isinstance(self.seed, random.Random):
+            raise RuntimeError(
+                "LazyCutMixer with seed=random.Random does not support constant-time restore."
             )
-            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
-            #       where we mix in some noise cut that effectively has 0 frames of features.
-            target_mixed_duration = round(
-                self.duration if self.duration is not None else cut.duration - 0.05,
-                ndigits=8,
+        return resolve_seed(self.seed) + iteration_idx
+
+    @staticmethod
+    def _combine_seed(iteration_seed: int, source_token: Any) -> int:
+        token_bytes = pickle.dumps(normalize_graph_token(source_token), protocol=4)
+        token_seed = int.from_bytes(
+            hashlib.blake2b(token_bytes, digest_size=8).digest(), byteorder="little"
+        )
+        return ((iteration_seed * 0x9E3779B97F4A7C15) + token_seed) & 0xFFFFFFFFFFFFFFFF
+
+    def _make_item_rng(self, source_token: Any, iteration_seed: int) -> random.Random:
+        return random.Random(self._combine_seed(iteration_seed, source_token))
+
+    def _mix_one(self, cut: Cut, rng: random.Random) -> Cut:
+        # Check whether we're going to mix something into the current cut
+        # or pass it through unchanged.
+        if not is_cut(cut) or rng.uniform(0.0, 1.0) > self.mix_prob:
+            return cut
+        # Determine the SNR - either it's specified or we need to sample one.
+        cut_snr = (
+            rng.uniform(*self.snr) if isinstance(self.snr, (list, tuple)) else self.snr
+        )
+        # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+        #       where we mix in some noise cut that effectively has 0 frames of features.
+        target_mixed_duration = round(
+            self.duration if self.duration is not None else cut.duration - 0.05,
+            ndigits=8,
+        )
+        # Actual mixing
+        to_mix = self._next_mix_in_cut(rng)
+        to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
+        mixed = cut.mix(
+            other=to_mix, snr=cut_snr, preserve_id=self.preserve_id, tag=self.tag
+        )
+        # Did the user specify a duration?
+        # If yes, we will ensure that shorter cuts have more noise mixed in
+        # to "pad" them with at the end.
+        # If no, we will mix in as many noise cuts as needed to cover complete
+        # duration.
+        mixed_in_duration = to_mix.duration
+        # Keep sampling until we mixed in a "duration" amount of noise.
+        # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+        #       where we mix in some noise cut that effectively has 0 frames of features.
+        while mixed_in_duration < target_mixed_duration - 0.05:
+            to_mix = self._next_mix_in_cut(rng)
+            to_mix = self._maybe_truncate_cut(
+                to_mix, target_mixed_duration - mixed_in_duration, rng
             )
-            # Actual mixing
-            to_mix = next(mix_in_cuts)
-            to_mix = self._maybe_truncate_cut(to_mix, target_mixed_duration, rng)
-            mixed = cut.mix(
+            # Keep the SNR constant for each cut from "self".
+            mixed = mixed.mix(
                 other=to_mix,
                 snr=cut_snr,
+                offset_other_by=mixed_in_duration,
+                allow_padding=self.allow_padding,
                 preserve_id=self.preserve_id,
                 tag=self.tag,
             )
-            # Did the user specify a duration?
-            # If yes, we will ensure that shorter cuts have more noise mixed in
-            # to "pad" them with at the end.
-            # If no, we will mix in as many noise cuts as needed to cover complete
-            # duration.
-            mixed_in_duration = to_mix.duration
-            # Keep sampling until we mixed in a "duration" amount of noise.
-            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
-            #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < target_mixed_duration - 0.05:
-                to_mix = next(mix_in_cuts)
-                to_mix = self._maybe_truncate_cut(
-                    to_mix, target_mixed_duration - mixed_in_duration, rng
-                )
-                # Keep the SNR constant for each cut from "self".
-                mixed = mixed.mix(
-                    other=to_mix,
-                    snr=cut_snr,
-                    offset_other_by=mixed_in_duration,
-                    allow_padding=self.allow_padding,
-                    preserve_id=self.preserve_id,
-                    tag=self.tag,
-                )
-                # Since we're adding floats, we can be off by an epsilon and trigger
-                # some assertions for exceeding duration; do precautionary rounding here.
-                mixed_in_duration = round(
-                    mixed_in_duration + to_mix.duration, ndigits=8
-                )
-            # We truncate the mixed to either the original duration or the requested duration.
-            # Note: we don't use 'target_mixed_duration' here because it may have subtracted
-            #       a tiny bit of actual target duration to avoid errors related to edge effects.
-            mixed = mixed.truncate(
-                duration=self.duration if self.duration is not None else cut.duration,
-                preserve_id=self.preserve_id is not None,
+            # Since we're adding floats, we can be off by an epsilon and trigger
+            # some assertions for exceeding duration; do precautionary rounding here.
+            mixed_in_duration = round(mixed_in_duration + to_mix.duration, ndigits=8)
+        # We truncate the mixed to either the original duration or the requested duration.
+        # Note: we don't use 'target_mixed_duration' here because it may have subtracted
+        #       a tiny bit of actual target duration to avoid errors related to edge effects.
+        return mixed.truncate(
+            duration=self.duration if self.duration is not None else cut.duration,
+            preserve_id=self.preserve_id is not None,
+        )
+
+    def __getitem__(self, idx: Any) -> Cut:
+        if not self.has_constant_time_access:
+            raise TypeError(
+                "LazyCutMixer only supports __getitem__ when both the source and "
+                "mix-in cuts provide constant-time indexed access."
             )
-            yield mixed
+        graph_token = normalize_graph_token(idx)
+        iteration_seed = (
+            self._iteration_seed
+            if self._iteration_seed is not None
+            else self._resolve_iteration_seed(0)
+        )
+        cut = self.source[graph_token]
+        return attach_graph_origin(
+            self._mix_one(cut, self._make_item_rng(graph_token, iteration_seed)),
+            graph_token,
+        )
+
+    def state_dict(self) -> dict:
+        if not self.is_checkpointable:
+            raise NotImplementedError(
+                "LazyCutMixer checkpointing is only supported when mix_in_cuts "
+                "is indexed (O(1) random-access)."
+            )
+
+        from lhotse.checkpoint import _rng_state_to_json
+
+        rng_state = self._rng.getstate() if self._rng is not None else self._rng_state
+        sd = {
+            "num_times_iterated": self.num_times_iterated,
+            "rng_state": _rng_state_to_json(rng_state)
+            if rng_state is not None
+            else None,
+            "iteration_seed": self._iteration_seed,
+        }
+        source_state = _try_collect_child_state(self.source)
+        if source_state is not None:
+            sd["source"] = source_state
+        return sd
+
+    def load_state_dict(self, sd: dict) -> None:
+        if not self.is_checkpointable:
+            raise NotImplementedError(
+                "LazyCutMixer checkpointing is only supported when mix_in_cuts "
+                "is indexed (O(1) random-access)."
+            )
+
+        from lhotse.checkpoint import _rng_state_from_json
+
+        self.num_times_iterated = sd["num_times_iterated"]
+        if sd.get("rng_state") is not None:
+            self._rng_state = _rng_state_from_json(sd["rng_state"])
+        else:
+            self._rng_state = None
+        self._iteration_seed = sd.get("iteration_seed")
+        _try_restore_child_state(self.source, sd.get("source"))
+        self._restored = True
 
     def _maybe_truncate_cut(
         self, cut: Cut, target_duration: Seconds, rng: random.Random
@@ -3968,7 +4283,7 @@ class LazyCutMixer(Dillable):
         return cut
 
     def __len__(self) -> int:
-        return len(self.source)
+        return len(self._source_len_ref)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
