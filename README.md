@@ -72,7 +72,7 @@ worlds.
 
 ## Installation
 
-Lhotse supports Python version 3.7 and later.
+Lhotse supports Python version 3.10 and later.
 
 ### Pip
 
