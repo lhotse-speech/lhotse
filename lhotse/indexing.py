@@ -36,6 +36,7 @@ import struct
 import tarfile
 import tempfile
 import time
+from json import JSONDecodeError
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Union
 
@@ -710,6 +711,7 @@ class IndexedJsonlReader:
             if self.index_path is not None
             else index_file_path(self.path)
         )
+        self._resolved_index_path = idx_path
         if not index_exists(self.path, index_path=idx_path):
             if auto_create_index:
                 create_jsonl_index(self.path, output_path=idx_path)
@@ -764,7 +766,18 @@ class IndexedJsonlReader:
         end = int(self._offsets[idx + 1])
         self._fh.seek(start)
         line = self._fh.read(end - start)
-        return decode_json_line(line.decode("utf-8"))
+        decoded_line = line.decode("utf-8")
+        try:
+            return decode_json_line(decoded_line)
+        except JSONDecodeError as ex:
+            preview = decoded_line[:120].replace("\n", "\\n").replace("\r", "\\r")
+            msg = (
+                f"{ex.msg} while decoding indexed JSONL record "
+                f"path={self.path!r} index_path={self._resolved_index_path!r} "
+                f"idx={idx} byte_range=[{start}, {end}) bytes_read={len(line)} "
+                f"preview={preview!r}"
+            )
+            raise JSONDecodeError(msg, ex.doc, ex.pos) from ex
 
     def __iter__(self):
         for i in range(len(self)):
