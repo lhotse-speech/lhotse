@@ -5,6 +5,7 @@ import warnings
 from collections import deque
 from contextlib import contextmanager
 from functools import partial
+from json import JSONDecodeError
 from typing import Any, Callable, Iterable, List, Literal, Optional, TypeVar, Union
 
 from lhotse.serialization import (
@@ -573,6 +574,10 @@ class LazyIndexedManifestIterator(IteratorNode):
         seed: int = 0,
         index_path: Optional[Pathlike] = None,
         decode: Optional[Callable[[dict], Any]] = None,
+        skip_decode_errors: bool = False,
+        decode_error_callback: Optional[
+            Callable[[BaseException, int, Pathlike], None]
+        ] = None,
     ) -> None:
         from lhotse.dataset.dataloading import PartitionedIndexedIterator
         from lhotse.indexing import IndexedJsonlReader
@@ -581,6 +586,8 @@ class LazyIndexedManifestIterator(IteratorNode):
         self.shuffle = shuffle
         self.seed = seed
         self.index_path = index_path
+        self.skip_decode_errors = skip_decode_errors
+        self.decode_error_callback = decode_error_callback
         self._decode = decode if decode is not None else deserialize_item
         self._reader = IndexedJsonlReader(path, index_path=index_path)
         self._iter_state = PartitionedIndexedIterator(shuffle=shuffle, seed=seed)
@@ -595,11 +602,25 @@ class LazyIndexedManifestIterator(IteratorNode):
 
     def __getitem__(self, idx: int) -> Any:
         """O(1) random access: decodes the *idx*-th item."""
+        return self._decode_index(idx)
+
+    def _decode_index(self, idx: int) -> Any:
         return attach_graph_origin(self._decode(self._reader[idx]), idx)
 
     def __iter__(self):
         for phys_idx in self._iter_state.iterate(len(self._reader)):
-            yield attach_graph_origin(self._decode(self._reader[phys_idx]), phys_idx)
+            try:
+                yield self._decode_index(phys_idx)
+            except (JSONDecodeError, UnicodeDecodeError) as ex:
+                if not self.skip_decode_errors:
+                    raise
+                if self.decode_error_callback is not None:
+                    self.decode_error_callback(ex, phys_idx, self.path)
+                else:
+                    warnings.warn(
+                        f"Skipping malformed indexed JSONL record path={self.path!r} "
+                        f"idx={phys_idx}: {type(ex).__name__}: {ex}"
+                    )
 
     def __len__(self) -> int:
         return len(self._reader)
