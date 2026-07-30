@@ -478,7 +478,7 @@ def _file_cache_for_pack(
     return cache
 
 
-_PACKED_FILE_CACHES: weakref.WeakKeyDictionary[IndexPack, _PackedFileCache] = (
-    weakref.WeakKeyDictionary()
-)
+_PACKED_FILE_CACHES: weakref.WeakKeyDictionary[
+    IndexPack, _PackedFileCache
+] = weakref.WeakKeyDictionary()
 _PACKED_FILE_CACHE_PID = os.getpid()
