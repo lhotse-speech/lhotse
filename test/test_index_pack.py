@@ -1,5 +1,7 @@
 import json
+import multiprocessing as mp
 import os
+import pickle
 import struct
 from pathlib import Path
 
@@ -26,6 +28,23 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
     with path.open("w") as f:
         for record in records:
             f.write(json.dumps(record) + "\n")
+
+
+def _inspect_pack_mapping_in_child(pack, collection_key, connection) -> None:
+    try:
+        connection.send((pack._fh is None, pack._mmap is None, pack._pid))
+        location = pack.collection(collection_key).locate(0)
+        connection.send(
+            (
+                pack._fh is not None,
+                pack._mmap is not None,
+                pack._pid,
+                location.local_index,
+            )
+        )
+    finally:
+        connection.close()
+        pack.close()
 
 
 def test_index_pack_converts_existing_sidecars_and_reads_lazily(tmp_path):
@@ -63,6 +82,69 @@ def test_index_pack_converts_existing_sidecars_and_reads_lazily(tmp_path):
                 actual.append(json.loads(f.read(location.end - location.start)))
 
         assert actual == [record for shard in records for record in shard]
+
+
+def test_index_pack_defers_mmap_through_catalog_lookup_and_pickle(tmp_path):
+    path = tmp_path / "data.jsonl"
+    _write_jsonl(path, [{"id": "a"}])
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="manifest", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    pack = IndexPack(pack_path)
+    collection = pack.collection(spec.key)
+    assert len(collection) == 1
+    assert pack._fh is None
+    assert pack._mmap is None
+    assert pack._pid is None
+
+    restored = pickle.loads(pickle.dumps(pack))
+    assert len(restored.collection(spec.key)) == 1
+    assert restored._fh is None
+    assert restored._mmap is None
+    assert restored._pid is None
+
+    assert restored.collection(spec.key).locate(0).local_index == 0
+    assert restored._fh is not None
+    assert restored._mmap is not None
+    assert restored._pid == os.getpid()
+    restored.close()
+
+
+def test_index_pack_first_mmap_is_opened_in_forked_worker(tmp_path):
+    if "fork" not in mp.get_all_start_methods():
+        pytest.skip("requires the fork multiprocessing start method")
+    path = tmp_path / "data.jsonl"
+    _write_jsonl(path, [{"id": "a"}])
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="manifest", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+    pack = IndexPack(pack_path)
+
+    receive, send = mp.get_context("fork").Pipe(duplex=False)
+    process = mp.get_context("fork").Process(
+        target=_inspect_pack_mapping_in_child, args=(pack, spec.key, send)
+    )
+    process.start()
+    send.close()
+    assert receive.poll(10)
+    before = receive.recv()
+    assert receive.poll(10)
+    after = receive.recv()
+    process.join(10)
+
+    assert process.exitcode == 0
+    assert before == (True, True, None)
+    assert after == (True, True, process.pid, 0)
+    assert pack._fh is None
+    assert pack._mmap is None
+    receive.close()
 
 
 def test_index_pack_deduplicates_segments_within_dataset(tmp_path):
@@ -298,8 +380,9 @@ def test_index_pack_refuses_replaced_file_on_reopen(tmp_path):
     pack = IndexPack(pack_path)
     pack.close()
     os.replace(replacement, pack_path)
+    collection = pack.collection(spec.key)
     with pytest.raises(RuntimeError, match="changed after it was opened"):
-        pack.collection(spec.key)
+        collection.locate(0)
 
 
 def test_packed_range_retries_short_pread(tmp_path, monkeypatch):

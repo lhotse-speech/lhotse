@@ -653,18 +653,20 @@ class PackedIndexCollection:
 
 class IndexPack:
     """
-    Read-only, memory-mapped view of an ``.idxpack``.
+    Lazy, read-only view of an ``.idxpack``.
 
-    Opening a pack validates its fixed-size catalog and maps the file into
-    virtual memory; it does not copy the offset payload into Python or NumPy
-    memory. Obtain a logical collection with :meth:`collection`, then use
-    :meth:`PackedIndexCollection.locate` to resolve record indices. The source
-    record itself is intentionally not read by this class.
+    Construction reads the compact collection catalog with temporary
+    positional reads and closes the file before returning. This makes lengths,
+    kinds, and collection lookup available while a data-loader graph is being
+    assembled without leaving a file descriptor or mmap to be inherited by
+    worker processes. The complete pack is opened, deeply validated, and
+    memory-mapped only when a record, shard path, or segment is first accessed.
+    Offset payloads are never copied into Python or NumPy memory.
 
-    The mapping is reopened automatically after ``fork()`` and the object is
-    pickle-safe for data-loader workers. Use it as a context manager when a
-    deterministic close is desired, or use :func:`open_index_pack` to share one
-    mapping per absolute path and process.
+    The lazy mapping is process-local and the object is pickle-safe for
+    data-loader workers. Use it as a context manager when a deterministic close
+    is desired, or use :func:`open_index_pack` to share one view per absolute
+    path and process.
 
     Args:
         path:
@@ -711,7 +713,7 @@ class IndexPack:
         self._pid = None
         self._file_identity = None
         self._collections = {}
-        self._open()
+        self._read_catalog()
 
     def collection(self, key: bytes | str) -> PackedIndexCollection:
         """
@@ -729,7 +731,6 @@ class IndexPack:
             KeyError:
                 If no collection with ``key`` exists in this pack.
         """
-        self._ensure_open()
         if isinstance(key, str):
             key = bytes.fromhex(key)
         try:
@@ -771,6 +772,7 @@ class IndexPack:
             ValueError:
                 If the payload checksum does not match.
         """
+        self._ensure_open()
         segment = self._segment(segment_id)
         offsets_position = segment[1]
         offsets_size = segment[6]
@@ -812,6 +814,20 @@ class IndexPack:
             "path": self.path,
             "expected_layout_hash": self.expected_layout_hash,
             "file_identity": self._file_identity,
+            "catalog": {
+                "collection_offset": self.collection_offset,
+                "num_collections": self.num_collections,
+                "sequence_offset": self.sequence_offset,
+                "num_sequences": self.num_sequences,
+                "segment_offset": self.segment_offset,
+                "num_segments": self.num_segments,
+                "strings_offset": self.strings_offset,
+                "strings_size": self.strings_size,
+                "offsets_offset": self.offsets_offset,
+                "offsets_size": self.offsets_size,
+                "layout_hash": self.layout_hash,
+                "collections": self._collections,
+            },
         }
 
     def __setstate__(self, state):
@@ -821,8 +837,262 @@ class IndexPack:
         self._mmap = None
         self._pid = None
         self._file_identity = state.get("file_identity")
-        self._collections = {}
-        self._open()
+        catalog = state.get("catalog")
+        if catalog is None:
+            # Compatibility with objects pickled before catalog-only opening.
+            self._collections = {}
+            self._read_catalog()
+            return
+        self.collection_offset = catalog["collection_offset"]
+        self.num_collections = catalog["num_collections"]
+        self.sequence_offset = catalog["sequence_offset"]
+        self.num_sequences = catalog["num_sequences"]
+        self.segment_offset = catalog["segment_offset"]
+        self.num_segments = catalog["num_segments"]
+        self.strings_offset = catalog["strings_offset"]
+        self.strings_size = catalog["strings_size"]
+        self.offsets_offset = catalog["offsets_offset"]
+        self.offsets_size = catalog["offsets_size"]
+        self.layout_hash = catalog["layout_hash"]
+        self._collections = catalog["collections"]
+
+    def _read_header(self, source, file_size: int) -> None:
+        """Decode and validate the common on-disk section layout."""
+        (
+            magic,
+            version,
+            header_size,
+            self.collection_offset,
+            self.num_collections,
+            self.sequence_offset,
+            self.num_sequences,
+            self.segment_offset,
+            self.num_segments,
+            self.strings_offset,
+            self.strings_size,
+            self.offsets_offset,
+            self.offsets_size,
+            self.layout_hash,
+        ) = _HEADER.unpack_from(source, 0)
+        if magic != _MAGIC:
+            raise ValueError(
+                f"Invalid index-pack header magic in {self.path}: {magic!r}"
+            )
+        if version != _VERSION or header_size != _HEADER_SIZE:
+            raise ValueError(
+                f"Unsupported index-pack header in {self.path}: "
+                f"version={version}, header_size={header_size}"
+            )
+        sections = (
+            (
+                "collections",
+                self.collection_offset,
+                self.num_collections * _COLLECTION.size,
+            ),
+            (
+                "sequences",
+                self.sequence_offset,
+                self.num_sequences * _SEQUENCE.size,
+            ),
+            (
+                "segments",
+                self.segment_offset,
+                self.num_segments * _SEGMENT.size,
+            ),
+            ("strings", self.strings_offset, self.strings_size),
+            ("offsets", self.offsets_offset, self.offsets_size),
+        )
+        for name, offset, size in sections:
+            if offset < _HEADER_SIZE or size < 0 or offset + size > file_size:
+                raise ValueError(
+                    f"Index pack has truncated/invalid {name} section: "
+                    f"offset={offset}, size={size}, file_size={file_size}"
+                )
+        expected_sections = (
+            ("collections", self.collection_offset, _HEADER_SIZE),
+            (
+                "sequences",
+                self.sequence_offset,
+                self.collection_offset + self.num_collections * _COLLECTION.size,
+            ),
+            (
+                "segments",
+                self.segment_offset,
+                self.sequence_offset + self.num_sequences * _SEQUENCE.size,
+            ),
+            (
+                "strings",
+                self.strings_offset,
+                self.segment_offset + self.num_segments * _SEGMENT.size,
+            ),
+        )
+        for name, actual, expected_offset in expected_sections:
+            if actual != expected_offset:
+                raise ValueError(
+                    f"Index pack has invalid {name} offset: "
+                    f"{actual} != {expected_offset}"
+                )
+        expected_offsets_offset = self.strings_offset + self.strings_size
+        expected_offsets_offset += (-expected_offsets_offset) % _U64.size
+        if (
+            self.offsets_offset != expected_offsets_offset
+            or self.offsets_offset + self.offsets_size != file_size
+        ):
+            raise ValueError(
+                "Index pack sections overlap, contain gaps, or do not cover the complete file"
+            )
+        expected = self.expected_layout_hash
+        if expected is not None:
+            if isinstance(expected, str):
+                expected = bytes.fromhex(expected)
+            if expected != self.layout_hash:
+                raise ValueError(
+                    f"Index-pack layout mismatch for {self.path}: "
+                    f"expected={expected.hex()}, actual={self.layout_hash.hex()}"
+                )
+
+    def _read_catalog(self) -> None:
+        """
+        Read construction-time metadata without retaining an fd or mmap.
+
+        Deep validation of every sequence and segment is intentionally deferred
+        to :meth:`_open`. The catalog phase validates the file layout,
+        collection directory, collection endpoints, and the first segment used
+        to determine whether each collection is path-only.
+        """
+        try:
+            fh = self.path.open("rb")
+        except FileNotFoundError as ex:
+            raise FileNotFoundError(f"Index pack not found: {self.path}") from ex
+        try:
+            stat = os.fstat(fh.fileno())
+            identity = (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+            if self._file_identity is not None and identity != self._file_identity:
+                raise RuntimeError(
+                    f"Index pack changed after it was opened: {self.path}; "
+                    "reconstruct the dataset to use the replacement"
+                )
+            file_size = stat.st_size
+            if file_size < _HEADER_SIZE:
+                raise ValueError(
+                    f"Index pack is truncated before its {_HEADER_SIZE}-byte header: {self.path}"
+                )
+            header = _pread_exact(fh.fileno(), _HEADER_SIZE, 0)
+            self._read_header(header, file_size)
+
+            collections = {}
+            expected_sequence_start = 0
+            collection_table = _pread_exact(
+                fh.fileno(),
+                self.num_collections * _COLLECTION.size,
+                self.collection_offset,
+            )
+            for collection_id in range(self.num_collections):
+                (
+                    key,
+                    sequence_start,
+                    sequence_count,
+                    total_records,
+                    kind_position,
+                    kind_length,
+                    flags,
+                ) = _COLLECTION.unpack_from(
+                    collection_table, collection_id * _COLLECTION.size
+                )
+                if flags & ~_COLLECTION_PATHS_ONLY:
+                    raise ValueError(
+                        f"Index pack collection {collection_id} has unsupported flags: {flags:#x}"
+                    )
+                if (
+                    sequence_start != expected_sequence_start
+                    or sequence_start + sequence_count > self.num_sequences
+                ):
+                    raise ValueError(
+                        f"Index pack collection {collection_id} has an invalid sequence range"
+                    )
+                if key in collections:
+                    raise ValueError(
+                        f"Duplicate collection key in index pack: {key.hex()}"
+                    )
+                kind = self._pread_string(
+                    fh.fileno(),
+                    kind_position,
+                    kind_length,
+                    label=f"collection {collection_id} kind",
+                )
+                declared_paths_only = bool(flags & _COLLECTION_PATHS_ONLY)
+                paths_only = declared_paths_only
+                if sequence_count:
+                    segment_id, _ = _SEQUENCE.unpack(
+                        _pread_exact(
+                            fh.fileno(),
+                            _SEQUENCE.size,
+                            self.sequence_offset + sequence_start * _SEQUENCE.size,
+                        )
+                    )
+                    if segment_id >= self.num_segments:
+                        raise ValueError(
+                            f"Index pack collection {collection_id} has corrupt sequence metadata"
+                        )
+                    segment = _SEGMENT.unpack(
+                        _pread_exact(
+                            fh.fileno(),
+                            _SEGMENT.size,
+                            self.segment_offset + segment_id * _SEGMENT.size,
+                        )
+                    )
+                    paths_only = bool(segment[3] & _SEGMENT_PATH_ONLY)
+                    _, final_cumulative = _SEQUENCE.unpack(
+                        _pread_exact(
+                            fh.fileno(),
+                            _SEQUENCE.size,
+                            self.sequence_offset
+                            + (sequence_start + sequence_count - 1) * _SEQUENCE.size,
+                        )
+                    )
+                    if final_cumulative != total_records:
+                        raise ValueError(
+                            f"Index pack collection {collection_id} has corrupt "
+                            f"cumulative count for its final shard: "
+                            f"{final_cumulative} != {total_records}"
+                        )
+                if declared_paths_only and not paths_only:
+                    raise ValueError(
+                        f"Index pack collection {collection_id} is marked path-only "
+                        "but references indexed segments"
+                    )
+                if paths_only and total_records != 0:
+                    raise ValueError(
+                        f"Index pack collection {collection_id} has an invalid total record count"
+                    )
+                collections[key] = (
+                    sequence_start,
+                    sequence_count,
+                    total_records,
+                    kind,
+                    not paths_only,
+                )
+                expected_sequence_start += sequence_count
+            if expected_sequence_start != self.num_sequences:
+                raise ValueError("Index pack contains unreferenced sequence rows")
+            self._collections = collections
+            self._file_identity = identity
+        finally:
+            fh.close()
+
+    def _pread_string(self, fd: int, position: int, length: int, *, label: str) -> str:
+        if (
+            position < self.strings_offset
+            or position + length > self.strings_offset + self.strings_size
+        ):
+            raise ValueError(
+                f"Index pack {label} points outside the strings section: "
+                f"position={position}, length={length}"
+            )
+        try:
+            return _pread_exact(fd, length, position).decode("utf-8")
+        except UnicodeDecodeError as ex:
+            raise ValueError(f"Index pack {label} is not valid UTF-8") from ex
 
     def _open(self) -> None:
         try:
@@ -848,95 +1118,11 @@ class IndexPack:
         self._mmap = mmap.mmap(self._fh.fileno(), 0, access=mmap.ACCESS_READ)
         self._pid = os.getpid()
         self._file_identity = identity
-        values = _HEADER.unpack_from(self._mmap, 0)
-        (
-            magic,
-            version,
-            header_size,
-            self.collection_offset,
-            self.num_collections,
-            self.sequence_offset,
-            self.num_sequences,
-            self.segment_offset,
-            self.num_segments,
-            self.strings_offset,
-            self.strings_size,
-            self.offsets_offset,
-            self.offsets_size,
-            self.layout_hash,
-        ) = values
-        if magic != _MAGIC:
+        try:
+            self._read_header(self._mmap, file_size)
+        except Exception:
             self.close()
-            raise ValueError(
-                f"Invalid index-pack header magic in {self.path}: {magic!r}"
-            )
-        if version != _VERSION or header_size != _HEADER_SIZE:
-            self.close()
-            raise ValueError(
-                f"Unsupported index-pack header in {self.path}: version={version}, header_size={header_size}"
-            )
-        sections = (
-            (
-                "collections",
-                self.collection_offset,
-                self.num_collections * _COLLECTION.size,
-            ),
-            ("sequences", self.sequence_offset, self.num_sequences * _SEQUENCE.size),
-            ("segments", self.segment_offset, self.num_segments * _SEGMENT.size),
-            ("strings", self.strings_offset, self.strings_size),
-            ("offsets", self.offsets_offset, self.offsets_size),
-        )
-        for name, offset, size in sections:
-            if offset < _HEADER_SIZE or size < 0 or offset + size > file_size:
-                self.close()
-                raise ValueError(
-                    f"Index pack has truncated/invalid {name} section: "
-                    f"offset={offset}, size={size}, file_size={file_size}"
-                )
-        expected_sections = (
-            ("collections", self.collection_offset, _HEADER_SIZE),
-            (
-                "sequences",
-                self.sequence_offset,
-                self.collection_offset + self.num_collections * _COLLECTION.size,
-            ),
-            (
-                "segments",
-                self.segment_offset,
-                self.sequence_offset + self.num_sequences * _SEQUENCE.size,
-            ),
-            (
-                "strings",
-                self.strings_offset,
-                self.segment_offset + self.num_segments * _SEGMENT.size,
-            ),
-        )
-        for name, actual, expected_offset in expected_sections:
-            if actual != expected_offset:
-                self.close()
-                raise ValueError(
-                    f"Index pack has invalid {name} offset: {actual} != {expected_offset}"
-                )
-        expected_offsets_offset = self.strings_offset + self.strings_size
-        expected_offsets_offset += (-expected_offsets_offset) % _U64.size
-        if (
-            self.offsets_offset != expected_offsets_offset
-            or self.offsets_offset + self.offsets_size != file_size
-        ):
-            self.close()
-            raise ValueError(
-                "Index pack sections overlap, contain gaps, or do not cover the complete file"
-            )
-        expected = self.expected_layout_hash
-        if expected is not None:
-            if isinstance(expected, str):
-                expected = bytes.fromhex(expected)
-            if expected != self.layout_hash:
-                actual = self.layout_hash.hex()
-                self.close()
-                raise ValueError(
-                    f"Index-pack layout mismatch for {self.path}: expected={expected.hex()}, actual={actual}"
-                )
+            raise
         offsets_cursor = self.offsets_offset
         for segment_id in range(self.num_segments):
             segment = self._segment(segment_id)
@@ -982,6 +1168,7 @@ class IndexPack:
                 "Index pack segment payloads do not cover the offsets section"
             )
 
+        collections = {}
         expected_sequence_start = 0
         for collection_id in range(self.num_collections):
             row = _COLLECTION.unpack_from(
@@ -1010,7 +1197,7 @@ class IndexPack:
                 raise ValueError(
                     f"Index pack collection {collection_id} has an invalid sequence range"
                 )
-            if key in self._collections:
+            if key in collections:
                 self.close()
                 raise ValueError(f"Duplicate collection key in index pack: {key.hex()}")
             kind = self._string(
@@ -1059,7 +1246,7 @@ class IndexPack:
                 raise ValueError(
                     f"Index pack collection {collection_id} has an invalid total record count"
                 )
-            self._collections[key] = (
+            collections[key] = (
                 sequence_start,
                 sequence_count,
                 total_records,
@@ -1071,15 +1258,16 @@ class IndexPack:
         if expected_sequence_start != self.num_sequences:
             self.close()
             raise ValueError("Index pack contains unreferenced sequence rows")
+        self._collections = collections
 
     def _ensure_open(self) -> None:
         if self._mmap is None or self._pid != os.getpid():
             self.close()
-            self._collections = {}
             self._open()
             _register_index_pack(self)
 
     def _sequence(self, index: int) -> tuple[int, int]:
+        self._ensure_open()
         if index < 0 or index >= self.num_sequences:
             raise IndexError(f"Index-pack sequence index out of range: {index}")
         return _SEQUENCE.unpack_from(
@@ -1087,6 +1275,7 @@ class IndexPack:
         )
 
     def _segment(self, index: int):
+        self._ensure_open()
         if index < 0 or index >= self.num_segments:
             raise IndexError(f"Index-pack segment index out of range: {index}")
         return _SEGMENT.unpack_from(
@@ -1094,9 +1283,11 @@ class IndexPack:
         )
 
     def _u64(self, position: int) -> int:
+        self._ensure_open()
         return _U64.unpack_from(self._mmap, position)[0]
 
     def _string(self, position: int, length: int, *, label: str) -> str:
+        self._ensure_open()
         if (
             position < self.strings_offset
             or position + length > self.strings_offset + self.strings_size
@@ -1112,15 +1303,15 @@ class IndexPack:
 
 def open_index_pack(path) -> IndexPack:
     """
-    Return one shared read-only pack mapping per absolute path and process.
+    Return one shared lazy pack view per absolute path and process.
 
     Args:
         path:
             Local ``.idxpack`` path.
 
     Returns:
-        A process-local cached :class:`IndexPack`. After ``fork()``, the child
-        creates its own mapping on first access.
+        A process-local cached :class:`IndexPack`. Construction retains only
+        the catalog; each child creates its own mapping on first data access.
     """
     global _INDEX_PACK_CACHE_PID
     pid = os.getpid()
@@ -1265,6 +1456,23 @@ def _is_remote_path(path) -> bool:
     return is_valid_url(str(path))
 
 
+def _pread_exact(fd: int, size: int, offset: int) -> bytes:
+    """Read exactly ``size`` bytes at ``offset`` without changing fd position."""
+    chunks = []
+    remaining = size
+    while remaining:
+        chunk = os.pread(fd, remaining, offset)
+        if not chunk:
+            raise EOFError(
+                f"Short positional read: requested {size} bytes at offset "
+                f"{offset - (size - remaining)}, received {size - remaining}"
+            )
+        chunks.append(chunk)
+        offset += len(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def _fsync_directory(path: Path) -> None:
     if not hasattr(os, "O_DIRECTORY"):
         return
@@ -1287,7 +1495,7 @@ def _register_index_pack(pack: IndexPack) -> None:
     _INDEX_PACK_CACHE[str(pack.path.absolute())] = pack
 
 
-_INDEX_PACK_CACHE: weakref.WeakValueDictionary[
-    str, IndexPack
-] = weakref.WeakValueDictionary()
+_INDEX_PACK_CACHE: weakref.WeakValueDictionary[str, IndexPack] = (
+    weakref.WeakValueDictionary()
+)
 _INDEX_PACK_CACHE_PID = os.getpid()
