@@ -1495,7 +1495,7 @@ def _register_index_pack(pack: IndexPack) -> None:
     _INDEX_PACK_CACHE[str(pack.path.absolute())] = pack
 
 
-_INDEX_PACK_CACHE: weakref.WeakValueDictionary[str, IndexPack] = (
-    weakref.WeakValueDictionary()
-)
+_INDEX_PACK_CACHE: weakref.WeakValueDictionary[
+    str, IndexPack
+] = weakref.WeakValueDictionary()
 _INDEX_PACK_CACHE_PID = os.getpid()
