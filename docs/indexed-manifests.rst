@@ -62,6 +62,66 @@ index creation:
    supported remote/object-store URIs can be indexed as long as the storage
    backend supports indexed reads.
 
+Packing many sidecars into one ``.idxpack``
+-------------------------------------------
+
+A very large sharded dataset may have hundreds of thousands of ``.idx``
+sidecars. Opening one reader per shard can then spend significant time on
+filesystem metadata operations and create one Python or NumPy object per index.
+An ``.idxpack`` is an optional storage optimization for this case: it combines
+the existing sidecar payloads, ordered shard catalog, and collection metadata
+into one immutable, memory-mapped file. Opening the pack maps one file and the
+operating system faults in offset pages only when records are requested.
+
+An index pack does not replace the source data or change checkpoint semantics.
+It stores byte offsets into the original uncompressed sources, and it is built
+from sidecars that already exist. The pack itself must be a local seekable file.
+Lhotse deliberately leaves dataset discovery to the caller, so a pack can hold
+one or more application-defined logical collections (for example, a manifest
+collection and a payload collection).
+
+The following example packs two ordered CutSet JSONL shards and reads them as
+one lazy virtual collection:
+
+.. code-block:: python
+
+   from lhotse import CutSet
+   from lhotse.index_pack import (
+       IndexPackCollectionSpec,
+       write_index_pack,
+   )
+   from lhotse.packed_lazy import LazyPackedManifestIterator
+
+   paths = (
+       "/data/cuts.000000.jsonl",
+       "/data/cuts.000001.jsonl",
+   )
+   # Each path must already have a corresponding .idx sidecar.
+   spec = IndexPackCollectionSpec(
+       role="cuts",
+       kind="jsonl",
+       source_spec="/data/cuts.{000000..000001}.jsonl",
+       paths=paths,
+   )
+   write_index_pack("/data/cuts.idxpack", [spec])
+
+   source = LazyPackedManifestIterator("/data/cuts.idxpack", spec.key)
+   cuts = CutSet(source)
+   print(len(cuts), cuts[0].id)
+
+``role``, ``kind``, and ``source_spec`` define the stable collection key; their
+meaning is application-defined. ``paths`` is the exact expanded shard order
+used at runtime. Repeated physical sources are stored once inside the pack, so
+several logical collections may refer to them without duplicating offset
+payloads.
+
+Use one pack per independently configured dataset rather than one global pack
+for an entire training mixture. This keeps rebuilds, validation, and deployment
+scoped to the dataset whose source declaration changed. For direct catalog and
+byte-range lookup, use :class:`lhotse.index_pack.IndexPack`; for sharded JSONL
+manifest iteration with deterministic shuffle and checkpoint support, use
+:class:`lhotse.packed_lazy.LazyPackedManifestIterator`.
+
 Reading indexed data
 --------------------
 

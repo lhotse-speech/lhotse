@@ -13,6 +13,12 @@ from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
 from lhotse.dataset.webdataset import LazyWebdatasetIterator, export_to_webdataset
 from lhotse.hf import LazyHFDatasetIterator
+from lhotse.index_pack import (
+    IndexPackCollectionSpec,
+    index_pack_collection_key,
+    write_index_pack,
+)
+from lhotse.indexing import create_jsonl_index
 from lhotse.lazy import (
     IteratorNode,
     LazyFilter,
@@ -29,6 +35,7 @@ from lhotse.lazy import (
     LazySlicer,
     LazyTxtIterator,
 )
+from lhotse.packed_lazy import LazyPackedManifestIterator
 from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.readers.lazy import LazySharIterator
 from lhotse.testing.dummies import DummyManifest
@@ -82,6 +89,17 @@ def iterator_node_sources(tmp_path) -> Dict[str, Path]:
     DummyManifest(CutSet, begin_id=2000, end_id=2016).to_jsonl(shar_0)
     DummyManifest(CutSet, begin_id=3000, end_id=3016).to_jsonl(shar_1)
 
+    packed_spec = IndexPackCollectionSpec(
+        role="cuts",
+        kind="application/x-lhotse-cut-jsonl",
+        source_spec="cuts_[ab].jsonl",
+        paths=(str(cuts_a), str(cuts_b)),
+    )
+    create_jsonl_index(cuts_a)
+    create_jsonl_index(cuts_b)
+    packed = tmp_path / "cuts.idxpack"
+    write_index_pack(packed, [packed_spec])
+
     webdataset_tar = tmp_path / "cuts.tar"
     if is_module_available("webdataset"):
         base_cut = CutSet.from_file("test/fixtures/libri/cuts.json")[0]
@@ -103,6 +121,7 @@ def iterator_node_sources(tmp_path) -> Dict[str, Path]:
         "shar_0": shar_0,
         "shar_1": shar_1,
         "webdataset_tar": webdataset_tar,
+        "packed": packed,
     }
 
 
@@ -112,6 +131,21 @@ def _build_lazy_manifest(sources: Dict[str, Path]) -> CutSet:
 
 def _build_lazy_indexed_manifest(sources: Dict[str, Path]) -> CutSet:
     return CutSet(LazyIndexedManifestIterator(sources["cuts_a"], shuffle=True, seed=19))
+
+
+def _build_lazy_packed_manifest(sources: Dict[str, Path]) -> CutSet:
+    return CutSet(
+        LazyPackedManifestIterator(
+            sources["packed"],
+            index_pack_collection_key(
+                "cuts",
+                "application/x-lhotse-cut-jsonl",
+                "cuts_[ab].jsonl",
+            ),
+            shuffle_shards=True,
+            seed=19,
+        )
+    )
 
 
 def _build_lazy_iterator_chain(sources: Dict[str, Path]) -> CutSet:
@@ -243,6 +277,11 @@ def _build_lazy_hf_dataset_iterator(_: Dict[str, Path]) -> CutSet:
 
 
 INDEXED_E2E_CASES = [
+    pytest.param(
+        "LazyPackedManifestIterator",
+        _build_lazy_packed_manifest,
+        id="LazyPackedManifestIterator",
+    ),
     pytest.param(
         "LazyIndexedManifestIterator",
         _build_lazy_indexed_manifest,
