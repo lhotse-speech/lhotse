@@ -325,3 +325,28 @@ def test_cli_list_storage_backends_marks_missing_optional_dependencies(monkeypat
     assert (
         "lilcom_hdf5 (unavailable, requires: pip install h5py lilcom)" in result.output
     )
+
+
+def test_fix_random_seed_is_deterministic_on_cpu():
+    import torch
+
+    from lhotse.utils import fix_random_seed
+
+    fix_random_seed(42)
+    a = torch.randn(3)
+    fix_random_seed(42)
+    b = torch.randn(3)
+    assert torch.equal(a, b)
+
+
+@pytest.mark.skipif(not __import__("torch").cuda.is_available(), reason="Requires CUDA")
+def test_fix_random_seed_does_not_touch_cuda_rng():
+    import torch
+
+    from lhotse.utils import fix_random_seed
+
+    states_before = torch.cuda.get_rng_state_all()
+    fix_random_seed(42)
+    states_after = torch.cuda.get_rng_state_all()
+    for before, after in zip(states_before, states_after):
+        assert torch.equal(before, after)
