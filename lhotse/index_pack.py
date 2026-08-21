@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lhotse.indexing import index_file_path
-from lhotse.utils import is_valid_url
+from lhotse.utils import Pathlike, is_valid_url
 
 # Keep these values stable: production packs created by the original format
 # implementation already use this signature and version.
@@ -177,6 +177,8 @@ def write_index_pack(
     *,
     indexes_root=None,
     overwrite: bool = False,
+    source_size_overrides: Mapping[str, int] | None = None,
+    index_path_overrides: Mapping[str, Pathlike] | None = None,
 ) -> Path:
     """
     Convert existing sidecar indexes into one atomic ``.idxpack``.
@@ -198,6 +200,15 @@ def write_index_pack(
         overwrite:
             Replace an existing destination atomically. The default is to fail
             if ``output_path`` already exists.
+        source_size_overrides:
+            Explicit current sizes for selected sources. The corresponding
+            sidecar sentinel is replaced in the pack without modifying the
+            sidecar itself. Callers are responsible for verifying that bytes
+            beyond the original sentinel are safe to include, for example
+            archive padding rather than another record.
+        index_path_overrides:
+            Alternative local sidecars for selected sources. This supports
+            private repair overlays without mutating a shared index mirror.
 
     Returns:
         ``output_path`` normalized to :class:`~pathlib.Path`.
@@ -247,6 +258,8 @@ def write_index_pack(
     """
     output_path = Path(output_path)
     collections = tuple(collections)
+    source_size_overrides = source_size_overrides or {}
+    index_path_overrides = index_path_overrides or {}
     if not collections:
         raise ValueError("Cannot build an index pack without collections.")
     if output_path.exists() and not overwrite:
@@ -280,6 +293,8 @@ def write_index_pack(
                         path,
                         indexes_root,
                         offsets_required=collection.offsets_required,
+                        source_size_override=source_size_overrides.get(path),
+                        index_path_override=index_path_overrides.get(path),
                     )
                 )
             cumulative_end += segments[segment_id].num_records
@@ -383,6 +398,13 @@ def write_index_pack(
                             if len(chunk) % _U64.size:
                                 raise ValueError(
                                     f"Index chunk is not uint64-aligned: {segment.index_path}"
+                                )
+                            if (
+                                copied + len(chunk) == expected_size
+                                and segment.source_size_override is not None
+                            ):
+                                chunk = chunk[: -_U64.size] + _U64.pack(
+                                    segment.source_size_override
                                 )
                             for (value,) in struct.iter_unpack("<Q", chunk):
                                 if previous is not None and value < previous:
@@ -1344,6 +1366,9 @@ class _BuildSegment:
             ``None`` and the copied sidecar sentinel becomes authoritative.
         path_only:
             Whether this segment intentionally stores no record offsets.
+        source_size_override:
+            Source-size sentinel to write into the pack instead of copying the
+            sidecar's final value.
     """
 
     path: str
@@ -1351,6 +1376,7 @@ class _BuildSegment:
     offsets_count: int
     source_size: int | None
     path_only: bool = False
+    source_size_override: int | None = None
 
     @property
     def num_records(self) -> int:
@@ -1393,7 +1419,12 @@ def _canonicalize(value):
 
 
 def _read_sidecar_metadata(
-    path: str, indexes_root, *, offsets_required: bool
+    path: str,
+    indexes_root,
+    *,
+    offsets_required: bool,
+    source_size_override: int | None = None,
+    index_path_override: Pathlike | None = None,
 ) -> _BuildSegment:
     if not offsets_required:
         return _BuildSegment(
@@ -1403,7 +1434,11 @@ def _read_sidecar_metadata(
             source_size=0,
             path_only=True,
         )
-    idx = index_file_path(path, indexes_root)
+    idx = (
+        index_file_path(path, indexes_root)
+        if index_path_override is None
+        else index_path_override
+    )
     if _is_remote_path(idx):
         raise ValueError(
             "Index-pack conversion currently requires a local sidecar; "
@@ -1420,15 +1455,30 @@ def _read_sidecar_metadata(
             f"Invalid .idx sidecar {idx}: size must be a positive multiple of {_U64.size}, got {size}"
         )
 
-    source_size = None
+    source_size = source_size_override
+    if source_size_override is not None and source_size_override < 0:
+        raise ValueError(
+            f"Invalid negative source-size override for {path}: {source_size_override}"
+        )
     if not _is_remote_path(path):
         try:
             source_stat = Path(path).stat()
         except FileNotFoundError as ex:
             raise FileNotFoundError(f"Indexed source not found: {path}") from ex
-        if source_stat.st_mtime_ns > index_stat.st_mtime_ns:
+        if (
+            source_stat.st_mtime_ns > index_stat.st_mtime_ns
+            and source_size_override is None
+        ):
             raise ValueError(
                 f"Source {path} is newer than index sidecar {idx}; rebuild the .idx before packing"
+            )
+        if (
+            source_size_override is not None
+            and source_size_override != source_stat.st_size
+        ):
+            raise ValueError(
+                f"Source-size override for {path} is {source_size_override}, "
+                f"but the local source is {source_stat.st_size} bytes"
             )
         source_size = source_stat.st_size
     return _BuildSegment(
@@ -1436,6 +1486,7 @@ def _read_sidecar_metadata(
         index_path=idx,
         offsets_count=size // _U64.size,
         source_size=source_size,
+        source_size_override=source_size_override,
     )
 
 
