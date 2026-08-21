@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 from lhotse.array import Array, TemporalArray
 from lhotse.audio.recording import Recording
+from lhotse.audio.source import resolve_s3_to_local_mirror
 from lhotse.cut import CutSet
 from lhotse.features.base import Features
 from lhotse.image import Image
@@ -532,7 +533,9 @@ class AISBatchLoader:
                 if isinstance(manifest, Recording):
                     for source in manifest.sources:
                         if source.type == "url" and is_valid_url(source.source):
-                            return True
+                            source_uri = str(source.source)
+                            if resolve_s3_to_local_mirror(source_uri) == source_uri:
+                                return True
                         if source.type == "shar_ptr" and _shar_ptr_is_url(
                             source.source
                         ):
@@ -579,7 +582,12 @@ class AISBatchLoader:
         if isinstance(manifest, Recording):
             for source in manifest.sources:
                 if source.type == "url":
-                    self._add_url_to_batch(source.source, batch)
+                    source_uri = str(source.source)
+                    resolved = resolve_s3_to_local_mirror(source_uri)
+                    if resolved != source_uri:
+                        source.source = resolved
+                        continue
+                    self._add_url_to_batch(source_uri, batch)
                     return True
                 if source.type == "shar_ptr":
                     if self._add_shar_ptr_to_batch(
