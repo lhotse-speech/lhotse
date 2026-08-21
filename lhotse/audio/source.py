@@ -3,9 +3,10 @@ import os
 import warnings
 from dataclasses import dataclass
 from io import BytesIO, FileIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from subprocess import PIPE, run
 from typing import List, Optional, Tuple, Union
+from urllib.parse import unquote, urlsplit
 
 import numpy as np
 import soundfile as sf
@@ -23,6 +24,50 @@ from lhotse.serialization import open_best
 from lhotse.utils import Pathlike, Seconds, asdict_nonull, compute_num_samples, fastcopy
 
 PathOrFilelike = Union[str, BytesIO, FileIO]
+
+
+_S3_LOCAL_MIRROR_ROOTS_ENV = "LHOTSE_S3_LOCAL_MIRROR_ROOTS"
+_TAR_ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tar")
+
+
+def resolve_s3_to_local_mirror(source: str) -> str:
+    """Resolve an S3 URI through an optional path-preserving local mirror.
+
+    Mirror roots are read from ``LHOTSE_S3_LOCAL_MIRROR_ROOTS`` and searched
+    in order. Each root must use the layout ``<root>/<bucket>/<key>``. For an
+    archive-member URI such as ``s3://bucket/a.tar/member.wav``, only the
+    archive itself must exist.
+
+    The input is returned unchanged when mirroring is not configured, the input
+    is not an S3 URI, or no mirror contains the referenced file.
+    """
+    roots = os.environ.get(_S3_LOCAL_MIRROR_ROOTS_ENV)
+    if not roots or not source.startswith("s3://"):
+        return source
+
+    parsed = urlsplit(source)
+    bucket = unquote(parsed.netloc)
+    key = unquote(parsed.path.lstrip("/"))
+    if not bucket or "/" in bucket or "\\" in bucket or key.startswith(("/", "\\")):
+        return source
+
+    relative = PurePosixPath(bucket, key)
+    if any(part == ".." or "\\" in part for part in relative.parts):
+        return source
+
+    relative_posix = relative.as_posix()
+    probe = relative
+    for suffix in _TAR_ARCHIVE_SUFFIXES:
+        marker = f"{suffix}/"
+        if marker in relative_posix:
+            probe = PurePosixPath(relative_posix.split(marker, 1)[0] + suffix)
+            break
+
+    for root in filter(None, roots.split(os.pathsep)):
+        mirror_root = Path(root)
+        if mirror_root.joinpath(*probe.parts).is_file():
+            return str(mirror_root.joinpath(*relative.parts))
+    return source
 
 
 @dataclass
@@ -289,6 +334,8 @@ class AudioSource:
 
         elif self.type == "url":
 
+            source = resolve_s3_to_local_mirror(str(source))
+
             if offset != 0.0 or duration is not None and not AudioCache.enabled():
                 warnings.warn(
                     "You requested a subset of a recording that is read from URL. "
@@ -301,7 +348,7 @@ class AudioSource:
             # never a microphone-stream or a live-stream.
             audio_bytes = AudioCache.try_cache(self.source)
             if not audio_bytes:
-                with open_best(self.source, "rb") as f:
+                with open_best(source, "rb") as f:
                     audio_bytes = f.read()
                 AudioCache.add_to_cache(self.source, audio_bytes)
             source = BytesIO(audio_bytes)

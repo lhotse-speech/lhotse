@@ -300,6 +300,78 @@ def test_index_pack_rejects_newer_same_size_jsonl(tmp_path):
         write_index_pack(tmp_path / "dataset.idxpack", [spec])
 
 
+def test_index_pack_uses_alternative_sidecar_without_modifying_mirror(tmp_path):
+    path = tmp_path / "data.jsonl"
+    _write_jsonl(path, [{"id": "a"}])
+    shared_idx = create_jsonl_index(path)
+    shared_bytes = shared_idx.read_bytes()
+    shared_idx.unlink()
+
+    private_idx = tmp_path / "private" / "data.jsonl.idx"
+    private_idx.parent.mkdir()
+    private_idx.write_bytes(shared_bytes)
+    spec = IndexPackCollectionSpec(
+        role="manifest", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(
+        pack_path,
+        [spec],
+        index_path_overrides={str(path): private_idx},
+    )
+
+    assert not shared_idx.exists()
+    assert private_idx.read_bytes() == shared_bytes
+    with IndexPack(pack_path) as pack:
+        assert pack.collection(spec.key).locate(0).end == path.stat().st_size
+
+
+def test_index_pack_overrides_source_size_without_modifying_sidecar(tmp_path):
+    path = tmp_path / "data.bin"
+    path.write_bytes(b"record")
+    idx = Path(f"{path}.idx")
+    idx.write_bytes(struct.pack("<QQ", 0, path.stat().st_size))
+    original_idx = idx.read_bytes()
+
+    with path.open("ab") as stream:
+        stream.write(bytes(512))
+    source_size = path.stat().st_size
+    spec = IndexPackCollectionSpec(
+        role="payload",
+        kind="binary-records",
+        source_spec=str(path),
+        paths=(str(path),),
+    )
+
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(
+        pack_path,
+        [spec],
+        source_size_overrides={str(path): source_size},
+    )
+
+    assert idx.read_bytes() == original_idx
+    with IndexPack(pack_path) as pack:
+        assert pack.collection(spec.key).locate(0).end == source_size
+
+
+def test_index_pack_rejects_incorrect_source_size_override(tmp_path):
+    path = tmp_path / "data.jsonl"
+    _write_jsonl(path, [{"id": "a"}])
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="manifest", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+
+    with pytest.raises(ValueError, match="Source-size override"):
+        write_index_pack(
+            tmp_path / "dataset.idxpack",
+            [spec],
+            source_size_overrides={str(path): path.stat().st_size + 1},
+        )
+
+
 def test_index_pack_rejects_truncated_file(tmp_path):
     path = tmp_path / "data.jsonl"
     _write_jsonl(path, [{"id": "a"}])

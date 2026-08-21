@@ -115,6 +115,27 @@ used at runtime. Repeated physical sources are stored once inside the pack, so
 several logical collections may refer to them without duplicating offset
 payloads.
 
+``write_index_pack()`` normally reads the sidecar returned by
+:func:`lhotse.indexing.index_file_path` and requires its final sentinel to
+match the local source size. Builders that have independently validated a
+repair may override either value for selected sources:
+
+.. code-block:: python
+
+   write_index_pack(
+       "/data/cuts.idxpack",
+       [spec],
+       source_size_overrides={source_path: validated_size},
+       index_path_overrides={source_path: repaired_sidecar},
+   )
+
+Both mappings are keyed by the exact source path stored in the collection.
+They affect only the new pack and do not modify source files or sidecars. A
+source-size override replaces the copied sidecar sentinel and bypasses the
+normal stale-mtime rejection for that source, so the caller must verify that
+any additional bytes are safe to include, such as trailing archive padding
+rather than another record.
+
 Use one pack per independently configured dataset rather than one global pack
 for an entire training mixture. This keeps rebuilds, validation, and deployment
 scoped to the dataset whose source declaration changed. For direct catalog and
