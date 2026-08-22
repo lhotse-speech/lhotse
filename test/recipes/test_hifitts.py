@@ -51,9 +51,6 @@ def test_prepare_hifitts_preserves_partition_identity_when_completion_reversed(
     monkeypatch.setattr(
         hifitts, "as_completed", lambda futures: reversed(list(futures))
     )
-    monkeypatch.setattr(hifitts, "manifests_exist", lambda **kwargs: False)
-    monkeypatch.setattr(hifitts, "read_manifests_if_cached", lambda **kwargs: {})
-    monkeypatch.setattr(hifitts, "tqdm", lambda iterable, **kwargs: iterable)
 
     output_dir = tmp_path / "manifests"
     manifests = hifitts.prepare_hifitts(tmp_path, output_dir=output_dir, num_jobs=2)
