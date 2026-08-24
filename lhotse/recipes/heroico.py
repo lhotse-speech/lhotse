@@ -208,7 +208,7 @@ def prepare_heroico(
         elif int(pid) > 354 and int(pid) < 562:
             spk = wav_path.parts[-2]
             utt_id = "-".join(["heroico-recitations-repeats", spk, pid])
-            trans_id = "-".join(["heroico-recitations-repeats", pid])
+            trans_id = "-".join(["heroico-recitations", pid])
             uttdata[str(wav_file)] = UttInfo(
                 fold="devtest",
                 speaker=spk,
