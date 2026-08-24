@@ -268,13 +268,13 @@ def prepare_heroico(
                 id=idx,
                 recording_id=idx,
                 start=0.0,
-                duration=audio.recordings[idx].duration,
+                duration=audio[idx].duration,
                 channel=0,
                 language="Spanish",
                 speaker=idx.split("-")[-2],
                 text=metadata[idx].text,
             )
-            for idx in audio.recordings
+            for idx in metadata
         )
 
         audio, supervision = fix_manifests(audio, supervision)
