@@ -58,6 +58,7 @@ _SEQUENCE = struct.Struct("<QQ")
 # offset count, source size, offsets byte size, CRC32, reserved.
 _SEGMENT = struct.Struct("<QQIIQQQII")
 _SEGMENT_PATH_ONLY = 1
+_SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT = 1
 _U64 = struct.Struct("<Q")
 
 
@@ -94,6 +95,19 @@ def index_pack_collection_key(role: str, kind: str, source_spec) -> bytes:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).digest()
+
+
+def index_pack_layout_hash(
+    collections: Sequence[IndexPackCollectionSpec],
+) -> bytes:
+    """Return the exact layout digest persisted for ``collections``.
+
+    This lets orchestration validate an existing pack against its current
+    declarative collection contract without creating or scanning a pack.
+    Source paths and collection identities participate in the digest; source
+    sizes are validated separately against per-segment metadata.
+    """
+    return _layout_digest(collections)
 
 
 @dataclass(frozen=True)
@@ -203,9 +217,11 @@ def write_index_pack(
         source_size_overrides:
             Explicit current sizes for selected sources. The corresponding
             sidecar sentinel is replaced in the pack without modifying the
-            sidecar itself. Callers are responsible for verifying that bytes
-            beyond the original sentinel are safe to include, for example
-            archive padding rather than another record.
+            sidecar itself. For path-only collections, the supplied size is
+            persisted as validation metadata even though no record offsets are
+            stored. Callers are responsible for verifying that bytes beyond
+            an indexed sentinel are safe to include, for example archive
+            padding rather than another record.
         index_path_overrides:
             Alternative local sidecars for selected sources. This supports
             private repair overlays without mutating a shared index mirror.
@@ -322,7 +338,7 @@ def write_index_pack(
     offsets_offset = strings_offset + len(string_blob)
     offsets_offset += (-offsets_offset) % _U64.size
     offsets_size = sum(segment.offsets_count * _U64.size for segment in segments)
-    layout_hash = _layout_digest(collections)
+    layout_hash = index_pack_layout_hash(collections)
 
     tmp_path = output_path.with_name(
         f".{output_path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
@@ -385,11 +401,17 @@ def write_index_pack(
                 checksum = 0
                 copied = 0
                 previous: int | None = None
+                metadata_flags = 0
                 if segment.path_only:
-                    chunk = _U64.pack(0)
+                    if segment.source_size is None:
+                        path_only_source_size = 0
+                    else:
+                        path_only_source_size = segment.source_size
+                        metadata_flags |= _SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT
+                    chunk = _U64.pack(path_only_source_size)
                     checksum = zlib.crc32(chunk)
                     copied = len(chunk)
-                    previous = 0
+                    previous = path_only_source_size
                     out.write(chunk)
                 else:
                     assert segment.index_path is not None
@@ -425,13 +447,21 @@ def write_index_pack(
                     raise ValueError(
                         f"Index sidecar contains no sentinel: {segment.index_path}"
                     )
-                source_size = (
-                    previous if segment.source_size is None else segment.source_size
-                )
-                if previous != source_size:
-                    raise ValueError(
-                        f"Invalid sentinel in {segment.index_path}: metadata={source_size}, payload={previous}"
+                if segment.path_only:
+                    # Keep the v2 segment-row invariant required by existing
+                    # readers. Optional source-size metadata lives in the
+                    # otherwise ignored one-uint64 payload and is identified
+                    # by the reserved metadata field below.
+                    source_size = 0
+                else:
+                    source_size = (
+                        previous if segment.source_size is None else segment.source_size
                     )
+                    if previous != source_size:
+                        raise ValueError(
+                            f"Invalid sentinel in {segment.index_path}: "
+                            f"metadata={source_size}, payload={previous}"
+                        )
                 path_rel, path_len = path_positions[segment_id]
                 segment_rows.append(
                     (
@@ -443,7 +473,7 @@ def write_index_pack(
                         source_size,
                         expected_size,
                         checksum & 0xFFFFFFFF,
-                        0,
+                        metadata_flags,
                     )
                 )
                 payload_cursor += expected_size
@@ -570,6 +600,25 @@ class PackedIndexCollection:
             else 0
         )
         return cumulative_end - previous_end
+
+    def source_size_for_shard(self, shard_index: int) -> int | None:
+        """Return the source size persisted for one logical shard.
+
+        Returns ``None`` for path-only v2 packs written before source-size
+        metadata was supported. A known empty source returns zero.
+        """
+        shard_index = self._normalize_shard_index(shard_index)
+        pack = self.pack
+        pack._ensure_open()
+        segment_id, _ = pack._sequence(self.sequence_start + shard_index)
+        segment = pack._segment(segment_id)
+        if segment[3] & _SEGMENT_PATH_ONLY:
+            if segment[8] & _SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT:
+                return int(pack._u64(segment[1]))
+            # Briefly, development versions stored this value directly in the
+            # segment row. Retain read compatibility with packs they produced.
+            return int(segment[5]) or None
+        return int(segment[5])
 
     def locate_in_shard(
         self, shard_index: int, local_index: int
@@ -1157,7 +1206,7 @@ class IndexPack:
                 source_size,
                 size,
                 _,
-                _,
+                metadata_flags,
             ) = segment
             if flags & ~_SEGMENT_PATH_ONLY:
                 self.close()
@@ -1178,10 +1227,20 @@ class IndexPack:
                 raise ValueError(
                     f"Index pack segment {segment_id} has an invalid offset payload range"
                 )
-            if flags & _SEGMENT_PATH_ONLY and (offsets_count != 1 or source_size != 0):
+            if flags & _SEGMENT_PATH_ONLY and offsets_count != 1:
                 self.close()
                 raise ValueError(
                     f"Index pack path-only segment {segment_id} contains record metadata"
+                )
+            if (
+                flags & _SEGMENT_PATH_ONLY
+                and metadata_flags & _SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT
+                and source_size != 0
+            ):
+                self.close()
+                raise ValueError(
+                    f"Index pack path-only segment {segment_id} mixes source-size "
+                    "encodings"
                 )
             offsets_cursor += size
         if offsets_cursor != self.offsets_offset + self.offsets_size:
@@ -1427,11 +1486,26 @@ def _read_sidecar_metadata(
     index_path_override: Pathlike | None = None,
 ) -> _BuildSegment:
     if not offsets_required:
+        if source_size_override is not None and source_size_override < 0:
+            raise ValueError(
+                f"Invalid negative source-size override for {path}: "
+                f"{source_size_override}"
+            )
+        if source_size_override is not None and not _is_remote_path(path):
+            try:
+                local_source_size = Path(path).stat().st_size
+            except FileNotFoundError as ex:
+                raise FileNotFoundError(f"Indexed source not found: {path}") from ex
+            if source_size_override != local_source_size:
+                raise ValueError(
+                    f"Source-size override for {path} is {source_size_override}, "
+                    f"but the local source is {local_source_size} bytes"
+                )
         return _BuildSegment(
             path=path,
             index_path=None,
             offsets_count=1,
-            source_size=0,
+            source_size=source_size_override,
             path_only=True,
         )
     idx = (

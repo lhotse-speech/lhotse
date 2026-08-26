@@ -12,6 +12,7 @@ from lhotse.index_pack import (
     IndexPack,
     IndexPackCollectionSpec,
     index_pack_collection_key,
+    index_pack_layout_hash,
     write_index_pack,
 )
 from lhotse.indexing import create_jsonl_index
@@ -82,6 +83,40 @@ def test_index_pack_converts_existing_sidecars_and_reads_lazily(tmp_path):
                 actual.append(json.loads(f.read(location.end - location.start)))
 
         assert actual == [record for shard in records for record in shard]
+
+
+def test_index_pack_layout_hash_matches_persisted_contract(tmp_path):
+    paths = (str(tmp_path / "payload-0.tar"), str(tmp_path / "payload-1.tar"))
+    spec = IndexPackCollectionSpec(
+        role="payload",
+        kind="application/x-tar",
+        source_spec="payload-{0..1}.tar",
+        paths=paths,
+        offsets_required=False,
+    )
+    expected = index_pack_layout_hash([spec])
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    with IndexPack(pack_path, expected_layout_hash=expected) as pack:
+        assert pack.layout_hash == expected
+
+    reversed_paths = IndexPackCollectionSpec(
+        role=spec.role,
+        kind=spec.kind,
+        source_spec=spec.source_spec,
+        paths=tuple(reversed(paths)),
+        offsets_required=False,
+    )
+    indexed = IndexPackCollectionSpec(
+        role=spec.role,
+        kind=spec.kind,
+        source_spec=spec.source_spec,
+        paths=paths,
+        offsets_required=True,
+    )
+    assert index_pack_layout_hash([reversed_paths]) != expected
+    assert index_pack_layout_hash([indexed]) != expected
 
 
 def test_index_pack_defers_mmap_through_catalog_lookup_and_pickle(tmp_path):
@@ -210,9 +245,91 @@ def test_index_pack_path_only_collection_needs_no_sidecars(tmp_path):
         collection = pack.collection(spec.key)
         assert not collection.offsets_required
         assert len(collection) == 0
+        assert collection.source_size_for_shard(0) is None
         assert collection.path_for_shard(-1) == paths[-1]
         with pytest.raises(IndexError):
             collection.locate(0)
+
+
+def test_index_pack_path_only_collection_persists_validated_source_sizes(tmp_path):
+    local_path = tmp_path / "payload.tar"
+    local_path.write_bytes(b"payload")
+    empty_path = tmp_path / "empty.tar"
+    empty_path.write_bytes(b"")
+    remote_path = "s3://sealed-bucket/payload.tar"
+    spec = IndexPackCollectionSpec(
+        role="payload",
+        kind="application/x-tar",
+        source_spec=[str(local_path), str(empty_path), remote_path],
+        paths=(str(local_path), str(empty_path), remote_path),
+        offsets_required=False,
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(
+        pack_path,
+        [spec],
+        source_size_overrides={
+            str(local_path): local_path.stat().st_size,
+            str(empty_path): empty_path.stat().st_size,
+            remote_path: 1234,
+        },
+    )
+
+    with IndexPack(pack_path) as pack:
+        collection = pack.collection(spec.key)
+        assert collection.source_size_for_shard(0) == len(b"payload")
+        assert collection.source_size_for_shard(1) == 0
+        assert collection.source_size_for_shard(2) == 1234
+
+        # Preserve the segment-row invariant enforced by pre-change v2 readers.
+        for shard_index, expected_size in enumerate((len(b"payload"), 0, 1234)):
+            segment_id, _ = pack._sequence(collection.sequence_start + shard_index)
+            segment = pack._segment(segment_id)
+            assert segment[5] == 0
+            assert segment[8] == 1
+            assert pack._u64(segment[1]) == expected_size
+
+
+def test_index_pack_reads_interim_path_only_source_size_encoding(tmp_path):
+    path = str(tmp_path / "payload.tar")
+    spec = IndexPackCollectionSpec(
+        role="payload",
+        kind="application/x-tar",
+        source_spec=path,
+        paths=(path,),
+        offsets_required=False,
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    with IndexPack(pack_path) as pack:
+        segment_offset = pack.segment_offset
+    source_size_offset = segment_offset + struct.calcsize("<QQIIQ")
+    with pack_path.open("r+b") as f:
+        f.seek(source_size_offset)
+        f.write(struct.pack("<Q", 1234))
+
+    with IndexPack(pack_path) as pack:
+        assert pack.collection(spec.key).source_size_for_shard(0) == 1234
+
+
+def test_index_pack_path_only_rejects_incorrect_local_source_size(tmp_path):
+    path = tmp_path / "payload.tar"
+    path.write_bytes(b"payload")
+    spec = IndexPackCollectionSpec(
+        role="payload",
+        kind="application/x-tar",
+        source_spec=str(path),
+        paths=(str(path),),
+        offsets_required=False,
+    )
+
+    with pytest.raises(ValueError, match="Source-size override"):
+        write_index_pack(
+            tmp_path / "dataset.idxpack",
+            [spec],
+            source_size_overrides={str(path): path.stat().st_size + 1},
+        )
 
 
 def test_index_pack_opens_v2_path_only_collection_without_collection_flag(tmp_path):
