@@ -180,7 +180,7 @@ tests_require = [
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
 ] + lilcom_requires
-aistore_requires = ["aistore>=1.17.0"]
+aistore_requires = ["aistore>=1.26.0"]
 orjson_requires = ["orjson>=3.6.6"]
 webdataset_requires = ["webdataset==0.2.5"]
 dill_requires = ["dill"]
