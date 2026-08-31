@@ -112,7 +112,7 @@ def download_chime6(
             f"{url}/{file_name}",
             filename=tar_path,
             force_download=force_download,
-            request_ssl_context=unverified_ssl_ctx,
+            ssl_context=unverified_ssl_ctx,
         )
         with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=target_dir)
@@ -424,7 +424,7 @@ def _verify_md5_checksums(
     temp_dir = Path(tempfile.mkdtemp())
     checksum_file = temp_dir / "md5sums.txt"
     resumable_download(
-        CHIME6_MD5SUM_FILE, str(checksum_file), desc="Downloading checksum file"
+        CHIME6_MD5SUM_FILE, str(checksum_file)
     )
     checksums = {}
     with open(checksum_file, "r") as f:
