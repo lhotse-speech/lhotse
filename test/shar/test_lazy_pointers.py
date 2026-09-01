@@ -333,6 +333,28 @@ def test_ais_byte_range_path_when_sdk_supports_it():
         def __init__(self):
             self.requests_list = []
 
+        def add(
+            self, obj_name, *, bck, provider, archpath=None, start=None, length=None
+        ):
+            from aistore.sdk.batch.types import MossIn
+
+            self.requests_list.append(
+                MossIn(
+                    obj_name=obj_name,
+                    bck=bck,
+                    provider=provider,
+                    **{
+                        k: v
+                        for k, v in [
+                            ("archpath", archpath),
+                            ("start", start),
+                            ("length", length),
+                        ]
+                        if v is not None
+                    },
+                )
+            )
+
     with patch.object(
         AISBatchLoader, "_aistore_byte_range_supported", staticmethod(lambda: True)
     ):
