@@ -423,9 +423,7 @@ def _verify_md5_checksums(
     # First download checksum file and read it into a dictionary
     temp_dir = Path(tempfile.mkdtemp())
     checksum_file = temp_dir / "md5sums.txt"
-    resumable_download(
-        CHIME6_MD5SUM_FILE, str(checksum_file)
-    )
+    resumable_download(CHIME6_MD5SUM_FILE, str(checksum_file))
     checksums = {}
     with open(checksum_file, "r") as f:
         for line in f:

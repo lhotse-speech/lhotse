@@ -6,6 +6,7 @@ from lhotse import CutSet
 from lhotse.ais.batch_loader import AISBatchLoader
 from lhotse.audio.recording import Recording
 from lhotse.audio.source import AudioSource, resolve_s3_to_local_mirror
+from lhotse.shar.lazy_pointer import encode_pointer
 
 _ENV_VAR = "LHOTSE_S3_LOCAL_MIRROR_ROOTS"
 
@@ -109,3 +110,41 @@ def test_ais_batch_loader_routes_mirrored_tar_member_locally(tmp_path, monkeypat
 
     assert not has_ais_url
     assert recording.sources[0].source == f"{archive}/nested/member.wav"
+
+
+def test_ais_batch_loader_leaves_mirrored_shar_pointer_for_local_loading(
+    tmp_path, monkeypatch
+):
+    archive = tmp_path / "bucket" / "key" / "audio.tar"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"tar-placeholder")
+    monkeypatch.setenv(_ENV_VAR, str(tmp_path))
+    recording = Recording(
+        id="recording",
+        sources=[
+            AudioSource(
+                type="shar_ptr",
+                channels=[0],
+                source=encode_pointer(
+                    "s3://bucket/key/audio.tar",
+                    0,
+                    1024,
+                    expected_name="nested/member.wav",
+                ),
+            )
+        ],
+        sampling_rate=16000,
+        num_samples=16000,
+        duration=1.0,
+    )
+    loader = AISBatchLoader.__new__(AISBatchLoader)
+
+    has_ais_url = loader._collect_manifest_urls(
+        recording,
+        object(),
+        shar_ptr_uses_batch=False,
+        shar_ptr_fallback=[],
+        manifest_idx=0,
+    )
+
+    assert not has_ais_url
