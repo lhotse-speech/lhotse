@@ -5,12 +5,14 @@ A "Shar pointer" is a string that uniquely identifies a single sample's data
 member inside an indexed Shar tar shard, *without* requiring any tar header
 read at construction time:
 
-    <tar_path>?o=<offset>&e=<end_offset>[&n=<expected_member_name>]
+    <tar_path>?o=<offset>&e=<end_offset>[&n=<expected_member_name>[&s=1]]
 
 where ``offset`` and ``end_offset`` delimit the sample's indexed tar byte
 range. The optional percent-encoded member name enables load-time validation
 and recovery when a manifest is filtered or reordered. Pointers without a
-member name retain their original behavior and wire format.
+member name retain their original behavior and wire format. ``s=1`` makes name
+validation strict, disabling the compatibility scan when the indexed range has
+an unexpected name.
 
 At load time, :func:`read_payload` parses the indexed tar headers (including PAX
 and GNU long-name records) and reads the first regular member's payload. When an
@@ -45,7 +47,8 @@ from lhotse.serialization import (
 from lhotse.utils import Pathlike, is_valid_url
 
 _POINTER_RE = re.compile(
-    r"^(?P<tar>[^?]+)\?o=(?P<o>\d+)&e=(?P<e>\d+)(?:&n=(?P<n>[^&]*))?$"
+    r"^(?P<tar>[^?]+)\?o=(?P<o>\d+)&e=(?P<e>\d+)"
+    r"(?:&n=(?P<n>[^&]*)(?:&s=(?P<s>1))?)?$"
 )
 _MIRROR_ROOTS_ENV = "LHOTSE_S3_LOCAL_MIRROR_ROOTS"
 _MAX_OPEN_FILES = 32
@@ -74,19 +77,26 @@ def encode_pointer(
     end_offset: int,
     *,
     expected_name: Optional[str] = None,
+    strict: bool = False,
 ) -> str:
     """Encode a Shar lazy-pointer string.
 
     ``expected_name`` is optional so existing callers retain the original wire
     format. When present, :func:`read_payload` validates it while loading the
-    indexed range.
+    indexed range. By default, a mismatch falls back to a cached name index for
+    compatibility with filtered manifests. Set ``strict=True`` when the byte
+    range is authoritative: a mismatch then fails without scanning the tar.
     """
+    if strict and expected_name is None:
+        raise ValueError("strict Shar pointers require expected_name")
     pointer = f"{tar_path}?o={int(offset)}&e={int(end_offset)}"
     if expected_name is not None:
         encoded_name = quote_from_bytes(
             str(expected_name).encode("utf-8", errors="surrogateescape"), safe=""
         )
         pointer += f"&n={encoded_name}"
+        if strict:
+            pointer += "&s=1"
     return pointer
 
 
@@ -96,13 +106,14 @@ def decode_pointer(s: str) -> Tuple[str, int, int]:
     The return type intentionally remains a three-tuple when the pointer also
     carries an expected member name, preserving the public API.
     """
-    tar_path, offset, end_offset, _expected_name = _decode_pointer(s)
+    tar_path, offset, end_offset, _expected_name, _strict = _decode_pointer(s)
     return tar_path, offset, end_offset
 
 
 def decode_pointer_with_name(s: str) -> Tuple[str, int, int, Optional[str]]:
     """Parse a Shar pointer, including its optional expected member name."""
-    return _decode_pointer(s)
+    tar_path, offset, end_offset, expected_name, _strict = _decode_pointer(s)
+    return tar_path, offset, end_offset, expected_name
 
 
 def is_shar_pointer(s: Any) -> bool:
@@ -112,12 +123,16 @@ def is_shar_pointer(s: Any) -> bool:
 
 def read_payload(pointer: str) -> bytes:
     """Resolve a Shar lazy pointer to the underlying data member's payload."""
-    tar_path, offset, end_offset, expected_name = _decode_pointer(pointer)
+    tar_path, offset, end_offset, expected_name, strict = _decode_pointer(pointer)
     try:
         resolved_path, entry = _acquire_handle(tar_path)
         try:
             with entry.lock:
-                if expected_name is not None and entry.member_index is not None:
+                if (
+                    expected_name is not None
+                    and not strict
+                    and entry.member_index is not None
+                ):
                     data = _read_named_payload(
                         entry.handle,
                         entry.member_index,
@@ -133,6 +148,11 @@ def read_payload(pointer: str) -> bytes:
                         expected_name=expected_name,
                     )
                     if expected_name is not None and actual_name != expected_name:
+                        if strict:
+                            raise AudioLoadingError(
+                                f"Indexed tar member name mismatch for {pointer!r}: "
+                                f"expected {expected_name!r}, found {actual_name!r}."
+                            )
                         entry.member_index = _build_member_index(
                             entry.handle, resolved_path
                         )
@@ -178,7 +198,7 @@ def close_all() -> None:
         _RESOLVED_PATHS.clear()
 
 
-def _decode_pointer(s: str) -> Tuple[str, int, int, Optional[str]]:
+def _decode_pointer(s: str) -> Tuple[str, int, int, Optional[str], bool]:
     match = _POINTER_RE.match(s)
     if match is None:
         raise ValueError(f"Not a Shar pointer: {s!r}")
@@ -194,7 +214,13 @@ def _decode_pointer(s: str) -> Tuple[str, int, int, Optional[str]]:
         if encoded_name is not None
         else None
     )
-    return match.group("tar"), offset, end_offset, expected_name
+    return (
+        match.group("tar"),
+        offset,
+        end_offset,
+        expected_name,
+        match.group("s") == "1",
+    )
 
 
 def resolve_pointer_path(tar_path: str) -> str:

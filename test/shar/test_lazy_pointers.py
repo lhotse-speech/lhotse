@@ -116,6 +116,28 @@ def test_encode_pointer_with_expected_member_name_is_backward_compatible():
     assert is_shar_pointer(p)
 
 
+def test_encode_strict_pointer_requires_and_preserves_expected_name():
+    p = encode_pointer(
+        "/some/where.tar",
+        1024,
+        65536,
+        expected_name="audio.wav",
+        strict=True,
+    )
+
+    assert p == "/some/where.tar?o=1024&e=65536&n=audio.wav&s=1"
+    assert decode_pointer(p) == ("/some/where.tar", 1024, 65536)
+    assert decode_pointer_with_name(p) == (
+        "/some/where.tar",
+        1024,
+        65536,
+        "audio.wav",
+    )
+    assert is_shar_pointer(p)
+    with pytest.raises(ValueError, match="require expected_name"):
+        encode_pointer("/some/where.tar", 0, 1, strict=True)
+
+
 def test_expected_member_name_roundtrips_surrogateescaped_bytes():
     name = "audio-\udcff.wav"
     pointer = encode_pointer("/some/where.tar", 0, 1024, expected_name=name)
@@ -245,6 +267,73 @@ def test_read_payload_resolves_filtered_manifest_member_on_first_mismatch(tmp_pa
     from lhotse.shar.lazy_pointer import read_payload
 
     assert read_payload(pointer) == payloads["selected.wav"]
+
+
+def test_read_payload_strict_name_mismatch_never_scans_tar(tmp_path):
+    from lhotse.audio import AudioLoadingError
+    from lhotse.shar import lazy_pointer
+
+    tar_path = tmp_path / "audio.tar"
+    payloads = {
+        "discarded.wav": b"discarded-audio",
+        "selected.wav": b"selected-audio",
+    }
+    with tarfile.open(tar_path, "w") as archive:
+        for name, payload in payloads.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            archive.addfile(info, BytesIO(payload))
+    candidate_range = _tar_member_ranges(tar_path)["discarded.wav"]
+    selected_range = _tar_member_ranges(tar_path)["selected.wav"]
+    pointer = encode_pointer(
+        tar_path,
+        *candidate_range,
+        expected_name="selected.wav",
+        strict=True,
+    )
+    matching_pointer = encode_pointer(
+        tar_path,
+        *selected_range,
+        expected_name="selected.wav",
+        strict=True,
+    )
+
+    close_all()
+    with patch.object(
+        lazy_pointer,
+        "_build_member_index",
+        side_effect=AssertionError("strict pointers must not scan the tar"),
+    ) as build_member_index:
+        assert lazy_pointer.read_payload(matching_pointer) == payloads["selected.wav"]
+        with pytest.raises(AudioLoadingError, match="name mismatch"):
+            lazy_pointer.read_payload(pointer)
+    build_member_index.assert_not_called()
+
+
+def test_read_payload_strict_pointer_ignores_cached_recovery_index(tmp_path):
+    from lhotse.audio import AudioLoadingError
+    from lhotse.shar import lazy_pointer
+
+    tar_path = tmp_path / "audio.tar"
+    payloads = {"first.wav": b"first", "second.wav": b"second"}
+    with tarfile.open(tar_path, "w") as archive:
+        for name, payload in payloads.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(payload)
+            archive.addfile(info, BytesIO(payload))
+    first_range = _tar_member_ranges(tar_path)["first.wav"]
+    recovering = encode_pointer(tar_path, *first_range, expected_name="second.wav")
+    strict = encode_pointer(
+        tar_path,
+        *first_range,
+        expected_name="second.wav",
+        strict=True,
+    )
+
+    close_all()
+    assert lazy_pointer.read_payload(recovering) == payloads["second.wav"]
+    with pytest.raises(AudioLoadingError, match="name mismatch"):
+        lazy_pointer.read_payload(strict)
 
 
 def test_read_payload_reuses_filtered_manifest_name_index(tmp_path):

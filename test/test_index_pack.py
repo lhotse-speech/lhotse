@@ -10,6 +10,7 @@ import pytest
 import lhotse.packed_lazy as packed_lazy_module
 from lhotse.index_pack import (
     IndexPack,
+    IndexPackArraySpec,
     IndexPackCollectionSpec,
     index_pack_collection_key,
     index_pack_layout_hash,
@@ -31,6 +32,10 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
             f.write(json.dumps(record) + "\n")
 
 
+def _write_u32(path: Path, values: list[int]) -> None:
+    path.write_bytes(b"".join(struct.pack("<I", value) for value in values))
+
+
 def _inspect_pack_mapping_in_child(pack, collection_key, connection) -> None:
     try:
         connection.send((pack._fh is None, pack._mmap is None, pack._pid))
@@ -42,6 +47,18 @@ def _inspect_pack_mapping_in_child(pack, collection_key, connection) -> None:
                 pack._pid,
                 location.local_index,
             )
+        )
+    finally:
+        connection.close()
+        pack.close()
+
+
+def _inspect_pack_array_in_child(pack, collection_key, connection) -> None:
+    try:
+        connection.send((pack._fh is None, pack._mmap is None, pack._pid))
+        value = pack.collection(collection_key).value_in_shard(0, 0)
+        connection.send(
+            (pack._fh is not None, pack._mmap is not None, pack._pid, value)
         )
     finally:
         connection.close()
@@ -83,6 +100,248 @@ def test_index_pack_converts_existing_sidecars_and_reads_lazily(tmp_path):
                 actual.append(json.loads(f.read(location.end - location.start)))
 
         assert actual == [record for shard in records for record in shard]
+
+
+def test_index_pack_v3_stores_nonmonotonic_uint32_arrays(tmp_path):
+    shard_paths = (
+        tmp_path / "route-0.u32",
+        tmp_path / "route-1.u32",
+        tmp_path / "route-empty.u32",
+    )
+    values = ([2, 0, 0xFFFFFFFF, 1], [8, 3], [])
+    for path, shard_values in zip(shard_paths, values):
+        _write_u32(path, shard_values)
+    spec = IndexPackArraySpec(
+        role="manifest-to-tar",
+        kind="member-ordinal",
+        source_spec={"manifest": "m-{0..2}", "tar": "a-{0..2}"},
+        shard_paths=shard_paths,
+    )
+
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    assert pack_path.read_bytes()[:16] == b"IDXPACK2\x03\x00\x00\x00\x00\x01\x00\x00"
+    for path in shard_paths:
+        assert os.fsencode(path) not in pack_path.read_bytes()
+    with IndexPack(pack_path) as pack:
+        collection = pack.collection(spec.key)
+        assert collection.is_array
+        assert collection.value_dtype == "uint32"
+        assert not collection.offsets_required
+        assert len(collection) == 6
+        assert [collection.shard_length(idx) for idx in range(3)] == [4, 2, 0]
+        assert [collection.value_in_shard(0, idx) for idx in range(4)] == values[0]
+        assert collection.value_in_shard(1, -1) == 3
+        assert [collection.value(idx) for idx in range(len(collection))] == [
+            *values[0],
+            *values[1],
+        ]
+        assert collection.value(-1) == 3
+        with pytest.raises(IndexError):
+            collection.value(len(collection))
+        with pytest.raises(IndexError):
+            collection.value_in_shard(2, 0)
+        with pytest.raises(TypeError, match="source paths"):
+            collection.path_for_shard(0)
+        with pytest.raises(TypeError, match="source byte ranges"):
+            collection.locate_in_shard(0, 0)
+        with pytest.raises(TypeError, match="source byte ranges"):
+            collection.locate(0)
+
+
+def test_index_pack_zero_shard_array_still_uses_v3(tmp_path):
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="empty", shard_paths=()
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    assert struct.unpack_from("<I", pack_path.read_bytes(), 8)[0] == 3
+    with IndexPack(pack_path) as pack:
+        collection = pack.collection(spec.key)
+        assert collection.is_array
+        assert collection.sequence_count == 0
+        assert len(collection) == 0
+
+
+def test_index_pack_v3_mixes_offset_and_array_collections(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    _write_jsonl(manifest, [{"id": "a"}, {"id": "b"}])
+    create_jsonl_index(manifest)
+    route = tmp_path / "route.u32"
+    _write_u32(route, [1, 0])
+    manifest_spec = IndexPackCollectionSpec(
+        role="manifest", kind="jsonl", source_spec=str(manifest), paths=(str(manifest),)
+    )
+    route_spec = IndexPackArraySpec(
+        role="manifest-to-tar",
+        kind="member-ordinal",
+        source_spec=str(manifest),
+        shard_paths=(route,),
+    )
+
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [manifest_spec, route_spec])
+
+    with IndexPack(pack_path) as pack:
+        manifest_collection = pack.collection(manifest_spec.key)
+        route_collection = pack.collection(route_spec.key)
+        assert manifest_collection.locate(1).local_index == 1
+        assert route_collection.value_in_shard(0, 1) == 0
+        with pytest.raises(TypeError, match="fixed-array values"):
+            manifest_collection.value_in_shard(0, 0)
+        with pytest.raises(TypeError, match="fixed-array values"):
+            manifest_collection.value(0)
+
+
+def test_index_pack_array_layout_hash_binds_shard_lengths_not_build_paths(tmp_path):
+    first = tmp_path / "first.u32"
+    same = tmp_path / "same.u32"
+    longer = tmp_path / "longer.u32"
+    _write_u32(first, [3, 1])
+    _write_u32(same, [9, 8])
+    _write_u32(longer, [3, 1, 0])
+
+    def spec(path):
+        return IndexPackArraySpec(
+            role="route", kind="u32", source_spec="stable", shard_paths=(path,)
+        )
+
+    assert index_pack_layout_hash([spec(first)]) == index_pack_layout_hash([spec(same)])
+    assert index_pack_layout_hash([spec(first)]) != index_pack_layout_hash(
+        [spec(longer)]
+    )
+
+
+def test_index_pack_array_rejects_invalid_dtype_and_misaligned_input(tmp_path):
+    path = tmp_path / "route.u32"
+    path.write_bytes(b"bad")
+    with pytest.raises(ValueError, match="dtype='uint32'"):
+        IndexPackArraySpec(
+            role="route",
+            kind="u32",
+            source_spec="x",
+            shard_paths=(path,),
+            dtype="uint64",
+        )
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    with pytest.raises(ValueError, match="multiple of 4"):
+        write_index_pack(tmp_path / "dataset.idxpack", [spec])
+
+
+def test_index_pack_array_detects_build_input_mutation(tmp_path, monkeypatch):
+    from lhotse import index_pack as index_pack_module
+
+    path = tmp_path / "route.u32"
+    _write_u32(path, [0])
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    original = index_pack_module._read_array_metadata
+
+    def mutate_after_stat(array_path):
+        segment = original(array_path)
+        with array_path.open("ab") as stream:
+            stream.write(struct.pack("<I", 1))
+        return segment
+
+    monkeypatch.setattr(index_pack_module, "_read_array_metadata", mutate_after_stat)
+    with pytest.raises(ValueError, match="changed while packing"):
+        write_index_pack(tmp_path / "dataset.idxpack", [spec])
+
+
+def test_index_pack_array_crc_detects_payload_corruption(tmp_path):
+    path = tmp_path / "route.u32"
+    _write_u32(path, [2, 0, 1])
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+    with IndexPack(pack_path) as pack:
+        collection = pack.collection(spec.key)
+        segment_id, _ = pack._sequence(collection.sequence_start)
+        payload_offset = pack._segment(segment_id)[1]
+    with pack_path.open("r+b") as stream:
+        stream.seek(payload_offset)
+        stream.write(struct.pack("<I", 7))
+
+    with IndexPack(pack_path) as pack:
+        with pytest.raises(ValueError, match="CRC mismatch"):
+            pack.verify_segment(segment_id)
+
+
+def test_index_pack_v3_rejects_truncated_array_payload(tmp_path):
+    path = tmp_path / "route.u32"
+    _write_u32(path, [2, 0, 1])
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    with pack_path.open("r+b") as stream:
+        stream.truncate(pack_path.stat().st_size - 1)
+
+    with pytest.raises(ValueError, match="truncated|do not cover"):
+        IndexPack(pack_path)
+
+
+def test_index_pack_v3_rejects_inconsistent_array_payload_size(tmp_path):
+    path = tmp_path / "route.u32"
+    _write_u32(path, [0])
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+    with IndexPack(pack_path) as pack:
+        segment_size_offset = pack.segment_offset + struct.calcsize("<QQIIQQ")
+    with pack_path.open("r+b") as stream:
+        stream.seek(segment_size_offset)
+        stream.write(struct.pack("<Q", 8))
+
+    pack = IndexPack(pack_path)
+    with pytest.raises(ValueError, match="inconsistent payload item count/size"):
+        pack.collection(spec.key).value_in_shard(0, 0)
+
+
+def test_index_pack_v2_rejects_fixed_array_flags(tmp_path):
+    path = tmp_path / "manifest.jsonl"
+    _write_jsonl(path, [{"id": "a"}])
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="manifest", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+    collection_flags_offset = 256 + struct.calcsize("<32sQQQQI")
+    with pack_path.open("r+b") as stream:
+        stream.seek(collection_flags_offset)
+        stream.write(struct.pack("<I", 2))
+
+    with pytest.raises(ValueError, match="unsupported flags"):
+        IndexPack(pack_path)
+
+
+def test_index_pack_v3_rejects_array_collection_segment_disagreement(tmp_path):
+    path = tmp_path / "route.u32"
+    _write_u32(path, [0])
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+    collection_flags_offset = 256 + struct.calcsize("<32sQQQQI")
+    with pack_path.open("r+b") as stream:
+        stream.seek(collection_flags_offset)
+        stream.write(struct.pack("<I", 0))
+
+    with pytest.raises(ValueError, match="fixed-array flag disagrees"):
+        IndexPack(pack_path)
 
 
 def test_index_pack_layout_hash_matches_persisted_contract(tmp_path):
@@ -177,6 +436,41 @@ def test_index_pack_first_mmap_is_opened_in_forked_worker(tmp_path):
     assert process.exitcode == 0
     assert before == (True, True, None)
     assert after == (True, True, process.pid, 0)
+    assert pack._fh is None
+    assert pack._mmap is None
+    receive.close()
+
+
+def test_index_pack_array_defers_mmap_through_pickle_and_fork(tmp_path):
+    if "fork" not in mp.get_all_start_methods():
+        pytest.skip("requires the fork multiprocessing start method")
+    path = tmp_path / "route.u32"
+    _write_u32(path, [17])
+    spec = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="x", shard_paths=(path,)
+    )
+    pack_path = tmp_path / "dataset.idxpack"
+    write_index_pack(pack_path, [spec])
+
+    pack = pickle.loads(pickle.dumps(IndexPack(pack_path)))
+    assert pack.collection(spec.key).value_dtype == "uint32"
+    assert pack._fh is None
+    assert pack._mmap is None
+    receive, send = mp.get_context("fork").Pipe(duplex=False)
+    process = mp.get_context("fork").Process(
+        target=_inspect_pack_array_in_child, args=(pack, spec.key, send)
+    )
+    process.start()
+    send.close()
+    assert receive.poll(10)
+    before = receive.recv()
+    assert receive.poll(10)
+    after = receive.recv()
+    process.join(10)
+
+    assert process.exitcode == 0
+    assert before == (True, True, None)
+    assert after == (True, True, process.pid, 17)
     assert pack._fh is None
     assert pack._mmap is None
     receive.close()
