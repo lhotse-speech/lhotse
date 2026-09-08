@@ -115,6 +115,29 @@ used at runtime. Repeated physical sources are stored once inside the pack, so
 several logical collections may refer to them without duplicating offset
 payloads.
 
+Index packs may also contain sharded, record-aligned ``uint32`` metadata. Use
+:class:`lhotse.index_pack.IndexPackArraySpec` with raw little-endian build
+files, then read values through ``collection.value()`` or
+``collection.value_in_shard()``. The build-file paths are not persisted:
+
+.. code-block:: python
+
+   from lhotse.index_pack import IndexPack, IndexPackArraySpec
+
+   route = IndexPackArraySpec(
+       role="manifest-to-payload",
+       kind="member-ordinal",
+       source_spec={"manifest": "cuts.*.jsonl", "payload": "audio.*.tar"},
+       shard_paths=("route.000000.u32", "route.000001.u32"),
+   )
+   write_index_pack("/data/cuts.idxpack", [spec, route])
+   with IndexPack("/data/cuts.idxpack") as pack:
+       member_ordinal = pack.collection(route.key).value_in_shard(0, 10)
+
+Packs containing only conventional offsets or path catalogs retain the
+version-2 format. Adding a fixed array selects version 3; current readers
+accept both versions, while older readers reject version 3 explicitly.
+
 ``write_index_pack()`` normally reads the sidecar returned by
 :func:`lhotse.indexing.index_file_path` and requires its final sentinel to
 match the local source size. Builders that have independently validated a

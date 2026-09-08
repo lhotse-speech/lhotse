@@ -522,11 +522,18 @@ class AISBatchLoader:
         loaders constructed in environments where AIStore isn't configured
         still pass cuts through unchanged.
         """
-        from lhotse.shar.lazy_pointer import decode_pointer
+        from lhotse.shar.lazy_pointer import (
+            decode_pointer_with_name,
+            resolve_pointer_path,
+        )
 
         def _shar_ptr_is_url(pointer: str) -> bool:
-            tar_path, _, _ = decode_pointer(pointer)
-            return is_valid_url(tar_path)
+            tar_path, _, _, expected_name = decode_pointer_with_name(pointer)
+            return (
+                expected_name is None
+                and is_valid_url(tar_path)
+                and resolve_pointer_path(tar_path) == tar_path
+            )
 
         for cut in cuts:
             for _, manifest in cut.iter_data():
@@ -722,9 +729,14 @@ class AISBatchLoader:
         """
         from aistore.sdk.utils import parse_url
 
-        from lhotse.shar.lazy_pointer import decode_pointer
+        from lhotse.shar.lazy_pointer import (
+            decode_pointer_with_name,
+            resolve_pointer_path,
+        )
 
-        tar_path, offset, end_offset = decode_pointer(pointer)
+        tar_path, offset, end_offset, expected_name = decode_pointer_with_name(pointer)
+        if expected_name is not None or resolve_pointer_path(tar_path) != tar_path:
+            return False
         if not is_valid_url(tar_path):
             return False
         provider, bck_name, obj_name = parse_url(tar_path)
