@@ -134,8 +134,7 @@ def prepare_hifitts(
         )
 
     with ProcessPoolExecutor(num_jobs) as ex:
-        futures = []
-        partition_ids = []
+        futures = {}
         for raw_manifest_path in json_manifests:
             speaker_id, _, clean_or_other, part = raw_manifest_path.stem.split("_")
             partition_id = to_partition_id(raw_manifest_path)
@@ -144,22 +143,21 @@ def prepare_hifitts(
             ):
                 logging.info(f"HiFiTTS subset: {part} already prepared - skipping.")
                 continue
-            futures.append(
-                ex.submit(
-                    prepare_single_partition,
-                    raw_manifest_path,
-                    corpus_dir,
-                    speaker_id,
-                    clean_or_other,
-                )
+            future = ex.submit(
+                prepare_single_partition,
+                raw_manifest_path,
+                corpus_dir,
+                speaker_id,
+                clean_or_other,
             )
-            partition_ids.append(partition_id)
+            futures[future] = partition_id
 
-        for future, partition_id in tqdm(
-            zip(as_completed(futures), partition_ids),
+        for future in tqdm(
+            as_completed(futures),
             desc="Preparing HiFiTTS parts",
             total=len(futures),
         ):
+            partition_id = futures[future]
             recordings, supervisions = future.result()
 
             if output_dir is not None:
