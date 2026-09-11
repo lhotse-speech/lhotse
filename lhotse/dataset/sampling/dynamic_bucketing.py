@@ -649,8 +649,15 @@ class DynamicBucketer:
     def _supports_graph_restore(source: Any) -> bool:
         return source is not None and supports_graph_restore(source)
 
-    def _capture_item_token(self, item: Cut, source: Any) -> Any:
-        if not self._supports_graph_restore(source):
+    def _restore_source_capabilities(self) -> List[bool]:
+        """Check each restore source once for the current save/restore operation."""
+        return [
+            self._supports_graph_restore(source)
+            for source in self.restore_sources or ()
+        ]
+
+    def _capture_item_token(self, item: Cut, source_is_restorable: bool) -> Any:
+        if not source_is_restorable:
             raise RuntimeError(
                 "DynamicBucketer checkpoint requires graph-restorable sources "
                 "when saving buffered O(1) restore state."
@@ -659,8 +666,10 @@ class DynamicBucketer:
             item, "DynamicBucketer checkpoint", "buffered items"
         )
 
-    def _restore_item_token(self, token: Any, source: Any) -> Cut:
-        if not self._supports_graph_restore(source):
+    def _restore_item_token(
+        self, token: Any, source: Any, source_is_restorable: bool
+    ) -> Cut:
+        if not source_is_restorable:
             raise RuntimeError(
                 "DynamicBucketer checkpoint captured a graph-local restore token, "
                 "but the current iterator graph does not support constant-time "
@@ -676,6 +685,7 @@ class DynamicBucketer:
         """Capture bucketer state for checkpoint."""
         from lhotse.checkpoint import _rng_state_to_json
 
+        source_capabilities = self._restore_source_capabilities()
         bucket_tokens: List[List] = []
         for bucket in self.buckets:
             tokens = []
@@ -684,10 +694,14 @@ class DynamicBucketer:
                     cuts = item if isinstance(item, tuple) else (item,)
                     item_tokens = []
                     for cut_idx, cut in enumerate(cuts):
-                        source = None
-                        if self.restore_sources is not None:
-                            source = self.restore_sources[cut_idx]
-                        item_tokens.append(self._capture_item_token(cut, source))
+                        source_is_restorable = (
+                            source_capabilities[cut_idx]
+                            if cut_idx < len(source_capabilities)
+                            else False
+                        )
+                        item_tokens.append(
+                            self._capture_item_token(cut, source_is_restorable)
+                        )
                     tokens.append(item_tokens)
             bucket_tokens.append(tokens)
 
@@ -724,16 +738,27 @@ class DynamicBucketer:
                 "DynamicBucketer checkpoint is inconsistent: "
                 f"saved {len(bucket_tokens)} buckets, expected {len(self.buckets)}."
             )
+        source_capabilities = self._restore_source_capabilities()
         for bucket, tokens in zip(self.buckets, bucket_tokens):
             with bucket.mutex:
                 bucket.queue.clear()
             for item_tokens in tokens:
                 items = []
                 for cut_idx, token in enumerate(item_tokens):
-                    source = None
-                    if self.restore_sources is not None:
-                        source = self.restore_sources[cut_idx]
-                    items.append(self._restore_item_token(token, source))
+                    source = (
+                        self.restore_sources[cut_idx]
+                        if self.restore_sources is not None
+                        and cut_idx < len(self.restore_sources)
+                        else None
+                    )
+                    source_is_restorable = (
+                        source_capabilities[cut_idx]
+                        if cut_idx < len(source_capabilities)
+                        else False
+                    )
+                    items.append(
+                        self._restore_item_token(token, source, source_is_restorable)
+                    )
                 # Match the runtime ingestion format (`zip(*sources)` always
                 # yields tuples, even for the 1-source case), so the queue is
                 # type-uniform across initial fill, refill, and restore.
