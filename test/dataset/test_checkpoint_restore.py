@@ -15,8 +15,11 @@ from lhotse import CutSet
 from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
 from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
-from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
-from lhotse.lazy import IteratorNode, LazyRepeater
+from lhotse.dataset.sampling.dynamic_bucketing import (
+    DynamicBucketer,
+    DynamicBucketingSampler,
+)
+from lhotse.lazy import IteratorNode, LazyRepeater, attach_graph_origin
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -54,6 +57,29 @@ class _IndexedCutsWithoutGraphOrigin(IteratorNode):
     def load_state_dict(self, sd):
         self.position = sd["position"]
         self._restored = True
+
+
+class _CountingGraphRestoreSource(IteratorNode):
+    is_indexed = True
+
+    def __init__(self, cuts):
+        self.cuts = list(cuts)
+        self.capability_checks = 0
+
+    @property
+    def has_constant_time_access(self):
+        self.capability_checks += 1
+        return True
+
+    def __iter__(self):
+        for idx, cut in enumerate(self.cuts):
+            yield attach_graph_origin(cut, idx)
+
+    def __getitem__(self, idx):
+        return attach_graph_origin(deepcopy(self.cuts[idx]), idx)
+
+    def __len__(self):
+        return len(self.cuts)
 
 
 class TestDynamicSamplerCheckpoint:
@@ -523,6 +549,59 @@ class TestIndexedSamplerStateCapture:
             match="indexed datasets should never use O\\(N\\) fast-forward",
         ):
             iter(sampler2)
+
+    @staticmethod
+    def _make_bucketer_with_buffer(cuts, num_buffered=20):
+        source = _CountingGraphRestoreSource(cuts)
+        bucketer = DynamicBucketer(
+            [],
+            duration_bins=[10.0],
+            world_size=1,
+            max_cuts=4,
+            buffer_size=num_buffered,
+            concurrent=False,
+            restore_sources=[source],
+        )
+        for idx in range(num_buffered):
+            cut = attach_graph_origin(deepcopy(source.cuts[idx]), idx)
+            bucketer.buckets[idx % len(bucketer.buckets)].put((cut,))
+        return bucketer, source
+
+    def test_dynamic_bucketer_snapshot_checks_each_source_once(self, cuts):
+        bucketer, source = self._make_bucketer_with_buffer(cuts)
+
+        state = bucketer.get_state()
+
+        assert source.capability_checks == 1
+        assert sum(len(tokens) for tokens in state["bucket_tokens"]) == 20
+
+    def test_dynamic_bucketer_snapshot_revalidates_sources(self, cuts):
+        bucketer, source = self._make_bucketer_with_buffer(cuts)
+
+        bucketer.get_state()
+        bucketer.get_state()
+
+        assert source.capability_checks == 2
+
+    def test_dynamic_bucketer_restore_checks_each_source_once(self, cuts):
+        bucketer, _ = self._make_bucketer_with_buffer(cuts)
+        state = bucketer.get_state()
+        restored_source = _CountingGraphRestoreSource(cuts)
+        restored = DynamicBucketer(
+            [],
+            duration_bins=[10.0],
+            world_size=1,
+            max_cuts=4,
+            buffer_size=20,
+            concurrent=False,
+            restore_sources=[restored_source],
+        )
+        restored.set_state(state)
+
+        restored._restore_from_saved_state()
+
+        assert restored_source.capability_checks == 1
+        assert sum(bucket.qsize() for bucket in restored.buckets) == 20
 
 
 class TestMixedSourceConstantTimeAccessRaises:
