@@ -28,7 +28,13 @@ from lhotse.dataset.sampling.base import (
 from lhotse.dataset.sampling.checkpoint_backends import (
     build_dynamic_cut_checkpoint_backend,
 )
-from lhotse.lazy import LazyShuffler, resolve_iterator_source
+from lhotse.lazy import (
+    LazyShuffler,
+    normalize_graph_token,
+    require_graph_origin,
+    resolve_iterator_source,
+    supports_graph_restore,
+)
 from lhotse.utils import ifnone
 
 
@@ -92,6 +98,9 @@ class DynamicCutSampler(CutSampler):
         """
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
         :param max_duration: The maximum total recording duration from ``cuts``.
+            Includes padding to the longest cut in the batch. A cut that would
+            exceed the limit is deferred to the next batch; a cut that exceeds
+            the limit on its own is yielded alone with a warning.
             Note: with multiple CutSets, ``max_duration`` constraint applies only to the first CutSet.
         :param max_cuts: The maximum total number of ``cuts`` per batch.
             When only ``max_duration`` is specified, this sampler yields static batch sizes.
@@ -140,6 +149,8 @@ class DynamicCutSampler(CutSampler):
         self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
         self._active_cuts = None
+        self._batcher = None
+        self._batcher_state = None
 
         if strict is not None:
             warnings.warn(
@@ -163,6 +174,23 @@ class DynamicCutSampler(CutSampler):
                 "quadratic_duration": self.quadratic_duration,
             }
         )
+        # Indexed sources have already advanced past any cut deferred by the
+        # batcher. Save graph tokens so that cut is not lost on O(1) resume.
+        # Streaming sources reconstruct this buffer naturally during replay.
+        if self._batcher_state is not None:
+            sd["batcher_state"] = self._batcher_state
+        elif self._batcher is not None and all(
+            supports_graph_restore(cs) for cs in self._active_cuts
+        ):
+            sd["batcher_state"] = [
+                [
+                    require_graph_origin(
+                        cut, "DynamicCutSampler checkpoint", "deferred cuts"
+                    )
+                    for cut in cuts
+                ]
+                for cuts in self._batcher.reuse_cuts_buffer
+            ]
         return sd
 
     def load_state_dict(self, sd: Dict[str, Any]) -> None:
@@ -171,6 +199,9 @@ class DynamicCutSampler(CutSampler):
         self.consistent_ids = sd.pop("consistent_ids")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
         self.quadratic_duration = sd.pop("quadratic_duration")
+        self._batcher_state = sd.pop("batcher_state", None)
+        self._batcher = None
+        self._active_cuts = None
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         # Defer _fast_forward to __iter__ so the sampler remains picklable
@@ -218,6 +249,8 @@ class DynamicCutSampler(CutSampler):
         return epoch_sources
 
     def _initialize_epoch_iterator(self, *, rebuild_sources: bool) -> None:
+        if rebuild_sources:
+            self._batcher_state = None
         if rebuild_sources or self._active_cuts is None:
             self._active_cuts = self._make_epoch_sources()
         self.cuts_iter = [iter(resolve_iterator_source(cs)) for cs in self._active_cuts]
@@ -226,7 +259,7 @@ class DynamicCutSampler(CutSampler):
             predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
             diagnostics=self.diagnostics,
         )
-        self.cuts_iter = DurationBatcher(
+        self._batcher = DurationBatcher(
             self.cuts_iter,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
@@ -235,9 +268,28 @@ class DynamicCutSampler(CutSampler):
             quadratic_duration=self.quadratic_duration,
             diagnostics=self.diagnostics,
         )
-        self.cuts_iter = iter(self.cuts_iter)
+        self.cuts_iter = iter(self._batcher)
+        if self._batcher_state is not None:
+            sources = [resolve_iterator_source(cs) for cs in self._active_cuts]
+            for tokens in self._batcher_state:
+                if len(tokens) != len(sources):
+                    raise RuntimeError(
+                        "DynamicCutSampler checkpoint has a different number "
+                        "of sources for deferred cuts."
+                    )
+                self._batcher.reuse_cuts_buffer.append(
+                    tuple(
+                        source[normalize_graph_token(token)]
+                        for source, token in zip(sources, tokens)
+                    )
+                )
+            self._batcher_state = None
 
     def _capture_cuts_state(self) -> Optional[list]:
+        # load_state_dict() defers source restoration until iter(). Preserve
+        # its cursor if another checkpoint is taken before iteration starts.
+        if getattr(self, "_cuts_state", None) is not None:
+            return self._cuts_state
         sources = self._active_cuts if self._active_cuts is not None else self.cuts
         return capture_sources_state(sources)
 
@@ -315,7 +367,18 @@ class DurationBatcher:
             )
 
     def __iter__(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:
-        self.cuts_iter = iter(self.datapipe)
+        cuts_iter = iter(self.datapipe)
+        # A restarted source must not retain lookahead from an abandoned epoch.
+        # A one-shot source returns the same iterator and resumes instead, so
+        # its deferred cut still needs to be yielded.
+        if cuts_iter is not getattr(self, "cuts_iter", None):
+            self.reuse_cuts_buffer.clear()
+        # Initialize eagerly so indexed restore can populate the buffer before
+        # the first next(), including when another checkpoint is taken then.
+        self.cuts_iter = cuts_iter
+        return self._iterate()
+
+    def _iterate(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:
         try:
             while True:
                 yield self._collect_batch()
@@ -344,7 +407,11 @@ class DurationBatcher:
             # Check that we have not reached the end of the dataset.
             try:
                 # If this doesn't raise (typical case), it's not the end: keep processing.
-                next_cut_or_tpl = next(self.cuts_iter)
+                next_cut_or_tpl = (
+                    self.reuse_cuts_buffer.popleft()
+                    if self.reuse_cuts_buffer
+                    else next(self.cuts_iter)
+                )
             except StopIteration:
                 # No more cuts to sample from: if we have a partial batch,
                 # we may output it, unless the user requested to drop it.
@@ -371,15 +438,27 @@ class DurationBatcher:
                 else next_cut_or_tpl
             )
 
-            # Did we exceed the max_duration and max_cuts constraints?
-            if self.constraint.close_to_exceeding():
-                # Yes. Finish sampling this batch.
-                if self.constraint.exceeded() and len(cuts) == 1:
+            # A newly encountered longest cut can increase padding for every
+            # other cut in the batch. Defer it if that exceeds the constraint.
+            if self.constraint.exceeded():
+                if len(cuts) > 1:
+                    deferred = cuts.pop()
+                    # Sources such as DataSource own a pushback buffer that
+                    # they clear when restarting. Keep lookahead there so a
+                    # reset cannot leave a stale cut in our local buffer.
+                    take_back = getattr(self.cuts_iter, "take_back", None)
+                    if callable(take_back):
+                        take_back(deferred)
+                    else:
+                        self.reuse_cuts_buffer.append(deferred)
+                else:
                     warnings.warn(
                         "We have exceeded the max_duration constraint during sampling but have only 1 cut. "
                         "This is likely because max_duration was set to a very low value ~10s, "
                         "or you're using a CutSet with very long cuts (e.g. 100s of seconds long)."
                     )
+                break
+            if self.constraint.close_to_exceeding():
                 break
 
         return detuplify(cuts)
