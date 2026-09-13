@@ -696,7 +696,7 @@ class DynamicBucketer:
     # State save / restore for O(1) indexed checkpoint
     # ------------------------------------------------------------------
 
-    def get_state(self, compact: bool = False) -> Dict[str, Any]:
+    def get_state(self, *, compact: bool = False) -> Dict[str, Any]:
         """Capture bucketer state, optionally streaming buffered tokens into immutable bytes."""
         from lhotse.checkpoint import _rng_state_to_json
 
