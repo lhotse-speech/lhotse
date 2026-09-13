@@ -20,12 +20,20 @@ class _TokenPickler(pickle.Pickler):
         )
 
 
-class _TokenUnpickler(pickle.Unpickler):
+class _TokenUnpickler(pickle._Unpickler):
     """Do not execute reconstruction functions when decoding checkpoint tokens."""
+
+    # The Python implementation exposes extension lookup; the C implementation can bypass find_class through its cache.
 
     def find_class(self, module, name):
         """Reject globals even in an externally supplied token payload."""
         raise ValueError(f"Non-primitive compact bucket token: {module}.{name}.")
+
+    def get_extension(self, code):
+        """Reject extension opcodes before consulting the process-wide extension cache."""
+        raise ValueError(
+            f"Non-primitive compact bucket token: pickle extension {code}."
+        )
 
 
 class _TokenWriter:
@@ -92,7 +100,16 @@ def unpack_bucket_tokens(data: bytes) -> list:
 
     try:
         result = [bucket() for _ in range(count())]
-    except (EOFError, pickle.UnpicklingError, OverflowError) as exc:
+    except (
+        EOFError,
+        pickle.UnpicklingError,
+        OverflowError,
+        IndexError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        struct.error,
+    ) as exc:
         raise ValueError("Malformed compact bucket token payload.") from exc
     if stream.tell() != len(data):
         raise ValueError("Trailing data in compact bucket tokens.")

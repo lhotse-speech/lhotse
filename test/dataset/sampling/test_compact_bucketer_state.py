@@ -1,6 +1,7 @@
 """Compact bucket snapshots preserve tokens and indexed sampler continuation."""
 
 import copy
+import copyreg
 import io
 import json
 import pickle
@@ -14,6 +15,7 @@ import torch
 from lhotse import CutSet
 from lhotse.checkpoint import DataloaderCheckpoint
 from lhotse.dataset import IterableDatasetWrapper
+from lhotse.dataset.sampling import RoundRobinSampler, ZipSampler
 from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
 from lhotse.dataset.sampling.token_codec import (
     _MAGIC,
@@ -104,6 +106,43 @@ def test_reject_pickle_globals():
     """Externally supplied payloads cannot reconstruct arbitrary Python objects."""
     payload = _MAGIC + struct.pack("<III", 1, 1, 1) + pickle.dumps(object())
     with pytest.raises(ValueError, match="Non-primitive"):
+        unpack_bucket_tokens(payload)
+
+
+class _ReconstructionProbe:
+    calls = 0
+
+    def __new__(cls):
+        cls.calls += 1
+        return super().__new__(cls)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("code_range", [(1, 256), (256, 65536), (65536, 2**31)])
+def test_reject_pickle_extensions(cached, code_range):
+    """Reject every extension opcode before it can reconstruct a cached class."""
+    code = next(
+        code for code in range(*code_range) if code not in copyreg._inverted_registry
+    )
+    copyreg.add_extension(__name__, "_ReconstructionProbe", code)
+    try:
+        record = pickle.dumps(_ReconstructionProbe(), protocol=4)
+        if cached:
+            pickle.loads(record)
+        _ReconstructionProbe.calls = 0
+        payload = _MAGIC + struct.pack("<III", 1, 1, 1) + record
+        with pytest.raises(ValueError, match="Non-primitive"):
+            unpack_bucket_tokens(payload)
+        assert _ReconstructionProbe.calls == 0
+    finally:
+        copyreg.remove_extension(__name__, "_ReconstructionProbe", code)
+
+
+@pytest.mark.parametrize("record", [b"\xff", b"0.", b"J\x00", b"h\x01.", b"N)R."])
+def test_malformed_pickle_records(record):
+    """Malformed opcodes and stacks retain the decoder's ValueError contract."""
+    payload = _MAGIC + struct.pack("<III", 1, 1, 1) + record
+    with pytest.raises(ValueError):
         unpack_bucket_tokens(payload)
 
 
@@ -322,6 +361,80 @@ def test_json_export_rejects_invalid_compact_state(tmp_path):
     )
 
     with pytest.raises(ValueError, match="Invalid compact bucket token header"):
+        checkpoint.save(tmp_path / "state.json")
+
+
+@pytest.mark.parametrize("wrapper", [RoundRobinSampler, ZipSampler])
+@pytest.mark.parametrize("nested", [False, True])
+def test_json_export_composed_samplers(manifest, tmp_path, wrapper, nested):
+    """Composed samplers export the same JSON with legacy and compact child states."""
+
+    def checkpoint(compact):
+        sampler = wrapper(_sampler(manifest, compact), _sampler(manifest, False))
+        if nested:
+            sampler = RoundRobinSampler(sampler)
+        iterator = iter(sampler)
+        for _ in range(5):
+            next(iterator)
+        return DataloaderCheckpoint(0, 1, 0, sampler_state=sampler.state_dict())
+
+    legacy = checkpoint(False)
+    compact = checkpoint(True)
+    original_state = copy.deepcopy(compact.sampler_state)
+    legacy_path = tmp_path / "legacy.json"
+    compact_path = tmp_path / "compact.json"
+    legacy.save(legacy_path)
+    compact.save(compact_path)
+    assert json.loads(compact_path.read_text()) == json.loads(legacy_path.read_text())
+    assert compact.sampler_state == original_state
+
+
+def test_json_export_bucket_sampler_children(tmp_path):
+    """Follow BucketingSampler's child-state field through nested compositions."""
+    tokens = [[[("source", 1)]]]
+    state = {
+        "samplers": [
+            {
+                "bucket_samplers": [
+                    {"bucketer_state": {"bucket_tokens": _pack(tokens)}},
+                    {"bucketer_state": {"bucket_tokens": tokens}},
+                ]
+            }
+        ]
+    }
+    checkpoint = DataloaderCheckpoint(0, 1, 0, sampler_state=state)
+    original_state = copy.deepcopy(state)
+    path = tmp_path / "state.json"
+    checkpoint.save(path)
+    children = DataloaderCheckpoint.load(path).sampler_state["samplers"][0][
+        "bucket_samplers"
+    ]
+    assert children[0] == children[1]
+    assert checkpoint.sampler_state == original_state
+
+
+@pytest.mark.parametrize("field", ["samplers", "bucket_samplers"])
+def test_json_export_composed_metadata_remains_opaque(tmp_path, field):
+    """Child sampler traversal must not turn unrelated metadata into token state."""
+    payload = _pack([[[1]]])
+    checkpoint = DataloaderCheckpoint(
+        0,
+        1,
+        0,
+        sampler_state={
+            field: [
+                {
+                    "bucketer_state": {"bucket_tokens": payload},
+                    "metadata": {
+                        "samplers": [{"bucketer_state": {"bucket_tokens": payload}}]
+                    },
+                }
+            ]
+        },
+    )
+    with pytest.raises(
+        TypeError, match="Object of type bytes is not JSON serializable"
+    ):
         checkpoint.save(tmp_path / "state.json")
 
 
