@@ -161,9 +161,21 @@ class DataloaderCheckpoint:
 
     def save(self, path: Pathlike) -> None:
         """Serialize the checkpoint to a JSON file."""
+        data = asdict(self)
+        sampler_state = data["sampler_state"]
+        if isinstance(sampler_state, dict):
+            bucketer_state = sampler_state.get("bucketer_state")
+            if isinstance(bucketer_state, dict) and isinstance(
+                bucketer_state.get("bucket_tokens"), bytes
+            ):
+                from lhotse.dataset.sampling.token_codec import unpack_bucket_tokens
+
+                bucketer_state["bucket_tokens"] = unpack_bucket_tokens(
+                    bucketer_state["bucket_tokens"]
+                )
         path = Path(path)
         with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=2, default=_json_serializer)
+            json.dump(data, f, indent=2, default=_json_serializer)
 
     @classmethod
     def load(cls, path: Pathlike) -> "DataloaderCheckpoint":
@@ -199,10 +211,6 @@ class DataloaderCheckpoint:
 
 def _json_serializer(obj):
     """Fallback serializer for JSON — handles tuples (from RNG state) etc."""
-    if isinstance(obj, bytes):
-        from lhotse.dataset.sampling.token_codec import unpack_bucket_tokens
-
-        return unpack_bucket_tokens(obj)
     if isinstance(obj, tuple):
         return list(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")

@@ -247,7 +247,10 @@ def test_json_export_is_legacy(manifest, tmp_path):
     state = copy.deepcopy(sampler.state_dict())
     expected = _remaining(iterator)
     path = tmp_path / "state.json"
-    DataloaderCheckpoint(0, 1, 0, sampler_state=state).save(path)
+    checkpoint = DataloaderCheckpoint(0, 1, 0, sampler_state=state)
+    original_state = copy.deepcopy(state)
+    checkpoint.save(path)
+    assert checkpoint.sampler_state == original_state
     assert isinstance(
         json.loads(path.read_text())["sampler_state"]["bucketer_state"][
             "bucket_tokens"
@@ -262,6 +265,64 @@ def test_json_export_is_legacy(manifest, tmp_path):
     state["bucketer_state"]["bucket_tokens"] = exported
     restored.load_state_dict(state)
     assert [_ids(batch) for batch in restored] == expected
+
+
+@pytest.mark.parametrize(
+    "value", [b"ordinary bytes", _pack([[[1]]])], ids=["ordinary", "compact_payload"]
+)
+@pytest.mark.parametrize("location", ["sampler", "worker", "nested", "bucket_metadata"])
+def test_json_export_rejects_unrelated_bytes(tmp_path, value, location):
+    """A byte string outside the sampler's token field is not a compact snapshot."""
+    checkpoint = DataloaderCheckpoint(0, 1, 0)
+    if location == "sampler":
+        checkpoint.sampler_state = {"custom": value}
+    elif location == "worker":
+        checkpoint.worker_states = [{"custom": value}]
+    elif location == "nested":
+        checkpoint.sampler_state = {
+            "custom": {"bucketer_state": {"bucket_tokens": value}}
+        }
+    else:
+        checkpoint.sampler_state = {
+            "bucketer_state": {"bucket_tokens": _pack([[[1]]]), "custom": value}
+        }
+
+    with pytest.raises(
+        TypeError, match="Object of type bytes is not JSON serializable"
+    ):
+        checkpoint.save(tmp_path / "state.json")
+
+
+@pytest.mark.parametrize(
+    "value", [b"ordinary bytes", _pack([[[1]]])], ids=["ordinary", "compact_payload"]
+)
+@pytest.mark.parametrize("compact", [False, True])
+def test_json_export_rejects_byte_tokens(tmp_path, value, compact):
+    """Opaque token bytes retain the legacy JSON error, even if they resemble a snapshot."""
+    tokens = [[[("source", value)]]]
+    checkpoint = DataloaderCheckpoint(
+        0,
+        1,
+        0,
+        sampler_state={
+            "bucketer_state": {"bucket_tokens": _pack(tokens) if compact else tokens}
+        },
+    )
+
+    with pytest.raises(
+        TypeError, match="Object of type bytes is not JSON serializable"
+    ):
+        checkpoint.save(tmp_path / "state.json")
+
+
+def test_json_export_rejects_invalid_compact_state(tmp_path):
+    """Malformed bytes in the compact token field still report a decoder error."""
+    checkpoint = DataloaderCheckpoint(
+        0, 1, 0, sampler_state={"bucketer_state": {"bucket_tokens": b"invalid"}}
+    )
+
+    with pytest.raises(ValueError, match="Invalid compact bucket token header"):
+        checkpoint.save(tmp_path / "state.json")
 
 
 class _IdsDataset:
