@@ -199,6 +199,10 @@ class DataloaderCheckpoint:
 
 def _json_serializer(obj):
     """Fallback serializer for JSON — handles tuples (from RNG state) etc."""
+    if isinstance(obj, bytes):
+        from lhotse.dataset.sampling.token_codec import unpack_bucket_tokens
+
+        return unpack_bucket_tokens(obj)
     if isinstance(obj, tuple):
         return list(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
