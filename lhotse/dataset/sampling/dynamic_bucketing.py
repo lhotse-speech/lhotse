@@ -148,7 +148,7 @@ class DynamicBucketingSampler(CutSampler):
             sampling results to be non-deterministic. This feature is experimental.
         :param compact_state: Store buffered graph tokens as immutable bytes instead of nested lists.
             This reduces object reconstruction and garbage collection in worker-to-parent snapshot transport.
-            Supported tokens are built-in integers, strings, bytes, floats, booleans, None, and nested tuples/lists.
+            Tokens may be any pickle-compatible objects; only load checkpoints from trusted sources.
             Legacy checkpoints remain loadable; JSON checkpoint export expands the tokens to the legacy representation.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.

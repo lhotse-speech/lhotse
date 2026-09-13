@@ -9,33 +9,6 @@ _MAGIC = b"LHOTSE-BUCKETS\x01"
 _COUNT = struct.Struct("<I")
 
 
-class _TokenPickler(pickle.Pickler):
-    """Accept built-in token data without user-defined reconstruction functions."""
-
-    def reducer_override(self, obj):
-        """Custom token classes require the legacy state representation."""
-        raise ValueError(
-            f"Unsupported compact bucket token type: {type(obj).__name__}. "
-            "Use compact_state=False for custom token objects."
-        )
-
-
-class _TokenUnpickler(pickle._Unpickler):
-    """Do not execute reconstruction functions when decoding checkpoint tokens."""
-
-    # The Python implementation exposes extension lookup; the C implementation can bypass find_class through its cache.
-
-    def find_class(self, module, name):
-        """Reject globals even in an externally supplied token payload."""
-        raise ValueError(f"Non-primitive compact bucket token: {module}.{name}.")
-
-    def get_extension(self, code):
-        """Reject extension opcodes before consulting the process-wide extension cache."""
-        raise ValueError(
-            f"Non-primitive compact bucket token: pickle extension {code}."
-        )
-
-
 class _TokenWriter:
     """Write counts and existing tokens directly into one immutable snapshot."""
 
@@ -43,7 +16,7 @@ class _TokenWriter:
         self.stream = io.BytesIO()
         self.stream.write(_MAGIC)
         # Bound memo retention to one bucket, not the whole snapshot.
-        self.pickler = _TokenPickler(self.stream, protocol=4)
+        self.pickler = pickle.Pickler(self.stream, protocol=4)
 
     def start_list(self, count: int) -> None:
         """Write a bucket/item/cut count without creating a corresponding list."""
@@ -51,7 +24,11 @@ class _TokenWriter:
 
     def write(self, value: Any) -> None:
         """Let the C-backed pickler traverse an existing graph token."""
-        self.pickler.dump(value)
+        try:
+            self.pickler.dump(value)
+        except (pickle.PicklingError, TypeError, AttributeError) as exc:
+            # Keep serialization failures out of the sampler's replay fallback.
+            raise ValueError("Cannot pickle compact bucket token.") from exc
 
     def start_bucket(self, count: int) -> None:
         """Start a bucket with an independent pickle memo."""
@@ -77,7 +54,11 @@ def pack_bucket_tokens(buckets: list) -> bytes:
 
 
 def unpack_bucket_tokens(data: bytes) -> list:
-    """Decode bucket counts and primitive token records, rejecting malformed data."""
+    """
+    Decode bucket counts and pickle token records.
+
+    Only load trusted checkpoint data; tokens use standard pickle reconstruction.
+    """
     if not isinstance(data, bytes) or not data.startswith(_MAGIC):
         raise ValueError("Invalid compact bucket token header or version.")
     stream = io.BytesIO(data)
@@ -95,7 +76,7 @@ def unpack_bucket_tokens(data: bytes) -> list:
 
     def bucket():
         """Match the writer's independent memo for each bucket."""
-        unpickler = _TokenUnpickler(stream)
+        unpickler = pickle.Unpickler(stream)
         return [[unpickler.load() for _ in range(count())] for _ in range(count())]
 
     try:

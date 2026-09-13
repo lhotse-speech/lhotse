@@ -1,12 +1,12 @@
 """Compact bucket snapshots preserve tokens and indexed sampler continuation."""
 
 import copy
-import copyreg
 import io
 import json
 import pickle
 import random
 import struct
+from dataclasses import dataclass
 from unittest.mock import patch
 
 import pytest
@@ -23,6 +23,17 @@ from lhotse.dataset.sampling.token_codec import (
     unpack_bucket_tokens,
 )
 from lhotse.testing.dummies import DummyManifest
+
+
+@dataclass
+class _CustomToken:
+    index: int
+    source: str
+
+
+class _ReducedToken(_CustomToken):
+    def __reduce__(self):
+        return type(self), (self.index, self.source)
 
 
 def _pack(value):
@@ -50,6 +61,11 @@ def _pack(value):
         True,
         False,
         1.25,
+        {"source": [1, 2]},
+        {1, 2},
+        complex(1, 2),
+        _CustomToken(42, "source"),
+        _ReducedToken(42, "source"),
     ],
 )
 def test_token_roundtrip(token):
@@ -96,46 +112,15 @@ def test_invalid_payloads():
             unpack_bucket_tokens(bad)
 
 
-def test_unsupported_tokens():
-    """Invalid opt-in token types fail explicitly rather than triggering sampler replay."""
-    with pytest.raises(ValueError, match="Unsupported compact"):
-        _pack([[[object()]]])
-
-
-def test_reject_pickle_globals():
-    """Externally supplied payloads cannot reconstruct arbitrary Python objects."""
-    payload = _MAGIC + struct.pack("<III", 1, 1, 1) + pickle.dumps(object())
-    with pytest.raises(ValueError, match="Non-primitive"):
-        unpack_bucket_tokens(payload)
-
-
-class _ReconstructionProbe:
-    calls = 0
-
-    def __new__(cls):
-        cls.calls += 1
-        return super().__new__(cls)
-
-
-@pytest.mark.parametrize("cached", [False, True])
-@pytest.mark.parametrize("code_range", [(1, 256), (256, 65536), (65536, 2**31)])
-def test_reject_pickle_extensions(cached, code_range):
-    """Reject every extension opcode before it can reconstruct a cached class."""
-    code = next(
-        code for code in range(*code_range) if code not in copyreg._inverted_registry
-    )
-    copyreg.add_extension(__name__, "_ReconstructionProbe", code)
-    try:
-        record = pickle.dumps(_ReconstructionProbe(), protocol=4)
-        if cached:
-            pickle.loads(record)
-        _ReconstructionProbe.calls = 0
-        payload = _MAGIC + struct.pack("<III", 1, 1, 1) + record
-        with pytest.raises(ValueError, match="Non-primitive"):
-            unpack_bucket_tokens(payload)
-        assert _ReconstructionProbe.calls == 0
-    finally:
-        copyreg.remove_extension(__name__, "_ReconstructionProbe", code)
+def test_cyclic_token_roundtrip():
+    """Pickle preserves cycles and shared custom objects within a bucket."""
+    token = [_CustomToken(42, "source")]
+    token.append(token)
+    restored = unpack_bucket_tokens(_pack([[[token], [token]]]))
+    first = restored[0][0][0]
+    assert first[0] == token[0]
+    assert first[1] is first
+    assert restored[0][1][0] is first
 
 
 @pytest.mark.parametrize("record", [b"\xff", b"0.", b"J\x00", b"h\x01.", b"N)R."])
@@ -268,12 +253,27 @@ def test_capture_with_concurrent_producer(manifest):
         sampler.cuts_iter.close()
 
 
-def test_unsupported_capture_does_not_fall_back_to_replay(manifest):
-    """The sampler's fallback catches TypeError, so compact validation uses ValueError."""
+def test_custom_token_capture(manifest):
+    """Direct capture accepts custom tokens through standard pickle."""
     sampler = _sampler(manifest, True)
     next(iter(sampler))
-    with patch.object(sampler._bucketer, "_capture_item_token", return_value=object()):
-        with pytest.raises(ValueError, match="Unsupported compact"):
+    token = _CustomToken(42, "source")
+    with patch.object(sampler._bucketer, "_capture_item_token", return_value=token):
+        state = sampler.state_dict()
+    tokens = unpack_bucket_tokens(state["bucketer_state"]["bucket_tokens"])
+    captured = [value for bucket in tokens for item in bucket for value in item]
+    assert captured
+    assert all(type(value) is _CustomToken and value == token for value in captured)
+
+
+@pytest.mark.parametrize("kind", ["generator", "local_function"])
+def test_unpicklable_capture_does_not_fall_back_to_replay(manifest, kind):
+    """Serialization errors must not silently discard the buffered state."""
+    sampler = _sampler(manifest, True)
+    next(iter(sampler))
+    token = (i for i in range(1)) if kind == "generator" else lambda: None
+    with patch.object(sampler._bucketer, "_capture_item_token", return_value=token):
+        with pytest.raises(ValueError, match="Cannot pickle compact bucket token"):
             sampler.state_dict()
 
 
