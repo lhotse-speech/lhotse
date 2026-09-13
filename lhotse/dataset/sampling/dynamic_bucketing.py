@@ -105,6 +105,7 @@ class DynamicBucketingSampler(CutSampler):
         seed: Union[int, Literal["randomized", "trng"]] = 0,
         sync_buckets: bool = True,
         concurrent: bool = False,
+        compact_state: bool = False,
         strict=None,
         shuffle_buffer_size=None,
     ) -> None:
@@ -145,6 +146,10 @@ class DynamicBucketingSampler(CutSampler):
             bucketing buffers before the sampler starts yielding examples. For tarred/Lhotse Shar data
             this can speed up the start of the training. Note that enabling concurrency will cause the
             sampling results to be non-deterministic. This feature is experimental.
+        :param compact_state: Store buffered graph tokens as immutable bytes instead of nested lists.
+            This reduces object reconstruction and garbage collection in worker-to-parent snapshot transport.
+            Supported tokens are built-in integers, strings, bytes, floats, booleans, None, and nested tuples/lists.
+            Legacy checkpoints remain loadable; JSON checkpoint export expands the tokens to the legacy representation.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -169,6 +174,7 @@ class DynamicBucketingSampler(CutSampler):
         self.quadratic_duration = quadratic_duration
         self.sync_buckets = sync_buckets
         self.concurrent = concurrent
+        self.compact_state = compact_state
         self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
 
@@ -229,7 +235,7 @@ class DynamicBucketingSampler(CutSampler):
             and getattr(bucketer, "_selection_state", None) is not None
         ):
             try:
-                bucketer_state = bucketer.get_state()
+                bucketer_state = bucketer.get_state(compact=self.compact_state)
                 sd["rng_state"] = self.rng.getstate()
                 sd["bucketer_state"] = bucketer_state
             except RuntimeError:
@@ -251,7 +257,16 @@ class DynamicBucketingSampler(CutSampler):
             pending_bucketer_state = getattr(self, "_bucketer_state", None)
             if pending_rng_state is not None and pending_bucketer_state is not None:
                 sd["rng_state"] = pending_rng_state
-                sd["bucketer_state"] = pending_bucketer_state
+                sd["bucketer_state"] = dict(pending_bucketer_state)
+                tokens = pending_bucketer_state["bucket_tokens"]
+                if self.compact_state and not isinstance(tokens, bytes):
+                    from lhotse.dataset.sampling.token_codec import pack_bucket_tokens
+
+                    sd["bucketer_state"]["bucket_tokens"] = pack_bucket_tokens(tokens)
+                elif not self.compact_state and isinstance(tokens, bytes):
+                    from lhotse.dataset.sampling.token_codec import unpack_bucket_tokens
+
+                    sd["bucketer_state"]["bucket_tokens"] = unpack_bucket_tokens(tokens)
         return sd
 
     def load_state_dict(self, sd: Dict[str, Any]) -> None:
@@ -681,11 +696,45 @@ class DynamicBucketer:
     # State save / restore for O(1) indexed checkpoint
     # ------------------------------------------------------------------
 
-    def get_state(self) -> Dict[str, Any]:
-        """Capture bucketer state for checkpoint."""
+    def get_state(self, *, compact: bool = False) -> Dict[str, Any]:
+        """Capture bucketer state, optionally streaming buffered tokens into immutable bytes."""
         from lhotse.checkpoint import _rng_state_to_json
 
         source_capabilities = self._restore_source_capabilities()
+        if compact:
+            from lhotse.dataset.sampling.token_codec import _TokenWriter
+
+            writer = _TokenWriter()
+            writer.start_list(len(self.buckets))
+            for bucket in self.buckets:
+                with bucket.mutex:
+                    writer.start_bucket(len(bucket.queue))
+                    for item in bucket.queue:
+                        cuts = item if isinstance(item, tuple) else (item,)
+                        writer.start_list(len(cuts))
+                        for cut_idx, cut in enumerate(cuts):
+                            source_is_restorable = (
+                                source_capabilities[cut_idx]
+                                if cut_idx < len(source_capabilities)
+                                else False
+                            )
+                            writer.write(
+                                self._capture_item_token(cut, source_is_restorable)
+                            )
+            bucket_tokens = writer.finish()
+        else:
+            bucket_tokens = self._get_plain_bucket_tokens(source_capabilities)
+
+        state = {
+            "bucket_tokens": bucket_tokens,
+            "rng_state": _rng_state_to_json(self.rng.getstate()),
+        }
+        if self._selection_state is not None:
+            state["selection_state"] = self._selection_state.save()
+        return state
+
+    def _get_plain_bucket_tokens(self, source_capabilities: List[bool]) -> List[List]:
+        """Keep the default and legacy checkpoint representation unchanged."""
         bucket_tokens: List[List] = []
         for bucket in self.buckets:
             tokens = []
@@ -705,13 +754,7 @@ class DynamicBucketer:
                     tokens.append(item_tokens)
             bucket_tokens.append(tokens)
 
-        state = {
-            "bucket_tokens": bucket_tokens,
-            "rng_state": _rng_state_to_json(self.rng.getstate()),
-        }
-        if self._selection_state is not None:
-            state["selection_state"] = self._selection_state.save()
-        return state
+        return bucket_tokens
 
     def set_state(self, state: Dict[str, Any]) -> None:
         """Store state to be consumed at the top of the next __iter__ call."""
@@ -733,6 +776,10 @@ class DynamicBucketer:
 
         # Restore buffered items from saved graph tokens.
         bucket_tokens = state["bucket_tokens"]
+        if isinstance(bucket_tokens, bytes):
+            from lhotse.dataset.sampling.token_codec import unpack_bucket_tokens
+
+            bucket_tokens = unpack_bucket_tokens(bucket_tokens)
         if len(bucket_tokens) != len(self.buckets):
             raise RuntimeError(
                 "DynamicBucketer checkpoint is inconsistent: "
