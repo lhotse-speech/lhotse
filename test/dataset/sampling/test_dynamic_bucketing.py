@@ -181,19 +181,25 @@ def test_dynamic_bucketing_sampler_precomputed_duration_bins():
     assert len(sampled_cuts) == len(cuts)
 
     # We sampled 5 batches with this RNG, like the following:
-    assert len(batches) == 4
+    assert len(batches) == 5
+
+    # The next longest cut must not inflate padding past max_duration.
+    assert all(len(b) * max(c.duration for c in b) <= 5 for b in batches)
 
     assert len(batches[0]) == 2
     assert sum(c.duration for c in batches[0]) == 4
 
-    assert len(batches[1]) == 4
-    assert sum(c.duration for c in batches[1]) == 5
+    assert len(batches[1]) == 3
+    assert sum(c.duration for c in batches[1]) == 3
 
     assert len(batches[2]) == 2
     assert sum(c.duration for c in batches[2]) == 3
 
     assert len(batches[3]) == 2
     assert sum(c.duration for c in batches[3]) == 3
+
+    assert len(batches[4]) == 1
+    assert sum(c.duration for c in batches[4]) == 2
 
 
 def test_dynamic_bucketing_sampler_max_duration_and_max_cuts():

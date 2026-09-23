@@ -112,6 +112,9 @@ class DynamicBucketingSampler(CutSampler):
         """
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
         :param max_duration: The maximum total recording duration from ``cuts``.
+            Includes padding to the longest cut in the batch. A cut that would
+            exceed the limit is kept for a later batch; a cut that exceeds the
+            limit on its own is yielded alone with a warning.
             Note: with multiple CutSets, ``max_duration`` constraint applies only to the first CutSet.
         :param max_cuts: The maximum total number of ``cuts`` per batch.
             When only ``max_duration`` is specified, this sampler yields static batch sizes.
@@ -876,6 +879,9 @@ class DynamicBucketer:
                 # point to the next batch in both main-process and worker-process
                 # iteration.
                 if indexes_used:
+                    # The batcher may have read one extra item and deferred it
+                    # to avoid overflowing the constraint. Keep it in the bucket.
+                    indexes_used = indexes_used[:batch_size]
                     indexes_used.sort(reverse=True)
                     with sampling_bucket.mutex:
                         _q = sampling_bucket.queue
