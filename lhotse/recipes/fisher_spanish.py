@@ -7,7 +7,6 @@ About the Fisher Spanish corpus
     This data is not available for free - your institution needs to have an LDC subscription.
 """
 
-import codecs
 import itertools as it
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -29,7 +28,7 @@ def create_supervision(
 
     sessions, transcript_path = sessions_and_transcript_path
     transcript_path = Path(transcript_path)
-    with codecs.open(transcript_path, "r", "utf8") as trans_f:
+    with open(transcript_path, "r", encoding="utf8", newline="") as trans_f:
 
         lines = [l.rstrip("\n") for l in trans_f.readlines()][3:]
         lines = [l.split("\t") for l in lines if l.strip() != ""]
@@ -87,7 +86,7 @@ def prepare_fisher_spanish(
     transcript_paths = check_and_rglob(transcript_dir_path, "*.tdf")
 
     sessions_data_path = check_and_rglob(transcript_dir_path, "*_call.tbl")[0]
-    with codecs.open(sessions_data_path, "r", "utf8") as sessions_data_f:
+    with open(sessions_data_path, "r", encoding="utf8", newline="") as sessions_data_f:
         session_lines = [
             l.rstrip("\n").split(",") for l in sessions_data_f.readlines()
         ][1:]
