@@ -7,7 +7,6 @@ About the Fisher English Part 1,2 corpus
     This data is not available for free - your institution needs to have an LDC subscription.
 """
 
-import codecs
 import itertools as it
 import logging
 import os
@@ -55,7 +54,7 @@ def create_supervision(
         return []
     channel_to_int = {"A": 0, "B": 1}
     session_id = transcript_path.stem.split("_")[2]
-    with codecs.open(transcript_path, "r", "utf8") as trans_f:
+    with open(transcript_path, "r", encoding="utf8", newline="") as trans_f:
         lines = [l.rstrip("\n") for l in trans_f.readlines()][3:]
         lines = [l.split() for l in lines if l.strip() != ""]
         lines = [
@@ -168,7 +167,9 @@ def prepare_fisher_english(
         sessions_data_path = check_and_rglob(
             corpus_dir / transcript_dir / "doc", "*_calldata.tbl"
         )[0]
-        with codecs.open(sessions_data_path, "r", "utf8") as sessions_data_f:
+        with open(
+            sessions_data_path, "r", encoding="utf8", newline=""
+        ) as sessions_data_f:
             tmp_sessions = [
                 l.rstrip("\n").split(",") for l in sessions_data_f.readlines()
             ][1:]
