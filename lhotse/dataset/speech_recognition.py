@@ -1,3 +1,4 @@
+import warnings
 from typing import Callable, Dict, List, Union
 
 import torch
@@ -206,10 +207,13 @@ def validate_for_asr(cuts: CutSet) -> None:
     tol = 2e-3  # 1ms
     for cut in cuts:
         for supervision in cut.supervisions:
-            assert supervision.start >= -tol, (
-                f"Supervisions starting before the cut are not supported for ASR"
-                f" (sup id: {supervision.id}, cut id: {cut.id})"
-            )
+            if supervision.start < -tol:
+                warnings.warn(
+                    f"Supervision starts {-supervision.start:.3f}s before the cut; "
+                    f"it will be truncated to the cut's start, and the part of the "
+                    f"transcript spoken before it will have no matching audio "
+                    f"(sup id: {supervision.id}, cut id: {cut.id})"
+                )
 
             # Supervision start time is relative to Cut ...
             # https://lhotse.readthedocs.io/en/v0.10_e/cuts.html
