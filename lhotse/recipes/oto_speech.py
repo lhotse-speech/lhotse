@@ -10,6 +10,11 @@ Dataset Details:
 Pseudo Labels:
 - The `seglst.json` labels downloaded from Google Drive are pseudo labels generated
   using the Parakeet v3 model.
+
+Channels:
+- Each session is one stereo FLAC with one speaker per channel. The speaker-to-channel
+  mapping comes from the session's own `<session_id>.json` (`speakers[].channel`),
+  so each supervision is placed on its speaker's channel.
 """
 
 import json
@@ -126,6 +131,13 @@ def extract_and_flatten_tar(tar_path: Path, extract_dir: Path):
     marker_file.touch()
 
 
+def load_channel_map(meta_path: Path) -> Dict[str, int]:
+    """Session metadata JSON -> {speaker_id: channel}."""
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    return {s["speaker_id"]: int(s["channel"]) for s in meta.get("speakers", [])}
+
+
 def prepare_oto_speech(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
@@ -179,6 +191,9 @@ def prepare_oto_speech(
 
         # 3. Create SupervisionSet from the GDrive JSON
         logger.info("--- [3/3] Building SupervisionSet ---")
+        channel_maps = {
+            p.stem: load_channel_map(p) for p in unpacked_dir.glob("*.json")
+        }
         supervisions = []
 
         for idx, seg in tqdm(
@@ -187,6 +202,14 @@ def prepare_oto_speech(
             rec_id = seg["session_id"]
 
             if rec_id not in recordings:
+                continue
+
+            channel = channel_maps.get(rec_id, {}).get(seg["speaker"])
+            if channel is None:
+                logger.warning(
+                    f"Skipped segment for rec: {rec_id}: speaker {seg['speaker']} "
+                    f"is not in the session's channel map"
+                )
                 continue
 
             start = seg["start_time"]
@@ -216,7 +239,7 @@ def prepare_oto_speech(
                     recording_id=rec_id,
                     start=start,
                     duration=duration,
-                    channel=0,
+                    channel=channel,
                     text=seg["words"],
                     speaker=seg["speaker"],
                     language="en",
