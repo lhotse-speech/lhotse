@@ -1028,7 +1028,7 @@ class IndexedTarReader:
         # Read first member (data)
         data, data_path = self._read_member(offset)
         # Advance past data to next header
-        next_offset = offset + _TAR_BLOCK_SIZE + _ceil_block(self._last_member_size)
+        next_offset = self._last_member_end
         # Read second member (metadata)
         meta_bytes, meta_path = self._read_member(next_offset)
 
@@ -1047,8 +1047,22 @@ class IndexedTarReader:
         """Read a single tar member at the given byte offset."""
         self._fh.seek(offset)
         data, path, info = read_tar_member_at(self._fh, offset)
-        self._last_member_size = info.size
+        self._last_member_end = info.offset_data + _ceil_block(info.size)
         return data, path
+
+    def read_metadata(self, idx: int) -> Tuple[Optional[Manifest], Path]:
+        """Read a sample's metadata without fetching its binary payload."""
+        offset, _ = self.member_byte_range(idx)
+        self._ensure_open()
+        _, data_path, info = read_tar_member_at(self._fh, offset, read_data=False)
+        next_offset = info.offset_data + _ceil_block(info.size)
+        meta_bytes, _, _ = read_tar_member_at(self._fh, next_offset)
+        meta = (
+            deserialize_item(decode_json_line(meta_bytes.decode("utf-8")))
+            if meta_bytes is not None
+            else None
+        )
+        return meta, data_path
 
     def member_byte_range(self, idx: int) -> Tuple[int, int]:
         """Return ``(offset, end_offset)`` for the *idx*-th sample-pair, where
@@ -1069,25 +1083,26 @@ class IndexedTarReader:
 
 
 def read_tar_member_at(
-    fh, offset: int
+    fh, offset: int, *, read_data: bool = True
 ) -> Tuple[Optional[bytes], Path, tarfile.TarInfo]:
     """Read a single tar member's header + payload at ``offset`` from an open
     file handle. Returns ``(data_bytes, member_path, tar_info)``.
 
-    ``data_bytes`` is None for ``.nodata``/``.nometa`` placeholder members.
-    Does NOT validate type or skip non-regular members — pass an offset that
-    points at a regular file's header.
+    ``data_bytes`` is None for ``.nodata``/``.nometa`` placeholder members
+    or when ``read_data=False`` (header-only access).
+    Resolves PAX and GNU extended headers, including long and Unicode names.
+    The offset must point at the sample's first header.
     """
     fh.seek(offset)
-    header_buf = fh.read(_TAR_BLOCK_SIZE)
-    if len(header_buf) < _TAR_BLOCK_SIZE:
-        raise RuntimeError(f"Unexpected EOF reading tar header at offset {offset}")
-    info = tarfile.TarInfo.frombuf(header_buf, tarfile.ENCODING, "surrogateescape")
-    path = Path(info.name)
-    if path.suffix in (".nodata", ".nometa"):
-        return None, path, info
-    data = fh.read(info.size)
-    return data, path, info
+    with tarfile.open(fileobj=fh, mode="r:") as archive:
+        info = archive.next()
+        if info is None:
+            raise RuntimeError(f"Unexpected EOF reading tar header at offset {offset}")
+        path = Path(info.name)
+        if not read_data or path.suffix in (".nodata", ".nometa"):
+            return None, path, info
+        data = archive.extractfile(info).read()
+        return data, path, info
 
 
 _URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://")

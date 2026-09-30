@@ -11,8 +11,9 @@ import numpy as np
 import pytest
 from packaging.version import parse as parse_version
 
-from lhotse import CutSet
+from lhotse import CutSet, fastcopy
 from lhotse.indexing import (
+    IndexedTarReader,
     create_jsonl_index,
     index_exists,
     index_file_path,
@@ -35,7 +36,9 @@ from lhotse.testing.dummies import (
 )
 
 
-def _write_fields(root, *, audio_format="wav", array_format="numpy", compress=True):
+def _write_fields(
+    root, *, audio_format="wav", array_format="numpy", compress=True, include_cuts=True
+):
     root.mkdir(parents=True, exist_ok=True)
     cuts = list(DummyManifest(CutSet, begin_id=0, end_id=3, with_data=True))
     fields = {
@@ -55,7 +58,11 @@ def _write_fields(root, *, audio_format="wav", array_format="numpy", compress=Tr
     for field in fields.keys() - {"recording", "features"}:
         cuts[-1].custom.pop(field)
     with SharWriter(
-        root, fields=fields, shard_size=2, compress_jsonl=compress
+        root,
+        fields=fields,
+        shard_size=2,
+        compress_jsonl=compress,
+        include_cuts=include_cuts,
     ) as writer:
         for cut in cuts:
             writer.write(cut)
@@ -194,6 +201,94 @@ def test_indexed_shar_validates_external_jsonl_cut_ids(tmp_path, compress, place
             reader[0]
     with pytest.raises(AssertionError, match="Mismatched IDs"):
         next(iter(CutSet.from_shar(in_dir=tmp_path)))
+
+
+@pytest.mark.parametrize("compress", [False, True])
+def test_lazy_indexed_shar_loads_fields_added_without_rewriting_cuts(
+    tmp_path, compress
+):
+    pytest.importorskip("indexed_gzip")
+    with SharWriter(
+        tmp_path, fields={}, shard_size=2, compress_jsonl=compress
+    ) as writer:
+        for cut in DummyManifest(CutSet, begin_id=0, end_id=3):
+            writer.write(fastcopy(cut, recording=None, features=None, custom=None))
+    _write_fields(
+        tmp_path, compress=compress, include_cuts=False, array_format="lilcom"
+    )
+    reference = [_loaded_fields(cut) for cut in LazySharIterator(in_dir=tmp_path)]
+    reader = LazyIndexedSharIterator(in_dir=tmp_path, lazy=True)
+    for position in (1, 0, 2):
+        actual = reader[position]
+        if position < 2:
+            assert actual.recording.sources[0].type == "shar_ptr"
+            assert actual.features.storage_type == "shar_ptr_array"
+            assert actual.custom_embedding.storage_type == "shar_ptr_array"
+        _assert_fields(_loaded_fields(actual), reference[position])
+
+
+@pytest.mark.parametrize("compress", [False, True])
+@pytest.mark.parametrize("append_fields", [False, True])
+def test_indexed_shar_handles_long_unicode_cut_ids(tmp_path, compress, append_fields):
+    pytest.importorskip("indexed_gzip")
+    cuts = list(DummyManifest(CutSet, begin_id=0, end_id=2, with_data=True))
+    for cut in cuts:
+        cut.id = f"nested/{cut.id}-" + "音声" * 70
+    if append_fields:
+        with SharWriter(
+            tmp_path, fields={}, shard_size=None, compress_jsonl=compress
+        ) as writer:
+            for cut in cuts:
+                writer.write(fastcopy(cut, recording=None, features=None, custom=None))
+    fields = {
+        "recording": "wav",
+        "features": "lilcom",
+        "custom_embedding": "numpy",
+        "custom_features": "lilcom",
+        "custom_indexes": "numpy",
+        "custom_recording": "flac",
+    }
+    with SharWriter(
+        tmp_path,
+        fields=fields,
+        shard_size=None,
+        compress_jsonl=compress,
+        include_cuts=not append_fields,
+    ) as writer:
+        for cut in cuts:
+            writer.write(cut)
+    expected = [_loaded_fields(cut) for cut in LazySharIterator(in_dir=tmp_path)]
+    for lazy in (False, True):
+        reader = LazyIndexedSharIterator(in_dir=tmp_path, lazy=lazy)
+        for position in (1, 0):
+            actual = reader[position]
+            assert actual.id == cuts[position].id
+            _assert_fields(_loaded_fields(actual), expected[position])
+
+
+def test_tar_metadata_access_does_not_fetch_payload(tmp_path, ais_objects):
+    pytest.importorskip("indexed_gzip")
+    _, paths = _write_fields(tmp_path)
+    path = Path(paths["recording"][0])
+    objects, requests = ais_objects
+    url = f"ais://bucket/{uuid4().hex}/{path.name}"
+    objects[url] = path.read_bytes()
+    import tarfile
+
+    with tarfile.open(path) as archive:
+        data_member = next(iter(archive))
+    payload_start = data_member.offset_data
+    payload_end = payload_start + data_member.size
+    reader = IndexedTarReader(url, index_path=index_file_path(path))
+    manifest, member_path = reader.read_metadata(0)
+    assert manifest.sources[0].type == "shar"
+    assert member_path.stem == "dummy-mono-cut-0000"
+    assert requests
+    for requested_url, range_ in requests:
+        assert requested_url == url
+        start, end = map(int, range_.removeprefix("bytes=").split("-"))
+        assert end < payload_start or start >= payload_end
+    reader.close()
 
 
 @pytest.fixture(params=["seekable", "streaming"])

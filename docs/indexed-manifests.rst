@@ -210,6 +210,11 @@ JSONL shards may be gzip-compressed; tar shards must be uncompressed.
 Streaming options such as shard splitting, randomized seeds, ``cut_map_fns``,
 and ``slice_length`` preserve streaming mode during automatic selection.
 
+Indexed Shar supports binary fields added separately with
+``SharWriter(include_cuts=False)``. Lazy reading recovers their metadata from
+the tar while deferring binary payload reads. Extended tar headers preserve
+long and Unicode cut IDs.
+
 How iterator composition works
 ------------------------------
 

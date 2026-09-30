@@ -370,11 +370,21 @@ class LazyIndexedSharIterator(IteratorNode):
             for field in self.fields:
                 reader = readers[field]
                 if isinstance(reader, IndexedTarReader):
-                    if self._lazy:
-                        if getattr(cut, field, None) is None:
+                    if not self._lazy or getattr(cut, field, None) is None:
+                        # Fields added with include_cuts=False have no placeholder
+                        # in the original cuts. Recover just their metadata in lazy mode.
+                        maybe_manifest, data_path = (
+                            reader.read_metadata(pos) if self._lazy else reader[pos]
+                        )
+                        if maybe_manifest is None:
                             continue
-                        # Lazy mode: emit a Shar pointer derived purely from
-                        # the .idx offset array — zero tar reads at iter time.
+                        assert str(data_path.parent / data_path.stem) == cut.id, (
+                            f"Mismatched IDs: cut ID is '{cut.id}' but found "
+                            f"data with name '{data_path}' for field {field}"
+                        )
+                        setattr(cut, field, maybe_manifest)
+                    if self._lazy:
+                        # Resolve the binary payload only when it is loaded.
                         offset, end_offset = reader.member_byte_range(pos)
                         from lhotse.shar.utils import fill_shar_placeholder_lazy
 
@@ -385,14 +395,6 @@ class LazyIndexedSharIterator(IteratorNode):
                             offset=offset,
                             end_offset=end_offset,
                         )
-                    else:
-                        maybe_manifest, data_path = reader[pos]
-                        if maybe_manifest is not None:
-                            assert str(data_path.parent / data_path.stem) == cut.id, (
-                                f"Mismatched IDs: cut ID is '{cut.id}' but found "
-                                f"data with name '{data_path}' for field {field}"
-                            )
-                            setattr(cut, field, maybe_manifest)
                 else:
                     item = reader[pos]
                     assert item["cut_id"] == cut.id, (
