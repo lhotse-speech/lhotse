@@ -41,9 +41,11 @@ def _discover_fields(in_dir: Path) -> Tuple[set, dict]:
     field names and *streams* maps each field (plus ``"cuts"``) to a
     sorted list of shard paths.
 
-    Index files (``.idx``) are excluded from discovery.
+    Index files (``.idx`` and ``.idx.gzidx``) are excluded from discovery.
     """
-    all_paths = [p for p in in_dir.glob("*") if p.suffix != ".idx"]
+    all_paths = [
+        p for p in in_dir.glob("*") if not p.name.endswith((".idx", ".idx.gzidx"))
+    ]
     fields = set(p.stem.split(".")[0] for p in all_paths)
     assert "cuts" in fields, f"No cuts JSONL shards found in {in_dir}"
     fields.remove("cuts")

@@ -38,7 +38,8 @@ class LazyIndexedSharIterator(IteratorNode):
     * ``__iter__()`` — sequential or shuffled iteration via ``__getitem__``.
     * ``state_dict()`` / ``load_state_dict()`` — checkpoint/restore.
 
-    Requires uncompressed, seekable JSONL/tar shards for every requested field.
+    Requires indexed JSONL and uncompressed, seekable tar shards for every
+    requested field. Gzip JSONL additionally requires ``indexed_gzip``.
     These may live on the local filesystem or on supported remote/object-store
     backends, as long as the underlying reader can perform indexed reads.
     Binary ``.idx`` indexes are created automatically if missing.

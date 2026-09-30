@@ -16,6 +16,8 @@ from the beginning.
 Typical examples are:
 
 * an uncompressed ``.jsonl`` manifest with ``cuts.jsonl.idx``
+* a gzip ``.jsonl.gz`` manifest with ``cuts.jsonl.gz.idx`` and
+  ``cuts.jsonl.gz.idx.gzidx``
 * an uncompressed Shar manifest shard such as ``cuts.000000.jsonl`` together
   with ``cuts.000000.jsonl.idx``
 * an uncompressed tar shard together with ``recording.000000.tar.idx``
@@ -31,6 +33,7 @@ For standalone manifests:
 .. code-block:: bash
 
    lhotse index jsonl /path/to/cuts.jsonl
+   lhotse index jsonl /path/to/cuts.jsonl.gz
    lhotse index tar /path/to/recording.tar
 
 For Shar:
@@ -56,11 +59,14 @@ index creation:
 
 .. note::
 
-   Indexed access requires **uncompressed, seekable** data sources.
-   ``.jsonl.gz`` and ``pipe:...`` inputs are valid for sequential streaming,
-   but they do not provide constant-time reconstruction. Local files and
-   supported remote/object-store URIs can be indexed as long as the storage
-   backend supports indexed reads.
+   Gzip JSONL requires the optional ``indexed_gzip`` dependency
+   (``pip install lhotse[gzip]``). The ``.idx`` offsets address the
+   uncompressed byte stream, while ``.idx.gzidx`` stores gzip decompression
+   checkpoints. Both files must travel with the source or its index mirror.
+   Gzip seeks decompress at most the configured checkpoint spacing, so they
+   have bounded work per lookup rather than a single physical byte-range read.
+   Pipes and compressed tar files remain unsupported. Remote sources require
+   a seekable storage backend.
 
 Packing many sidecars into one ``.idxpack``
 -------------------------------------------
@@ -74,7 +80,8 @@ into one immutable, memory-mapped file. Opening the pack maps one file and the
 operating system faults in offset pages only when records are requested.
 
 An index pack does not replace the source data or change checkpoint semantics.
-It stores byte offsets into the original uncompressed sources, and it is built
+It stores physical byte offsets into uncompressed sources, so gzip JSONL is
+currently supported only with standalone ``.idx`` sidecars. The pack is built
 from sidecars that already exist. The pack itself must be a local seekable file.
 Lhotse deliberately leaves dataset discovery to the caller, so a pack can hold
 one or more application-defined logical collections (for example, a manifest
@@ -184,8 +191,8 @@ For Shar:
    cuts = CutSet.from_shar(in_dir="data/", indexed=True)
 
 ``CutSet.from_shar(..., indexed=None)`` will auto-detect indexed mode when all
-requested field shards are uncompressed, indexable, and have matching indexes
-available.
+requested field shards are indexable and have matching indexes available.
+JSONL shards may be gzip-compressed; tar shards must be uncompressed.
 
 How iterator composition works
 ------------------------------

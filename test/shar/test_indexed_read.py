@@ -9,7 +9,7 @@ from test.shar.conftest import cuts  # noqa: F401
 import pytest
 
 from lhotse import CutSet
-from lhotse.indexing import create_jsonl_index, index_exists
+from lhotse.indexing import create_jsonl_index, create_shar_index, index_exists
 from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.readers.lazy import LazySharIterator
 from lhotse.shar.writers.shar import SharWriter
@@ -753,8 +753,8 @@ def test_indexed_shar_pickle(tmp_path, cuts):
 # ---------------------------------------------------------------------------
 
 
-def test_indexed_shar_rejects_compressed(tmp_path, cuts):
-    """LazyIndexedSharIterator raises ValueError for compressed JSONL."""
+def test_indexed_shar_reads_gzip_jsonl_after_indexing(tmp_path, cuts):
+    pytest.importorskip("indexed_gzip")
     writer = SharWriter(
         tmp_path,
         fields=ALL_FIELDS,
@@ -766,8 +766,10 @@ def test_indexed_shar_rejects_compressed(tmp_path, cuts):
         for c in cuts:
             writer.write(c)
 
-    with pytest.raises(ValueError, match="uncompressed JSONL or tar data"):
-        LazyIndexedSharIterator(in_dir=tmp_path)
+    create_shar_index(tmp_path)
+    indexed = CutSet.from_shar(in_dir=tmp_path)
+    assert indexed.is_indexed
+    assert [cut.id for cut in indexed] == [cut.id for cut in cuts]
 
 
 # ---------------------------------------------------------------------------

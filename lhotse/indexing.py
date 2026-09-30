@@ -4,20 +4,22 @@ Binary index files for O(1) random-access reads into JSONL and tar archives.
 Index File Format
 -----------------
 An index file stores an array of little-endian ``uint64`` byte-offsets,
-one per sample, plus a sentinel entry equal to the file size.
+one per sample, plus a sentinel entry equal to the readable stream size
+(the uncompressed size for gzip JSONL).
 
 For *N* samples the file is exactly ``(N + 1) * 8`` bytes:
 
-    offset[0]  offset[1]  ...  offset[N-1]  file_size
+    offset[0]  offset[1]  ...  offset[N-1]  stream_size
 
 Naming convention: ``<original_file>.idx``
     (e.g. ``cuts.000000.jsonl.idx``, ``recording.000000.tar.idx``)
 
 Constraints
 -----------
-Index files **only work with uncompressed** data files:
+Index files work with:
 
-* JSONL — plain ``.jsonl``, **not** ``.jsonl.gz``
+* JSONL — plain ``.jsonl`` or ``.jsonl.gz`` (the latter requires ``indexed_gzip``
+  and a companion ``.idx.gzidx`` seek index)
 * Tar   — plain ``.tar``,   **not** ``.tar.gz``
 
 Usage
@@ -97,8 +99,16 @@ def _is_compressed_path(path: Pathlike) -> bool:
     )
 
 
+def _is_gzip_jsonl(path: Pathlike) -> bool:
+    return _path_str(path).lower().endswith((".jsonl.gz", ".json.gz"))
+
+
 def indexed_path_kind(path: Pathlike) -> Optional[str]:
-    if _is_pipe_path(path) or _is_compressed_path(path):
+    if _is_pipe_path(path):
+        return None
+    if _is_gzip_jsonl(path):
+        return "jsonl"
+    if _is_compressed_path(path):
         return None
     # Accept both ``.jsonl`` and ``.json`` for line-delimited manifests. NeMo
     # ships many ASR/SLM manifests as ``*.json`` (one JSON object per line,
@@ -133,7 +143,7 @@ def validate_indexed_access(
             )
         if _is_compressed_path(path):
             raise ValueError(
-                f"{context} requires uncompressed JSONL or tar data, but got a compressed path: {path}"
+                f"{context} requires JSONL, gzip JSONL, or uncompressed tar data, but got a compressed path: {path}"
             )
         raise ValueError(
             f"{context} requires a .jsonl or .tar data source, but got: {path}"
@@ -197,6 +207,8 @@ def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> 
         as a belt-and-braces guard against stale 0-byte files on disk).
     """
     idx_path = index_path if index_path is not None else index_file_path(data_path)
+    if _is_gzip_jsonl(data_path) and not _gzip_index_exists(idx_path):
+        return False
     local_path = _as_local_path(idx_path)
     if local_path is not None:
         return _is_valid_index_file(local_path)
@@ -322,7 +334,7 @@ def read_index(idx_path: Pathlike) -> np.ndarray:
     blend), and lookups are just integer indexing — no benefit from memmap
     semantics. Remote index files are cached under a deterministic local
     temp path and read from there. The last element is the sentinel
-    (file size); there are ``len(arr) - 1`` samples.
+    (readable stream size); there are ``len(arr) - 1`` samples.
     """
     local_path = _as_local_path(idx_path)
     if local_path is not None:
@@ -342,16 +354,19 @@ def create_jsonl_index(
     jsonl_path: Pathlike, output_path: Optional[Pathlike] = None
 ) -> Path:
     """
-    Scan an **uncompressed** JSONL file and build a binary index.
+    Scan a JSONL file and build a binary line-offset index.
 
-    Each entry in the index is the byte-offset of the corresponding line's
-    first character.  A final sentinel entry stores the file size.
+    Each entry is the byte-offset of a line's first character in the
+    *uncompressed* stream. The final sentinel stores its length. For gzip
+    inputs, a companion ``.idx.gzidx`` file stores decompression seek points.
 
     :param output_path: if set, write the ``.idx`` file to this path
         instead of the conventional location next to *jsonl_path*.
     :returns: the path of the newly created ``.idx`` file.
     """
-    _assert_uncompressed(jsonl_path, "JSONL")
+    if _is_compressed_path(jsonl_path) and not _is_gzip_jsonl(jsonl_path):
+        _assert_uncompressed(jsonl_path, "JSONL")
+    idx_path = output_path if output_path is not None else index_file_path(jsonl_path)
     # Track the running byte offset by accumulating ``len(line)`` rather than
     # calling ``f.tell()`` on every line. The latter raises
     # ``io.UnsupportedOperation`` on non-seekable streams (AIStore's
@@ -361,16 +376,32 @@ def create_jsonl_index(
     # accumulated total exactly tracks the start-of-line byte offsets.
     offsets = []
     pos = 0
-    with open_best(jsonl_path, "rb") as f:
+    if _is_gzip_jsonl(jsonl_path):
+        indexed_gzip = _require_indexed_gzip()
+        source = _open_for_indexed_read(jsonl_path)
+        try:
+            f = indexed_gzip.IndexedGzipFile(fileobj=source)
+        except Exception:
+            source.close()
+            raise
+    else:
+        source = None
+        f = open_best(jsonl_path, "rb")
+    try:
         while True:
             line = f.readline()
             if not line:
                 break
             offsets.append(pos)
             pos += len(line)
-        offsets.append(pos)  # sentinel = file size
-
-    idx_path = output_path if output_path is not None else index_file_path(jsonl_path)
+        offsets.append(pos)  # sentinel = readable stream size
+        if source is not None:
+            f.build_full_index()
+            _write_gzip_index(f, _gzip_index_path(idx_path))
+    finally:
+        f.close()
+        if source is not None:
+            source.close()
     _write_index(offsets, idx_path)
     return idx_path
 
@@ -437,8 +468,8 @@ def create_shar_index(
     Create binary index files for **all** JSONL and tar files in a
     Shar directory.
 
-    Compressed files (``.gz``) are silently skipped because they cannot
-    be indexed.
+    Gzip JSONL files are indexed when ``indexed_gzip`` is installed.
+    Compressed tar files and other compression formats are skipped.
 
     :param output_dir: if set, write ``.idx`` files into this directory
         (using the same filenames as the conventional location, but under
@@ -451,6 +482,8 @@ def create_shar_index(
             out = Path(output_dir) / (p.name + ".idx")
         if p.suffix == ".jsonl":
             create_jsonl_index(p, output_path=out)
+        elif _is_gzip_jsonl(p):
+            create_jsonl_index(p, output_path=out)
         elif p.suffix == ".tar":
             create_tar_index(p, output_path=out)
 
@@ -460,6 +493,54 @@ def create_shar_index(
 # ---------------------------------------------------------------------------
 
 _COMPRESSED_SUFFIXES = {".gz", ".bz2", ".xz", ".lz4", ".zst"}
+
+
+def _require_indexed_gzip():
+    try:
+        import indexed_gzip
+    except ImportError as ex:
+        raise ImportError(
+            "Indexed .jsonl.gz access requires indexed_gzip; "
+            "install lhotse[gzip] or indexed_gzip."
+        ) from ex
+    return indexed_gzip
+
+
+def _gzip_index_path(index_path: Pathlike) -> Pathlike:
+    return str(index_path) + ".gzidx"
+
+
+def _gzip_index_exists(index_path: Pathlike) -> bool:
+    path = _gzip_index_path(index_path)
+    local_path = _as_local_path(path)
+    if local_path is not None:
+        try:
+            return local_path.stat().st_size > 0
+        except FileNotFoundError:
+            return False
+    try:
+        with open_best(path, "rb") as f:
+            return bool(f.read(1))
+    except Exception:
+        return False
+
+
+def _write_gzip_index(reader, path: Pathlike) -> None:
+    local_path = _as_local_path(path)
+    if local_path is None:
+        with open_best(path, "wb") as f:
+            reader.export_index(fileobj=f)
+        return
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = local_path.with_name(
+        f"{local_path.name}.tmp.{os.getpid()}.{time.monotonic_ns()}"
+    )
+    try:
+        with open(tmp_path, "wb") as f:
+            reader.export_index(fileobj=f)
+        os.replace(tmp_path, local_path)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def _assert_uncompressed(path: Pathlike, kind: str) -> None:
@@ -664,6 +745,10 @@ def _open_for_indexed_read(path: Pathlike):
         from lhotse.ais import AISRangeReader
 
         return AISRangeReader(str(path))
+    if _is_gzip_jsonl(path):
+        # open_best() transparently decompresses .gz; indexed_gzip needs the
+        # compressed bytes and performs its own seeking/decompression.
+        return open(path, "rb")
     return open_best(path, "rb")
 
 
@@ -674,8 +759,7 @@ def _open_for_indexed_read(path: Pathlike):
 
 class IndexedJsonlReader:
     """
-    Random-access reader for an uncompressed JSONL file using a binary
-    index.
+    Random-access reader for plain or gzip JSONL using a binary index.
 
     Each ``__getitem__`` call performs a single seek + readline + JSON parse,
     giving O(1) access to any line.
@@ -683,7 +767,7 @@ class IndexedJsonlReader:
     Parameters
     ----------
     path : Pathlike
-        Path to the uncompressed JSONL file.
+        Path to the JSONL file.
     auto_create_index : bool
         If ``True`` (default), the ``.idx`` file will be created
         automatically when it is missing.  Set to ``False`` to raise
@@ -706,6 +790,7 @@ class IndexedJsonlReader:
         self.index_path = index_path
         self._fh: Optional[object] = None
         self._fh_pid: Optional[int] = None
+        self._gzip_source: Optional[object] = None
         idx_path = (
             self.index_path
             if self.index_path is not None
@@ -728,8 +813,26 @@ class IndexedJsonlReader:
         # can otherwise race on its shared seek offset. Reopen per process.
         if self._fh is None or self._fh_pid != current_pid:
             if self._fh is not None:
-                self._fh.close()
-            self._fh = _open_for_indexed_read(self.path)
+                self.close()
+            if _is_gzip_jsonl(self.path):
+                indexed_gzip = _require_indexed_gzip()
+                source = _open_for_indexed_read(self.path)
+                reader = None
+                try:
+                    reader = indexed_gzip.IndexedGzipFile(fileobj=source)
+                    with open_best(
+                        _gzip_index_path(self._resolved_index_path), "rb"
+                    ) as index:
+                        reader.import_index(fileobj=index)
+                except Exception:
+                    if reader is not None:
+                        reader.close()
+                    source.close()
+                    raise
+                self._gzip_source = source
+                self._fh = reader
+            else:
+                self._fh = _open_for_indexed_read(self.path)
             self._fh_pid = current_pid
 
     def __del__(self):
@@ -740,11 +843,15 @@ class IndexedJsonlReader:
             self._fh.close()
             self._fh = None
             self._fh_pid = None
+        if self._gzip_source is not None:
+            self._gzip_source.close()
+            self._gzip_source = None
 
     def __getstate__(self):
         state = self.__dict__.copy()
         state["_fh"] = None  # file handles are not picklable
         state["_fh_pid"] = None
+        state["_gzip_source"] = None
         return state
 
     def __setstate__(self, state):

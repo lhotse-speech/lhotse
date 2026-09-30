@@ -330,7 +330,8 @@ class CutSet(Serializable, AlgorithmMixin):
             will be different on each script execution.
         :param indexed: controls whether to use indexed random-access reading
             for each JSONL file.  ``True`` forces indexed mode (requires
-            uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
+            plain ``.jsonl`` or gzip ``.jsonl.gz``). ``False`` uses the
+            default lazy reader.
             ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
             file already exists alongside each JSONL file.
         :param index_path: optional list of custom ``.idx`` file paths,
@@ -339,9 +340,8 @@ class CutSet(Serializable, AlgorithmMixin):
             for that file.
         :return: a lazy CutSet instance.
         """
-        from lhotse.indexing import index_exists
+        from lhotse.indexing import index_exists, supports_indexed_access
         from lhotse.lazy import LazyIndexedManifestIterator
-        from lhotse.serialization import extension_contains
 
         if index_path is not None and len(index_path) != len(paths):
             raise ValueError(
@@ -354,7 +354,7 @@ class CutSet(Serializable, AlgorithmMixin):
             if indexed is True or (indexed is None and ip is not None):
                 return LazyIndexedManifestIterator(p, index_path=ip)
             elif indexed is None:
-                use_idx = not extension_contains(".gz", p) and index_exists(p)
+                use_idx = supports_indexed_access(p, kind="jsonl") and index_exists(p)
                 if use_idx:
                     return LazyIndexedManifestIterator(p)
             return LazyManifestIterator(p)
@@ -617,8 +617,8 @@ class CutSet(Serializable, AlgorithmMixin):
             and read only ``slice_length`` examples from each shard, then move to the next one.
         :param indexed: optional bool. If ``True``, uses
             :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator` for O(1)
-            random access (requires uncompressed indexed Shar shards for every
-            requested field).
+            random access (requires indexed JSONL and uncompressed tar shards
+            for every requested field).
             If ``False``, uses the streaming :class:`~lhotse.shar.readers.lazy.LazySharIterator`.
             If ``None`` (default), auto-detects: uses indexed mode when every
             requested field is readable through indexed readers and has a matching

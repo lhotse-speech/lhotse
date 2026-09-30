@@ -226,8 +226,9 @@ Requirements and limitations
 
 * Requires ``torchdata`` package (``pip install torchdata``) for
   ``StatefulDataLoader``.
-* Exact indexed restore requires **uncompressed** data files. For Shar, write
-  it with ``compress_jsonl=False``.
+* Exact indexed restore supports plain JSONL and gzip JSONL with
+  ``indexed_gzip`` installed and both ``.idx`` and ``.idx.gzidx`` sidecars.
+  Tar shards must be uncompressed. See :doc:`indexed-manifests`.
 * ``num_workers`` and ``world_size`` must match between save and restore.
 * Non-indexed pipelines still use replay-based restore.
 

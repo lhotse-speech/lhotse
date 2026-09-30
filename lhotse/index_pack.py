@@ -1761,6 +1761,11 @@ def _read_sidecar_metadata(
             source_size=source_size_override,
             path_only=True,
         )
+    if str(path).endswith((".jsonl.gz", ".json.gz")):
+        raise ValueError(
+            "Index packs require physical byte offsets and cannot contain gzip JSONL; "
+            f"use its standalone .idx and .idx.gzidx sidecars instead: {path}"
+        )
     idx = (
         index_file_path(path, indexes_root)
         if index_path_override is None

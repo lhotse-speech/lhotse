@@ -1,3 +1,4 @@
+import gzip
 import json
 import multiprocessing as mp
 import os
@@ -34,6 +35,19 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 
 def _write_u32(path: Path, values: list[int]) -> None:
     path.write_bytes(b"".join(struct.pack("<I", value) for value in values))
+
+
+def test_index_pack_rejects_gzip_jsonl_offsets(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / "records.jsonl.gz"
+    with gzip.open(path, "wt") as f:
+        f.write('{"id": 1}\n')
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    with pytest.raises(ValueError, match="cannot contain gzip JSONL"):
+        write_index_pack(tmp_path / "records.idxpack", [spec])
 
 
 def _inspect_pack_mapping_in_child(pack, collection_key, connection) -> None:

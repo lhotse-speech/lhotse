@@ -97,8 +97,9 @@ class SharWriter:
         if self.create_index and self.compress_jsonl:
             warnings.warn(
                 "create_index=True with compress_jsonl=True creates only a partially "
-                "indexed Shar: compressed cuts.*.jsonl.gz shards cannot be indexed. "
-                "Use compress_jsonl=False to enable exact indexed Shar restore.",
+                "indexed Shar: compressed cuts.*.jsonl.gz shards are not indexed "
+                "automatically. Install lhotse[gzip] and run 'lhotse index shar' "
+                "after writing, or use compress_jsonl=False.",
                 stacklevel=2,
             )
         if self.sharding_enabled:
