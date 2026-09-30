@@ -62,15 +62,17 @@ _ALL_FIELDS = {
 }
 
 
-@pytest.fixture
-def indexed_shar_dir(tmp_path) -> Path:
+@pytest.fixture(params=[False, True], ids=["plain-jsonl", "gzip-jsonl"])
+def indexed_shar_dir(tmp_path, request) -> Path:
     """16 cuts across 4 indexed shards (4 cuts per shard)."""
+    if request.param:
+        pytest.importorskip("indexed_gzip")
     cuts = DummyManifest(CutSet, begin_id=0, end_id=16, with_data=True)
     writer = SharWriter(
         tmp_path,
         fields=_ALL_FIELDS,
         shard_size=4,
-        compress_jsonl=False,
+        compress_jsonl=request.param,
         create_index=True,
     )
     with writer:
