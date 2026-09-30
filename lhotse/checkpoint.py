@@ -161,9 +161,11 @@ class DataloaderCheckpoint:
 
     def save(self, path: Pathlike) -> None:
         """Serialize the checkpoint to a JSON file."""
+        data = asdict(self)
+        _expand_compact_sampler_tokens(data["sampler_state"])
         path = Path(path)
         with open(path, "w") as f:
-            json.dump(asdict(self), f, indent=2, default=_json_serializer)
+            json.dump(data, f, indent=2, default=_json_serializer)
 
     @classmethod
     def load(cls, path: Pathlike) -> "DataloaderCheckpoint":
@@ -195,6 +197,26 @@ class DataloaderCheckpoint:
             raise ValueError(
                 f"Checkpoint rank={self.rank} does not match " f"current rank={rank}."
             )
+
+
+def _expand_compact_sampler_tokens(sampler_state: dict) -> None:
+    """Expand token fields in a copied sampler state, following known composition keys."""
+    if not isinstance(sampler_state, dict):
+        return
+    bucketer_state = sampler_state.get("bucketer_state")
+    if isinstance(bucketer_state, dict) and isinstance(
+        bucketer_state.get("bucket_tokens"), bytes
+    ):
+        from lhotse.dataset.sampling.token_codec import unpack_bucket_tokens
+
+        bucketer_state["bucket_tokens"] = unpack_bucket_tokens(
+            bucketer_state["bucket_tokens"]
+        )
+    for key in ("samplers", "bucket_samplers"):
+        children = sampler_state.get(key)
+        if isinstance(children, (list, tuple)):
+            for child in children:
+                _expand_compact_sampler_tokens(child)
 
 
 def _json_serializer(obj):
