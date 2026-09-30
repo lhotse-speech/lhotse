@@ -1948,9 +1948,12 @@ def _read_sidecar_metadata(
             index_stat.st_mtime_ns, gzip_index_stat.st_mtime_ns
         ):
             raise ValueError(f"Gzip source is newer than its indexes: {path}")
-        with idx.open("rb") as source_index:
-            source_index.seek(-_U64.size, os.SEEK_END)
-            stream_size = _U64.unpack(source_index.read(_U64.size))[0]
+        from lhotse.indexing import _require_indexed_gzip
+
+        with _require_indexed_gzip().IndexedGzipFile(filename=path) as source:
+            with gzip_index_path.open("rb") as seek_index:
+                source.import_index(fileobj=seek_index)
+            stream_size = source.seek(0, os.SEEK_END)
         digest = hashlib.sha256()
         with gzip_index_path.open("rb") as seek_index:
             while chunk := seek_index.read(1024 * 1024):

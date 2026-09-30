@@ -107,6 +107,41 @@ def test_index_pack_requires_gzip_seek_index(tmp_path):
         write_index_pack(tmp_path / "records.idxpack", [spec])
 
 
+@pytest.mark.parametrize("compressed", [False, True])
+def test_index_pack_rejects_truncated_jsonl_sidecar(tmp_path, compressed):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / ("records.jsonl.gz" if compressed else "records.jsonl")
+    first = b'{"id": 0}\n'
+    content = first + b'{"id": 1}\n'
+    path.write_bytes(gzip.compress(content) if compressed else content)
+    index = create_jsonl_index(path)
+    Path(index).write_bytes(struct.pack("<QQ", 0, len(first)))
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    target = tmp_path / "records.idxpack"
+    with pytest.raises(ValueError, match="sentinel"):
+        write_index_pack(target, [spec])
+    assert not target.exists()
+
+
+def test_index_pack_validates_concatenated_gzip_eof(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / "records.jsonl.gz"
+    path.write_bytes(gzip.compress(b'{"id": 0}\n') + gzip.compress(b'{"id": 1}\n'))
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    target = tmp_path / "records.idxpack"
+    write_index_pack(target, [spec])
+    with IndexPack(target) as pack:
+        assert len(pack.collection(spec.key)) == 2
+        assert pack.collection(spec.key).source_size_for_shard(0) == 20
+        reader = LazyPackedManifestIterator(pack, spec.key, decode=GraphOriginDict)
+        assert [row["id"] for row in reader] == [0, 1]
+
+
 def test_index_pack_embeds_multiple_gzip_seek_indexes_and_reopens_sources(tmp_path):
     pytest.importorskip("indexed_gzip")
     paths = [tmp_path / f"part-{i}.jsonl.gz" for i in range(2)]

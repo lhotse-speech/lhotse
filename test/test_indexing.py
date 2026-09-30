@@ -147,6 +147,32 @@ def test_indexed_gzip_jsonl_cutset_autodetection(tmp_path):
     assert [cut.id for cut in single] == [cut.id for cut in expected]
 
 
+@pytest.mark.parametrize("api", ["from_file", "from_files", "from_shar"])
+def test_gzip_autodetection_without_optional_dependency(tmp_path, monkeypatch, api):
+    pytest.importorskip("indexed_gzip")
+    import sys
+
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.000000.jsonl.gz"
+    expected = _write_cuts_jsonl(path, n=3)
+    create_jsonl_index(path)
+    monkeypatch.setitem(sys.modules, "indexed_gzip", None)
+
+    def read(indexed):
+        if api == "from_files":
+            return CutSet.from_files([path], indexed=indexed, shuffle_iters=False)
+        if api == "from_shar":
+            return CutSet.from_shar(in_dir=tmp_path, indexed=indexed)
+        return CutSet.from_file(path, indexed=indexed)
+
+    automatic = read(None)
+    assert not automatic.is_indexed
+    assert [cut.id for cut in automatic] == [cut.id for cut in expected]
+    with pytest.raises(ImportError, match="lhotse\\[gzip\\]"):
+        list(read(True))
+
+
 def test_indexed_gzip_jsonl_resume(tmp_path):
     pytest.importorskip("indexed_gzip")
     from lhotse.lazy import LazyIndexedManifestIterator

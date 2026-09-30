@@ -68,6 +68,11 @@ installed, both plain and gzip JSONL shards are indexed as they are finalized:
    Pipes and compressed tar files remain unsupported. Remote sources require
    a seekable storage backend.
 
+   Automatic reader selection falls back to streaming when ``indexed_gzip``
+   is unavailable, even if gzip sidecars exist. Explicit ``indexed=True``
+   still requires the dependency. Shar writing reports indexing failures as
+   warnings; completed source shards remain readable in streaming mode.
+
 Packing many sidecars into one ``.idxpack``
 -------------------------------------------
 
@@ -152,6 +157,8 @@ reject newer versions explicitly.
 :func:`lhotse.indexing.index_file_path` and requires its final sentinel to
 match the local source size, or the uncompressed stream size for gzip JSONL.
 Gzip sources require a local source and a corresponding ``.gzidx`` sidecar.
+The builder independently obtains the uncompressed EOF before validating the
+``.idx`` sentinel, including gzip files containing concatenated members.
 Builders that have independently validated a
 repair may override either value for selected sources:
 

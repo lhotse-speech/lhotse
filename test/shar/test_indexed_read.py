@@ -137,6 +137,29 @@ def test_shar_writer_compressed_without_dependency(tmp_path, cuts, monkeypatch):
 
 
 @pytest.mark.parametrize("compress_jsonl", [False, True])
+def test_shar_writer_reports_index_creation_failure(
+    tmp_path, cuts, monkeypatch, compress_jsonl
+):
+    def fail_index(*args, **kwargs):
+        raise PermissionError("Cannot write the sidecar")
+
+    monkeypatch.setattr("lhotse.indexing.create_jsonl_index", fail_index)
+    with pytest.warns(UserWarning, match="Failed to create index"):
+        with SharWriter(
+            tmp_path,
+            fields=ALL_FIELDS,
+            shard_size=None,
+            compress_jsonl=compress_jsonl,
+        ) as writer:
+            for cut in cuts:
+                writer.write(cut)
+    assert [cut.id for cut in LazySharIterator(in_dir=tmp_path)] == [
+        cut.id for cut in cuts
+    ]
+    assert all(index_exists(path) for path in writer.output_paths["recording"])
+
+
+@pytest.mark.parametrize("compress_jsonl", [False, True])
 def test_shar_writer_no_index(tmp_path, cuts, compress_jsonl):
     """create_index=False skips index creation."""
     writer = SharWriter(

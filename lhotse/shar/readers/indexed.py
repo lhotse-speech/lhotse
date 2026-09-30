@@ -8,6 +8,7 @@ from lhotse.indexing import (
     create_jsonl_index,
     create_tar_index,
     index_exists,
+    supports_indexed_access,
     validate_indexed_access,
 )
 from lhotse.lazy import (
@@ -273,6 +274,12 @@ class LazyIndexedSharIterator(IteratorNode):
             return False
         try:
             _, streams = cls._resolve_streams(fields=fields, in_dir=in_dir)
+            if any(
+                not supports_indexed_access(path)
+                for paths in streams.values()
+                for path in paths
+            ):
+                return False
             index_streams = cls._resolve_index_streams(
                 streams=streams,
                 index_path=index_path,
@@ -364,6 +371,8 @@ class LazyIndexedSharIterator(IteratorNode):
                 reader = readers[field]
                 if isinstance(reader, IndexedTarReader):
                     if self._lazy:
+                        if getattr(cut, field, None) is None:
+                            continue
                         # Lazy mode: emit a Shar pointer derived purely from
                         # the .idx offset array — zero tar reads at iter time.
                         offset, end_offset = reader.member_byte_range(pos)
@@ -386,6 +395,10 @@ class LazyIndexedSharIterator(IteratorNode):
                             setattr(cut, field, maybe_manifest)
                 else:
                     item = reader[pos]
+                    assert item["cut_id"] == cut.id, (
+                        f"Mismatched IDs: cut ID is '{cut.id}' but found "
+                        f"JSONL row for '{item['cut_id']}' for field {field}"
+                    )
                     if field in item:
                         setattr(cut, field, item[field])
 

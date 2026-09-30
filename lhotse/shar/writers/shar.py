@@ -179,8 +179,12 @@ class SharWriter:
                 "and run 'lhotse index shar' to index them.",
                 stacklevel=2,
             )
-        except (RuntimeError, OSError):
-            pass
+        except (RuntimeError, OSError) as ex:
+            warnings.warn(
+                f"Failed to create index for {path_str}: {ex}. "
+                "Run 'lhotse index shar' after resolving the error to index the shard.",
+                stacklevel=2,
+            )
 
     def write(self, cut: Cut) -> None:
 
@@ -246,6 +250,7 @@ class SharWriter:
                     kwargs = {}
                     if isinstance(val, Recording):
                         kwargs["sampling_rate"] = val.sampling_rate
+                        kwargs["original_format"] = val.source_format
                         if cut.has_custom(channel_selector_key):
                             # override custom recording channels since the audio was loaded via cut
                             # and used the channel selector

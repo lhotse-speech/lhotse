@@ -127,7 +127,14 @@ def indexed_path_kind(path: Pathlike) -> Optional[str]:
 
 def supports_indexed_access(path: Pathlike, *, kind: Optional[str] = None) -> bool:
     path_kind = indexed_path_kind(path)
-    return path_kind is not None and (kind is None or path_kind == kind)
+    if path_kind is None or (kind is not None and path_kind != kind):
+        return False
+    if _is_gzip_jsonl(path):
+        try:
+            _require_indexed_gzip()
+        except ImportError:
+            return False
+    return True
 
 
 def validate_indexed_access(
@@ -427,6 +434,19 @@ def create_jsonl_index(
     return idx_path
 
 
+class _ReadCounter:
+    """Count physical bytes even when a storage stream does not support tell()."""
+
+    def __init__(self, stream):
+        self.stream = stream
+        self.bytes_read = 0
+
+    def read(self, size=-1):
+        data = self.stream.read(size)
+        self.bytes_read += len(data)
+        return data
+
+
 def create_tar_index(
     tar_path: Pathlike, output_path: Optional[Pathlike] = None
 ) -> Path:
@@ -448,34 +468,23 @@ def create_tar_index(
 
     offsets = []
     num_members = 0
-    # Sentinel needs to be ≥ "byte position past the last sample pair's
-    # data" so ``IndexedTarReader.member_byte_range`` can recover the upper
-    # bound for the final sample. Prefer ``f.tell()`` on the underlying
-    # handle when supported (= bytes consumed from storage, typically the
-    # file size since the tar record buffer reads in 10 KiB chunks) so the
-    # written .idx matches the historical "sentinel = file size" semantics.
-    # Non-seekable streams (e.g. AIS ``ObjectFileReader``) inherit
-    # ``BufferedIOBase.tell()``, which delegates to ``seek(0, SEEK_CUR)`` and
-    # raises ``UnsupportedOperation: seek``; fall back to ``tf.offset``,
-    # which ``tarfile`` itself tracks and which sits at the start of the
-    # trailing EOF-marker block once iteration stops on ``EOFHeaderError``.
+    # Count all physical bytes, including trailing padding after tar EOF.
+    # AIStore SDK streams may not implement tell() or seek().
     with open_best(tar_path, "rb") as f:
-        with tarfile.open(fileobj=f, mode="r|") as tf:
+        counted = _ReadCounter(f)
+        with tarfile.open(fileobj=counted, mode="r|") as tf:
             for member in tf:
                 if num_members % 2 == 0:
                     offsets.append(member.offset)
                 num_members += 1
-            sentinel_from_tarfile = tf.offset
         if num_members % 2 != 0:
             raise RuntimeError(
                 f"Expected an even number of tar members (data+meta pairs) "
                 f"in {tar_path}, got {num_members}."
             )
-        try:
-            sentinel = f.tell()
-        except (io.UnsupportedOperation, OSError, AttributeError):
-            sentinel = sentinel_from_tarfile
-        offsets.append(sentinel)
+        while counted.read(1024 * 1024):
+            pass
+        offsets.append(counted.bytes_read)
 
     idx_path = output_path if output_path is not None else index_file_path(tar_path)
     _write_index(offsets, idx_path)
