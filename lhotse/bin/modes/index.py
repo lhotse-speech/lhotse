@@ -39,7 +39,7 @@ def jsonl(path: str, output_dir: str):
 
     The index file is written next to the input as ``<path>.idx``,
     unless ``--output-dir`` is specified. Gzip inputs also create a
-    ``<path>.idx.gzidx`` seek index in the same location.
+    ``<path>.gzidx`` seek index in the same location.
     """
     from lhotse.indexing import create_jsonl_index
 

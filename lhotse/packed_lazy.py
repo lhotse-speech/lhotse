@@ -10,7 +10,10 @@ shard, and one in-memory offset array per sidecar.
 
 from __future__ import annotations
 
+import hashlib
+import io
 import os
+import threading
 import warnings
 import weakref
 from collections import OrderedDict
@@ -19,6 +22,7 @@ from json import JSONDecodeError
 from typing import Any
 
 from lhotse.index_pack import IndexPack, open_index_pack
+from lhotse.indexing import _require_indexed_gzip
 from lhotse.lazy import (
     IteratorNode,
     attach_graph_origin,
@@ -43,10 +47,11 @@ def read_packed_range(
     All readers using the same :class:`~lhotse.index_pack.IndexPack` share one
     process-local LRU, so ``max_open_files`` is a bound per dataset pack rather
     than per logical collection. Remote source URLs are rejected because
-    ``os.pread()`` requires a local, seekable file.
+    Plain sources use ``os.pread()``; gzip JSONL sources use their ``.gzidx``
+    seek index. Both require a local, seekable file.
     """
     cache = _file_cache_for_pack(index_pack, max_open_files)
-    return cache.read(path, start, end)
+    return cache.read(path, start, end, gzip_info=index_pack.gzip_index_info(path))
 
 
 class LazyPackedManifestIterator(IteratorNode):
@@ -389,9 +394,9 @@ class _PackedFileCache:
             raise ValueError("max_open_files must be positive")
         self.max_open_files = max_open_files
         self._pid = os.getpid()
-        self._fds: OrderedDict[str, int] = OrderedDict()
+        self._fds: OrderedDict[str, object] = OrderedDict()
 
-    def read(self, path: str, start: int, end: int) -> bytes:
+    def read(self, path: str, start: int, end: int, *, gzip_info=None) -> bytes:
         """
         Read the exact half-open byte range ``[start, end)`` from ``path``.
 
@@ -407,17 +412,31 @@ class _PackedFileCache:
         if start < 0 or end < start:
             raise ValueError(f"Invalid packed byte range: [{start}, {end})")
         self._ensure_process()
-        fd = self._fds.pop(path, None)
-        if fd is None:
-            fd = os.open(path, os.O_RDONLY)
-        self._fds[path] = fd
+        handle = self._fds.pop(path, None)
+        if handle is None:
+            handle = (
+                self._open_gzip(path, gzip_info)
+                if gzip_info
+                else os.open(path, os.O_RDONLY)
+            )
+        self._fds[path] = handle
         while len(self._fds) > self.max_open_files:
             _, evicted = self._fds.popitem(last=False)
-            os.close(evicted)
+            self._close_handle(evicted)
+        if gzip_info:
+            reader, _, lock = handle
+            with lock:
+                reader.seek(start)
+                data = reader.read(end - start)
+            if len(data) != end - start:
+                raise EOFError(
+                    f"Short indexed gzip read from {path}: requested [{start}, {end})"
+                )
+            return data
         chunks = []
         position = start
         while position < end:
-            chunk = os.pread(fd, end - position, position)
+            chunk = os.pread(handle, end - position, position)
             if not chunk:
                 received = position - start
                 raise EOFError(
@@ -435,13 +454,43 @@ class _PackedFileCache:
         self.max_open_files = min(self.max_open_files, max_open_files)
         while len(self._fds) > self.max_open_files:
             _, evicted = self._fds.popitem(last=False)
-            os.close(evicted)
+            self._close_handle(evicted)
 
     def close(self) -> None:
         """Close all cached descriptors."""
         for fd in self._fds.values():
-            os.close(fd)
+            self._close_handle(fd)
         self._fds.clear()
+
+    @staticmethod
+    def _close_handle(handle) -> None:
+        if isinstance(handle, int):
+            os.close(handle)
+        else:
+            reader, source, _ = handle
+            reader.close()
+            source.close()
+
+    @staticmethod
+    def _open_gzip(path: str, info):
+        index_path, expected_size, expected_digest = info
+        source = open(path, "rb")
+        reader = None
+        try:
+            if os.fstat(source.fileno()).st_size != expected_size:
+                raise ValueError(f"Packed gzip source size changed: {path}")
+            with open(index_path, "rb") as index:
+                seek_index = index.read()
+            if hashlib.sha256(seek_index).digest() != expected_digest:
+                raise ValueError(f"Packed gzip seek index changed: {index_path}")
+            reader = _require_indexed_gzip().IndexedGzipFile(fileobj=source)
+            reader.import_index(fileobj=io.BytesIO(seek_index))
+            return reader, source, threading.Lock()
+        except Exception:
+            if reader is not None:
+                reader.close()
+            source.close()
+            raise
 
     def __getstate__(self):
         return {"max_open_files": self.max_open_files}

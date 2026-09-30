@@ -116,7 +116,7 @@ def test_indexed_gzip_jsonl_random_access_and_mirrored_indexes(tmp_path):
     assert not index_exists(p, index)
     assert create_jsonl_index(p, output_path=index) == index
     assert index_exists(p, index)
-    assert (tmp_path / "mirror" / "data.jsonl.gz.idx.gzidx").is_file()
+    assert (tmp_path / "mirror" / "data.jsonl.gz.gzidx").is_file()
     assert int(read_index(index)[-1]) > p.stat().st_size
 
     reader = IndexedJsonlReader(p, auto_create_index=False, index_path=index)
@@ -126,7 +126,7 @@ def test_indexed_gzip_jsonl_random_access_and_mirrored_indexes(tmp_path):
     assert pickle.loads(pickle.dumps(reader))[3000] == records[3000]
     reader.close()
 
-    (tmp_path / "mirror" / "data.jsonl.gz.idx.gzidx").unlink()
+    (tmp_path / "mirror" / "data.jsonl.gz.gzidx").unlink()
     assert not index_exists(p, index)
     with pytest.raises(FileNotFoundError):
         IndexedJsonlReader(p, auto_create_index=False, index_path=index)

@@ -19,7 +19,7 @@ Constraints
 Index files work with:
 
 * JSONL — plain ``.jsonl`` or ``.jsonl.gz`` (the latter requires ``indexed_gzip``
-  and a companion ``.idx.gzidx`` seek index)
+  and a companion ``.gzidx`` seek index)
 * Tar   — plain ``.tar``,   **not** ``.tar.gz``
 
 Usage
@@ -62,6 +62,7 @@ __all__ = [
     "create_tar_index",
     "create_shar_index",
     "index_file_path",
+    "gzip_index_file_path",
     "read_index",
     "index_exists",
     "supports_indexed_access",
@@ -188,6 +189,26 @@ def index_file_path(
     return _join_indexes_root(data_path, indexes_root)
 
 
+def gzip_index_file_path(
+    data_path: Pathlike,
+    indexes_root: Optional[Pathlike] = None,
+    *,
+    index_path: Optional[Pathlike] = None,
+) -> Pathlike:
+    """Return the ``.gzidx`` companion to a gzip JSONL file's ``.idx``.
+
+    The same mirror or custom index location is used for both sidecars.
+    """
+    idx = (
+        index_path
+        if index_path is not None
+        else index_file_path(data_path, indexes_root)
+    )
+    text = str(idx)
+    result = text[:-4] + ".gzidx" if text.endswith(".idx") else text + ".gzidx"
+    return Path(result) if _as_local_path(idx) is not None else result
+
+
 def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> bool:
     """
     Return ``True`` when a ``.idx`` file exists *and is usable*.
@@ -207,7 +228,7 @@ def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> 
         as a belt-and-braces guard against stale 0-byte files on disk).
     """
     idx_path = index_path if index_path is not None else index_file_path(data_path)
-    if _is_gzip_jsonl(data_path) and not _gzip_index_exists(idx_path):
+    if _is_gzip_jsonl(data_path) and not _gzip_index_exists(data_path, idx_path):
         return False
     local_path = _as_local_path(idx_path)
     if local_path is not None:
@@ -358,7 +379,7 @@ def create_jsonl_index(
 
     Each entry is the byte-offset of a line's first character in the
     *uncompressed* stream. The final sentinel stores its length. For gzip
-    inputs, a companion ``.idx.gzidx`` file stores decompression seek points.
+    inputs, a companion ``.gzidx`` file stores decompression seek points.
 
     :param output_path: if set, write the ``.idx`` file to this path
         instead of the conventional location next to *jsonl_path*.
@@ -397,7 +418,7 @@ def create_jsonl_index(
         offsets.append(pos)  # sentinel = readable stream size
         if source is not None:
             f.build_full_index()
-            _write_gzip_index(f, _gzip_index_path(idx_path))
+            _write_gzip_index(f, gzip_index_file_path(jsonl_path, index_path=idx_path))
     finally:
         f.close()
         if source is not None:
@@ -506,12 +527,8 @@ def _require_indexed_gzip():
     return indexed_gzip
 
 
-def _gzip_index_path(index_path: Pathlike) -> Pathlike:
-    return str(index_path) + ".gzidx"
-
-
-def _gzip_index_exists(index_path: Pathlike) -> bool:
-    path = _gzip_index_path(index_path)
+def _gzip_index_exists(data_path: Pathlike, index_path: Pathlike) -> bool:
+    path = gzip_index_file_path(data_path, index_path=index_path)
     local_path = _as_local_path(path)
     if local_path is not None:
         try:
@@ -821,7 +838,10 @@ class IndexedJsonlReader:
                 try:
                     reader = indexed_gzip.IndexedGzipFile(fileobj=source)
                     with open_best(
-                        _gzip_index_path(self._resolved_index_path), "rb"
+                        gzip_index_file_path(
+                            self.path, index_path=self._resolved_index_path
+                        ),
+                        "rb",
                     ) as index:
                         reader.import_index(fileobj=index)
                 except Exception:

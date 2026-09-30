@@ -17,7 +17,7 @@ Typical examples are:
 
 * an uncompressed ``.jsonl`` manifest with ``cuts.jsonl.idx``
 * a gzip ``.jsonl.gz`` manifest with ``cuts.jsonl.gz.idx`` and
-  ``cuts.jsonl.gz.idx.gzidx``
+  ``cuts.jsonl.gz.gzidx``
 * an uncompressed Shar manifest shard such as ``cuts.000000.jsonl`` together
   with ``cuts.000000.jsonl.idx``
 * an uncompressed tar shard together with ``recording.000000.tar.idx``
@@ -61,7 +61,7 @@ index creation:
 
    Gzip JSONL requires the optional ``indexed_gzip`` dependency
    (``pip install lhotse[gzip]``). The ``.idx`` offsets address the
-   uncompressed byte stream, while ``.idx.gzidx`` stores gzip decompression
+   uncompressed byte stream, while ``.gzidx`` stores gzip decompression
    checkpoints. Both files must travel with the source or its index mirror.
    Gzip seeks decompress at most the configured checkpoint spacing, so they
    have bounded work per lookup rather than a single physical byte-range read.
@@ -80,9 +80,10 @@ into one immutable, memory-mapped file. Opening the pack maps one file and the
 operating system faults in offset pages only when records are requested.
 
 An index pack does not replace the source data or change checkpoint semantics.
-It stores physical byte offsets into uncompressed sources, so gzip JSONL is
-currently supported only with standalone ``.idx`` sidecars. The pack is built
-from sidecars that already exist. The pack itself must be a local seekable file.
+For gzip JSONL, it stores offsets into the uncompressed stream and a reference
+to the ``.gzidx`` seek index. Keep that file alongside the pack and source;
+the reader verifies its digest before opening it. The pack is built from
+sidecars that already exist. The pack itself must be a local seekable file.
 Lhotse deliberately leaves dataset discovery to the caller, so a pack can hold
 one or more application-defined logical collections (for example, a manifest
 collection and a payload collection).
@@ -142,12 +143,15 @@ files, then read values through ``collection.value()`` or
        member_ordinal = pack.collection(route.key).value_in_shard(0, 10)
 
 Packs containing only conventional offsets or path catalogs retain the
-version-2 format. Adding a fixed array selects version 3; current readers
-accept both versions, while older readers reject version 3 explicitly.
+version-2 format. Adding a fixed array selects version 3; adding gzip JSONL
+selects version 4. Current readers accept all three versions; older readers
+reject newer versions explicitly.
 
 ``write_index_pack()`` normally reads the sidecar returned by
 :func:`lhotse.indexing.index_file_path` and requires its final sentinel to
-match the local source size. Builders that have independently validated a
+match the local source size, or the uncompressed stream size for gzip JSONL.
+Gzip sources require a local source and a corresponding ``.gzidx`` sidecar.
+Builders that have independently validated a
 repair may override either value for selected sources:
 
 .. code-block:: python
@@ -160,6 +164,8 @@ repair may override either value for selected sources:
    )
 
 Both mappings are keyed by the exact source path stored in the collection.
+For gzip JSONL, an index-path override also locates its ``.gzidx`` companion;
+source-size overrides are unavailable because the offset space is uncompressed.
 They affect only the new pack and do not modify source files or sidecars. A
 source-size override replaces the copied sidecar sentinel and bypasses the
 normal stale-mtime rejection for that source, so the caller must verify that

@@ -9,8 +9,8 @@ not require one filesystem operation or one in-memory array per source shard.
 
 Writers retain version 2 whenever all inputs are conventional byte-offset or
 path-only collections. Supplying any :class:`IndexPackArraySpec` selects version
-3. Current readers accept both versions; legacy readers correctly reject v3
-instead of misinterpreting its array payloads.
+3; gzip JSONL selects version 4. Current readers accept all three versions;
+legacy readers reject newer versions instead of misinterpreting their payloads.
 
 This module is deliberately independent of manifest schemas and downstream
 frameworks. Callers describe each logical collection with an application-defined
@@ -33,7 +33,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from lhotse.indexing import index_file_path
+from lhotse.indexing import _is_gzip_jsonl, gzip_index_file_path, index_file_path
 from lhotse.utils import Pathlike, is_valid_url
 
 # Keep these values stable: production packs created by the original format
@@ -41,6 +41,7 @@ from lhotse.utils import Pathlike, is_valid_url
 _MAGIC = b"IDXPACK2"
 _VERSION = 2
 _ARRAY_VERSION = 3
+_GZIP_VERSION = 4
 _HEADER_SIZE = 256
 
 # Header fields:
@@ -66,7 +67,9 @@ _SEQUENCE = struct.Struct("<QQ")
 _SEGMENT = struct.Struct("<QQIIQQQII")
 _SEGMENT_PATH_ONLY = 1
 _SEGMENT_FIXED_ARRAY = 2
+_SEGMENT_GZIP_JSONL = 4
 _SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT = 1
+_GZIP_META = struct.Struct("<QI32s")  # compressed size, seek-index path length, SHA-256
 _U64 = struct.Struct("<Q")
 _U32 = struct.Struct("<I")
 _UINT32_DTYPE = "uint32"
@@ -252,8 +255,8 @@ def write_index_pack(
     written to a temporary sibling, flushed with ``fsync()``, and atomically
     published after all inputs pass structural validation.
 
-    The writer emits version 2 unless at least one
-    :class:`IndexPackArraySpec` is present, in which case it emits version 3.
+    The writer emits version 2 for conventional offsets, version 3 when a
+    :class:`IndexPackArraySpec` is present, and version 4 for gzip JSONL.
     This preserves byte-for-byte format compatibility for existing callers.
 
     Args:
@@ -395,7 +398,17 @@ def write_index_pack(
             )
         )
 
-    path_positions = [strings.add(segment.path) for segment in segments]
+    path_positions = [
+        strings.add_gzip_source(
+            segment.path,
+            str(segment.gzip_index_path),
+            segment.physical_source_size,
+            segment.gzip_index_digest,
+        )
+        if segment.gzip_index_path is not None
+        else strings.add(segment.path)
+        for segment in segments
+    ]
     string_blob = bytes(strings.data)
 
     collection_offset = _HEADER_SIZE
@@ -409,11 +422,12 @@ def write_index_pack(
         for segment in segments
     )
     layout_hash = index_pack_layout_hash(collections)
-    version = (
-        _ARRAY_VERSION
-        if any(isinstance(collection, IndexPackArraySpec) for collection in collections)
-        else _VERSION
-    )
+    if any(segment.gzip_index_path is not None for segment in segments):
+        version = _GZIP_VERSION
+    elif any(isinstance(collection, IndexPackArraySpec) for collection in collections):
+        version = _ARRAY_VERSION
+    else:
+        version = _VERSION
 
     tmp_path = output_path.with_name(
         f".{output_path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
@@ -565,6 +579,8 @@ def write_index_pack(
                             if segment.fixed_array
                             else _SEGMENT_PATH_ONLY
                             if segment.path_only
+                            else _SEGMENT_GZIP_JSONL
+                            if segment.gzip_index_path is not None
                             else 0
                         ),
                         segment.offsets_count,
@@ -890,8 +906,7 @@ class IndexPack:
     worker processes. The complete pack is opened, deeply validated, and
     memory-mapped only when a record, shard path, or segment is first accessed.
     Offset and fixed-array payloads are never copied into Python or NumPy
-    memory. Versions 2 and 3 are accepted; fixed arrays are available only in
-    version 3.
+    memory. Versions 2, 3, and 4 are accepted; version 4 supports gzip JSONL.
 
     The lazy mapping is process-local and the object is pickle-safe for
     data-loader workers. Use it as a context manager when a deterministic close
@@ -943,7 +958,13 @@ class IndexPack:
         self._pid = None
         self._file_identity = None
         self._collections = {}
+        self._gzip_sources = {}
         self._read_catalog()
+
+    def gzip_index_info(self, path: str) -> tuple[str, int, bytes] | None:
+        """Return the pinned seek-index path, compressed size, and digest."""
+        self._ensure_open()
+        return self._gzip_sources.get(path)
 
     def collection(self, key: bytes | str) -> PackedIndexCollection:
         """
@@ -1117,7 +1138,7 @@ class IndexPack:
                 f"Invalid index-pack header magic in {self.path}: {magic!r}"
             )
         if (
-            self.version not in (_VERSION, _ARRAY_VERSION)
+            self.version not in (_VERSION, _ARRAY_VERSION, _GZIP_VERSION)
             or header_size != _HEADER_SIZE
         ):
             raise ValueError(
@@ -1294,6 +1315,8 @@ class IndexPack:
                     supported_segment_flags = _SEGMENT_PATH_ONLY
                     if self.version >= _ARRAY_VERSION:
                         supported_segment_flags |= _SEGMENT_FIXED_ARRAY
+                    if self.version >= _GZIP_VERSION:
+                        supported_segment_flags |= _SEGMENT_GZIP_JSONL
                     if segment[3] & ~supported_segment_flags:
                         raise ValueError(
                             f"Index pack segment {segment_id} has unsupported flags: {segment[3]:#x}"
@@ -1394,6 +1417,7 @@ class IndexPack:
             self.close()
             raise
         offsets_cursor = self.offsets_offset
+        self._gzip_sources = {}
         for segment_id in range(self.num_segments):
             segment = self._segment(segment_id)
             (
@@ -1410,6 +1434,8 @@ class IndexPack:
             supported_flags = _SEGMENT_PATH_ONLY
             if self.version >= _ARRAY_VERSION:
                 supported_flags |= _SEGMENT_FIXED_ARRAY
+            if self.version >= _GZIP_VERSION:
+                supported_flags |= _SEGMENT_GZIP_JSONL
             if flags & ~supported_flags:
                 self.close()
                 raise ValueError(
@@ -1420,7 +1446,38 @@ class IndexPack:
                 raise ValueError(
                     f"Index pack segment {segment_id} cannot be both path-only and fixed-array"
                 )
-            self._string(path_position, path_length, label=f"segment {segment_id} path")
+            if flags & _SEGMENT_GZIP_JSONL and flags != _SEGMENT_GZIP_JSONL:
+                self.close()
+                raise ValueError(
+                    f"Index pack gzip segment {segment_id} has incompatible flags"
+                )
+            path = self._string(
+                path_position, path_length, label=f"segment {segment_id} path"
+            )
+            if flags & _SEGMENT_GZIP_JSONL:
+                metadata_position = path_position + path_length
+                if (
+                    metadata_position + _GZIP_META.size
+                    > self.strings_offset + self.strings_size
+                ):
+                    self.close()
+                    raise ValueError(
+                        f"Index pack gzip segment {segment_id} has truncated metadata"
+                    )
+                physical_size, seek_path_length, digest = _GZIP_META.unpack_from(
+                    self._mmap, metadata_position
+                )
+                seek_path = self._string(
+                    metadata_position + _GZIP_META.size,
+                    seek_path_length,
+                    label=f"segment {segment_id} gzip index path",
+                )
+                if not _is_gzip_jsonl(path) or not seek_path or metadata_flags != 0:
+                    self.close()
+                    raise ValueError(
+                        f"Index pack gzip segment {segment_id} has invalid metadata"
+                    )
+                self._gzip_sources[path] = (seek_path, physical_size, digest)
             is_array = bool(flags & _SEGMENT_FIXED_ARRAY)
             expected_size = offsets_count * (_U32.size if is_array else _U64.size)
             if (not is_array and offsets_count < 1) or size != expected_size:
@@ -1689,6 +1746,9 @@ class _BuildSegment:
     fixed_array: bool = False
     source_size_override: int | None = None
     input_identity: tuple[int, int, int, int] | None = None
+    gzip_index_path: Path | None = None
+    gzip_index_digest: bytes | None = None
+    physical_source_size: int | None = None
 
     @property
     def num_records(self) -> int:
@@ -1710,6 +1770,23 @@ class _StringTableBuilder:
             position = (len(self.data), len(encoded))
             self._positions[encoded] = position
             self.data.extend(encoded)
+        return position
+
+    def add_gzip_source(
+        self, path: str, gzip_index_path: str, physical_size: int, digest: bytes
+    ) -> tuple[int, int]:
+        encoded_path = path.encode("utf-8")
+        encoded_index = gzip_index_path.encode("utf-8")
+        payload = (
+            encoded_path
+            + _GZIP_META.pack(physical_size, len(encoded_index), digest)
+            + encoded_index
+        )
+        position = self._positions.get(payload)
+        if position is None:
+            position = (len(self.data), len(encoded_path))
+            self._positions[payload] = position
+            self.data.extend(payload)
         return position
 
 
@@ -1761,11 +1838,9 @@ def _read_sidecar_metadata(
             source_size=source_size_override,
             path_only=True,
         )
-    if str(path).endswith((".jsonl.gz", ".json.gz")):
-        raise ValueError(
-            "Index packs require physical byte offsets and cannot contain gzip JSONL; "
-            f"use its standalone .idx and .idx.gzidx sidecars instead: {path}"
-        )
+    is_gzip = _is_gzip_jsonl(path)
+    if is_gzip and source_size_override is not None:
+        raise ValueError("Source-size overrides are not supported for gzip JSONL packs")
     idx = (
         index_file_path(path, indexes_root)
         if index_path_override is None
@@ -1785,6 +1860,40 @@ def _read_sidecar_metadata(
     if size < _U64.size or size % _U64.size:
         raise ValueError(
             f"Invalid .idx sidecar {idx}: size must be a positive multiple of {_U64.size}, got {size}"
+        )
+
+    if is_gzip:
+        if _is_remote_path(path):
+            raise ValueError(f"Gzip JSONL packs require a local source: {path}")
+        gzip_index_path = Path(gzip_index_file_path(path, index_path=idx))
+        try:
+            gzip_index_stat = gzip_index_path.stat()
+            source_stat = Path(path).stat()
+        except FileNotFoundError as ex:
+            raise FileNotFoundError(
+                f"Gzip source and .gzidx must exist for {path}"
+            ) from ex
+        if gzip_index_stat.st_size == 0:
+            raise ValueError(f"Empty gzip seek index: {gzip_index_path}")
+        if source_stat.st_mtime_ns > min(
+            index_stat.st_mtime_ns, gzip_index_stat.st_mtime_ns
+        ):
+            raise ValueError(f"Gzip source is newer than its indexes: {path}")
+        with idx.open("rb") as source_index:
+            source_index.seek(-_U64.size, os.SEEK_END)
+            stream_size = _U64.unpack(source_index.read(_U64.size))[0]
+        digest = hashlib.sha256()
+        with gzip_index_path.open("rb") as seek_index:
+            while chunk := seek_index.read(1024 * 1024):
+                digest.update(chunk)
+        return _BuildSegment(
+            path=path,
+            index_path=idx,
+            offsets_count=size // _U64.size,
+            source_size=stream_size,
+            gzip_index_path=gzip_index_path,
+            gzip_index_digest=digest.digest(),
+            physical_source_size=source_stat.st_size,
         )
 
     source_size = source_size_override
