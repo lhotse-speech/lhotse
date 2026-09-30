@@ -28,6 +28,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.dataloading import LHOTSE_USE_WORKER_PARTITION
+from lhotse.indexing import create_shar_index
 from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.writers import SharWriter
 from lhotse.testing.dummies import DummyManifest
@@ -62,20 +63,24 @@ _ALL_FIELDS = {
 }
 
 
-@pytest.fixture
-def indexed_shar_dir(tmp_path) -> Path:
+@pytest.fixture(params=[False, True], ids=["plain-jsonl", "gzip-jsonl"])
+def indexed_shar_dir(tmp_path, request) -> Path:
     """16 cuts across 4 indexed shards (4 cuts per shard)."""
+    if request.param:
+        pytest.importorskip("indexed_gzip")
     cuts = DummyManifest(CutSet, begin_id=0, end_id=16, with_data=True)
     writer = SharWriter(
         tmp_path,
         fields=_ALL_FIELDS,
         shard_size=4,
-        compress_jsonl=False,
-        create_index=True,
+        compress_jsonl=request.param,
+        create_index=not request.param,
     )
     with writer:
         for c in cuts:
             writer.write(c)
+    if request.param:
+        create_shar_index(tmp_path)
     return tmp_path
 
 

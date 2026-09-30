@@ -69,7 +69,9 @@ _SEGMENT_PATH_ONLY = 1
 _SEGMENT_FIXED_ARRAY = 2
 _SEGMENT_GZIP_JSONL = 4
 _SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT = 1
-_GZIP_META = struct.Struct("<QI32s")  # compressed size, seek-index path length, SHA-256
+# Compressed source size, seek-index offset relative to the appended gzip
+# payloads, seek-index byte length, and SHA-256 of those embedded bytes.
+_GZIP_META = struct.Struct("<QQQ32s")
 _U64 = struct.Struct("<Q")
 _U32 = struct.Struct("<I")
 _UINT32_DTYPE = "uint32"
@@ -398,17 +400,22 @@ def write_index_pack(
             )
         )
 
-    path_positions = [
-        strings.add_gzip_source(
-            segment.path,
-            str(segment.gzip_index_path),
-            segment.physical_source_size,
-            segment.gzip_index_digest,
-        )
-        if segment.gzip_index_path is not None
-        else strings.add(segment.path)
-        for segment in segments
-    ]
+    path_positions = []
+    gzip_payload_size = 0
+    for segment in segments:
+        if segment.gzip_index_path is None:
+            path_positions.append(strings.add(segment.path))
+        else:
+            path_positions.append(
+                strings.add_gzip_source(
+                    segment.path,
+                    segment.physical_source_size,
+                    gzip_payload_size,
+                    segment.gzip_index_size,
+                    segment.gzip_index_digest,
+                )
+            )
+            gzip_payload_size += segment.gzip_index_size
     string_blob = bytes(strings.data)
 
     collection_offset = _HEADER_SIZE
@@ -417,7 +424,7 @@ def write_index_pack(
     strings_offset = segment_offset + len(segments) * _SEGMENT.size
     offsets_offset = strings_offset + len(string_blob)
     offsets_offset += (-offsets_offset) % _U64.size
-    offsets_size = sum(
+    offsets_size = gzip_payload_size + sum(
         segment.offsets_count * (_U32.size if segment.fixed_array else _U64.size)
         for segment in segments
     )
@@ -591,6 +598,24 @@ def write_index_pack(
                     )
                 )
                 payload_cursor += expected_size
+
+            for segment in segments:
+                if segment.gzip_index_path is None:
+                    continue
+                digest = hashlib.sha256()
+                copied = 0
+                with segment.gzip_index_path.open("rb") as seek_index:
+                    while chunk := seek_index.read(1024 * 1024):
+                        out.write(chunk)
+                        digest.update(chunk)
+                        copied += len(chunk)
+                if (
+                    copied != segment.gzip_index_size
+                    or digest.digest() != segment.gzip_index_digest
+                ):
+                    raise ValueError(
+                        f"Gzip seek index changed while packing: {segment.gzip_index_path}"
+                    )
 
             if out.tell() != offsets_offset + offsets_size:
                 raise AssertionError(
@@ -961,10 +986,21 @@ class IndexPack:
         self._gzip_sources = {}
         self._read_catalog()
 
-    def gzip_index_info(self, path: str) -> tuple[str, int, bytes] | None:
-        """Return the pinned seek-index path, compressed size, and digest."""
+    def gzip_index_info(self, path: str) -> tuple[int, int, int, bytes] | None:
+        """Return compressed size and the embedded seek-index range and digest."""
         self._ensure_open()
         return self._gzip_sources.get(path)
+
+    def gzip_index_bytes(self, path: str) -> bytes:
+        """Read and authenticate one embedded gzip seek index on demand."""
+        info = self.gzip_index_info(path)
+        if info is None:
+            raise KeyError(f"No gzip seek index for {path!r} in {self.path}")
+        _, position, size, expected_digest = info
+        data = self._mmap[position : position + size]
+        if hashlib.sha256(data).digest() != expected_digest:
+            raise ValueError(f"Packed gzip seek index checksum mismatch for {path}")
+        return data
 
     def collection(self, key: bytes | str) -> PackedIndexCollection:
         """
@@ -1040,6 +1076,11 @@ class IndexPack:
                 f"Index-pack CRC mismatch for segment {segment_id} in {self.path}: "
                 f"expected={expected_crc:#x}, actual={actual_crc:#x}"
             )
+        if segment[3] & _SEGMENT_GZIP_JSONL:
+            path = self._string(
+                segment[0], segment[2], label=f"segment {segment_id} path"
+            )
+            self.gzip_index_bytes(path)
 
     def close(self) -> None:
         """Close the mmap and its underlying file descriptor."""
@@ -1417,6 +1458,10 @@ class IndexPack:
             self.close()
             raise
         offsets_cursor = self.offsets_offset
+        gzip_payload_base = self.offsets_offset + sum(
+            self._segment(segment_id)[6] for segment_id in range(self.num_segments)
+        )
+        gzip_segments = []
         self._gzip_sources = {}
         for segment_id in range(self.num_segments):
             segment = self._segment(segment_id)
@@ -1464,20 +1509,20 @@ class IndexPack:
                     raise ValueError(
                         f"Index pack gzip segment {segment_id} has truncated metadata"
                     )
-                physical_size, seek_path_length, digest = _GZIP_META.unpack_from(
-                    self._mmap, metadata_position
-                )
-                seek_path = self._string(
-                    metadata_position + _GZIP_META.size,
-                    seek_path_length,
-                    label=f"segment {segment_id} gzip index path",
-                )
-                if not _is_gzip_jsonl(path) or not seek_path or metadata_flags != 0:
+                (
+                    physical_size,
+                    relative_position,
+                    seek_size,
+                    digest,
+                ) = _GZIP_META.unpack_from(self._mmap, metadata_position)
+                if not _is_gzip_jsonl(path) or seek_size == 0 or metadata_flags != 0:
                     self.close()
                     raise ValueError(
                         f"Index pack gzip segment {segment_id} has invalid metadata"
                     )
-                self._gzip_sources[path] = (seek_path, physical_size, digest)
+                gzip_segments.append(
+                    (path, physical_size, relative_position, seek_size, digest)
+                )
             is_array = bool(flags & _SEGMENT_FIXED_ARRAY)
             expected_size = offsets_count * (_U32.size if is_array else _U64.size)
             if (not is_array and offsets_count < 1) or size != expected_size:
@@ -1516,10 +1561,31 @@ class IndexPack:
                     "encodings"
                 )
             offsets_cursor += size
-        if offsets_cursor != self.offsets_offset + self.offsets_size:
+        if offsets_cursor != gzip_payload_base:
             self.close()
             raise ValueError(
                 "Index pack segment payloads do not cover the offsets section"
+            )
+        for path, physical_size, relative_position, seek_size, digest in gzip_segments:
+            if (
+                gzip_payload_base + relative_position != offsets_cursor
+                or seek_size > self.offsets_offset + self.offsets_size - offsets_cursor
+            ):
+                self.close()
+                raise ValueError(
+                    f"Index pack gzip seek index has an invalid payload range: {path}"
+                )
+            self._gzip_sources[path] = (
+                physical_size,
+                offsets_cursor,
+                seek_size,
+                digest,
+            )
+            offsets_cursor += seek_size
+        if offsets_cursor != self.offsets_offset + self.offsets_size:
+            self.close()
+            raise ValueError(
+                "Index pack gzip payloads do not cover the offsets section"
             )
 
         collections = {}
@@ -1748,6 +1814,7 @@ class _BuildSegment:
     input_identity: tuple[int, int, int, int] | None = None
     gzip_index_path: Path | None = None
     gzip_index_digest: bytes | None = None
+    gzip_index_size: int | None = None
     physical_source_size: int | None = None
 
     @property
@@ -1773,14 +1840,16 @@ class _StringTableBuilder:
         return position
 
     def add_gzip_source(
-        self, path: str, gzip_index_path: str, physical_size: int, digest: bytes
+        self,
+        path: str,
+        physical_size: int,
+        relative_position: int,
+        size: int,
+        digest: bytes,
     ) -> tuple[int, int]:
         encoded_path = path.encode("utf-8")
-        encoded_index = gzip_index_path.encode("utf-8")
-        payload = (
-            encoded_path
-            + _GZIP_META.pack(physical_size, len(encoded_index), digest)
-            + encoded_index
+        payload = encoded_path + _GZIP_META.pack(
+            physical_size, relative_position, size, digest
         )
         position = self._positions.get(payload)
         if position is None:
@@ -1893,6 +1962,7 @@ def _read_sidecar_metadata(
             source_size=stream_size,
             gzip_index_path=gzip_index_path,
             gzip_index_digest=digest.digest(),
+            gzip_index_size=gzip_index_stat.st_size,
             physical_source_size=source_stat.st_size,
         )
 

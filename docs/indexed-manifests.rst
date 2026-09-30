@@ -80,10 +80,11 @@ into one immutable, memory-mapped file. Opening the pack maps one file and the
 operating system faults in offset pages only when records are requested.
 
 An index pack does not replace the source data or change checkpoint semantics.
-For gzip JSONL, it stores offsets into the uncompressed stream and a reference
-to the ``.gzidx`` seek index. Keep that file alongside the pack and source;
-the reader verifies its digest before opening it. The pack is built from
-sidecars that already exist. The pack itself must be a local seekable file.
+For gzip JSONL, it stores offsets into the uncompressed stream and embeds the
+``.gzidx`` seek index. After packing, the loose ``.idx`` and ``.gzidx`` files
+are unnecessary for packed reads. The reader verifies the embedded seek index
+before opening the gzip source. The pack is built from sidecars that already
+exist. The pack itself must be a local seekable file.
 Lhotse deliberately leaves dataset discovery to the caller, so a pack can hold
 one or more application-defined logical collections (for example, a manifest
 collection and a payload collection).

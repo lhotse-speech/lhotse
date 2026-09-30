@@ -100,14 +100,16 @@ class LazyIndexedSharIterator(IteratorNode):
         ]
 
         # ----- Resolve index_path into per-shard per-field index paths -----
-        if indexes_root is not None:
-            index_path = _index_path_from_indexes_root(self.streams, indexes_root)
         self._index_streams: Optional[Dict[str, List[Optional[Pathlike]]]] = None
         self._raw_index_path = index_path  # kept for pickling
-        self._index_streams = self._resolve_index_streams(
-            streams=self.streams,
-            index_path=index_path,
-            in_dir=in_dir,
+        self._index_streams = (
+            _index_path_from_indexes_root(self.streams, indexes_root)
+            if indexes_root is not None
+            else self._resolve_index_streams(
+                streams=self.streams,
+                index_path=index_path,
+                in_dir=in_dir,
+            )
         )
         self._validate_indexed_streams(
             streams=self.streams,
@@ -271,12 +273,14 @@ class LazyIndexedSharIterator(IteratorNode):
             return False
         try:
             _, streams = cls._resolve_streams(fields=fields, in_dir=in_dir)
-            if indexes_root is not None:
-                index_path = _index_path_from_indexes_root(streams, indexes_root)
-            index_streams = cls._resolve_index_streams(
-                streams=streams,
-                index_path=index_path,
-                in_dir=in_dir,
+            index_streams = (
+                _index_path_from_indexes_root(streams, indexes_root)
+                if indexes_root is not None
+                else cls._resolve_index_streams(
+                    streams=streams,
+                    index_path=index_path,
+                    in_dir=in_dir,
+                )
             )
             cls._validate_indexed_streams(
                 streams=streams,

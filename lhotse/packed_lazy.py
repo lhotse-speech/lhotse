@@ -10,7 +10,6 @@ shard, and one in-memory offset array per sidecar.
 
 from __future__ import annotations
 
-import hashlib
 import io
 import os
 import threading
@@ -46,12 +45,18 @@ def read_packed_range(
 
     All readers using the same :class:`~lhotse.index_pack.IndexPack` share one
     process-local LRU, so ``max_open_files`` is a bound per dataset pack rather
-    than per logical collection. Remote source URLs are rejected because
-    Plain sources use ``os.pread()``; gzip JSONL sources use their ``.gzidx``
-    seek index. Both require a local, seekable file.
+    than per logical collection. Remote source URLs are rejected.
+    Plain sources use ``os.pread()``; gzip JSONL sources use their seek index
+    embedded in the pack. Both require a local, seekable source file.
     """
     cache = _file_cache_for_pack(index_pack, max_open_files)
-    return cache.read(path, start, end, gzip_info=index_pack.gzip_index_info(path))
+    return cache.read(
+        path,
+        start,
+        end,
+        gzip_info=index_pack.gzip_index_info(path),
+        index_pack=index_pack,
+    )
 
 
 class LazyPackedManifestIterator(IteratorNode):
@@ -396,7 +401,9 @@ class _PackedFileCache:
         self._pid = os.getpid()
         self._fds: OrderedDict[str, object] = OrderedDict()
 
-    def read(self, path: str, start: int, end: int, *, gzip_info=None) -> bytes:
+    def read(
+        self, path: str, start: int, end: int, *, gzip_info=None, index_pack=None
+    ) -> bytes:
         """
         Read the exact half-open byte range ``[start, end)`` from ``path``.
 
@@ -415,7 +422,7 @@ class _PackedFileCache:
         handle = self._fds.pop(path, None)
         if handle is None:
             handle = (
-                self._open_gzip(path, gzip_info)
+                self._open_gzip(path, gzip_info, index_pack)
                 if gzip_info
                 else os.open(path, os.O_RDONLY)
             )
@@ -472,17 +479,14 @@ class _PackedFileCache:
             source.close()
 
     @staticmethod
-    def _open_gzip(path: str, info):
-        index_path, expected_size, expected_digest = info
+    def _open_gzip(path: str, info, index_pack: IndexPack):
+        expected_size, _, _, _ = info
         source = open(path, "rb")
         reader = None
         try:
             if os.fstat(source.fileno()).st_size != expected_size:
                 raise ValueError(f"Packed gzip source size changed: {path}")
-            with open(index_path, "rb") as index:
-                seek_index = index.read()
-            if hashlib.sha256(seek_index).digest() != expected_digest:
-                raise ValueError(f"Packed gzip seek index changed: {index_path}")
+            seek_index = index_pack.gzip_index_bytes(path)
             reader = _require_indexed_gzip().IndexedGzipFile(fileobj=source)
             reader.import_index(fileobj=io.BytesIO(seek_index))
             return reader, source, threading.Lock()

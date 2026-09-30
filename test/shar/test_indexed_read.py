@@ -9,7 +9,14 @@ from test.shar.conftest import cuts  # noqa: F401
 import pytest
 
 from lhotse import CutSet
-from lhotse.indexing import create_jsonl_index, create_shar_index, index_exists
+from lhotse.indexing import (
+    create_jsonl_index,
+    create_shar_index,
+    create_tar_index,
+    index_exists,
+    index_file_path,
+    read_index,
+)
 from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.readers.lazy import LazySharIterator
 from lhotse.shar.writers.shar import SharWriter
@@ -770,6 +777,153 @@ def test_indexed_shar_reads_gzip_jsonl_after_indexing(tmp_path, cuts):
     indexed = CutSet.from_shar(in_dir=tmp_path)
     assert indexed.is_indexed
     assert [cut.id for cut in indexed] == [cut.id for cut in cuts]
+    assert len(indexed) == len(cuts)
+    for path in sorted(tmp_path.glob("cuts.*.jsonl.gz")):
+        assert index_exists(path)
+        assert Path(f"{path}.idx").is_file()
+        assert Path(f"{path}.gzidx").is_file()
+    original = list(cuts)
+    random_access = LazyIndexedSharIterator(in_dir=tmp_path)
+    for position in (19, 0, 10, 9, -1, 3):
+        actual = random_access[position]
+        assert actual.id == original[position].id
+        assert actual.load_audio().shape == original[position].load_audio().shape
+    full = [
+        cut.id
+        for cut in LazyIndexedSharIterator(in_dir=tmp_path, shuffle=True, seed=17)
+    ]
+    interrupted = LazyIndexedSharIterator(in_dir=tmp_path, shuffle=True, seed=17)
+    stream = iter(interrupted)
+    before = [next(stream).id for _ in range(13)]
+    state = interrupted.state_dict()
+    restored = LazyIndexedSharIterator(in_dir=tmp_path, shuffle=True, seed=17)
+    restored.load_state_dict(state)
+    assert before + [cut.id for cut in restored] == full
+
+
+def test_indexed_gzip_shar_with_separate_index_directory(tmp_path, cuts):
+    pytest.importorskip("indexed_gzip")
+    data = tmp_path / "data"
+    index_dir = tmp_path / "indexes"
+    data.mkdir()
+    writer = SharWriter(
+        data, fields=ALL_FIELDS, shard_size=7, compress_jsonl=True, create_index=False
+    )
+    with writer:
+        for cut in cuts:
+            writer.write(cut)
+    create_shar_index(data, output_dir=index_dir)
+    assert not list(data.glob("*.idx"))
+    assert len(list(index_dir.glob("cuts.*.jsonl.gz.idx"))) == 3
+    assert len(list(index_dir.glob("cuts.*.jsonl.gz.gzidx"))) == 3
+
+    indexed = CutSet.from_shar(in_dir=data, index_path=index_dir)
+    assert indexed.is_indexed
+    assert [cut.id for cut in indexed] == [cut.id for cut in cuts]
+    seek_index = sorted(index_dir.glob("cuts.*.jsonl.gz.gzidx"))[1]
+    seek_index.unlink()
+    assert not LazyIndexedSharIterator.supports_configuration(
+        in_dir=data, index_path=index_dir
+    )
+    rebuilt = LazyIndexedSharIterator(in_dir=data, index_path=index_dir)
+    assert len(rebuilt) == len(cuts)
+    assert seek_index.is_file()
+    assert rebuilt[8].id == list(cuts)[8].id
+
+
+def test_indexed_gzip_shar_in_dir_uses_mirrored_indexes_root(
+    tmp_path, cuts, monkeypatch
+):
+    pytest.importorskip("indexed_gzip")
+    data = tmp_path / "data"
+    mirror = tmp_path / "mirror"
+    data.mkdir()
+    with SharWriter(
+        data, fields=ALL_FIELDS, shard_size=10, compress_jsonl=True, create_index=False
+    ) as writer:
+        for cut in cuts:
+            writer.write(cut)
+    for path in data.iterdir():
+        output = index_file_path(path, mirror)
+        if path.name.endswith(".jsonl.gz"):
+            create_jsonl_index(path, output_path=output)
+        elif path.suffix == ".tar":
+            create_tar_index(path, output_path=output)
+    monkeypatch.chdir(tmp_path)
+    assert LazyIndexedSharIterator.supports_configuration(
+        in_dir=data, indexes_root=mirror
+    )
+    indexed = CutSet.from_shar(in_dir=data, indexes_root=mirror)
+    assert indexed.is_indexed
+    assert [cut.id for cut in indexed] == [cut.id for cut in cuts]
+    assert not list(data.glob("*.idx"))
+    assert not list(tmp_path.glob("{*"))
+    import pickle
+
+    restored = pickle.loads(
+        pickle.dumps(LazyIndexedSharIterator(in_dir=data, indexes_root=mirror))
+    )
+    assert restored[11].id == list(cuts)[11].id
+
+
+def test_indexed_shar_mixed_plain_and_gzip_shards(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    original = list(DummyManifest(CutSet, begin_id=0, end_id=7, with_data=True))
+    roots = [tmp_path / "gzip", tmp_path / "plain"]
+    for root, subset, compress in zip(
+        roots, (original[:4], original[4:]), (True, False)
+    ):
+        root.mkdir()
+        with SharWriter(
+            root,
+            fields=ALL_FIELDS,
+            shard_size=10,
+            compress_jsonl=compress,
+            create_index=False,
+        ) as writer:
+            for cut in subset:
+                writer.write(cut)
+        create_shar_index(root)
+    fields = {
+        "cuts": [roots[0] / "cuts.000000.jsonl.gz", roots[1] / "cuts.000000.jsonl"]
+    }
+    fields.update(
+        {
+            field: [root / f"{field}.000000.tar" for root in roots]
+            for field in ALL_FIELDS
+        }
+    )
+    reader = LazyIndexedSharIterator(fields=fields)
+    assert [cut.id for cut in reader] == [cut.id for cut in original]
+    assert [reader[i].id for i in (4, 3, -1, 0)] == [
+        original[i].id for i in (4, 3, -1, 0)
+    ]
+
+
+def test_indexed_gzip_shar_large_manifest_crosses_seek_checkpoints(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=300, with_data=True)
+    with SharWriter(
+        tmp_path,
+        fields={"recording": "wav"},
+        shard_size=300,
+        compress_jsonl=True,
+        create_index=False,
+    ) as writer:
+        for cut in cuts:
+            cut.features = None
+            cut.custom = None
+            cut.supervisions[0].custom = None
+            cut.supervisions[0].text = "x" * 20000
+            writer.write(cut)
+    create_shar_index(tmp_path)
+    source = tmp_path / "cuts.000000.jsonl.gz"
+    assert int(read_index(Path(f"{source}.idx"))[-1]) > 4 * 1024 * 1024
+    indexed = LazyIndexedSharIterator(in_dir=tmp_path)
+    expected_ids = [cut.id for cut in cuts]
+    for position in (299, 0, 150, 75, 225):
+        assert indexed[position].id == expected_ids[position]
+        assert len(indexed[position].supervisions[0].text) == 20000
 
 
 # ---------------------------------------------------------------------------
