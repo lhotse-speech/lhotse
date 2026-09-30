@@ -28,7 +28,6 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.dataloading import LHOTSE_USE_WORKER_PARTITION
-from lhotse.indexing import create_shar_index
 from lhotse.shar.readers.indexed import LazyIndexedSharIterator
 from lhotse.shar.writers import SharWriter
 from lhotse.testing.dummies import DummyManifest
@@ -74,13 +73,11 @@ def indexed_shar_dir(tmp_path, request) -> Path:
         fields=_ALL_FIELDS,
         shard_size=4,
         compress_jsonl=request.param,
-        create_index=not request.param,
+        create_index=True,
     )
     with writer:
         for c in cuts:
             writer.write(c)
-    if request.param:
-        create_shar_index(tmp_path)
     return tmp_path
 
 

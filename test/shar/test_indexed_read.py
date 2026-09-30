@@ -10,6 +10,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.indexing import (
+    IndexedJsonlReader,
     create_jsonl_index,
     create_shar_index,
     create_tar_index,
@@ -67,25 +68,67 @@ def test_shar_writer_uncompressed(tmp_path, cuts):
         assert index_exists(tf), f"Missing index for {tf}"
 
 
-def test_shar_writer_compressed_no_index(tmp_path, cuts):
-    """Compressed JSONL doesn't get indexed."""
-    with pytest.warns(UserWarning, match="partially indexed Shar"):
-        writer = SharWriter(
+@pytest.mark.parametrize("shard_size", [None, 7])
+@pytest.mark.parametrize("include_cuts", [False, True])
+def test_shar_writer_indexes_gzip_cuts_and_custom_jsonl(
+    tmp_path, cuts, shard_size, include_cuts
+):
+    pytest.importorskip("indexed_gzip")
+    with SharWriter(
+        tmp_path,
+        fields={**ALL_FIELDS, "label": "jsonl"},
+        shard_size=shard_size,
+        include_cuts=include_cuts,
+    ) as writer:
+        for cut in cuts:
+            cut.label = f"label-{cut.id}"
+            writer.write(cut)
+        # Completed shards are indexed immediately; the active shard is not.
+        for field in ("cuts", "label") if include_cuts else ("label",):
+            paths = writer.output_paths[field]
+            for path in paths[:-1]:
+                assert index_exists(path)
+            assert not index_exists(paths[-1])
+
+    for paths in writer.output_paths.values():
+        for path in paths:
+            assert index_exists(path)
+    labels = [
+        row
+        for path in writer.output_paths["label"]
+        for row in IndexedJsonlReader(path, auto_create_index=False)
+    ]
+    assert labels == [{"cut_id": cut.id, "label": f"label-{cut.id}"} for cut in cuts]
+    if include_cuts:
+        indexed = CutSet.from_shar(in_dir=tmp_path)
+        assert indexed.is_indexed
+        assert [cut.label for cut in indexed] == [f"label-{cut.id}" for cut in cuts]
+
+
+def test_shar_writer_compressed_without_dependency(tmp_path, cuts, monkeypatch):
+    """Missing gzip support keeps writing functional and indexes the tars."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "indexed_gzip", None)
+    with pytest.warns(UserWarning, match=r"install lhotse\[gzip\]"):
+        with SharWriter(
             tmp_path,
             fields=ALL_FIELDS,
             shard_size=10,
             compress_jsonl=True,
             create_index=True,
-        )
-    with writer:
-        for c in cuts:
-            writer.write(c)
+        ) as writer:
+            for c in cuts:
+                writer.write(c)
 
     gz_files = sorted(tmp_path.glob("cuts.*.jsonl.gz"))
     assert len(gz_files) == 2
-    # .gz files should NOT have .idx (they're compressed)
     for gf in gz_files:
         assert not index_exists(gf)
+    assert not list(tmp_path.glob("*.gzidx"))
+    assert [cut.id for cut in LazySharIterator(in_dir=tmp_path)] == [
+        cut.id for cut in cuts
+    ]
 
     # tar files should still have .idx
     tar_files = sorted(tmp_path.glob("recording.*.tar"))
@@ -93,23 +136,27 @@ def test_shar_writer_compressed_no_index(tmp_path, cuts):
         assert index_exists(tf)
 
 
-def test_shar_writer_no_index(tmp_path, cuts):
+@pytest.mark.parametrize("compress_jsonl", [False, True])
+def test_shar_writer_no_index(tmp_path, cuts, compress_jsonl):
     """create_index=False skips index creation."""
     writer = SharWriter(
         tmp_path,
         fields=ALL_FIELDS,
         shard_size=10,
-        compress_jsonl=False,
+        compress_jsonl=compress_jsonl,
         create_index=False,
     )
     with writer:
         for c in cuts:
             writer.write(c)
 
-    jsonl_files = sorted(tmp_path.glob("cuts.*.jsonl"))
+    suffix = ".jsonl.gz" if compress_jsonl else ".jsonl"
+    jsonl_files = sorted(tmp_path.glob(f"cuts.*{suffix}"))
     assert len(jsonl_files) == 2
     for jf in jsonl_files:
         assert not index_exists(jf)
+    assert not list(tmp_path.glob("*.idx"))
+    assert not list(tmp_path.glob("*.gzidx"))
 
     tar_files = sorted(tmp_path.glob("recording.*.tar"))
     for tf in tar_files:
@@ -595,7 +642,8 @@ def test_cutset_from_shar_indexed_auto_detect(tmp_path, cuts):
 
 
 def test_cutset_from_shar_indexed_auto_detect_compressed(tmp_path, cuts):
-    """CutSet.from_shar(indexed=None) falls back to streaming for compressed."""
+    """Automatically built gzip sidecars enable indexed autodetection."""
+    pytest.importorskip("indexed_gzip")
     cs = CutSet.from_cuts(cuts)
     cs.to_shar(
         output_dir=tmp_path,
@@ -605,9 +653,27 @@ def test_cutset_from_shar_indexed_auto_detect_compressed(tmp_path, cuts):
         create_index=True,
     )
 
-    # Auto-detect: compressed -> streaming
     shar_cs = CutSet.from_shar(in_dir=tmp_path)
-    assert shar_cs.is_indexed is False
+    assert shar_cs.is_indexed
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"split_for_dataloading": True},
+        {"seed": "randomized", "shuffle_shards": True},
+        {"seed": "trng", "shuffle_shards": True},
+        {"slice_length": 3},
+        {"cut_map_fns": [lambda cut: cut, lambda cut: cut]},
+        {"shuffle_shards": True, "stateful_shuffle": False},
+    ],
+)
+def test_shar_auto_detect_preserves_streaming_options(shar_dir, options):
+    pytest.importorskip("indexed_gzip")
+    assert index_exists(shar_dir / "cuts.000000.jsonl.gz")
+    result = CutSet.from_shar(in_dir=shar_dir, **options)
+    assert not result.is_indexed
+    assert len(list(result)) == (6 if "slice_length" in options else 20)
 
 
 def test_cutset_from_shar_indexed_auto_detect_requires_all_fields_indexed(
@@ -756,11 +822,11 @@ def test_indexed_shar_pickle(tmp_path, cuts):
 
 
 # ---------------------------------------------------------------------------
-# LazyIndexedSharIterator: compressed shard rejection
+# LazyIndexedSharIterator: gzip shards
 # ---------------------------------------------------------------------------
 
 
-def test_indexed_shar_reads_gzip_jsonl_after_indexing(tmp_path, cuts):
+def test_indexed_shar_reads_automatically_indexed_gzip_jsonl(tmp_path, cuts):
     pytest.importorskip("indexed_gzip")
     writer = SharWriter(
         tmp_path,
@@ -773,7 +839,6 @@ def test_indexed_shar_reads_gzip_jsonl_after_indexing(tmp_path, cuts):
         for c in cuts:
             writer.write(c)
 
-    create_shar_index(tmp_path)
     indexed = CutSet.from_shar(in_dir=tmp_path)
     assert indexed.is_indexed
     assert [cut.id for cut in indexed] == [cut.id for cut in cuts]

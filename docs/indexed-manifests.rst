@@ -42,8 +42,8 @@ For Shar:
 
    lhotse index shar /path/to/shar_dir/
 
-When writing Shar from Python, keep the cuts manifest uncompressed and enable
-index creation:
+When writing Shar from Python, enable index creation. With ``lhotse[gzip]``
+installed, both plain and gzip JSONL shards are indexed as they are finalized:
 
 .. code-block:: python
 
@@ -53,7 +53,7 @@ index creation:
        "data/",
        fields={"recording": "wav"},
        shard_size=1000,
-       compress_jsonl=False,
+       compress_jsonl=True,
        create_index=True,
    )
 
@@ -200,6 +200,8 @@ For Shar:
 ``CutSet.from_shar(..., indexed=None)`` will auto-detect indexed mode when all
 requested field shards are indexable and have matching indexes available.
 JSONL shards may be gzip-compressed; tar shards must be uncompressed.
+Streaming options such as shard splitting, randomized seeds, ``cut_map_fns``,
+and ``slice_length`` preserve streaming mode during automatic selection.
 
 How iterator composition works
 ------------------------------

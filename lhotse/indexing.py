@@ -501,9 +501,7 @@ def create_shar_index(
         out = None
         if output_dir is not None:
             out = Path(output_dir) / (p.name + ".idx")
-        if p.suffix == ".jsonl":
-            create_jsonl_index(p, output_path=out)
-        elif _is_gzip_jsonl(p):
+        if p.suffix == ".jsonl" or _is_gzip_jsonl(p):
             create_jsonl_index(p, output_path=out)
         elif p.suffix == ".tar":
             create_tar_index(p, output_path=out)
