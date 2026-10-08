@@ -513,6 +513,12 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
         assert (
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
+        assert (
+            add_durations(self.duration, -offset, sampling_rate=self.sampling_rate) > 0
+        ), (
+            f"Offset for truncate must be smaller than the duration of the cut "
+            f"(provided offset {offset} for a cut of duration {self.duration})."
+        )
         new_start = max(
             add_durations(self.start, offset, sampling_rate=self.sampling_rate), 0
         )
