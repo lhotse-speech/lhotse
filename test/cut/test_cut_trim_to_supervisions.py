@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import MonoCut, MultiCut, Recording, SupervisionSegment
+from lhotse import CutSet, MonoCut, MultiCut, Recording, SupervisionSegment
 from lhotse.supervision import AlignmentItem
 
 
@@ -609,3 +609,95 @@ def test_cut_set_trim_to_supervision_groups_edge_case1(mono_cut2):
     assert len(cuts) == 2
     assert cuts[0].duration == 3.37
     assert cuts[1].duration == 2.0
+
+
+@pytest.fixture
+def cut_with_supervision_past_the_end():
+    """
+    The last supervision ends 7 ms after the recording does, which real annotations
+    often do (https://github.com/lhotse-speech/lhotse/issues/1416)::
+
+        |----------Recording---------|
+           |-Sup1-|             |---Sup2---|
+        |------------Cut-------------|
+    """
+    return MonoCut(
+        id="X",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        supervisions=[
+            SupervisionSegment(id="X1", recording_id="X", start=1.0, duration=1.0),
+            SupervisionSegment(id="X2", recording_id="X", start=9.0, duration=1.007),
+        ],
+        recording=Recording(
+            id="X", sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+        ),
+    )
+
+
+def test_cut_trim_to_supervision_groups_supervision_past_the_end(
+    cut_with_supervision_past_the_end,
+):
+    cuts = cut_with_supervision_past_the_end.trim_to_supervision_groups(max_pause=2)
+    cuts = cuts.to_eager()
+    assert [[s.id for s in c.supervisions] for c in cuts] == [["X1"], ["X2"]]
+    assert cuts[1].start == 9.0
+    assert cuts[1].duration == 1.0
+    assert cuts[1].supervisions[0].start == 0.0
+    assert cuts[1].supervisions[0].duration == 1.007
+
+
+@pytest.mark.parametrize("from_cut_set", [False, True])
+def test_cut_trim_to_supervisions_no_keep_overlapping_supervision_past_the_end(
+    cut_with_supervision_past_the_end, from_cut_set
+):
+    cut = cut_with_supervision_past_the_end
+    if from_cut_set:
+        cuts = CutSet.from_cuts([cut]).trim_to_supervisions(keep_overlapping=False)
+    else:
+        cuts = cut.trim_to_supervisions(keep_overlapping=False)
+    cuts = cuts.to_eager()
+    assert [[s.id for s in c.supervisions] for c in cuts] == [["X1"], ["X2"]]
+    assert cuts[1].duration == 1.0
+
+
+@pytest.mark.parametrize("use_index", [False, True])
+def test_truncate_keeps_supervision_past_the_end_only_if_the_window_covers_it(
+    cut_with_supervision_past_the_end, use_index
+):
+    cut = cut_with_supervision_past_the_end
+    kwargs = {"keep_excessive_supervisions": False}
+    if use_index:
+        kwargs["_supervisions_index"] = cut.index_supervisions()
+
+    def kept(**window):
+        return [s.id for s in cut.truncate(**window, **kwargs).supervisions]
+
+    # The requested window covers the whole supervision; the cut just ends first.
+    assert kept(offset=9.0, duration=1.007) == ["X2"]
+    assert kept(offset=8.0, duration=5.0) == ["X2"]
+    # The window ends inside the supervision.
+    assert kept(offset=9.0, duration=0.5) == []
+    # Without a duration the window ends where the cut does.
+    assert kept(offset=9.0) == []
+    assert kept(offset=0.5, duration=2.0) == ["X1"]
+
+
+@pytest.mark.parametrize("use_index", [False, True])
+def test_truncate_drops_supervision_that_only_touches_the_end_of_the_cut(
+    cut_with_supervision_past_the_end, use_index
+):
+    cut = cut_with_supervision_past_the_end
+    # Starts 1 ms before the cut ends, so less than 1% of it is inside the cut.
+    cut.supervisions.append(
+        SupervisionSegment(id="X3", recording_id="X", start=9.999, duration=0.2)
+    )
+    index = cut.index_supervisions() if use_index else None
+    truncated = cut.truncate(
+        offset=9.0,
+        duration=2.0,
+        keep_excessive_supervisions=False,
+        _supervisions_index=index,
+    )
+    assert [s.id for s in truncated.supervisions] == ["X2"]

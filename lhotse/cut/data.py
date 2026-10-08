@@ -536,18 +536,35 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             new_duration = add_durations(
                 new_duration, -duration_past_end, sampling_rate=self.sampling_rate
             )
+        # The window the caller asked for. When it runs past the end of this cut,
+        # ``new_duration`` was shortened above, but a supervision that fits in the
+        # requested window is not cut through by the truncation.
+        requested_duration = duration if duration is not None else new_duration
 
         if _supervisions_index is None:
-            criterion = overlaps if keep_excessive_supervisions else overspans
             new_time_span = TimeSpan(start=0, end=new_duration)
             new_supervisions = (
                 segment.with_offset(-offset) for segment in self.supervisions
             )
-            supervisions = [
-                segment
-                for segment in new_supervisions
-                if criterion(new_time_span, segment)
-            ]
+            if keep_excessive_supervisions:
+                supervisions = [
+                    segment
+                    for segment in new_supervisions
+                    if overlaps(new_time_span, segment)
+                ]
+            else:
+                # The same rule as with a supervisions index below: inside the
+                # requested window, and not only brushing the end of the new cut.
+                requested_time_span = TimeSpan(start=0, end=requested_duration)
+                supervisions = [
+                    segment
+                    for segment in new_supervisions
+                    if overspans(new_time_span, segment)
+                    or (
+                        overspans(requested_time_span, segment)
+                        and measure_overlap(segment, new_time_span) > 0.01
+                    )
+                ]
         else:
             tree = _supervisions_index[self.id]
             # Below we select which method should be called on the IntervalTree object.
@@ -560,7 +577,7 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
                 intervals = tree.overlap(begin=offset, end=offset + new_duration)
             else:
                 intervals = tree.envelop(
-                    begin=offset - 1e-3, end=offset + new_duration + 1e-3
+                    begin=offset - 1e-3, end=offset + requested_duration + 1e-3
                 )
             supervisions = []
             for interval in intervals:
