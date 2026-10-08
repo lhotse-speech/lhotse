@@ -32,6 +32,7 @@ import tarfile
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
+from io import BufferedReader, FileIO
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, Optional, Tuple
 from urllib.parse import quote_from_bytes, unquote_to_bytes
@@ -281,7 +282,19 @@ def _open_seekable(path: str) -> BinaryIO:
         from lhotse.ais import AISRangeReader
 
         return AISRangeReader(path)
-    return open_best(path, "rb")
+    handle = open_best(path, "rb")
+    # Large filesystem block sizes can make a header read prefetch megabytes.
+    # Bound local buffering for random member access, retaining other I/O backends.
+    if isinstance(handle, BufferedReader) and isinstance(handle.raw, FileIO):
+        # Avoid kernel readahead when seeking between indexed members.
+        try:
+            os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_RANDOM)
+        except (AttributeError, OSError):
+            # A small buffer alone can increase kernel readahead.
+            # Preserve the original policy if the random-access hint is unavailable.
+            return handle
+        return BufferedReader(handle.detach(), buffer_size=8192)
+    return handle
 
 
 def _release_handle(entry: _HandleEntry) -> None:
