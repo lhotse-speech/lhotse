@@ -553,8 +553,9 @@ class LazyIndexedManifestIterator(IteratorNode):
     Supports O(1) random access via ``__getitem__`` and optional Feistel-shuffled
     iteration via :class:`~lhotse.indexing.LazyShuffledRange`.
 
-    Unlike :class:`LazyManifestIterator`, this class requires an uncompressed
-    JSONL file (the binary ``.idx`` index is created automatically if missing).
+    Unlike :class:`LazyManifestIterator`, this class requires an indexed
+    JSONL file. Gzip JSONL additionally requires ``indexed_gzip`` and a
+    companion gzip seek index; missing indexes are created automatically.
 
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
 

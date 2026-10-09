@@ -1,4 +1,6 @@
+import gzip
 import json
+import pickle
 import random
 import tarfile
 from collections import Counter
@@ -102,11 +104,91 @@ def test_create_jsonl_index(jsonl_file):
     assert offsets[-1] == p.stat().st_size
 
 
-def test_create_jsonl_index_rejects_compressed(tmp_path):
+def test_indexed_gzip_jsonl_random_access_and_mirrored_indexes(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    records = [{"id": i, "text": "hello" * 80} for i in range(6000)]
     p = tmp_path / "data.jsonl.gz"
-    p.write_bytes(b"")
-    with pytest.raises(RuntimeError, match="compressed"):
-        create_jsonl_index(p)
+    with gzip.open(p, "wt") as f:
+        for record in records:
+            f.write(json.dumps(record) + "\n")
+
+    index = tmp_path / "mirror" / "data.jsonl.gz.idx"
+    assert not index_exists(p, index)
+    assert create_jsonl_index(p, output_path=index) == index
+    assert index_exists(p, index)
+    assert (tmp_path / "mirror" / "data.jsonl.gz.gzidx").is_file()
+    assert int(read_index(index)[-1]) > p.stat().st_size
+
+    reader = IndexedJsonlReader(p, auto_create_index=False, index_path=index)
+    assert [reader[i] for i in (5999, 0, 3000, 1, 5999)] == [
+        records[i] for i in (5999, 0, 3000, 1, 5999)
+    ]
+    assert pickle.loads(pickle.dumps(reader))[3000] == records[3000]
+    reader.close()
+
+    (tmp_path / "mirror" / "data.jsonl.gz.gzidx").unlink()
+    assert not index_exists(p, index)
+    with pytest.raises(FileNotFoundError):
+        IndexedJsonlReader(p, auto_create_index=False, index_path=index)
+
+
+def test_indexed_gzip_jsonl_cutset_autodetection(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    from lhotse import CutSet
+
+    p = tmp_path / "cuts.jsonl.gz"
+    expected = _write_cuts_jsonl(p, n=12)
+    create_jsonl_index(p)
+    cuts = CutSet.from_files([p], indexed=None, shuffle_iters=False)
+    assert cuts.is_indexed
+    assert [cut.id for cut in cuts] == [cut.id for cut in expected]
+    single = CutSet.from_file(p, indexed=None)
+    assert single.is_indexed
+    assert [cut.id for cut in single] == [cut.id for cut in expected]
+
+
+@pytest.mark.parametrize("api", ["from_file", "from_files", "from_shar"])
+def test_gzip_autodetection_without_optional_dependency(tmp_path, monkeypatch, api):
+    pytest.importorskip("indexed_gzip")
+    import sys
+
+    from lhotse import CutSet
+
+    path = tmp_path / "cuts.000000.jsonl.gz"
+    expected = _write_cuts_jsonl(path, n=3)
+    create_jsonl_index(path)
+    monkeypatch.setitem(sys.modules, "indexed_gzip", None)
+
+    def read(indexed):
+        if api == "from_files":
+            return CutSet.from_files([path], indexed=indexed, shuffle_iters=False)
+        if api == "from_shar":
+            return CutSet.from_shar(in_dir=tmp_path, indexed=indexed)
+        return CutSet.from_file(path, indexed=indexed)
+
+    automatic = read(None)
+    assert not automatic.is_indexed
+    assert [cut.id for cut in automatic] == [cut.id for cut in expected]
+    with pytest.raises(ImportError, match="lhotse\\[gzip\\]"):
+        list(read(True))
+
+
+def test_indexed_gzip_jsonl_resume(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl.gz"
+    _write_cuts_jsonl(path, n=30)
+    create_jsonl_index(path)
+    full = [cut.id for cut in LazyIndexedManifestIterator(path, shuffle=True, seed=42)]
+
+    interrupted = LazyIndexedManifestIterator(path, shuffle=True, seed=42)
+    iterator = iter(interrupted)
+    first = [next(iterator).id for _ in range(9)]
+    state = interrupted.state_dict()
+    restored = LazyIndexedManifestIterator(path, shuffle=True, seed=42)
+    restored.load_state_dict(state)
+    assert first + [cut.id for cut in restored] == full
 
 
 def test_indexed_jsonl_reader(jsonl_file):
@@ -294,14 +376,14 @@ def test_create_shar_index(tmp_path, jsonl_file, tar_file):
 
     shutil.copy(jsonl_p, shar_dir / "cuts.000000.jsonl")
     shutil.copy(tar_p, shar_dir / "recording.000000.tar")
-    # Also add a .gz file which should be skipped
-    (shar_dir / "cuts.000001.jsonl.gz").write_bytes(b"")
+    # Compressed tar still cannot be indexed.
+    (shar_dir / "recording.000001.tar.gz").write_bytes(b"")
 
     create_shar_index(shar_dir)
 
     assert (shar_dir / "cuts.000000.jsonl.idx").is_file()
     assert (shar_dir / "recording.000000.tar.idx").is_file()
-    assert not (shar_dir / "cuts.000001.jsonl.gz.idx").is_file()
+    assert not (shar_dir / "recording.000001.tar.gz.idx").is_file()
 
 
 # ---------------------------------------------------------------------------

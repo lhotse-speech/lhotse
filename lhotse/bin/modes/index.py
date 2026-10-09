@@ -35,10 +35,11 @@ def _create_single_index(path: str, output_dir: str, create_index_fn):
 )
 def jsonl(path: str, output_dir: str):
     """
-    Create a binary index for an uncompressed JSONL file.
+    Create a binary index for a plain or gzip JSONL file.
 
     The index file is written next to the input as ``<path>.idx``,
-    unless ``--output-dir`` is specified.
+    unless ``--output-dir`` is specified. Gzip inputs also create a
+    ``<path>.gzidx`` seek index in the same location.
     """
     from lhotse.indexing import create_jsonl_index
 
@@ -81,7 +82,8 @@ def shar(shar_dir: str, output_dir: str):
 
     Indexes are written next to each data file as ``<file>.idx``,
     unless ``--output-dir`` is specified.
-    Compressed files (``.jsonl.gz``, ``.tar.gz``) are skipped.
+    Gzip JSONL is indexed when ``indexed_gzip`` is installed; compressed tar
+    files are skipped.
     """
     from lhotse.indexing import create_shar_index
 

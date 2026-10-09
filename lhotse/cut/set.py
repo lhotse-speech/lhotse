@@ -330,7 +330,8 @@ class CutSet(Serializable, AlgorithmMixin):
             will be different on each script execution.
         :param indexed: controls whether to use indexed random-access reading
             for each JSONL file.  ``True`` forces indexed mode (requires
-            uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
+            plain ``.jsonl`` or gzip ``.jsonl.gz``). ``False`` uses the
+            default lazy reader.
             ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
             file already exists alongside each JSONL file.
         :param index_path: optional list of custom ``.idx`` file paths,
@@ -339,9 +340,8 @@ class CutSet(Serializable, AlgorithmMixin):
             for that file.
         :return: a lazy CutSet instance.
         """
-        from lhotse.indexing import index_exists
+        from lhotse.indexing import index_exists, supports_indexed_access
         from lhotse.lazy import LazyIndexedManifestIterator
-        from lhotse.serialization import extension_contains
 
         if index_path is not None and len(index_path) != len(paths):
             raise ValueError(
@@ -354,7 +354,7 @@ class CutSet(Serializable, AlgorithmMixin):
             if indexed is True or (indexed is None and ip is not None):
                 return LazyIndexedManifestIterator(p, index_path=ip)
             elif indexed is None:
-                use_idx = not extension_contains(".gz", p) and index_exists(p)
+                use_idx = supports_indexed_access(p, kind="jsonl") and index_exists(p)
                 if use_idx:
                     return LazyIndexedManifestIterator(p)
             return LazyManifestIterator(p)
@@ -617,12 +617,13 @@ class CutSet(Serializable, AlgorithmMixin):
             and read only ``slice_length`` examples from each shard, then move to the next one.
         :param indexed: optional bool. If ``True``, uses
             :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator` for O(1)
-            random access (requires uncompressed indexed Shar shards for every
-            requested field).
+            random access (requires indexed JSONL and uncompressed tar shards
+            for every requested field).
             If ``False``, uses the streaming :class:`~lhotse.shar.readers.lazy.LazySharIterator`.
             If ``None`` (default), auto-detects: uses indexed mode when every
             requested field is readable through indexed readers and has a matching
-            ``.idx`` file.
+            index, unless streaming options such as shard splitting, randomized
+            seeds, ``cut_map_fns``, or ``slice_length`` are requested.
         :param index_path: optional location of ``.idx`` files stored
             separately from the data.  Accepts a directory path (when
             ``in_dir`` is used) or a dict mapping field names to lists
@@ -646,11 +647,19 @@ class CutSet(Serializable, AlgorithmMixin):
             )
 
         if use_indexed is None:
-            use_indexed = LazyIndexedSharIterator.supports_configuration(
-                fields=fields,
-                in_dir=in_dir,
-                index_path=index_path,
-                indexes_root=indexes_root,
+            # Automatic selection must preserve streaming-specific behavior.
+            use_indexed = (
+                not split_for_dataloading
+                and isinstance(seed, int)
+                and not cut_map_fns
+                and slice_length is None
+                and (stateful_shuffle or not shuffle_shards)
+                and LazyIndexedSharIterator.supports_configuration(
+                    fields=fields,
+                    in_dir=in_dir,
+                    index_path=index_path,
+                    indexes_root=indexes_root,
+                )
             )
 
         if use_indexed:
@@ -734,9 +743,9 @@ class CutSet(Serializable, AlgorithmMixin):
         By default it creates a directory ``some_dir`` with files such as
         ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
         ``some_dir/features.000000.tar``, and then the same names but numbered
-        with ``000001``, etc. Set ``compress_jsonl=False`` together with
-        ``create_index=True`` to produce fully indexed Shar data that supports
-        exact indexed restore.
+        with ``000001``, etc. With ``create_index=True``, finalized JSONL and
+        tar shards are indexed for exact restore. Gzip JSONL additionally
+        requires ``lhotse[gzip]``.
         The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
         The function returns a dict that maps field names to lists of saved shard paths.
 
