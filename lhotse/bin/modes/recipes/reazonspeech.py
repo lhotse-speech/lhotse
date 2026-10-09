@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 
 import click
 
@@ -24,14 +24,46 @@ __all__ = ["reazonspeech"]
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
+@click.option(
+    "--train-hours",
+    type=float,
+    default=None,
+    help="Optional: Target number of hours for the training set. If specified, "
+         "the dataset will be split by duration instead of fixed counts. "
+         "Requires --dev-hours and/or --test-hours to also be specified for splitting.",
+)
+@click.option(
+    "--dev-hours",
+    type=float,
+    default=None,
+    help="Optional: Target number of hours for the development set. If specified, "
+         "the dataset will be split by duration instead of fixed counts.",
+)
+@click.option(
+    "--test-hours",
+    type=float,
+    default=None,
+    help="Optional: Target number of hours for the test set. If specified, "
+         "the dataset will be split by duration instead of fixed counts.",
+)
 def reazonspeech(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     num_jobs: int,
+    train_hours: Optional[float],
+    dev_hours: Optional[float],
+    test_hours: Optional[float],
 ):
     """ReazonSpeech ASR data preparation."""
     logging.basicConfig(level=logging.INFO)
-    prepare_reazonspeech(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
+    prepare_reazonspeech(
+        corpus_dir,
+        output_dir=output_dir,
+        num_jobs=num_jobs,
+        train_hours=train_hours,
+        dev_hours=dev_hours,
+        test_hours=test_hours,
+    )
 
 
 @download.command(context_settings=dict(show_default=True))
