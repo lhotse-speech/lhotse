@@ -1288,6 +1288,47 @@ def test_sampler_map():
     assert b[0].duration == 5.0
 
 
+@pytest.mark.parametrize(
+    "sampler_cls", [CutPairsSampler, DynamicCutSampler, DynamicBucketingSampler]
+)
+@pytest.mark.parametrize("num_cuts,world_size", [(2, 8), (2, 4), (5, 4), (9, 4)])
+def test_paired_sampler_end_of_epoch_redistribution(sampler_cls, num_cuts, world_size):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=num_cuts)
+    # Paired samplers require matching IDs; distinguish the target cuts by duration.
+    paired_cuts = CutSet.from_cuts(
+        fastcopy(cut, duration=2 * cut.duration) for cut in cuts
+    )
+    kwargs = {"num_buckets": 2} if sampler_cls is DynamicBucketingSampler else {}
+    batch_counts = []
+    sampled_ids = set()
+    for rank in range(world_size):
+        sampler = sampler_cls(
+            cuts,
+            paired_cuts,
+            max_cuts=2,
+            drop_last=False,
+            world_size=world_size,
+            rank=rank,
+            **kwargs,
+        )
+        batches = list(sampler)
+        batch_counts.append(len(batches))
+        for batch in batches:
+            assert isinstance(batch, tuple)
+            assert len(batch) == 2
+            source, target = batch
+            assert isinstance(source, CutSet)
+            assert isinstance(target, CutSet)
+            assert len(source) == len(target) > 0
+            assert list(source.ids) == list(target.ids)
+            assert all(t.duration == 2 * s.duration for s, t in zip(source, target))
+            sampled_ids.update(source.ids)
+
+    assert len(set(batch_counts)) == 1
+    assert batch_counts[0] > 0
+    assert set(cuts.ids).issubset(sampled_ids)
+
+
 def test_sampler_much_less_data_than_ddp_ranks():
     world_size = 128
     orig_cut = dummy_cut(0)
