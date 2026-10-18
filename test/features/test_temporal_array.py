@@ -14,6 +14,7 @@ from lhotse import (
     NumpyHdf5Writer,
 )
 from lhotse.array import Array, TemporalArray
+from lhotse.features.io import MemoryRawWriter
 from lhotse.utils import is_module_available
 
 
@@ -187,3 +188,49 @@ def test_temporal_array_partial_read():
         # Read middle 10 frames (5 - 10 seconds)
         mid_10 = manifest.load(start=5, duration=5)
         np.testing.assert_equal(array[10:20], mid_10)
+
+
+@pytest.mark.parametrize("temporal_dim", [0, 1, 2])
+@pytest.mark.parametrize(
+    "start_frame,num_frames",
+    [(None, None), (0, 0), (0, 2), (1, None), (1, 2), (4, 100)],
+)
+@pytest.mark.parametrize(
+    "writer_class",
+    [
+        NumpyFilesWriter,
+        pytest.param(
+            NumpyHdf5Writer,
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="Requires h5py to run HDF5 tests.",
+            ),
+        ),
+        MemoryRawWriter,
+    ],
+)
+def test_temporal_array_reads_along_time_axis(
+    tmp_path, temporal_dim, start_frame, num_frames, writer_class
+):
+    """Full and partial reads preserve non-temporal axes across storage backends."""
+    array = np.arange(4 * 6 * 8, dtype=np.int16).reshape(4, 6, 8)
+    with writer_class(tmp_path / "arrays") as writer:
+        manifest = writer.store_array(
+            key="utt1",
+            value=array,
+            temporal_dim=temporal_dim,
+            frame_shift=0.5,
+            start=5.0,
+        )
+
+    restored = manifest.load(
+        start=None if start_frame is None else 5.0 + start_frame * 0.5,
+        duration=None if num_frames is None else num_frames * 0.5,
+    )
+
+    left = 0 if start_frame is None else start_frame
+    right = None if num_frames is None else left + num_frames
+    slices = [slice(None)] * array.ndim
+    slices[temporal_dim] = slice(left, right)
+    np.testing.assert_array_equal(restored, array[tuple(slices)])
+    assert restored.dtype == array.dtype
