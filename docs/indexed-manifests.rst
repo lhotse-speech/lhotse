@@ -16,6 +16,8 @@ from the beginning.
 Typical examples are:
 
 * an uncompressed ``.jsonl`` manifest with ``cuts.jsonl.idx``
+* a gzip ``.jsonl.gz`` manifest with ``cuts.jsonl.gz.idx`` and
+  ``cuts.jsonl.gz.gzidx``
 * an uncompressed Shar manifest shard such as ``cuts.000000.jsonl`` together
   with ``cuts.000000.jsonl.idx``
 * an uncompressed tar shard together with ``recording.000000.tar.idx``
@@ -31,6 +33,7 @@ For standalone manifests:
 .. code-block:: bash
 
    lhotse index jsonl /path/to/cuts.jsonl
+   lhotse index jsonl /path/to/cuts.jsonl.gz
    lhotse index tar /path/to/recording.tar
 
 For Shar:
@@ -39,8 +42,8 @@ For Shar:
 
    lhotse index shar /path/to/shar_dir/
 
-When writing Shar from Python, keep the cuts manifest uncompressed and enable
-index creation:
+When writing Shar from Python, enable index creation. With ``lhotse[gzip]``
+installed, both plain and gzip JSONL shards are indexed as they are finalized:
 
 .. code-block:: python
 
@@ -50,17 +53,25 @@ index creation:
        "data/",
        fields={"recording": "wav"},
        shard_size=1000,
-       compress_jsonl=False,
+       compress_jsonl=True,
        create_index=True,
    )
 
 .. note::
 
-   Indexed access requires **uncompressed, seekable** data sources.
-   ``.jsonl.gz`` and ``pipe:...`` inputs are valid for sequential streaming,
-   but they do not provide constant-time reconstruction. Local files and
-   supported remote/object-store URIs can be indexed as long as the storage
-   backend supports indexed reads.
+   Gzip JSONL requires the optional ``indexed_gzip`` dependency
+   (``pip install lhotse[gzip]``). The ``.idx`` offsets address the
+   uncompressed byte stream, while ``.gzidx`` stores gzip decompression
+   checkpoints. Both files must travel with the source or its index mirror.
+   Gzip seeks decompress at most the configured checkpoint spacing, so they
+   have bounded work per lookup rather than a single physical byte-range read.
+   Pipes and compressed tar files remain unsupported. Remote sources require
+   a seekable storage backend.
+
+   Automatic reader selection falls back to streaming when ``indexed_gzip``
+   is unavailable, even if gzip sidecars exist. Explicit ``indexed=True``
+   still requires the dependency. Shar writing reports indexing failures as
+   warnings; completed source shards remain readable in streaming mode.
 
 Packing many sidecars into one ``.idxpack``
 -------------------------------------------
@@ -74,8 +85,11 @@ into one immutable, memory-mapped file. Opening the pack maps one file and the
 operating system faults in offset pages only when records are requested.
 
 An index pack does not replace the source data or change checkpoint semantics.
-It stores byte offsets into the original uncompressed sources, and it is built
-from sidecars that already exist. The pack itself must be a local seekable file.
+For gzip JSONL, it stores offsets into the uncompressed stream and embeds the
+``.gzidx`` seek index. After packing, the loose ``.idx`` and ``.gzidx`` files
+are unnecessary for packed reads. The reader verifies the embedded seek index
+before opening the gzip source. The pack is built from sidecars that already
+exist. The pack itself must be a local seekable file.
 Lhotse deliberately leaves dataset discovery to the caller, so a pack can hold
 one or more application-defined logical collections (for example, a manifest
 collection and a payload collection).
@@ -135,12 +149,17 @@ files, then read values through ``collection.value()`` or
        member_ordinal = pack.collection(route.key).value_in_shard(0, 10)
 
 Packs containing only conventional offsets or path catalogs retain the
-version-2 format. Adding a fixed array selects version 3; current readers
-accept both versions, while older readers reject version 3 explicitly.
+version-2 format. Adding a fixed array selects version 3; adding gzip JSONL
+selects version 4. Current readers accept all three versions; older readers
+reject newer versions explicitly.
 
 ``write_index_pack()`` normally reads the sidecar returned by
 :func:`lhotse.indexing.index_file_path` and requires its final sentinel to
-match the local source size. Builders that have independently validated a
+match the local source size, or the uncompressed stream size for gzip JSONL.
+Gzip sources require a local source and a corresponding ``.gzidx`` sidecar.
+The builder independently obtains the uncompressed EOF before validating the
+``.idx`` sentinel, including gzip files containing concatenated members.
+Builders that have independently validated a
 repair may override either value for selected sources:
 
 .. code-block:: python
@@ -153,6 +172,8 @@ repair may override either value for selected sources:
    )
 
 Both mappings are keyed by the exact source path stored in the collection.
+For gzip JSONL, an index-path override also locates its ``.gzidx`` companion;
+source-size overrides are unavailable because the offset space is uncompressed.
 They affect only the new pack and do not modify source files or sidecars. A
 source-size override replaces the copied sidecar sentinel and bypasses the
 normal stale-mtime rejection for that source, so the caller must verify that
@@ -184,8 +205,15 @@ For Shar:
    cuts = CutSet.from_shar(in_dir="data/", indexed=True)
 
 ``CutSet.from_shar(..., indexed=None)`` will auto-detect indexed mode when all
-requested field shards are uncompressed, indexable, and have matching indexes
-available.
+requested field shards are indexable and have matching indexes available.
+JSONL shards may be gzip-compressed; tar shards must be uncompressed.
+Streaming options such as shard splitting, randomized seeds, ``cut_map_fns``,
+and ``slice_length`` preserve streaming mode during automatic selection.
+
+Indexed Shar supports binary fields added separately with
+``SharWriter(include_cuts=False)``. Lazy reading recovers their metadata from
+the tar while deferring binary payload reads. Extended tar headers preserve
+long and Unicode cut IDs.
 
 How iterator composition works
 ------------------------------

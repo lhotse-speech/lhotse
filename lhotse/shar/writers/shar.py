@@ -51,8 +51,9 @@ class SharWriter:
     By default it creates a directory ``some_dir`` with files such as
     ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
     ``some_dir/features.000000.tar``, and then the same names but numbered with
-    ``000001``, etc. Set ``compress_jsonl=False`` to write uncompressed
-    ``cuts.*.jsonl`` shards that can be indexed for exact indexed restore.
+    ``000001``, etc. With ``create_index=True``, completed JSONL and tar shards
+    are indexed automatically. Gzip JSONL requires ``lhotse[gzip]``; without
+    that dependency, only tar shards are indexed and a warning is emitted.
     The starting shard offset can be set using ``shard_offset`` parameter. The writer starts from 0 by default.
 
     When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
@@ -93,13 +94,6 @@ class SharWriter:
                 "create_index=True is only supported for local output paths. "
                 f"Got output_dir='{self.output_dir}'. "
                 "Set create_index=False for pipe/URL/cloud outputs."
-            )
-        if self.create_index and self.compress_jsonl:
-            warnings.warn(
-                "create_index=True with compress_jsonl=True creates only a partially "
-                "indexed Shar: compressed cuts.*.jsonl.gz shards cannot be indexed. "
-                "Use compress_jsonl=False to enable exact indexed Shar restore.",
-                stacklevel=2,
             )
         if self.sharding_enabled:
             assert (
@@ -158,7 +152,7 @@ class SharWriter:
 
         Called as an ``on_shard_complete`` callback by sub-writers so that
         indexes are created per-shard as soon as each shard is finalized.
-        Skips non-local paths (pipes, URLs, compressed files).
+        Gzip JSONL is indexed when the optional dependency is installed.
         """
         from lhotse.indexing import create_jsonl_index, create_tar_index
 
@@ -171,16 +165,26 @@ class SharWriter:
                 f"Got remote shard path '{path_str}'. "
                 "Set create_index=False for pipe/URL/cloud outputs."
             )
-        if path_str.endswith(".jsonl"):
-            try:
-                create_jsonl_index(path_str)
-            except (RuntimeError, OSError):
-                pass
+        if path_str.endswith((".jsonl", ".jsonl.gz")):
+            create_index = create_jsonl_index
         elif path_str.endswith(".tar"):
-            try:
-                create_tar_index(path_str)
-            except (RuntimeError, OSError):
-                pass
+            create_index = create_tar_index
+        else:
+            return
+        try:
+            create_index(path_str)
+        except ImportError:
+            warnings.warn(
+                "Gzip JSONL shards were written without indexes; install lhotse[gzip] "
+                "and run 'lhotse index shar' to index them.",
+                stacklevel=2,
+            )
+        except (RuntimeError, OSError) as ex:
+            warnings.warn(
+                f"Failed to create index for {path_str}: {ex}. "
+                "Run 'lhotse index shar' after resolving the error to index the shard.",
+                stacklevel=2,
+            )
 
     def write(self, cut: Cut) -> None:
 
@@ -246,6 +250,7 @@ class SharWriter:
                     kwargs = {}
                     if isinstance(val, Recording):
                         kwargs["sampling_rate"] = val.sampling_rate
+                        kwargs["original_format"] = val.source_format
                         if cut.has_custom(channel_selector_key):
                             # override custom recording channels since the audio was loaded via cut
                             # and used the channel selector
