@@ -663,41 +663,52 @@ def test_cut_trim_to_supervisions_no_keep_overlapping_supervision_past_the_end(
 
 
 @pytest.mark.parametrize("use_index", [False, True])
-def test_truncate_keeps_supervision_past_the_end_only_if_the_window_covers_it(
+def test_truncate_drops_supervision_past_the_end(
     cut_with_supervision_past_the_end, use_index
 ):
     cut = cut_with_supervision_past_the_end
-    kwargs = {"keep_excessive_supervisions": False}
-    if use_index:
-        kwargs["_supervisions_index"] = cut.index_supervisions()
-
-    def kept(**window):
-        return [s.id for s in cut.truncate(**window, **kwargs).supervisions]
-
-    # The requested window covers the whole supervision; the cut just ends first.
-    assert kept(offset=9.0, duration=1.007) == ["X2"]
-    assert kept(offset=8.0, duration=5.0) == ["X2"]
-    # The window ends inside the supervision.
-    assert kept(offset=9.0, duration=0.5) == []
-    # Without a duration the window ends where the cut does.
-    assert kept(offset=9.0) == []
-    assert kept(offset=0.5, duration=2.0) == ["X1"]
-
-
-@pytest.mark.parametrize("use_index", [False, True])
-def test_truncate_drops_supervision_that_only_touches_the_end_of_the_cut(
-    cut_with_supervision_past_the_end, use_index
-):
-    cut = cut_with_supervision_past_the_end
-    # Starts 1 ms before the cut ends, so less than 1% of it is inside the cut.
-    cut.supervisions.append(
-        SupervisionSegment(id="X3", recording_id="X", start=9.999, duration=0.2)
-    )
     index = cut.index_supervisions() if use_index else None
-    truncated = cut.truncate(
-        offset=9.0,
-        duration=2.0,
-        keep_excessive_supervisions=False,
-        _supervisions_index=index,
+    for duration in (1.007, 2.0, 5.0, None):
+        truncated = cut.truncate(
+            offset=9.0,
+            duration=duration,
+            keep_excessive_supervisions=False,
+            _supervisions_index=index,
+        )
+        assert truncated.supervisions == []
+
+
+@pytest.mark.parametrize("from_cut_set", [False, True])
+@pytest.mark.parametrize("balanced", [False, True])
+def test_windowing_drops_incomplete_final_supervision(from_cut_set, balanced):
+    from lhotse.audio import AudioSource
+    from lhotse.dataset.speech_recognition import validate_for_asr
+
+    cut = MonoCut(
+        id="X",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        recording=Recording(
+            id="X",
+            sources=[AudioSource(type="file", channels=[0], source="unused.wav")],
+            sampling_rate=16000,
+            num_samples=192000,
+            duration=12.0,
+        ),
+        supervisions=[
+            SupervisionSegment(id="X1", recording_id="X", start=1.0, duration=1.0),
+            SupervisionSegment(id="X2", recording_id="X", start=9.0, duration=3.0),
+        ],
     )
-    assert [s.id for s in truncated.supervisions] == ["X2"]
+    cuts = CutSet.from_cuts([cut]) if from_cut_set else cut
+    if balanced:
+        windows = cuts.cut_into_windows_balanced(
+            min_duration=4, max_duration=4, keep_excessive_supervisions=False
+        )
+    else:
+        windows = cuts.cut_into_windows(4, keep_excessive_supervisions=False)
+    windows = windows.to_eager()
+    assert [c.duration for c in windows] == [4.0, 4.0, 2.0]
+    assert [[s.id for s in c.supervisions] for c in windows] == [["X1"], [], []]
+    validate_for_asr(windows)
