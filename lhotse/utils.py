@@ -748,6 +748,7 @@ def supervision_to_frames(
 ) -> Tuple[int, int]:
     """
     Utility to convert a supervision's time span into a tuple of ``(start_frame, num_frames)``.
+    A supervision starting before the cut is truncated to start at frame 0.
     When ``max_frames`` is specified, it will truncate the ``num_frames`` (if necessary).
     """
     start_frame = compute_num_frames(
@@ -756,6 +757,10 @@ def supervision_to_frames(
     num_frames = compute_num_frames(
         supervision.duration, frame_shift=frame_shift, sampling_rate=sampling_rate
     )
+    if start_frame < 0:
+        # The supervision starts before the cut: keep only the part inside it.
+        num_frames = max(0, num_frames + start_frame)
+        start_frame = 0
     if max_frames:
         diff = start_frame + num_frames - max_frames
         if diff > 0:
@@ -768,10 +773,15 @@ def supervision_to_samples(
 ) -> Tuple[int, int]:
     """
     Utility to convert a supervision's time span into a tuple of ``(start_sample num_samples)``.
+    A supervision starting before the cut is truncated to start at sample 0.
     When ``max_samples`` is specified, it will truncate the ``num_samples`` (if necessary).
     """
     start_sample = compute_num_samples(supervision.start, sampling_rate=sampling_rate)
     num_samples = compute_num_samples(supervision.duration, sampling_rate=sampling_rate)
+    if start_sample < 0:
+        # The supervision starts before the cut: keep only the part inside it.
+        num_samples = max(0, num_samples + start_sample)
+        start_sample = 0
     if max_samples:
         diff = start_sample + num_samples - max_samples
         if diff > 0:

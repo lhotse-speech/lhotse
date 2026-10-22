@@ -12,6 +12,7 @@ from lhotse.dataset.input_strategies import AudioSamples, OnTheFlyFeatures
 from lhotse.dataset.sampling import SimpleCutSampler
 from lhotse.dataset.speech_recognition import K2SpeechRecognitionDataset
 from lhotse.testing.dummies import DummyManifest
+from lhotse.utils import fastcopy
 
 
 @pytest.fixture
@@ -218,6 +219,25 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction_with_randomized_smo
         rs_batch = rs_dataset[cut_ids]
         # Additive noise should cause the energies to go up
         assert (rs_batch["inputs"] - batch["inputs"]).sum() > 0
+
+
+@pytest.mark.parametrize(
+    ["input_strategy", "expected_num"],
+    [(None, 250), (AudioSamples(), 40000)],
+)
+def test_k2_speech_recognition_supervision_starting_before_cut(
+    libri_cut_set, input_strategy, expected_num
+):
+    cut = libri_cut_set[0]
+    sup = fastcopy(cut.supervisions[0], start=-0.5, duration=3.0)
+    cuts = CutSet.from_cuts([fastcopy(cut, supervisions=[sup])])
+    kwargs = {"input_strategy": input_strategy} if input_strategy else {}
+    dataset = K2SpeechRecognitionDataset(**kwargs)
+    with pytest.warns(UserWarning, match="before the cut"):
+        batch = dataset[cuts]
+    unit = "frame" if input_strategy is None else "sample"
+    assert batch["supervisions"][f"start_{unit}"].tolist() == [0]
+    assert batch["supervisions"][f"num_{unit}s"].tolist() == [expected_num]
 
 
 def test_k2_speech_recognition_audio_inputs(k2_cut_set):
