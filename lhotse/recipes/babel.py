@@ -5,6 +5,7 @@ https://www.iarpa.gov/index.php/research-programs/babel
 It has about 25 languages with 40h - 160h of training recordings and ~20h
 of development set recordings.
 """
+
 import logging
 import re
 from collections import defaultdict
@@ -21,7 +22,6 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
-from lhotse.manipulation import combine
 from lhotse.qa import (
     remove_missing_recordings_and_supervisions,
     trim_supervisions_to_recordings,
@@ -77,7 +77,8 @@ def prepare_single_babel_language(
             if there is more than once, it picks the first one (and emits a warning)
         - then, it will try to find `dev`, `eval`, and `training` splits inside
             (if any of them is not present, it will skip it with a warning)
-        - finally, it scans the selected location for SPHERE audio files and transcripts.
+        - finally, it scans the selected location for SPHERE and WAV audio files
+            and transcripts.
 
     :param corpus_dir: Path to the root of the LDC package with a BABEL language.
     :param output_dir: Path where the manifests are stored.json
@@ -107,13 +108,11 @@ def prepare_single_babel_language(
 
     for split in ("dev", "eval", "training"):
         audio_dir = corpus_dir / f"conversational/{split}/audio"
-        sph_recordings = RecordingSet.from_recordings(
-            Recording.from_file(p) for p in audio_dir.glob("*.sph")
+        recordings = RecordingSet.from_recordings(
+            Recording.from_file(p)
+            for pattern in ("*.sph", "*.wav")
+            for p in audio_dir.glob(pattern)
         )
-        wav_recordings = RecordingSet.from_recordings(
-            Recording.from_file(p) for p in audio_dir.glob("*.wav")
-        )
-        recordings = combine(sph_recordings, wav_recordings)
         if len(recordings) == 0:
             if split == "eval" and no_eval_ok:
                 continue
@@ -137,8 +136,8 @@ def prepare_single_babel_language(
             lines = p.read_text().splitlines() + [""]
             lines = [
                 prev_l
-                for prev_l, l in sliding_window(2, lines)
-                if not (prev_l.startswith("[") and l.startswith("["))
+                for prev_l, current_l in sliding_window(2, lines)
+                if not (prev_l.startswith("[") and current_l.startswith("["))
             ]
             # Add a None at the end so that the last timestamp is only used as "next_timestamp"
             # and ends the iretation (otherwise we'd lose the last segment).
