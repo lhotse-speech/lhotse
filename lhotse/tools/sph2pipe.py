@@ -26,13 +26,14 @@ def install_sph2pipe(
     where = Path(where)
     # Download
     download_and_untar_sph2pipe(where, url=download_from, force_download=force)
-    # Compile
+    # Compile as C17: sph2pipe's legacy declarations are incompatible with C23,
+    # which is the default starting with GCC 15.
     subprocess.run(
         [
             "make",
             "-C",
             str(where / "sph2pipe-2.5"),
-            "CCFLAGS=-Wno-error=implicit-function-declaration",
+            "CCFLAGS=-std=gnu17 -Wno-error=implicit-function-declaration",
         ],
         check=True,
     )
