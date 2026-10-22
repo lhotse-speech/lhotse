@@ -16,9 +16,15 @@ from lhotse.features import (
     Features,
     FeatureSet,
     FeatureSetBuilder,
+    KaldifeatFbank,
+    LibrosaFbank,
+    LogSpectrogram,
     Mfcc,
+    Spectrogram,
+    TorchaudioFbank,
     TorchaudioSpectrogram,
     TorchaudioSpectrogramConfig,
+    WhisperFbank,
 )
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
@@ -317,6 +323,55 @@ def test_feature_mixer_handles_empty_array_with_offset():
     np.testing.assert_equal(fmix_feat[:100], f1)
     # time 1s - 1.5s: padding
     np.testing.assert_equal(fmix_feat[100:], -1000)
+
+
+@pytest.mark.parametrize(
+    "feature_extractor_type",
+    [
+        Fbank,
+        Spectrogram,
+        LogSpectrogram,
+        TorchaudioFbank,
+        TorchaudioSpectrogram,
+        LibrosaFbank,
+        WhisperFbank,
+        KaldifeatFbank,
+    ],
+)
+def test_compute_energy_does_not_depend_on_num_frames(feature_extractor_type):
+    feats = np.random.default_rng(0).uniform(0.1, 1.0, size=(20, 40))
+    repeated = np.tile(feats, (5, 1))
+    assert feature_extractor_type.compute_energy(repeated) == pytest.approx(
+        feature_extractor_type.compute_energy(feats)
+    )
+
+
+def test_feature_mixer_snr_does_not_depend_on_noise_length():
+    sr = 16000
+    t = np.linspace(0, 1, sr, dtype=np.float32)
+    speech = np.sin(440.0 * t).reshape(1, -1)
+    noise = 0.1 * np.sin(55.0 * t[: sr // 5]).reshape(1, -1)  # 0.2s
+
+    fe = Fbank()
+    speech_feats = fe.extract(speech, sr)
+    noise_feats = fe.extract(noise, sr)
+
+    # Repeating the noise 5 times does not change its level, so the gain must not change
+    gains = []
+    for feats in [noise_feats, np.tile(noise_feats, (5, 1))]:
+        mixer = FeatureMixer(
+            feature_extractor=fe,
+            base_feats=speech_feats,
+            frame_shift=fe.frame_shift,
+        )
+        mixer.add_to_mix(feats, sampling_rate=sr, snr=10)
+        gains.append(mixer.gains[-1])
+
+    expected = (
+        10 ** (-10 / 10) * np.mean(np.exp(speech_feats)) / np.mean(np.exp(noise_feats))
+    )
+    assert gains[0] == pytest.approx(expected, rel=1e-5)
+    assert gains[1] == pytest.approx(expected, rel=1e-5)
 
 
 def test_feature_set_prefix_path():
