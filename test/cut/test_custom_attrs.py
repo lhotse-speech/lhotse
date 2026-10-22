@@ -368,6 +368,23 @@ def test_cut_attach_tensor(deterministic_rng):
     np.testing.assert_equal(alignment, restored_alignment)
 
 
+@pytest.mark.parametrize("temporal_dim", [0, 1, 2])
+def test_cut_truncate_tensor_time_axis(temporal_dim):
+    """Truncating a cut slices an attached tensor along its declared time axis."""
+    array = np.arange(4 * 6 * 8).reshape(4, 6, 8)
+    cut = MonoCut(
+        id="x",
+        start=5.0,
+        duration=array.shape[temporal_dim] * 0.5,
+        channel=0,
+        recording=dummy_recording(0, duration=10.0),
+    ).attach_tensor("video_features", array, frame_shift=0.5, temporal_dim=temporal_dim)
+
+    restored = cut.truncate(offset=0.5, duration=1.0).load_video_features()
+
+    np.testing.assert_array_equal(restored, np.take(array, [1, 2], axis=temporal_dim))
+
+
 def test_cut_attach_tensor_temporal():
     ivector = np.arange(20).astype(np.float32)
     cut = MonoCut(id="x", start=0, duration=5, channel=0)
