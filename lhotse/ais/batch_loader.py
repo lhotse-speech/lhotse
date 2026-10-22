@@ -3,8 +3,6 @@ import logging
 from functools import lru_cache
 from typing import Any, Optional
 
-from urllib3.exceptions import TimeoutError
-
 # Get a logger instance for this module
 logger = logging.getLogger(__name__)
 
@@ -293,6 +291,7 @@ class AISBatchLoader:
 
         # Execute batch request
         from aistore.sdk.errors import AISError
+        from urllib3.exceptions import TimeoutError
 
         # No AIS-backed objects in this CutSet (e.g. all data lives on a non-AIS
         # filesystem). Skip the batch call entirely to avoid spurious warnings.
