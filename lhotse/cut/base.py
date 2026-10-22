@@ -827,6 +827,8 @@ class Cut:
             "source_cut_start": self.start,
         }
         for i in range(n_windows):
+            if not self._has_samples_from(hop * i):
+                break
             sub = self.truncate(
                 offset=hop * i,
                 duration=best_duration,
@@ -881,6 +883,8 @@ class Cut:
         supervisions_index = self.index_supervisions(index_mixed_tracks=True)
 
         for i in range(n_windows):
+            if not self._has_samples_from(hop * i):
+                break
             new_cuts.append(
                 self.truncate(
                     offset=hop * i,
@@ -890,6 +894,16 @@ class Cut:
                 ).with_id(f"{self.id}-{i}")
             )
         return CutSet.from_cuts(new_cuts)
+
+    def _has_samples_from(self, offset: Seconds) -> bool:
+        """
+        Whether at least one sample of this cut lies at or after ``offset``.
+        A cut whose duration is less than one sample over a whole number of hops
+        has none left for the window that would start at the last hop.
+        """
+        return (
+            add_durations(self.duration, -offset, sampling_rate=self.sampling_rate) > 0
+        )
 
     def index_supervisions(
         self, index_mixed_tracks: bool = False, keep_ids: Optional[Set[str]] = None
