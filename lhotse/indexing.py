@@ -830,6 +830,12 @@ class IndexedJsonlReader:
                     f"Use create_jsonl_index() to build it, or set auto_create_index=True."
                 )
         self._offsets = read_index(idx_path)
+        # Compare uint64 neighbors directly: subtraction would wrap on decreasing offsets.
+        if len(self._offsets) == 0 or np.any(self._offsets[1:] <= self._offsets[:-1]):
+            raise ValueError(
+                f"Invalid JSONL index {idx_path!r} for {path!r}: "
+                "expected a size sentinel and strictly increasing byte offsets."
+            )
 
     def _ensure_open(self):
         current_pid = os.getpid()
