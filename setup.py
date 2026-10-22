@@ -168,6 +168,7 @@ else:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 checkpoint_requires = ["torchdata"]
+gzip_requires = ["indexed_gzip>=1.10"]
 tests_require = [
     "pytest",
     "pytest-forked",
@@ -232,6 +233,7 @@ setup(
         "orjson": orjson_requires,
         "webdataset": webdataset_requires,
         "checkpoint": checkpoint_requires,
+        "gzip": gzip_requires,
         "h5py": h5py_requires,
         "kaldi": kaldi_requires,
         "lilcom": lilcom_requires,
