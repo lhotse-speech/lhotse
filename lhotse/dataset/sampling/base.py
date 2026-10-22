@@ -389,6 +389,7 @@ class CutSampler(Sampler, Dillable):
             "_transforms_state",
             "_rng_state",
             "_bucketer_state",
+            "_batcher_state",
         ):
             if hasattr(self, attr):
                 setattr(self, attr, None)
