@@ -97,12 +97,19 @@ class AlignmentItem(NamedTuple):
         assert start >= 0
         start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
+        new_start = max(start, self.start)
+        new_duration = add_durations(
+            self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
+        )
+        # A span that misses the window used to come back with a negative duration.
+        if new_duration < 0:
+            new_duration = 0
+        if new_start > end:
+            new_start = end
         return AlignmentItem(
             symbol=self.symbol,
-            start=max(start, self.start),
-            duration=add_durations(
-                self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
-            ),
+            start=new_start,
+            duration=new_duration,
         )
 
     def transform(self, transform_fn: Callable[[str], str]) -> "AlignmentItem":
@@ -379,12 +386,19 @@ class SupervisionSegment(CustomFieldMixin):
         assert start >= 0
         start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
+        new_start = max(start, self.start)
+        new_duration = add_durations(
+            self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
+        )
+        # A span that misses the window used to come back with a negative duration.
+        if new_duration < 0:
+            new_duration = 0
+        if new_start > end:
+            new_start = end
         return fastcopy(
             self,
-            start=max(start, self.start),
-            duration=add_durations(
-                self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
-            ),
+            start=new_start,
+            duration=new_duration,
             alignment={
                 type: [item.trim(end=end, start=start) for item in ali]
                 for type, ali in self.alignment.items()

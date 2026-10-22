@@ -351,6 +351,27 @@ def test_supervision_trim(supervision, trim_end, expected_end):
     assert trimmed.duration == expected_end
 
 
+def test_supervision_trim_outside_the_window_has_no_duration():
+    segment = SupervisionSegment(
+        "sup",
+        "rec",
+        start=10,
+        duration=2,
+        alignment={"word": [AlignmentItem(symbol="hi", start=10, duration=2)]},
+    )
+    trimmed = segment.trim(end=5)
+    assert trimmed.start == 5
+    assert trimmed.duration == 0
+    assert trimmed.end == 5
+    assert trimmed.alignment["word"][0].duration == 0
+    assert trimmed.alignment["word"][0].start == 5
+
+    earlier = SupervisionSegment("sup", "rec", start=-3, duration=1)
+    trimmed = earlier.trim(end=10)
+    assert trimmed.start == 0
+    assert trimmed.duration == 0
+
+
 @pytest.mark.parametrize("start", [0, 5])
 def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):
     supervision = fastcopy(supervision, start=start)
