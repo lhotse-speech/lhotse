@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import MonoCut, MultiCut, Recording, SupervisionSegment
+from lhotse import CutSet, MonoCut, MultiCut, Recording, SupervisionSegment
 from lhotse.supervision import AlignmentItem
 
 
@@ -609,3 +609,106 @@ def test_cut_set_trim_to_supervision_groups_edge_case1(mono_cut2):
     assert len(cuts) == 2
     assert cuts[0].duration == 3.37
     assert cuts[1].duration == 2.0
+
+
+@pytest.fixture
+def cut_with_supervision_past_the_end():
+    """
+    The last supervision ends 7 ms after the recording does, which real annotations
+    often do (https://github.com/lhotse-speech/lhotse/issues/1416)::
+
+        |----------Recording---------|
+           |-Sup1-|             |---Sup2---|
+        |------------Cut-------------|
+    """
+    return MonoCut(
+        id="X",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        supervisions=[
+            SupervisionSegment(id="X1", recording_id="X", start=1.0, duration=1.0),
+            SupervisionSegment(id="X2", recording_id="X", start=9.0, duration=1.007),
+        ],
+        recording=Recording(
+            id="X", sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+        ),
+    )
+
+
+def test_cut_trim_to_supervision_groups_supervision_past_the_end(
+    cut_with_supervision_past_the_end,
+):
+    cuts = cut_with_supervision_past_the_end.trim_to_supervision_groups(max_pause=2)
+    cuts = cuts.to_eager()
+    assert [[s.id for s in c.supervisions] for c in cuts] == [["X1"], ["X2"]]
+    assert cuts[1].start == 9.0
+    assert cuts[1].duration == 1.0
+    assert cuts[1].supervisions[0].start == 0.0
+    assert cuts[1].supervisions[0].duration == 1.007
+
+
+@pytest.mark.parametrize("from_cut_set", [False, True])
+def test_cut_trim_to_supervisions_no_keep_overlapping_supervision_past_the_end(
+    cut_with_supervision_past_the_end, from_cut_set
+):
+    cut = cut_with_supervision_past_the_end
+    if from_cut_set:
+        cuts = CutSet.from_cuts([cut]).trim_to_supervisions(keep_overlapping=False)
+    else:
+        cuts = cut.trim_to_supervisions(keep_overlapping=False)
+    cuts = cuts.to_eager()
+    assert [[s.id for s in c.supervisions] for c in cuts] == [["X1"], ["X2"]]
+    assert cuts[1].duration == 1.0
+
+
+@pytest.mark.parametrize("use_index", [False, True])
+def test_truncate_drops_supervision_past_the_end(
+    cut_with_supervision_past_the_end, use_index
+):
+    cut = cut_with_supervision_past_the_end
+    index = cut.index_supervisions() if use_index else None
+    for duration in (1.007, 2.0, 5.0, None):
+        truncated = cut.truncate(
+            offset=9.0,
+            duration=duration,
+            keep_excessive_supervisions=False,
+            _supervisions_index=index,
+        )
+        assert truncated.supervisions == []
+
+
+@pytest.mark.parametrize("from_cut_set", [False, True])
+@pytest.mark.parametrize("balanced", [False, True])
+def test_windowing_drops_incomplete_final_supervision(from_cut_set, balanced):
+    from lhotse.audio import AudioSource
+    from lhotse.dataset.speech_recognition import validate_for_asr
+
+    cut = MonoCut(
+        id="X",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        recording=Recording(
+            id="X",
+            sources=[AudioSource(type="file", channels=[0], source="unused.wav")],
+            sampling_rate=16000,
+            num_samples=192000,
+            duration=12.0,
+        ),
+        supervisions=[
+            SupervisionSegment(id="X1", recording_id="X", start=1.0, duration=1.0),
+            SupervisionSegment(id="X2", recording_id="X", start=9.0, duration=3.0),
+        ],
+    )
+    cuts = CutSet.from_cuts([cut]) if from_cut_set else cut
+    if balanced:
+        windows = cuts.cut_into_windows_balanced(
+            min_duration=4, max_duration=4, keep_excessive_supervisions=False
+        )
+    else:
+        windows = cuts.cut_into_windows(4, keep_excessive_supervisions=False)
+    windows = windows.to_eager()
+    assert [c.duration for c in windows] == [4.0, 4.0, 2.0]
+    assert [[s.id for s in c.supervisions] for c in windows] == [["X1"], [], []]
+    validate_for_asr(windows)

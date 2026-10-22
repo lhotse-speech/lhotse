@@ -522,7 +522,7 @@ class Cut:
             trimmed = self.truncate(
                 offset=new_start,
                 duration=new_duration,
-                keep_excessive_supervisions=keep_overlapping,
+                keep_excessive_supervisions=True,
                 _supervisions_index=supervisions_index,
             )
 
@@ -738,12 +738,15 @@ class Cut:
                 duration = add_durations(
                     cur_end, -offset, sampling_rate=self.sampling_rate
                 )
+                group_ids = {s.id for s in supervision_group}
                 new_cuts.append(
                     self.truncate(
                         offset=offset,
                         duration=duration,
-                        keep_excessive_supervisions=False,
-                    ).with_id(f"{self.id}-{max_pause}-{group_idx}")
+                        keep_excessive_supervisions=True,
+                    )
+                    .filter_supervisions(lambda s: s.id in group_ids)
+                    .with_id(f"{self.id}-{max_pause}-{group_idx}")
                 )
                 group_idx += 1
                 supervision_group = [sup]
@@ -753,12 +756,15 @@ class Cut:
         if len(supervision_group) > 0:
             offset = supervision_group[0].start
             duration = add_durations(cur_end, -offset, sampling_rate=self.sampling_rate)
+            group_ids = {s.id for s in supervision_group}
             new_cuts.append(
                 self.truncate(
                     offset=offset,
                     duration=duration,
-                    keep_excessive_supervisions=False,
-                ).with_id(f"{self.id}-{max_pause}-{group_idx}")
+                    keep_excessive_supervisions=True,
+                )
+                .filter_supervisions(lambda s: s.id in group_ids)
+                .with_id(f"{self.id}-{max_pause}-{group_idx}")
             )
         # The total number of supervisions should be the same.
         assert sum(len(c.supervisions) for c in new_cuts) == len(self.supervisions), (
