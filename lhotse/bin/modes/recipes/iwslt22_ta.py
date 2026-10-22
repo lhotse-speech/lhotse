@@ -52,6 +52,6 @@ def iwslt22_ta(
         splits,
         output_dir=output_dir,
         num_jobs=num_jobs,
-        clean=normalize_text,
+        normalize_text=normalize_text,
         langs=langs_list,
     )

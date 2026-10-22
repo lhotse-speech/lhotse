@@ -2,10 +2,15 @@
 Packed, memory-mapped random-access indexes for sharded byte-addressable data.
 
 An ``.idxpack`` combines the contents of many conventional little-endian
-``uint64`` ``.idx`` sidecars into one immutable file. Its catalog and offset
-payload are accessed through a single read-only mmap, so opening a large
-collection does not require one filesystem operation or one in-memory offset
-array per source shard.
+``uint64`` ``.idx`` sidecars into one immutable file. Version 3 may additionally
+store sharded fixed-width ``uint32`` metadata arrays. Its catalog and payload
+are accessed through a single read-only mmap, so opening a large collection does
+not require one filesystem operation or one in-memory array per source shard.
+
+Writers retain version 2 whenever all inputs are conventional byte-offset or
+path-only collections. Supplying any :class:`IndexPackArraySpec` selects version
+3. Current readers accept both versions; legacy readers correctly reject v3
+instead of misinterpreting its array payloads.
 
 This module is deliberately independent of manifest schemas and downstream
 frameworks. Callers describe each logical collection with an application-defined
@@ -35,6 +40,7 @@ from lhotse.utils import Pathlike, is_valid_url
 # implementation already use this signature and version.
 _MAGIC = b"IDXPACK2"
 _VERSION = 2
+_ARRAY_VERSION = 3
 _HEADER_SIZE = 256
 
 # Header fields:
@@ -48,18 +54,22 @@ _HEADER = struct.Struct("<8sIIQQQQQQQQQQ32s")
 # kind-string position, kind-string length, reserved flags.
 _COLLECTION = struct.Struct("<32sQQQQII")
 _COLLECTION_PATHS_ONLY = 1
+_COLLECTION_FIXED_ARRAY = 2
 
 # Sequence fields:
 # segment ID, cumulative record count through this shard.
 _SEQUENCE = struct.Struct("<QQ")
 
 # Segment fields:
-# path-string position, offsets position, path-string length, flags,
-# offset count, source size, offsets byte size, CRC32, reserved.
+# path-string position, payload position, path-string length, flags,
+# payload item count, source size, payload byte size, CRC32, reserved.
 _SEGMENT = struct.Struct("<QQIIQQQII")
 _SEGMENT_PATH_ONLY = 1
+_SEGMENT_FIXED_ARRAY = 2
 _SEGMENT_PATH_ONLY_SOURCE_SIZE_PRESENT = 1
 _U64 = struct.Struct("<Q")
+_U32 = struct.Struct("<I")
+_UINT32_DTYPE = "uint32"
 
 
 def index_pack_collection_key(role: str, kind: str, source_spec) -> bytes:
@@ -98,14 +108,15 @@ def index_pack_collection_key(role: str, kind: str, source_spec) -> bytes:
 
 
 def index_pack_layout_hash(
-    collections: Sequence[IndexPackCollectionSpec],
+    collections: Sequence[IndexPackCollectionSpec | IndexPackArraySpec],
 ) -> bytes:
     """Return the exact layout digest persisted for ``collections``.
 
     This lets orchestration validate an existing pack against its current
     declarative collection contract without creating or scanning a pack.
     Source paths and collection identities participate in the digest; source
-    sizes are validated separately against per-segment metadata.
+    sizes are validated separately against per-segment metadata. Fixed-array
+    build paths are excluded, while their ordered shard lengths are included.
     """
     return _layout_digest(collections)
 
@@ -156,6 +167,44 @@ class IndexPackCollectionSpec:
 
 
 @dataclass(frozen=True)
+class IndexPackArraySpec:
+    """Build-time description of a sharded fixed-width integer collection.
+
+    Array collections are intended for compact record-aligned metadata such as
+    permutations or routing tables. ``shard_paths`` contain raw little-endian
+    values and are consumed only while building the pack: their paths are not
+    persisted and do not participate in collection identity. The collection
+    key is derived from ``role``, ``kind``, and ``source_spec`` exactly like a
+    byte-offset collection.
+
+    Version 3 currently supports only ``uint32`` values. A separate spec keeps
+    the conventional ``.idx`` contract unambiguous: those files remain
+    monotonic uint64 byte offsets with a terminal source-size sentinel.
+    """
+
+    role: str
+    kind: str
+    source_spec: object
+    shard_paths: tuple[Pathlike, ...]
+    dtype: str = _UINT32_DTYPE
+
+    def __post_init__(self):
+        _validate_collection_identity(self.role, self.kind)
+        if self.dtype != _UINT32_DTYPE:
+            raise ValueError(
+                f"Index-pack fixed arrays currently require dtype='uint32', got {self.dtype!r}"
+            )
+        object.__setattr__(
+            self, "shard_paths", tuple(Path(path) for path in self.shard_paths)
+        )
+
+    @property
+    def key(self) -> bytes:
+        """Return the stable lookup key derived from this specification."""
+        return index_pack_collection_key(self.role, self.kind, self.source_spec)
+
+
+@dataclass(frozen=True)
 class PackedIndexLocation:
     """
     Resolved source byte range for one logical record.
@@ -187,7 +236,7 @@ class PackedIndexLocation:
 
 def write_index_pack(
     output_path,
-    collections: Sequence[IndexPackCollectionSpec],
+    collections: Sequence[IndexPackCollectionSpec | IndexPackArraySpec],
     *,
     indexes_root=None,
     overwrite: bool = False,
@@ -195,19 +244,24 @@ def write_index_pack(
     index_path_overrides: Mapping[str, Pathlike] | None = None,
 ) -> Path:
     """
-    Convert existing sidecar indexes into one atomic ``.idxpack``.
+    Build one atomic ``.idxpack`` from existing sidecars and fixed arrays.
 
-    Collection order and path order are preserved. Repeated physical sources
-    are stored once inside a pack and referenced by multiple sequence entries.
-    The output is written to a temporary sibling, flushed with ``fsync()``, and
-    atomically published after all sidecars pass structural validation.
+    Collection and shard order are preserved. Repeated physical sources are
+    stored once inside a pack and referenced by multiple sequence entries.
+    Fixed-array build paths are copied but never persisted. The output is
+    written to a temporary sibling, flushed with ``fsync()``, and atomically
+    published after all inputs pass structural validation.
+
+    The writer emits version 2 unless at least one
+    :class:`IndexPackArraySpec` is present, in which case it emits version 3.
+    This preserves byte-for-byte format compatibility for existing callers.
 
     Args:
         output_path:
             Destination pack path.
         collections:
             Logical collections belonging to one dataset. A dataset may contain
-            several collections (for example records and payload members).
+            byte-offset and fixed-array collections.
         indexes_root:
             Optional mirror root passed to :func:`lhotse.indexing.index_file_path`
             when resolving each conventional sidecar.
@@ -296,35 +350,48 @@ def write_index_pack(
                 f"collections with a different role/source spec: {collection.source_spec!r}"
             )
         collection_keys.add(collection.key)
+        is_array = isinstance(collection, IndexPackArraySpec)
+        shard_paths = collection.shard_paths if is_array else collection.paths
         sequence_start = len(sequences)
         cumulative_end = 0
-        for path in collection.paths:
-            segment_key = (path, collection.offsets_required)
-            segment_id = segment_ids.get(segment_key)
-            if segment_id is None:
+        for path in shard_paths:
+            if is_array:
                 segment_id = len(segments)
-                segment_ids[segment_key] = segment_id
-                segments.append(
-                    _read_sidecar_metadata(
-                        path,
-                        indexes_root,
-                        offsets_required=collection.offsets_required,
-                        source_size_override=source_size_overrides.get(path),
-                        index_path_override=index_path_overrides.get(path),
+                segments.append(_read_array_metadata(path))
+            else:
+                segment_key = (path, collection.offsets_required)
+                segment_id = segment_ids.get(segment_key)
+                if segment_id is None:
+                    segment_id = len(segments)
+                    segment_ids[segment_key] = segment_id
+                    segments.append(
+                        _read_sidecar_metadata(
+                            path,
+                            indexes_root,
+                            offsets_required=collection.offsets_required,
+                            source_size_override=source_size_overrides.get(path),
+                            index_path_override=index_path_overrides.get(path),
+                        )
                     )
-                )
             cumulative_end += segments[segment_id].num_records
             sequences.append((segment_id, cumulative_end))
         kind_position, kind_length = strings.add(collection.kind)
+        flags = (
+            _COLLECTION_FIXED_ARRAY
+            if is_array
+            else 0
+            if collection.offsets_required
+            else _COLLECTION_PATHS_ONLY
+        )
         collection_rows.append(
             (
                 collection.key,
                 sequence_start,
-                len(collection.paths),
+                len(shard_paths),
                 cumulative_end,
                 kind_position,
                 kind_length,
-                0 if collection.offsets_required else _COLLECTION_PATHS_ONLY,
+                flags,
             )
         )
 
@@ -337,8 +404,16 @@ def write_index_pack(
     strings_offset = segment_offset + len(segments) * _SEGMENT.size
     offsets_offset = strings_offset + len(string_blob)
     offsets_offset += (-offsets_offset) % _U64.size
-    offsets_size = sum(segment.offsets_count * _U64.size for segment in segments)
+    offsets_size = sum(
+        segment.offsets_count * (_U32.size if segment.fixed_array else _U64.size)
+        for segment in segments
+    )
     layout_hash = index_pack_layout_hash(collections)
+    version = (
+        _ARRAY_VERSION
+        if any(isinstance(collection, IndexPackArraySpec) for collection in collections)
+        else _VERSION
+    )
 
     tmp_path = output_path.with_name(
         f".{output_path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
@@ -348,7 +423,7 @@ def write_index_pack(
         with tmp_path.open("w+b") as out:
             header = _HEADER.pack(
                 _MAGIC,
-                _VERSION,
+                version,
                 _HEADER_SIZE,
                 collection_offset,
                 len(collection_rows),
@@ -397,7 +472,8 @@ def write_index_pack(
 
             payload_cursor = offsets_offset
             for segment_id, segment in enumerate(segments):
-                expected_size = segment.offsets_count * _U64.size
+                item = _U32 if segment.fixed_array else _U64
+                expected_size = segment.offsets_count * item.size
                 checksum = 0
                 copied = 0
                 previous: int | None = None
@@ -417,37 +493,53 @@ def write_index_pack(
                     assert segment.index_path is not None
                     with segment.index_path.open("rb") as src:
                         while chunk := src.read(1024 * 1024):
-                            if len(chunk) % _U64.size:
+                            if len(chunk) % item.size:
                                 raise ValueError(
-                                    f"Index chunk is not uint64-aligned: {segment.index_path}"
+                                    f"Packed payload chunk is not {item.size}-byte aligned: {segment.index_path}"
                                 )
                             if (
-                                copied + len(chunk) == expected_size
+                                not segment.fixed_array
+                                and copied + len(chunk) == expected_size
                                 and segment.source_size_override is not None
                             ):
                                 chunk = chunk[: -_U64.size] + _U64.pack(
                                     segment.source_size_override
                                 )
-                            for (value,) in struct.iter_unpack("<Q", chunk):
-                                if previous is not None and value < previous:
-                                    raise ValueError(
-                                        f"Non-monotonic offsets in {segment.index_path}: "
-                                        f"{value} follows {previous}"
-                                    )
-                                previous = value
+                            if not segment.fixed_array:
+                                for (value,) in struct.iter_unpack("<Q", chunk):
+                                    if previous is not None and value < previous:
+                                        raise ValueError(
+                                            f"Non-monotonic offsets in {segment.index_path}: "
+                                            f"{value} follows {previous}"
+                                        )
+                                    previous = value
                             checksum = zlib.crc32(chunk, checksum)
                             copied += len(chunk)
                             out.write(chunk)
+                    if segment.fixed_array:
+                        stat = segment.index_path.stat()
+                        identity = (
+                            stat.st_dev,
+                            stat.st_ino,
+                            stat.st_size,
+                            stat.st_mtime_ns,
+                        )
+                        if identity != segment.input_identity:
+                            raise ValueError(
+                                f"Fixed-array shard changed while packing: {segment.index_path}"
+                            )
                 if copied != expected_size:
                     raise ValueError(
                         f"Index changed while packing {segment.index_path}: "
                         f"expected {expected_size} bytes, copied {copied}"
                     )
-                if previous is None:
+                if not segment.fixed_array and previous is None:
                     raise ValueError(
                         f"Index sidecar contains no sentinel: {segment.index_path}"
                     )
-                if segment.path_only:
+                if segment.fixed_array:
+                    source_size = 0
+                elif segment.path_only:
                     # Keep the v2 segment-row invariant required by existing
                     # readers. Optional source-size metadata lives in the
                     # otherwise ignored one-uint64 payload and is identified
@@ -468,7 +560,13 @@ def write_index_pack(
                         strings_offset + path_rel,
                         payload_cursor,
                         path_len,
-                        _SEGMENT_PATH_ONLY if segment.path_only else 0,
+                        (
+                            _SEGMENT_FIXED_ARRAY
+                            if segment.fixed_array
+                            else _SEGMENT_PATH_ONLY
+                            if segment.path_only
+                            else 0
+                        ),
                         segment.offsets_count,
                         source_size,
                         expected_size,
@@ -510,9 +608,10 @@ class PackedIndexCollection:
     Zero-copy view of one logical collection inside an :class:`IndexPack`.
 
     Instances are created by :meth:`IndexPack.collection`; callers normally do
-    not instantiate this class directly. It translates a collection-global
-    record index into a source path and byte range without materializing the
-    shard catalog or offsets.
+    not instantiate this class directly. Byte-offset collections translate a
+    collection-global record index into a source path and byte range. Fixed
+    arrays expose :meth:`value` and :meth:`value_in_shard`. Neither access mode
+    materializes the shard catalog or payload.
 
     Args:
         pack:
@@ -531,6 +630,8 @@ class PackedIndexCollection:
         offsets_required:
             Whether this collection contains record offsets. Path-only
             collections support :meth:`path_for_shard` but contain no records.
+        value_dtype:
+            ``"uint32"`` for a fixed-array collection, otherwise ``None``.
     """
 
     def __init__(
@@ -542,6 +643,7 @@ class PackedIndexCollection:
         total_records: int,
         kind: str,
         offsets_required: bool,
+        value_dtype: str | None = None,
     ):
         self.pack = pack
         self.key = key
@@ -550,6 +652,12 @@ class PackedIndexCollection:
         self.total_records = total_records
         self.kind = kind
         self.offsets_required = offsets_required
+        self.value_dtype = value_dtype
+
+    @property
+    def is_array(self) -> bool:
+        """Return whether this collection stores fixed-width values."""
+        return self.value_dtype is not None
 
     def __len__(self) -> int:
         """Return the number of addressable records across all shards."""
@@ -571,13 +679,9 @@ class PackedIndexCollection:
             IndexError:
                 If ``shard_index`` is outside the collection.
         """
-        if shard_index < 0:
-            shard_index += self.sequence_count
-        if shard_index < 0 or shard_index >= self.sequence_count:
-            raise IndexError(
-                f"shard index {shard_index} out of range for packed collection "
-                f"with {self.sequence_count} shards"
-            )
+        if self.is_array:
+            raise TypeError("Fixed-array collections do not contain source paths")
+        shard_index = self._normalize_shard_index(shard_index)
         self.pack._ensure_open()
         segment_id, _ = self.pack._sequence(self.sequence_start + shard_index)
         segment = self.pack._segment(segment_id)
@@ -607,6 +711,8 @@ class PackedIndexCollection:
         Returns ``None`` for path-only v2 packs written before source-size
         metadata was supported. A known empty source returns zero.
         """
+        if self.is_array:
+            raise TypeError("Fixed-array collections do not describe source files")
         shard_index = self._normalize_shard_index(shard_index)
         pack = self.pack
         pack._ensure_open()
@@ -628,15 +734,12 @@ class PackedIndexCollection:
 
         Both indices accept Python-style negative values.
         """
-        shard_index = self._normalize_shard_index(shard_index)
-        shard_length = self.shard_length(shard_index)
-        if local_index < 0:
-            local_index += shard_length
-        if local_index < 0 or local_index >= shard_length:
-            raise IndexError(
-                f"local index {local_index} out of range for packed shard "
-                f"{shard_index} with {shard_length} records"
+        if self.is_array:
+            raise TypeError(
+                "Fixed-array collections contain values, not source byte ranges; "
+                "use value_in_shard()"
             )
+        shard_index, local_index = self._normalize_local_index(shard_index, local_index)
         pack = self.pack
         pack._ensure_open()
         segment_id, _ = pack._sequence(self.sequence_start + shard_index)
@@ -682,6 +785,70 @@ class PackedIndexCollection:
             ValueError:
                 If sequence metadata or offsets are internally inconsistent.
         """
+        if self.is_array:
+            raise TypeError(
+                "Fixed-array collections contain values, not source byte ranges; "
+                "use value_in_shard()"
+            )
+        shard_index, local_index = self._normalize_global_index(index)
+        return self.locate_in_shard(shard_index, local_index)
+
+    def value(self, index: int) -> int:
+        """Return one fixed-array value by collection-global position.
+
+        Resolving the containing shard takes O(log(number of shards)); reading
+        the uint32 value from the mmap is O(1). Negative indices follow Python
+        sequence semantics.
+        """
+        if not self.is_array:
+            raise TypeError(
+                "Byte-offset collections contain source ranges, not fixed-array values"
+            )
+        shard_index, local_index = self._normalize_global_index(index)
+        return self.value_in_shard(shard_index, local_index)
+
+    def value_in_shard(self, shard_index: int, local_index: int) -> int:
+        """Return one fixed-array value by shard and shard-local position in O(1)."""
+        if not self.is_array:
+            raise TypeError(
+                "Byte-offset collections contain source ranges, not fixed-array values"
+            )
+        shard_index, local_index = self._normalize_local_index(shard_index, local_index)
+        pack = self.pack
+        pack._ensure_open()
+        segment_id, _ = pack._sequence(self.sequence_start + shard_index)
+        segment = pack._segment(segment_id)
+        if not segment[3] & _SEGMENT_FIXED_ARRAY:
+            raise ValueError(
+                f"Corrupt idxpack array collection references non-array segment {segment_id}"
+            )
+        return pack._u32(segment[1] + local_index * _U32.size)
+
+    def _normalize_shard_index(self, shard_index: int) -> int:
+        if shard_index < 0:
+            shard_index += self.sequence_count
+        if shard_index < 0 or shard_index >= self.sequence_count:
+            raise IndexError(
+                f"shard index {shard_index} out of range for packed collection "
+                f"with {self.sequence_count} shards"
+            )
+        return shard_index
+
+    def _normalize_local_index(
+        self, shard_index: int, local_index: int
+    ) -> tuple[int, int]:
+        shard_index = self._normalize_shard_index(shard_index)
+        shard_length = self.shard_length(shard_index)
+        if local_index < 0:
+            local_index += shard_length
+        if local_index < 0 or local_index >= shard_length:
+            raise IndexError(
+                f"local index {local_index} out of range for packed shard "
+                f"{shard_index} with {shard_length} records"
+            )
+        return shard_index, local_index
+
+    def _normalize_global_index(self, index: int) -> tuple[int, int]:
         if index < 0:
             index += self.total_records
         if index < 0 or index >= self.total_records:
@@ -709,17 +876,7 @@ class PackedIndexCollection:
             if shard_index
             else 0
         )
-        return self.locate_in_shard(shard_index, index - previous_end)
-
-    def _normalize_shard_index(self, shard_index: int) -> int:
-        if shard_index < 0:
-            shard_index += self.sequence_count
-        if shard_index < 0 or shard_index >= self.sequence_count:
-            raise IndexError(
-                f"shard index {shard_index} out of range for packed collection "
-                f"with {self.sequence_count} shards"
-            )
-        return shard_index
+        return shard_index, index - previous_end
 
 
 class IndexPack:
@@ -732,7 +889,9 @@ class IndexPack:
     assembled without leaving a file descriptor or mmap to be inherited by
     worker processes. The complete pack is opened, deeply validated, and
     memory-mapped only when a record, shard path, or segment is first accessed.
-    Offset payloads are never copied into Python or NumPy memory.
+    Offset and fixed-array payloads are never copied into Python or NumPy
+    memory. Versions 2 and 3 are accepted; fixed arrays are available only in
+    version 3.
 
     The lazy mapping is process-local and the object is pickle-safe for
     data-loader workers. Use it as a context manager when a deterministic close
@@ -796,7 +955,8 @@ class IndexPack:
                 64-character hexadecimal representation.
 
         Returns:
-            A view supporting length, shard-path, and record-location lookup.
+            A view supporting length and the accessors appropriate to its
+            collection type: shard paths/record locations or fixed-array values.
 
         Raises:
             KeyError:
@@ -811,6 +971,7 @@ class IndexPack:
                 total_records,
                 kind,
                 offsets_required,
+                value_dtype,
             ) = self._collections[key]
         except KeyError as ex:
             raise KeyError(
@@ -824,13 +985,14 @@ class IndexPack:
             total_records,
             kind,
             offsets_required,
+            value_dtype,
         )
 
     def verify_segment(self, segment_id: int) -> None:
         """
-        Verify one packed offset payload against its stored CRC32.
+        Verify one packed segment payload against its stored CRC32.
 
-        Validation is explicit because scanning every offset payload at open
+        Validation is explicit because scanning every segment payload at open
         time would defeat fast startup.
 
         Args:
@@ -886,6 +1048,7 @@ class IndexPack:
             "expected_layout_hash": self.expected_layout_hash,
             "file_identity": self._file_identity,
             "catalog": {
+                "version": self.version,
                 "collection_offset": self.collection_offset,
                 "num_collections": self.num_collections,
                 "sequence_offset": self.sequence_offset,
@@ -914,6 +1077,7 @@ class IndexPack:
             self._collections = {}
             self._read_catalog()
             return
+        self.version = catalog.get("version", _VERSION)
         self.collection_offset = catalog["collection_offset"]
         self.num_collections = catalog["num_collections"]
         self.sequence_offset = catalog["sequence_offset"]
@@ -925,13 +1089,16 @@ class IndexPack:
         self.offsets_offset = catalog["offsets_offset"]
         self.offsets_size = catalog["offsets_size"]
         self.layout_hash = catalog["layout_hash"]
-        self._collections = catalog["collections"]
+        self._collections = {
+            key: (*value, None) if len(value) == 5 else value
+            for key, value in catalog["collections"].items()
+        }
 
     def _read_header(self, source, file_size: int) -> None:
         """Decode and validate the common on-disk section layout."""
         (
             magic,
-            version,
+            self.version,
             header_size,
             self.collection_offset,
             self.num_collections,
@@ -949,10 +1116,13 @@ class IndexPack:
             raise ValueError(
                 f"Invalid index-pack header magic in {self.path}: {magic!r}"
             )
-        if version != _VERSION or header_size != _HEADER_SIZE:
+        if (
+            self.version not in (_VERSION, _ARRAY_VERSION)
+            or header_size != _HEADER_SIZE
+        ):
             raise ValueError(
                 f"Unsupported index-pack header in {self.path}: "
-                f"version={version}, header_size={header_size}"
+                f"version={self.version}, header_size={header_size}"
             )
         sections = (
             (
@@ -1070,9 +1240,16 @@ class IndexPack:
                 ) = _COLLECTION.unpack_from(
                     collection_table, collection_id * _COLLECTION.size
                 )
-                if flags & ~_COLLECTION_PATHS_ONLY:
+                supported_flags = _COLLECTION_PATHS_ONLY
+                if self.version >= _ARRAY_VERSION:
+                    supported_flags |= _COLLECTION_FIXED_ARRAY
+                if flags & ~supported_flags:
                     raise ValueError(
                         f"Index pack collection {collection_id} has unsupported flags: {flags:#x}"
+                    )
+                if flags & _COLLECTION_PATHS_ONLY and flags & _COLLECTION_FIXED_ARRAY:
+                    raise ValueError(
+                        f"Index pack collection {collection_id} cannot be both path-only and fixed-array"
                     )
                 if (
                     sequence_start != expected_sequence_start
@@ -1092,7 +1269,9 @@ class IndexPack:
                     label=f"collection {collection_id} kind",
                 )
                 declared_paths_only = bool(flags & _COLLECTION_PATHS_ONLY)
+                declared_array = bool(flags & _COLLECTION_FIXED_ARRAY)
                 paths_only = declared_paths_only
+                is_array = declared_array
                 if sequence_count:
                     segment_id, _ = _SEQUENCE.unpack(
                         _pread_exact(
@@ -1112,7 +1291,26 @@ class IndexPack:
                             self.segment_offset + segment_id * _SEGMENT.size,
                         )
                     )
+                    supported_segment_flags = _SEGMENT_PATH_ONLY
+                    if self.version >= _ARRAY_VERSION:
+                        supported_segment_flags |= _SEGMENT_FIXED_ARRAY
+                    if segment[3] & ~supported_segment_flags:
+                        raise ValueError(
+                            f"Index pack segment {segment_id} has unsupported flags: {segment[3]:#x}"
+                        )
+                    if (
+                        segment[3] & _SEGMENT_PATH_ONLY
+                        and segment[3] & _SEGMENT_FIXED_ARRAY
+                    ):
+                        raise ValueError(
+                            f"Index pack segment {segment_id} cannot be both path-only and fixed-array"
+                        )
                     paths_only = bool(segment[3] & _SEGMENT_PATH_ONLY)
+                    is_array = bool(segment[3] & _SEGMENT_FIXED_ARRAY)
+                    if declared_array != is_array:
+                        raise ValueError(
+                            f"Index pack collection {collection_id} fixed-array flag disagrees with its first segment"
+                        )
                     _, final_cumulative = _SEQUENCE.unpack(
                         _pread_exact(
                             fh.fileno(),
@@ -1141,7 +1339,8 @@ class IndexPack:
                     sequence_count,
                     total_records,
                     kind,
-                    not paths_only,
+                    not paths_only and not is_array,
+                    _UINT32_DTYPE if is_array else None,
                 )
                 expected_sequence_start += sequence_count
             if expected_sequence_start != self.num_sequences:
@@ -1208,16 +1407,33 @@ class IndexPack:
                 _,
                 metadata_flags,
             ) = segment
-            if flags & ~_SEGMENT_PATH_ONLY:
+            supported_flags = _SEGMENT_PATH_ONLY
+            if self.version >= _ARRAY_VERSION:
+                supported_flags |= _SEGMENT_FIXED_ARRAY
+            if flags & ~supported_flags:
                 self.close()
                 raise ValueError(
                     f"Index pack segment {segment_id} has unsupported flags: {flags:#x}"
                 )
-            self._string(path_position, path_length, label=f"segment {segment_id} path")
-            if offsets_count < 1 or size != offsets_count * _U64.size:
+            if flags & _SEGMENT_PATH_ONLY and flags & _SEGMENT_FIXED_ARRAY:
                 self.close()
                 raise ValueError(
-                    f"Index pack segment {segment_id} has inconsistent offset count/size"
+                    f"Index pack segment {segment_id} cannot be both path-only and fixed-array"
+                )
+            self._string(path_position, path_length, label=f"segment {segment_id} path")
+            is_array = bool(flags & _SEGMENT_FIXED_ARRAY)
+            expected_size = offsets_count * (_U32.size if is_array else _U64.size)
+            if (not is_array and offsets_count < 1) or size != expected_size:
+                self.close()
+                raise ValueError(
+                    f"Index pack segment {segment_id} has inconsistent payload item count/size"
+                )
+            if is_array and (
+                path_length != 0 or source_size != 0 or metadata_flags != 0
+            ):
+                self.close()
+                raise ValueError(
+                    f"Index pack fixed-array segment {segment_id} contains source-file metadata"
                 )
             if (
                 offsets_position != offsets_cursor
@@ -1225,7 +1441,7 @@ class IndexPack:
             ):
                 self.close()
                 raise ValueError(
-                    f"Index pack segment {segment_id} has an invalid offset payload range"
+                    f"Index pack segment {segment_id} has an invalid payload range"
                 )
             if flags & _SEGMENT_PATH_ONLY and offsets_count != 1:
                 self.close()
@@ -1265,10 +1481,18 @@ class IndexPack:
                 kind_length,
                 flags,
             ) = row
-            if flags & ~_COLLECTION_PATHS_ONLY:
+            supported_flags = _COLLECTION_PATHS_ONLY
+            if self.version >= _ARRAY_VERSION:
+                supported_flags |= _COLLECTION_FIXED_ARRAY
+            if flags & ~supported_flags:
                 self.close()
                 raise ValueError(
                     f"Index pack collection {collection_id} has unsupported flags: {flags:#x}"
+                )
+            if flags & _COLLECTION_PATHS_ONLY and flags & _COLLECTION_FIXED_ARRAY:
+                self.close()
+                raise ValueError(
+                    f"Index pack collection {collection_id} cannot be both path-only and fixed-array"
                 )
             if (
                 sequence_start != expected_sequence_start
@@ -1286,7 +1510,9 @@ class IndexPack:
             )
             cumulative = 0
             declared_paths_only = bool(flags & _COLLECTION_PATHS_ONLY)
+            declared_array = bool(flags & _COLLECTION_FIXED_ARRAY)
             paths_only = None
+            is_array = None
             for local_shard in range(sequence_count):
                 segment_id, cumulative_end = self._sequence(
                     sequence_start + local_shard
@@ -1297,7 +1523,11 @@ class IndexPack:
                         f"Index pack collection {collection_id} has corrupt sequence metadata"
                     )
                 segment = self._segment(segment_id)
-                expected_cumulative_end = cumulative + segment[4] - 1
+                segment_paths_only = bool(segment[3] & _SEGMENT_PATH_ONLY)
+                segment_is_array = bool(segment[3] & _SEGMENT_FIXED_ARRAY)
+                expected_cumulative_end = (
+                    cumulative + segment[4] - (0 if segment_is_array else 1)
+                )
                 if cumulative_end != expected_cumulative_end:
                     self.close()
                     raise ValueError(
@@ -1305,7 +1535,6 @@ class IndexPack:
                         f"cumulative count for shard {local_shard}: "
                         f"{cumulative_end} != {expected_cumulative_end}"
                     )
-                segment_paths_only = bool(segment[3] & _SEGMENT_PATH_ONLY)
                 if paths_only is None:
                     paths_only = segment_paths_only
                 elif segment_paths_only != paths_only:
@@ -1313,14 +1542,28 @@ class IndexPack:
                     raise ValueError(
                         f"Index pack collection {collection_id} mixes path-only and indexed segments"
                     )
+                if is_array is None:
+                    is_array = segment_is_array
+                elif segment_is_array != is_array:
+                    self.close()
+                    raise ValueError(
+                        f"Index pack collection {collection_id} mixes fixed-array and byte-offset segments"
+                    )
                 cumulative = cumulative_end
             if paths_only is None:
                 paths_only = declared_paths_only
+            if is_array is None:
+                is_array = declared_array
             if declared_paths_only and not paths_only:
                 self.close()
                 raise ValueError(
                     f"Index pack collection {collection_id} is marked path-only "
                     "but references indexed segments"
+                )
+            if declared_array != is_array:
+                self.close()
+                raise ValueError(
+                    f"Index pack collection {collection_id} fixed-array flag disagrees with its segments"
                 )
             if cumulative != total_records or (paths_only and total_records != 0):
                 self.close()
@@ -1332,7 +1575,8 @@ class IndexPack:
                 sequence_count,
                 total_records,
                 kind,
-                not paths_only,
+                not paths_only and not is_array,
+                _UINT32_DTYPE if is_array else None,
             )
             expected_sequence_start += sequence_count
 
@@ -1366,6 +1610,10 @@ class IndexPack:
     def _u64(self, position: int) -> int:
         self._ensure_open()
         return _U64.unpack_from(self._mmap, position)[0]
+
+    def _u32(self, position: int) -> int:
+        self._ensure_open()
+        return _U32.unpack_from(self._mmap, position)[0]
 
     def _string(self, position: int, length: int, *, label: str) -> str:
         self._ensure_open()
@@ -1425,6 +1673,9 @@ class _BuildSegment:
             ``None`` and the copied sidecar sentinel becomes authoritative.
         path_only:
             Whether this segment intentionally stores no record offsets.
+        fixed_array:
+            Whether this segment stores raw little-endian uint32 values rather
+            than byte offsets. Its build-only ``index_path`` is not persisted.
         source_size_override:
             Source-size sentinel to write into the pack instead of copying the
             sidecar's final value.
@@ -1435,12 +1686,14 @@ class _BuildSegment:
     offsets_count: int
     source_size: int | None
     path_only: bool = False
+    fixed_array: bool = False
     source_size_override: int | None = None
+    input_identity: tuple[int, int, int, int] | None = None
 
     @property
     def num_records(self) -> int:
         """Return addressable records represented by this segment."""
-        return self.offsets_count - 1
+        return self.offsets_count if self.fixed_array else self.offsets_count - 1
 
 
 class _StringTableBuilder:
@@ -1564,10 +1817,51 @@ def _read_sidecar_metadata(
     )
 
 
-def _layout_digest(collections: Sequence[IndexPackCollectionSpec]) -> bytes:
+def _read_array_metadata(path: Path) -> _BuildSegment:
+    """Validate one build-only raw uint32 shard without reading it into memory."""
+    try:
+        stat = path.stat()
+    except FileNotFoundError as ex:
+        raise FileNotFoundError(f"Missing fixed-array shard: {path}") from ex
+    if not path.is_file():
+        raise ValueError(f"Fixed-array shard is not a regular file: {path}")
+    size = stat.st_size
+    if size % _U32.size:
+        raise ValueError(
+            f"Invalid fixed-array shard {path}: size must be a multiple of {_U32.size}, got {size}"
+        )
+    return _BuildSegment(
+        path="",
+        index_path=path,
+        offsets_count=size // _U32.size,
+        source_size=0,
+        fixed_array=True,
+        input_identity=(stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns),
+    )
+
+
+def _layout_digest(
+    collections: Sequence[IndexPackCollectionSpec | IndexPackArraySpec],
+) -> bytes:
     digest = hashlib.sha256()
     for collection in collections:
         digest.update(collection.key)
+        if isinstance(collection, IndexPackArraySpec):
+            digest.update(b"\x02")
+            digest.update(_U64.pack(len(collection.shard_paths)))
+            for path in collection.shard_paths:
+                try:
+                    size = path.stat().st_size
+                except FileNotFoundError as ex:
+                    raise FileNotFoundError(
+                        f"Missing fixed-array shard: {path}"
+                    ) from ex
+                if size % _U32.size:
+                    raise ValueError(
+                        f"Invalid fixed-array shard {path}: size must be a multiple of {_U32.size}, got {size}"
+                    )
+                digest.update(_U64.pack(size // _U32.size))
+            continue
         digest.update(bytes((collection.offsets_required,)))
         digest.update(_U64.pack(len(collection.paths)))
         for path in collection.paths:
