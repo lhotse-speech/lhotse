@@ -117,7 +117,7 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         duration_bins: List[Seconds] = None,
         quadratic_duration: Optional[Seconds] = None,
     ) -> None:
-        super().__init__(data_source=None)
+        super().__init__()
 
         # Parse file paths and scales
         self.paths = []
