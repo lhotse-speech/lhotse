@@ -42,6 +42,10 @@ def normalize_loudness(
     Applies pyloudnorm based loudness normalization to the input audio. The input audio
     can have up to 5 channels, with the following order: [left, right, center, left_surround, right_surround]
 
+    When all blocks are below the meter's absolute gate, use -70 LUFS as the input
+    loudness to keep the gain finite. Silence stays silent; other signals below the
+    gate may not reach the target loudness.
+
     :param audio: the input audio, expected to be 2D with shape (channels, samples).
     :param target: the target loudness in LUFS.
     :param sampling_rate: the sampling rate of the audio.
@@ -64,6 +68,8 @@ def normalize_loudness(
         sampling_rate, block_size=min(0.4, duration - EPSILON)
     )  # create BS.1770 meter
     loudness = meter.integrated_loudness(audio.T)
+    if np.isneginf(loudness):
+        loudness = -70.0  # BS.1770 absolute gating threshold in LUFS.
 
     # loudness normalize audio to target LUFS. We will ignore the warnings related to
     # clipping the audio.
