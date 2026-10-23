@@ -367,3 +367,97 @@ def test_load_state_dict_same_rank_still_works():
     src = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
     dst = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
     dst.load_state_dict(src.state_dict())  # no raise
+
+
+def _make_randomized_round_robin(randomize):
+    return RoundRobinSampler(
+        *[
+            SimpleCutSampler(
+                DummyManifest(CutSet, begin_id=start, end_id=start + size),
+                max_cuts=2,
+                shuffle=True,
+            )
+            for start, size in [(0, 8), (1000, 20), (2000, 40)]
+        ],
+        randomize=randomize,
+        seed=42,
+    )
+
+
+def _remaining_batch_ids(sampler):
+    batches = []
+    while True:
+        try:
+            batches.append(list(next(sampler).ids))
+        except StopIteration:
+            return batches
+
+
+@pytest.mark.parametrize("randomize", [False, True, [0.2, 0.3, 0.5]])
+@pytest.mark.parametrize("checkpoint_step", [1, 7, 15])
+@pytest.mark.parametrize("same_instance", [False, True])
+def test_randomized_round_robin_restores_batch_order(
+    randomize, checkpoint_step, same_instance
+):
+    sampler = _make_randomized_round_robin(randomize)
+    sampler.set_epoch(3)
+    iter(sampler)
+    for _ in range(checkpoint_step):
+        next(sampler)
+    state = sampler.state_dict()
+    # Advancing the original must not mutate the saved snapshot.
+    expected = _remaining_batch_ids(sampler)
+    restored = sampler if same_instance else _make_randomized_round_robin(randomize)
+    restored.load_state_dict(deepcopy(state))
+    iter(restored)
+    assert _remaining_batch_ids(restored) == expected
+
+    # Explicitly discarding restored state must start the next epoch afresh.
+    restored.allow_iter_to_reset_state()
+    restored.set_epoch(4)
+    reference = _make_randomized_round_robin(randomize)
+    reference.set_epoch(4)
+    iter(restored)
+    iter(reference)
+    assert _remaining_batch_ids(restored) == _remaining_batch_ids(reference)
+
+
+@pytest.mark.parametrize("randomize", [False, True, [0.2, 0.3, 0.5]])
+def test_randomized_round_robin_restores_before_iteration(randomize):
+    sampler = _make_randomized_round_robin(randomize)
+    restored = _make_randomized_round_robin(randomize)
+    restored.load_state_dict(sampler.state_dict())
+    iter(sampler)
+    iter(restored)
+    assert _remaining_batch_ids(restored) == _remaining_batch_ids(sampler)
+
+
+@pytest.mark.parametrize("randomize", [False, True, [0.2, 0.3, 0.5]])
+def test_randomized_round_robin_loads_legacy_checkpoint(randomize):
+    sampler = _make_randomized_round_robin(randomize)
+    iter(sampler)
+    for _ in range(7):
+        next(sampler)
+    state = sampler.state_dict()
+    state.pop("rng_state", None)
+    expected = _remaining_batch_ids(sampler)
+    restored = _make_randomized_round_robin(randomize)
+    restored.load_state_dict(state)
+    iter(restored)
+    actual = _remaining_batch_ids(restored)
+    # Legacy snapshots retain source progress but cannot recover random choices.
+    assert sorted(cid for batch in actual for cid in batch) == sorted(
+        cid for batch in expected for cid in batch
+    )
+
+
+@pytest.mark.parametrize("wrapper", [RoundRobinSampler, ZipSampler])
+def test_randomized_round_robin_restores_under_wrapper(wrapper):
+    sampler = wrapper(_make_randomized_round_robin(True))
+    restored = wrapper(_make_randomized_round_robin(True))
+    iter(sampler)
+    for _ in range(7):
+        next(sampler)
+    restored.load_state_dict(sampler.state_dict())
+    iter(restored)
+    assert _remaining_batch_ids(restored) == _remaining_batch_ids(sampler)
