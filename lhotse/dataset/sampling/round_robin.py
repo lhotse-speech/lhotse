@@ -190,6 +190,7 @@ class RoundRobinSampler(CutSampler):
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
+        self.allow_iter_to_reset_state()
         if len(self._nondepleted_samplers_indices) == 0:
             raise StopIteration()
 
