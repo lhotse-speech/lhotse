@@ -141,12 +141,21 @@ def is_valid_url(value: str) -> bool:
 def fix_random_seed(random_seed: int):
     """
     Set the same random seed for the libraries and modules that Lhotse interacts with.
-    Includes the ``random`` module, numpy, torch, and ``uuid4()`` function defined in this file.
+    Includes the ``random`` module, numpy, torch (CPU generator only), and ``uuid4()``
+    function defined in this file.
+
+    .. note:: This function deliberately does not touch CUDA RNG state.
+        ``torch.manual_seed`` would seed the RNG of every visible CUDA device,
+        which is surprising when this function runs inside DataLoader worker
+        processes (e.g. via :func:`~lhotse.dataset.dataloading.worker_init_fn`)
+        and can interfere with the GPU RNG state managed by the training loop.
+        Seed CUDA explicitly in your training script if you need it, e.g. with
+        ``torch.cuda.manual_seed_all(seed)``. See issue #1564 for details.
     """
     global _lhotse_uuid
     random.seed(random_seed)
     np.random.seed(random_seed)
-    torch.random.manual_seed(random_seed)
+    torch.default_generator.manual_seed(random_seed)
     # Ensure deterministic ID creation
     rd = random.Random()
     rd.seed(random_seed)
