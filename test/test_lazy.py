@@ -13,7 +13,7 @@ import pytest
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
 from lhotse.cut.text import TextExample
 from lhotse.lazy import LazyJsonlIterator, LazyRepeater, LazyTxtIterator
-from lhotse.testing.dummies import DummyManifest, as_lazy
+from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
 from lhotse.testing.fixtures import with_dill_enabled
 from lhotse.utils import fastcopy, is_module_available
 
@@ -172,6 +172,23 @@ def test_repeat_infinite_terminates_with_empty_iterable():
     repeated_iter = LazyRepeater(data)
     result = list(repeated_iter)
     assert len(result) == 0
+
+
+@pytest.mark.parametrize("times", [3, None])
+def test_repeat_raises_when_source_can_be_iterated_only_once(times):
+    data = (x for x in range(10))
+    repeated_iter = LazyRepeater(data, times=times, preserve_id=True)
+    result = []
+    with pytest.raises(ValueError, match="iterated only once"):
+        for item in repeated_iter:
+            result.append(item)
+    assert result == list(range(10))
+
+
+def test_cut_set_repeat_raises_when_source_is_a_generator():
+    cuts = CutSet(dummy_cut(idx) for idx in range(5))
+    with pytest.raises(ValueError, match="iterated only once"):
+        list(cuts.repeat(times=3))
 
 
 @pytest.mark.parametrize(

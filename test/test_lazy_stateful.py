@@ -856,7 +856,8 @@ class TestLazyRepeaterStateful:
         rep = LazyRepeater([1, 2, 3], times=2)
         assert hasattr(rep, "source")
 
-    def test_restore_yields_remaining_items(self, tmp_path):
+    @pytest.mark.parametrize("k", [8, 10], ids=["mid_epoch", "epoch_boundary"])
+    def test_restore_yields_remaining_items(self, tmp_path, k):
         with jsonl_file(tmp_path, n=5) as p:
             # Full run: 3 epochs × 5 items = 15
             inner_full = LazyJsonlIterator(p)
@@ -864,14 +865,15 @@ class TestLazyRepeaterStateful:
             all_items = list(rep_full)
             assert len(all_items) == 15
 
-            # Interrupted: consume 8 items (into epoch 1)
+            # Interrupted: consume k items (into epoch 1, or right after its last item)
             inner1 = LazyJsonlIterator(p)
             rep1 = LazyRepeater(inner1, times=3, preserve_id=True)
             gen1 = iter(rep1)
-            first_k = consume(gen1, 8)
+            first_k = consume(gen1, k)
             sd = rep1.state_dict()
 
-            # Restore
+            # Restore. At the epoch boundary the restored epoch 1 yields nothing,
+            # which must not be mistaken for a source that can be iterated only once.
             inner2 = LazyJsonlIterator(p)
             rep2 = LazyRepeater(inner2, times=3, preserve_id=True)
             rep2.load_state_dict(sd)
