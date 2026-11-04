@@ -21,6 +21,60 @@ from lhotse.testing.dummies import DummyManifest
 CUTS = DummyManifest(CutSet, begin_id=0, end_id=100)
 CUTS_MOD = CUTS.modify_ids(lambda cid: cid + "_alt")
 
+
+@pytest.mark.parametrize(
+    "sampler_type", [SimpleCutSampler, DynamicCutSampler, DynamicBucketingSampler]
+)
+@pytest.mark.parametrize("checkpoint_step", [3, 9])
+@pytest.mark.parametrize("next_epoch", [3, 4])
+@pytest.mark.parametrize("same_instance", [False, True])
+def test_round_robin_restored_depleted_source_restarts(
+    sampler_type, checkpoint_step, next_epoch, same_instance
+):
+    def make_sampler():
+        kwargs = {"num_buckets": 2} if sampler_type is DynamicBucketingSampler else {}
+        return RoundRobinSampler(
+            sampler_type(
+                DummyManifest(CutSet, begin_id=0, end_id=4),
+                max_cuts=1,
+                shuffle=True,
+                **kwargs,
+            ),
+            sampler_type(
+                DummyManifest(CutSet, begin_id=100, end_id=112),
+                max_cuts=1,
+                shuffle=True,
+                **kwargs,
+            ),
+        )
+
+    sampler = make_sampler()
+    sampler.set_epoch(3)
+    original = [[cut.id for cut in batch] for batch in sampler]
+    iter(sampler)
+    for _ in range(checkpoint_step):
+        next(sampler)
+    state = deepcopy(sampler.state_dict())
+
+    restored = sampler if same_instance else make_sampler()
+    restored.load_state_dict(state)
+    # Training loops may call set_epoch before consuming the restored state.
+    restored.set_epoch(99)
+    assert [[cut.id for cut in batch] for batch in restored] == original[
+        checkpoint_step:
+    ]
+
+    # At step 9 the short source is already exhausted and is never advanced
+    # during the restored remainder. It must still restart on the next pass.
+    restored.set_epoch(next_epoch)
+    actual = [[cut.id for cut in batch] for batch in restored]
+    reference = make_sampler()
+    reference.set_epoch(next_epoch)
+    expected = [[cut.id for cut in batch] for batch in reference]
+    assert len(actual) == len(expected) == 16
+    assert actual == expected
+
+
 # fmt: off
 SAMPLERS_TO_TEST = [
     # Identically initialized SimpleCutSampler
