@@ -163,6 +163,7 @@ class SpecAugment(torch.nn.Module):
         assert num_frame_masks >= 0
         assert features_mask_size > 0
         assert frames_mask_size > 0
+        assert max_frames_mask_fraction >= 0
         self.time_warp_factor = time_warp_factor
         self.num_feature_masks = num_feature_masks
         self.features_mask_size = features_mask_size
@@ -246,16 +247,17 @@ class SpecAugment(torch.nn.Module):
                 self.num_frame_masks,
                 math.ceil(max_tot_mask_frames / self.frames_mask_size),
             )
-            max_mask_frames = min(
-                self.frames_mask_size, max_tot_mask_frames // num_frame_masks
-            )
-            features = mask_along_axis_optimized(
-                features,
-                mask_size=max_mask_frames,
-                mask_times=num_frame_masks,
-                mask_value=mean,
-                axis=1,
-            )
+            if num_frame_masks > 0:
+                max_mask_frames = min(
+                    self.frames_mask_size, max_tot_mask_frames // num_frame_masks
+                )
+                features = mask_along_axis_optimized(
+                    features,
+                    mask_size=max_mask_frames,
+                    mask_times=num_frame_masks,
+                    mask_value=mean,
+                    axis=1,
+                )
 
         return features
 
@@ -309,6 +311,10 @@ def mask_along_axis_optimized(
     """
     if axis not in [1, 2]:
         raise ValueError("Only Frequency and Time masking are supported!")
+
+    if mask_size < 1:
+        # E.g. an utterance too short to fit a time mask within its allowed fraction
+        return features
 
     features = features.unsqueeze(0)
     features = features.reshape([-1] + list(features.size()[-2:]))

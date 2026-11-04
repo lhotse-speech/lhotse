@@ -85,7 +85,7 @@ def download_speechcommands(
         # Remove partial unpacked files, if any, and unpack everything.
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(part_dir)
+            safe_extract(tar, path=part_dir)
         completed_detector.touch()
 
     return corpus_dir

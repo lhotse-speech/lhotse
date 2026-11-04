@@ -30,7 +30,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.serialization import load_json
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, resumable_download
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 # The last update is 5 years ago so it is safe to use the master branch.
 AUDIO_MNIST_URL = "https://github.com/soerenab/AudioMNIST/archive/master.tar.gz"  # noqa
@@ -65,7 +65,7 @@ def download_audio_mnist(
     if not tgz_dir.exists():
         logging.info(f"Untarring {tgz_name}.")
         with tarfile.open(tgz_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
         os.rename(str(target_dir / "AudioMNIST-master"), str(tgz_dir))
     return tgz_dir
 
