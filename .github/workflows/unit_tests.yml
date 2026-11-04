@@ -17,19 +17,20 @@ jobs:
       matrix:
         include:
           - python-version: "3.10"  # note: no torchaudio, no torchcodec
-            torch-install-cmd: "pip install torch==2.5 --extra-index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: "multi-storage-client==0.16.0"
-          - python-version: "3.11"  # note: no torchaudio, no torchcodec
-            torch-install-cmd: "pip install torch==2.6 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.12"  # note: no torchaudio, no torchcodec
-            torch-install-cmd: "pip install torch==2.7 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.13"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.9 torchcodec==0.9 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.12.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
           - python-version: "3.14"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.9 torchcodec==0.9 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==2.14.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
+            extra_deps: "multi-storage-client==0.16.0"
+          # TorchCodec does not publish Python 3.15 wheels yet.
+          - python-version: "3.15"  # note: no torchaudio, no torchcodec
+            torch-install-cmd: "pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
 
       fail-fast: false
@@ -47,7 +48,8 @@ jobs:
     - name: Install apt dependencies
       run: |
         sudo apt update
-        sudo apt install libsndfile1-dev libsndfile1 ffmpeg sox
+        # CMake and HDF5 headers support source builds on the newest Python.
+        sudo apt install libsndfile1-dev libsndfile1 ffmpeg sox cmake libhdf5-dev
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
@@ -58,8 +60,8 @@ jobs:
         pip install lilcom '.[tests]'
         # Enable some optional tests
         pip install h5py dill smart_open[http] webdataset==0.2.5 scipy nara_wpe pyloudnorm pillow aistore>=1.17.0 ${{ matrix.extra_deps }}
-        # No Python 3.14 wheel; the legacy CMake/pybind11 source build is incompatible.
-        # Kaldi tests remain enabled on Python 3.10-3.13 and skip when unavailable.
+        # No wheels for Python >=3.14; the legacy source build is incompatible.
+        # Kaldi tests remain enabled on older versions and skip when unavailable.
         pip install "kaldi_native_io; python_version < '3.14'"
     - name: Install sph2pipe
       run: |

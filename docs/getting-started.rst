@@ -83,7 +83,7 @@ Lhotse introduces the notion of audio cuts, designed to ease the training data c
 Installation
 ------------
 
-Lhotse supports Python version 3.7 and later.
+Lhotse supports Python version 3.10 and later, including Python 3.15.
 
 Pip
 ***
