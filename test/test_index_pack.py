@@ -1,3 +1,4 @@
+import gzip
 import json
 import multiprocessing as mp
 import os
@@ -34,6 +35,143 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 
 def _write_u32(path: Path, values: list[int]) -> None:
     path.write_bytes(b"".join(struct.pack("<I", value) for value in values))
+
+
+def test_index_pack_reads_gzip_jsonl_with_mirrored_seek_index(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / "records.jsonl.gz"
+    plain = tmp_path / "plain.jsonl"
+    records = [{"id": i, "text": "hello" * 100} for i in range(6)]
+    with gzip.open(path, "wt") as f:
+        for record in records:
+            f.write(json.dumps(record) + "\n")
+    _write_jsonl(plain, [{"id": 6}])
+    index = tmp_path / "mirror" / "records.jsonl.gz.idx"
+    create_jsonl_index(path, output_path=index)
+    create_jsonl_index(plain)
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec="mixed", paths=(str(path), str(plain))
+    )
+    route_path = tmp_path / "route.u32"
+    _write_u32(route_path, [7, 8])
+    route = IndexPackArraySpec(
+        role="route", kind="u32", source_spec="mixed", shard_paths=(route_path,)
+    )
+    pack_path = tmp_path / "records.idxpack"
+    write_index_pack(pack_path, [spec, route], index_path_overrides={str(path): index})
+    seek_index = tmp_path / "mirror" / "records.jsonl.gz.gzidx"
+    index.unlink()
+    seek_index.unlink()
+
+    with IndexPack(pack_path) as pack:
+        assert pack.version == 4
+        collection = pack.collection(spec.key)
+        assert pack.collection(route.key).value_in_shard(0, 1) == 8
+        assert collection.source_size_for_shard(0) > path.stat().st_size
+        assert collection.source_size_for_shard(1) == plain.stat().st_size
+        packed = LazyPackedManifestIterator(pack, spec.key, decode=GraphOriginDict)
+        assert [packed[i]["id"] for i in (6, 0, 5, 2)] == [6, 0, 5, 2]
+        full = [item["id"] for item in packed]
+        interrupted = LazyPackedManifestIterator(pack, spec.key, decode=GraphOriginDict)
+        iterator = iter(interrupted)
+        first = [next(iterator)["id"] for _ in range(3)]
+        state = interrupted.state_dict()
+        restored = LazyPackedManifestIterator(pack, spec.key, decode=GraphOriginDict)
+        restored.load_state_dict(state)
+        assert first + [item["id"] for item in restored] == full
+
+    with IndexPack(pack_path) as pack:
+        _, position, size, _ = pack.gzip_index_info(str(path))
+    with pack_path.open("r+b") as packed:
+        packed.seek(position + size - 1)
+        original = packed.read(1)
+        packed.seek(position + size - 1)
+        packed.write(bytes([original[0] ^ 1]))
+    with IndexPack(pack_path) as pack:
+        location = pack.collection(spec.key).locate(0)
+        with pytest.raises(ValueError, match="seek index checksum mismatch"):
+            read_packed_range(pack, location.path, location.start, location.end)
+
+
+def test_index_pack_requires_gzip_seek_index(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / "records.jsonl.gz"
+    with gzip.open(path, "wt") as f:
+        f.write('{"id": 1}\n')
+    create_jsonl_index(path)
+    (tmp_path / "records.jsonl.gz.gzidx").unlink()
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    with pytest.raises(FileNotFoundError, match=".gzidx"):
+        write_index_pack(tmp_path / "records.idxpack", [spec])
+
+
+@pytest.mark.parametrize("compressed", [False, True])
+def test_index_pack_rejects_truncated_jsonl_sidecar(tmp_path, compressed):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / ("records.jsonl.gz" if compressed else "records.jsonl")
+    first = b'{"id": 0}\n'
+    content = first + b'{"id": 1}\n'
+    path.write_bytes(gzip.compress(content) if compressed else content)
+    index = create_jsonl_index(path)
+    Path(index).write_bytes(struct.pack("<QQ", 0, len(first)))
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    target = tmp_path / "records.idxpack"
+    with pytest.raises(ValueError, match="sentinel"):
+        write_index_pack(target, [spec])
+    assert not target.exists()
+
+
+def test_index_pack_validates_concatenated_gzip_eof(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    path = tmp_path / "records.jsonl.gz"
+    path.write_bytes(gzip.compress(b'{"id": 0}\n') + gzip.compress(b'{"id": 1}\n'))
+    create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="records", kind="jsonl", source_spec=str(path), paths=(str(path),)
+    )
+    target = tmp_path / "records.idxpack"
+    write_index_pack(target, [spec])
+    with IndexPack(target) as pack:
+        assert len(pack.collection(spec.key)) == 2
+        assert pack.collection(spec.key).source_size_for_shard(0) == 20
+        reader = LazyPackedManifestIterator(pack, spec.key, decode=GraphOriginDict)
+        assert [row["id"] for row in reader] == [0, 1]
+
+
+def test_index_pack_embeds_multiple_gzip_seek_indexes_and_reopens_sources(tmp_path):
+    pytest.importorskip("indexed_gzip")
+    paths = [tmp_path / f"part-{i}.jsonl.gz" for i in range(2)]
+    for shard, path in enumerate(paths):
+        with gzip.open(path, "wt") as source:
+            for row in range(2):
+                source.write(json.dumps({"id": shard * 2 + row}) + "\n")
+        create_jsonl_index(path)
+    spec = IndexPackCollectionSpec(
+        role="records",
+        kind="jsonl",
+        source_spec="two-gzip-shards",
+        paths=tuple(map(str, paths)),
+    )
+    pack_path = tmp_path / "records.idxpack"
+    write_index_pack(pack_path, [spec])
+    for path in paths:
+        Path(f"{path}.idx").unlink()
+        Path(f"{path}.gzidx").unlink()
+
+    with IndexPack(pack_path) as pack:
+        first = pack.gzip_index_info(str(paths[0]))
+        second = pack.gzip_index_info(str(paths[1]))
+        assert first[1] + first[2] == second[1]
+        for segment_id in range(pack.num_segments):
+            pack.verify_segment(segment_id)
+        reader = LazyPackedManifestIterator(
+            pack, spec.key, decode=GraphOriginDict, max_open_files=1
+        )
+        assert [reader[i]["id"] for i in (3, 0, 2, 1, 3)] == [3, 0, 2, 1, 3]
 
 
 def _inspect_pack_mapping_in_child(pack, collection_key, connection) -> None:

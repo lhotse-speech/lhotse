@@ -121,8 +121,11 @@ class FeatureExtractor(metaclass=ABCMeta):
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
         """
-        Compute the total energy of a feature matrix. How the energy is computed depends on a
+        Compute the mean energy of a feature matrix. How the energy is computed depends on a
         particular type of features.
+        It is averaged rather than summed, so that, like ``audio_energy`` for audio, it does not
+        depend on the number of frames; otherwise SNRs in feature-domain mixing would depend on
+        the length of the mixed signals.
         It is expected that when implemented, ``compute_energy`` will never return zero.
 
         :param features: A feature matrix.

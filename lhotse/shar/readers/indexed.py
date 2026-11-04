@@ -8,6 +8,7 @@ from lhotse.indexing import (
     create_jsonl_index,
     create_tar_index,
     index_exists,
+    supports_indexed_access,
     validate_indexed_access,
 )
 from lhotse.lazy import (
@@ -38,7 +39,8 @@ class LazyIndexedSharIterator(IteratorNode):
     * ``__iter__()`` — sequential or shuffled iteration via ``__getitem__``.
     * ``state_dict()`` / ``load_state_dict()`` — checkpoint/restore.
 
-    Requires uncompressed, seekable JSONL/tar shards for every requested field.
+    Requires indexed JSONL and uncompressed, seekable tar shards for every
+    requested field. Gzip JSONL additionally requires ``indexed_gzip``.
     These may live on the local filesystem or on supported remote/object-store
     backends, as long as the underlying reader can perform indexed reads.
     Binary ``.idx`` indexes are created automatically if missing.
@@ -99,14 +101,13 @@ class LazyIndexedSharIterator(IteratorNode):
         ]
 
         # ----- Resolve index_path into per-shard per-field index paths -----
-        if indexes_root is not None:
-            index_path = _index_path_from_indexes_root(self.streams, indexes_root)
         self._index_streams: Optional[Dict[str, List[Optional[Pathlike]]]] = None
         self._raw_index_path = index_path  # kept for pickling
         self._index_streams = self._resolve_index_streams(
             streams=self.streams,
             index_path=index_path,
             in_dir=in_dir,
+            indexes_root=indexes_root,
         )
         self._validate_indexed_streams(
             streams=self.streams,
@@ -196,7 +197,10 @@ class LazyIndexedSharIterator(IteratorNode):
         streams: Dict[str, Sequence[Pathlike]],
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]],
         in_dir: Optional[Pathlike],
+        indexes_root: Optional[Pathlike] = None,
     ) -> Optional[Dict[str, List[Optional[Pathlike]]]]:
+        if indexes_root is not None:
+            return _index_path_from_indexes_root(streams, indexes_root)
         if index_path is None:
             return None
         if in_dir is not None:
@@ -270,12 +274,17 @@ class LazyIndexedSharIterator(IteratorNode):
             return False
         try:
             _, streams = cls._resolve_streams(fields=fields, in_dir=in_dir)
-            if indexes_root is not None:
-                index_path = _index_path_from_indexes_root(streams, indexes_root)
+            if any(
+                not supports_indexed_access(path)
+                for paths in streams.values()
+                for path in paths
+            ):
+                return False
             index_streams = cls._resolve_index_streams(
                 streams=streams,
                 index_path=index_path,
                 in_dir=in_dir,
+                indexes_root=indexes_root,
             )
             cls._validate_indexed_streams(
                 streams=streams,
@@ -361,9 +370,21 @@ class LazyIndexedSharIterator(IteratorNode):
             for field in self.fields:
                 reader = readers[field]
                 if isinstance(reader, IndexedTarReader):
+                    if not self._lazy or getattr(cut, field, None) is None:
+                        # Fields added with include_cuts=False have no placeholder
+                        # in the original cuts. Recover just their metadata in lazy mode.
+                        maybe_manifest, data_path = (
+                            reader.read_metadata(pos) if self._lazy else reader[pos]
+                        )
+                        if maybe_manifest is None:
+                            continue
+                        assert str(data_path.parent / data_path.stem) == cut.id, (
+                            f"Mismatched IDs: cut ID is '{cut.id}' but found "
+                            f"data with name '{data_path}' for field {field}"
+                        )
+                        setattr(cut, field, maybe_manifest)
                     if self._lazy:
-                        # Lazy mode: emit a Shar pointer derived purely from
-                        # the .idx offset array — zero tar reads at iter time.
+                        # Resolve the binary payload only when it is loaded.
                         offset, end_offset = reader.member_byte_range(pos)
                         from lhotse.shar.utils import fill_shar_placeholder_lazy
 
@@ -374,16 +395,12 @@ class LazyIndexedSharIterator(IteratorNode):
                             offset=offset,
                             end_offset=end_offset,
                         )
-                    else:
-                        maybe_manifest, data_path = reader[pos]
-                        if maybe_manifest is not None:
-                            assert str(data_path.parent / data_path.stem) == cut.id, (
-                                f"Mismatched IDs: cut ID is '{cut.id}' but found "
-                                f"data with name '{data_path}' for field {field}"
-                            )
-                            setattr(cut, field, maybe_manifest)
                 else:
                     item = reader[pos]
+                    assert item["cut_id"] == cut.id, (
+                        f"Mismatched IDs: cut ID is '{cut.id}' but found "
+                        f"JSONL row for '{item['cut_id']}' for field {field}"
+                    )
                     if field in item:
                         setattr(cut, field, item[field])
 

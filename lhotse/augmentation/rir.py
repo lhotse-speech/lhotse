@@ -135,7 +135,8 @@ class ReverbWithImpulseResponse(AudioTransform):
         for d in range(D_out):
             d_in = 0 if input_is_mono else d
             augmented[d, :N_in] = samples[d_in]
-            power_before_reverb = np.sum(np.abs(samples[d_in]) ** 2) / N_in
+            # Promote before squaring to avoid float32 power under/overflow.
+            power_before_reverb = np.mean(np.square(samples[d_in], dtype=np.float64))
             rir_d = rir_[d, :] * self.RIR_SCALING_FACTOR
 
             # Convolve the signal with impulse response.
@@ -146,7 +147,9 @@ class ReverbWithImpulseResponse(AudioTransform):
             augmented[d, :] = aug_d[shift_index : shift_index + N_out]
 
             if self.normalize_output:
-                power_after_reverb = np.sum(np.abs(augmented[d, :]) ** 2) / N_out
+                power_after_reverb = np.mean(
+                    np.square(augmented[d, :], dtype=np.float64)
+                )
                 if power_after_reverb > 0:
                     augmented[d, :] *= np.sqrt(power_before_reverb / power_after_reverb)
 

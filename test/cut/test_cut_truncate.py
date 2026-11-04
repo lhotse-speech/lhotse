@@ -446,3 +446,36 @@ def test_known_issue_with_overlap():
     assert sup.start == 0
     assert sup.duration == 0.5
     assert sup.text == "World"
+
+
+@pytest.mark.parametrize("offset", [12.46, 15.32])
+@pytest.mark.parametrize("duration", [None, 1.0, 12.46])
+def test_truncate_at_or_past_the_end_of_the_cut_raises(offset, duration):
+    # It used to return a cut with zero or negative duration, which failed much
+    # later, e.g. inside noise mixing: https://github.com/lhotse-speech/lhotse/issues/1448
+    cut = dummy_cut(0, duration=12.46)
+    with pytest.raises(
+        AssertionError, match="must be smaller than the duration of the cut"
+    ):
+        cut.truncate(offset=offset, duration=duration)
+
+
+def test_truncate_just_before_the_end_of_the_cut():
+    cut = dummy_cut(0, duration=12.46)
+    truncated = cut.truncate(offset=12.45, duration=1.0)
+    assert truncated.start == 12.45
+    assert isclose(truncated.duration, 0.01)
+
+
+@pytest.mark.parametrize("duration", [3.0000017, 3.0, 3.0000625])
+def test_cut_into_windows_has_no_empty_last_window(duration):
+    # 3.0000017 s is less than one sample over three windows of 1 s. The fourth
+    # window used to come back with a duration of 0; 3.0000625 s has one sample
+    # left for it, and that window stays.
+    cut = dummy_cut(0, duration=duration)
+    windows = cut.cut_into_windows(duration=1.0)
+    balanced = cut.cut_into_windows_balanced(min_duration=1, max_duration=1)
+    expected = 4 if duration > 3.00006 else 3
+    for cuts in (windows, balanced):
+        assert len(cuts) == expected
+        assert all(c.duration > 0 for c in cuts)

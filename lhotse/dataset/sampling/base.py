@@ -6,7 +6,7 @@ from bisect import bisect_left
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Tuple, Union
 
 import torch
 from torch import distributed as dist
@@ -434,14 +434,15 @@ class CutSampler(Sampler, Dillable):
             # The only problematic scenario is when the number of examples is smaller
             # than world size. In these cases, we will duplicate the first ``n_diff``
             # examples so that each rank has exactly 1 example in its mini-batch.
-            combined = combine([b for b in batches if b is not None])
-            chunk = 0
-            while (diff := self.world_size - len(combined)) > 0:
-                combined = combined + combined.subset(first=diff).modify_ids(
-                    mark_as_duplicate(chunk)
-                )
-                chunk += 1
-            batches = combined.split(self.world_size)
+            batches = [b for b in batches if b is not None]
+            if isinstance(batches[0], tuple):
+                splits = [
+                    _redistribute_batches(cuts, self.world_size)
+                    for cuts in zip(*batches)
+                ]
+                batches = list(zip(*splits))
+            else:
+                batches = _redistribute_batches(batches, self.world_size)
 
         selected = batches[self.rank]
         self._log_diagnostics(selected)
@@ -461,6 +462,17 @@ class CutSampler(Sampler, Dillable):
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
         return self.diagnostics.get_report()
+
+
+def _redistribute_batches(batches: Iterable[CutSet], world_size: int) -> List[CutSet]:
+    combined = combine(batches)
+    chunk = 0
+    while (diff := world_size - len(combined)) > 0:
+        combined = combined + combined.subset(first=diff).modify_ids(
+            mark_as_duplicate(chunk)
+        )
+        chunk += 1
+    return combined.split(world_size)
 
 
 def mark_as_duplicate(iteration: int) -> Callable[[str], str]:

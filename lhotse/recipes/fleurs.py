@@ -28,7 +28,6 @@ from lhotse import (
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
-    audio,
     fix_manifests,
     get_ffmpeg_torchaudio_info_enabled,
     set_ffmpeg_torchaudio_info_enabled,
@@ -217,7 +216,7 @@ def download_single_fleurs_language(
             " ...(pip install datasets)"
         )
     else:
-        from datasets import load_dataset
+        from datasets import Audio, load_dataset
 
     def _identity(x):
         return x
@@ -240,15 +239,17 @@ def download_single_fleurs_language(
             streaming=True,
             split=split,
         )
+        # Save the original audio files rather than decoded samples: datasets>=4
+        # decodes audio with torchcodec, which needs FFmpeg and yields objects
+        # without a "path" entry.
+        fleurs = fleurs.cast_column("audio", Audio(decode=False))
         metadata = []
         osplit = "dev" if split == "validation" else split
         split_dir = target_dir / osplit
         split_dir.mkdir(parents=True, exist_ok=True)
         for data in tqdm(fleurs, desc=f"Downloading data from {language}-{osplit}"):
-            audio.save_audio(
-                f"{split_dir}/{Path(data['audio']['path']).name}",
-                data["audio"]["array"],
-                data["audio"]["sampling_rate"],
+            (split_dir / Path(data["audio"]["path"]).name).write_bytes(
+                data["audio"]["bytes"]
             )
             metadata_ = [
                 str(data["id"]),  # ID

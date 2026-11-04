@@ -222,6 +222,9 @@ class TemporalArray:
         Load the array from the underlying storage.
         Optionally perform a partial read along the ``temporal_dim``.
 
+        Storage backends apply partial reads to the first axis. When time is on
+        another axis, the array is loaded in full and sliced in memory.
+
         :param start: when specified, we'll offset the read by ``start`` after
             converting it to a number of frames based on ``self.frame_shift``.
         :param duration: when specified, we'll limit the read to a number of
@@ -256,6 +259,12 @@ class TemporalArray:
                 frame_shift=self.frame_shift,
                 max_index=self.shape[self.temporal_dim],
             )
+
+        if self.temporal_dim != 0:
+            array = storage.read(self.array.storage_key)
+            slices = [slice(None)] * self.ndim
+            slices[self.temporal_dim] = slice(left_offset_frames, right_offset_frames)
+            return array[tuple(slices)]
 
         # Load and return the features (subset) from the storage
         return storage.read(

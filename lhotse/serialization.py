@@ -414,7 +414,7 @@ class LazyMixin:
 
         When ``shuffle=True``, uses :class:`~lhotse.lazy.LazyIndexedManifestIterator`
         backed by a binary index file for O(1) random-access shuffled iteration.
-        The JSONL file must be uncompressed (``.jsonl``, not ``.jsonl.gz``).
+        Gzip JSONL also requires ``indexed_gzip`` and a companion seek index.
 
         :param path: path to a JSONL manifest file.
         :param shuffle: when ``True``, use indexed shuffled iteration.
@@ -503,7 +503,7 @@ def load_manifest_lazy(
         default lazy reader, ``None`` auto-detects (indexed when ``.idx``
         exists).
     :param shuffle: when ``True``, use Feistel-cipher shuffled iteration
-        (requires uncompressed ``.jsonl``).  Implies ``indexed=True``.
+        (requires indexed ``.jsonl`` or ``.jsonl.gz``). Implies ``indexed=True``.
     :param seed: random seed for shuffled iteration (only used when
         ``shuffle=True``).
     :param index_path: optional custom path to the ``.idx`` file.
@@ -531,11 +531,11 @@ def load_manifest_lazy(
             use_indexed = True
         else:
             # Auto-detect: use indexed mode if the .idx file already exists
-            from lhotse.indexing import index_exists
+            from lhotse.indexing import index_exists, supports_indexed_access
 
             use_indexed = (
                 str(path) != "-"
-                and not extension_contains(".gz", path)
+                and supports_indexed_access(path, kind="jsonl")
                 and index_exists(path)
             )
     else:
@@ -629,11 +629,12 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
         :param path: path to a manifest file (JSONL, JSON, or YAML).
         :param indexed: controls whether to use indexed random-access reading
             for JSONL files.  ``True`` forces indexed mode (requires
-            uncompressed ``.jsonl``).  ``False`` uses the default lazy reader.
+            plain ``.jsonl`` or gzip ``.jsonl.gz``). ``False`` uses the
+            default lazy reader.
             ``None`` (default) auto-detects: uses indexed mode when a ``.idx``
             file already exists alongside the JSONL file.
         :param shuffle: when ``True``, use Feistel-cipher shuffled iteration
-            (requires uncompressed ``.jsonl``).  Implies ``indexed=True``.
+            (requires indexed ``.jsonl`` or ``.jsonl.gz``). Implies ``indexed=True``.
         :param seed: random seed for shuffled iteration (only used when
             ``shuffle=True``).
         :param index_path: optional path to the ``.idx`` file stored
