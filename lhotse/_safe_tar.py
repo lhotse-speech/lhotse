@@ -75,12 +75,32 @@ def guarded_tar_extraction(tar: TarFile, path: Path) -> Iterator[None]:
     for member in tar.getmembers():
         check_path(path / member.name, allow_root=member.isdir())
 
-    def guard(method, check_links: bool = False):
+    def guard(method, extracting: bool = False):
         @wraps(method)
         def checked(member, targetpath, *args, **kwargs):
             target = Path(targetpath)
             check_path(target)
-            if check_links:
+            if extracting:
+                # makedirs() visits lexical parents, even when the final path
+                # resolves inside root (e.g. ../outside/../destination/file).
+                # Only the caller's destination itself may need outside parents.
+                parent = target.parent
+                while (
+                    target not in (path, root)
+                    and parent not in (path, root)
+                    and parent != parent.parent
+                ):
+                    try:
+                        parent.stat()
+                    except FileNotFoundError:
+                        check_path(parent)
+                        parent = parent.parent
+                    except OSError as error:
+                        raise ValueError(
+                            f"Cannot safely resolve archive path: {parent}"
+                        ) from error
+                    else:
+                        break
                 if member.issym():
                     check_path(target.parent / member.linkname)
                     symlinks.add(target)
@@ -99,7 +119,7 @@ def guarded_tar_extraction(tar: TarFile, path: Path) -> Iterator[None]:
         # Guard the instance so recursive link fallback uses the same checks.
         # TarFile already requires exclusive access during extraction.
         for name, method in originals.items():
-            setattr(tar, name, guard(method, check_links=name == "_extract_member"))
+            setattr(tar, name, guard(method, extracting=name == "_extract_member"))
         yield
         # A later link can change the meaning of an earlier dangling target.
         for target in symlinks:

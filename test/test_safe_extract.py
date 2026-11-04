@@ -92,6 +92,28 @@ def test_reject_preexisting_external_symlink(make_tar, tmp_path, symlinks_suppor
     assert list(outside.iterdir()) == []
 
 
+def test_reject_external_intermediate_directories(make_tar, tmp_path):
+    archive = make_tar(
+        [("../outside/../destination/file", tarfile.REGTYPE, b"payload")]
+    )
+    archive.errorlevel = 0
+
+    with pytest.raises(ValueError, match="Path Traversal"):
+        safe_extract(archive, path=tmp_path / "destination")
+
+    assert not (tmp_path / "outside").exists()
+
+
+def test_preserve_internal_intermediate_directories(make_tar, tmp_path):
+    archive = make_tar([("internal/../folder/file", tarfile.REGTYPE, b"payload")])
+    destination = tmp_path / "new/destination"
+
+    safe_extract(archive, path=destination)
+
+    assert (destination / "folder/file").read_bytes() == b"payload"
+    assert (destination / "internal").is_dir()
+
+
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("payload", [False, True])
 def test_reject_changing_link_targets(
@@ -226,10 +248,10 @@ def test_preserve_relative_destination_and_root_directory(
     )
     monkeypatch.chdir(tmp_path)
 
-    safe_extract(archive, path="destination")
+    safe_extract(archive, path="new/destination")
 
-    assert (tmp_path / "destination/file").read_bytes() == b"payload"
-    assert (tmp_path / "destination").stat().st_mtime == 123456789
+    assert (tmp_path / "new/destination/file").read_bytes() == b"payload"
+    assert (tmp_path / "new/destination").stat().st_mtime == 123456789
 
 
 def test_preserve_native_default(make_tar, tmp_path):
