@@ -590,18 +590,21 @@ def safe_extract(
     numeric_owner: bool = False,
 ) -> None:
     """
-    Extracts a tar file in a safe way, avoiding path traversal attacks.
+    Extracts a tar file while keeping filesystem operations inside ``path``.
+
+    Internal symbolic and hard links are supported. The archive's permissions,
+    timestamps, ownership, and any configured stdlib extraction filter retain
+    their usual behavior. Links escaping ``path`` raise ``ValueError``, including
+    when ``tar.errorlevel`` is zero. Extraction can leave partial output on error.
+    The destination must not be modified concurrently during extraction.
+
     See: https://github.com/lhotse-speech/lhotse/pull/872
     """
+    from lhotse.workarounds import guarded_tar_extraction
 
     path = Path(path)
-
-    for member in tar.getmembers():
-        member_path = path / member.name
-        if not _is_within_directory(path, member_path):
-            raise Exception("Attempted Path Traversal in Tar File")
-
-    tar.extractall(path, members, numeric_owner=numeric_owner)
+    with guarded_tar_extraction(tar=tar, path=path):
+        tar.extractall(path, members, numeric_owner=numeric_owner)
 
 
 def safe_extract_rar(

@@ -198,8 +198,9 @@ class FastRandomRIRGenerator:
             torch.ceil(dist * sample_sr / velocity), torch.ones(1) * rir_length - 1
         ).long()
         delta_decay = reflect_coef.pow(reflect_ratio) / dist
-        for i in range(nsource):
-            rir[i][delta_idx[i]] += delta_decay[i]
+        # Several paths may arrive at the same sample; indexed += would only
+        # keep one of their amplitudes rather than sum all the reflections.
+        rir.scatter_add_(1, delta_idx, delta_decay.to(rir.dtype))
 
         # a binary mask for direct-path RIR
         direct_mask = torch.zeros(nsource, rir_length).float()

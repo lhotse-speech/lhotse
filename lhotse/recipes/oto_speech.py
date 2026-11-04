@@ -35,7 +35,7 @@ from lhotse import (
     fix_manifests,
 )
 from lhotse.supervision import AlignmentItem
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, safe_extract
 
 # Set up the logger
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ def extract_and_flatten_tar(tar_path: Path, extract_dir: Path):
         return
 
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=extract_dir)
+        safe_extract(tar, path=extract_dir)
 
     # Flatten structure and ignore marker files
     for p in extract_dir.rglob("*"):
