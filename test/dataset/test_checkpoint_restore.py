@@ -8,11 +8,13 @@ Tests that:
 - IterableDatasetWrapper implements state_dict()/load_state_dict()
 """
 
+import random
 from copy import deepcopy
 
 import pytest
 
 from lhotse import CutSet
+from lhotse.dataset.cut_transforms import PerturbSpeed
 from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
 from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
@@ -21,12 +23,133 @@ from lhotse.dataset.sampling.dynamic_bucketing import (
     DynamicBucketingSampler,
 )
 from lhotse.lazy import IteratorNode, LazyRepeater, attach_graph_origin
+from lhotse.shar.writers import SharWriter
 from lhotse.testing.dummies import DummyManifest
 
 
 @pytest.fixture
 def cuts():
     return DummyManifest(CutSet, begin_id=0, end_id=100)
+
+
+@pytest.fixture(params=["jsonl", "shar"])
+def indexed_sampler_factory(tmp_path, request):
+    path = tmp_path / "cuts.jsonl"
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=8)
+    if request.param == "shar":
+        with SharWriter(tmp_path, fields={}, compress_jsonl=False) as writer:
+            for cut in cuts:
+                writer.write(cut)
+    else:
+        cuts.to_jsonl(path)
+
+    def make(sampler_type, *, shuffle=True):
+        source = (
+            CutSet.from_shar(in_dir=tmp_path, indexed=True)
+            if request.param == "shar"
+            else CutSet.from_file(path, indexed=True)
+        )
+        kwargs = {"duration_bins": [0.5, 1.5], "buffer_size": 20}
+        if sampler_type is DynamicCutSampler:
+            kwargs = {"shuffle_buffer_size": 20}
+        return sampler_type(source, max_cuts=2, shuffle=shuffle, seed=7, **kwargs)
+
+    return make
+
+
+def _remaining_ids(sampler):
+    batches = []
+    while True:
+        try:
+            batches.append(list(next(sampler).ids))
+        except StopIteration:
+            return batches
+
+
+@pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
+@pytest.mark.parametrize("same_instance", [False, True])
+@pytest.mark.parametrize("shuffle", [False, True])
+@pytest.mark.parametrize("augment", [False, True])
+@pytest.mark.parametrize("prepare_iterator", [False, True])
+@pytest.mark.parametrize("checkpoint_step", [0, 1, 4])
+def test_indexed_sampler_pending_checkpoint_roundtrip(
+    indexed_sampler_factory,
+    sampler_type,
+    same_instance,
+    shuffle,
+    augment,
+    prepare_iterator,
+    checkpoint_step,
+):
+    def make():
+        sampler = indexed_sampler_factory(sampler_type, shuffle=shuffle)
+        if augment:
+            sampler.map(
+                PerturbSpeed(factors=[0.9, 1.1], p=1.0, randgen=random.Random(17))
+            )
+        return sampler
+
+    sampler = make()
+    iter(sampler)
+    for _ in range(checkpoint_step):
+        next(sampler)
+    state = deepcopy(sampler.state_dict())
+    expected = _remaining_ids(sampler)
+    intermediate = sampler if same_instance else make()
+    intermediate.load_state_dict(deepcopy(state))
+    if prepare_iterator:
+        iter(intermediate)
+    pending = deepcopy(intermediate.state_dict())
+    # Preparing a pre-yield iterator may change unused source cursors.
+    if checkpoint_step > 0 or not prepare_iterator:
+        assert pending == state
+    restored = make()
+    restored.load_state_dict(pending)
+    assert [list(batch.ids) for batch in restored] == expected
+
+
+@pytest.mark.parametrize("prepare_iterator", [False, True])
+@pytest.mark.parametrize("shuffle", [False, True])
+def test_sampler_checkpoint_preserves_separately_restored_source(
+    tmp_path, prepare_iterator, shuffle
+):
+    path = tmp_path / "source.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=8).to_jsonl(path)
+    source = CutSet.from_file(path, indexed=True)
+    iterator = iter(source)
+    for _ in range(3):
+        next(iterator)
+    source_state = deepcopy(source.state_dict())
+
+    def make(*, restore_source):
+        source = CutSet.from_file(path, indexed=True)
+        if restore_source:
+            source.load_state_dict(deepcopy(source_state))
+        return DynamicCutSampler(source, max_cuts=2, shuffle=shuffle, seed=7)
+
+    expected = [list(batch.ids) for batch in make(restore_source=True)]
+    sampler = make(restore_source=True)
+    if prepare_iterator:
+        iter(sampler)
+    state = deepcopy(sampler.state_dict())
+    if not shuffle:
+        assert state["cuts_state"] == [source_state]
+    restored = make(restore_source=False)
+    restored.load_state_dict(state)
+    assert [list(batch.ids) for batch in restored] == expected
+
+
+@pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
+@pytest.mark.parametrize("shuffle", [False, True])
+def test_indexed_sampler_checkpoint_before_iteration(
+    indexed_sampler_factory, sampler_type, shuffle
+):
+    sampler = indexed_sampler_factory(sampler_type, shuffle=shuffle)
+    state = deepcopy(sampler.state_dict())
+    restored = indexed_sampler_factory(sampler_type, shuffle=shuffle)
+    restored.load_state_dict(state)
+    expected = _remaining_ids(iter(sampler))
+    assert _remaining_ids(iter(restored)) == expected
 
 
 class _IndexedCutsWithoutGraphOrigin(IteratorNode):
@@ -468,14 +591,15 @@ class TestIndexedSamplerStateCapture:
         assert called["on_fast_forward"] is False
         assert first_batches + remaining == all_batches
 
-    def test_dynamic_bucketing_indexed_prefetch_state_has_bucketer_state(
-        self, tmp_path
-    ):
+    @pytest.mark.parametrize(
+        "sampler_type", [DynamicCutSampler, DynamicBucketingSampler]
+    )
+    def test_indexed_prefetch_state_restores_next_batch(self, tmp_path, sampler_type):
         path = tmp_path / "cuts.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=80).to_jsonl(path)
         cs = CutSet.from_file(path, indexed=True)
 
-        sampler1 = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
+        sampler1 = sampler_type(cs, max_cuts=5, shuffle=False)
         iter(sampler1)
         # Simulate a worker-prefetched batch that wasn't yet accounted in
         # sampler diagnostics.
@@ -483,12 +607,13 @@ class TestIndexedSamplerStateCapture:
         assert sampler1.diagnostics.current_epoch_stats.total_batches == 0
 
         sd = sampler1.state_dict()
-        assert "bucketer_state" in sd
-        assert "rng_state" in sd
+        if sampler_type is DynamicBucketingSampler:
+            assert "bucketer_state" in sd
+            assert "rng_state" in sd
 
         expected_next = [c.id for c in next(sampler1)]
 
-        sampler2 = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
+        sampler2 = sampler_type(cs, max_cuts=5, shuffle=False)
         sampler2.load_state_dict(sd.copy())
         iter(sampler2)
         restored_next = [c.id for c in next(sampler2)]

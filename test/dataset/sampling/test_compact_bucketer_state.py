@@ -191,11 +191,14 @@ def _remaining(iterator):
 
 
 @pytest.mark.parametrize("arity", [1, 2, 3])
+@pytest.mark.parametrize("prepare_iterator", [False, True])
 @pytest.mark.parametrize(
     "save_compact,load_compact",
     [(False, False), (False, True), (True, False), (True, True)],
 )
-def test_indexed_continuation(manifest, arity, save_compact, load_compact):
+def test_indexed_continuation(
+    manifest, arity, save_compact, load_compact, prepare_iterator
+):
     """Packed and legacy states restore the exact sequence without replay."""
     sampler = _sampler(manifest, save_compact, arity)
     iterator = iter(sampler)
@@ -205,8 +208,11 @@ def test_indexed_continuation(manifest, arity, save_compact, load_compact):
     expected = _remaining(iterator)
     restored = _sampler(manifest, load_compact, arity)
     restored.load_state_dict(copy.deepcopy(state))
+    if prepare_iterator:
+        iter(restored)
     pending = restored.state_dict()
     assert isinstance(pending["bucketer_state"]["bucket_tokens"], bytes) == load_compact
+    restored.load_state_dict(copy.deepcopy(pending))
     with patch.object(
         restored, "_replay_step", side_effect=AssertionError("Unexpected replay")
     ):
