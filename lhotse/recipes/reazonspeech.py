@@ -188,13 +188,17 @@ def prepare_reazonspeech(
         with open(filename, "r", encoding="utf-8") as file:
             items = json.load(file)
 
-        with RecordingSet.open_writer(
-            output_dir / f"reazonspeech_recordings_{part}.jsonl.gz"
-        ) as rec_writer, SupervisionSet.open_writer(
-            output_dir / f"reazonspeech_supervisions_{part}.jsonl.gz"
-        ) as sup_writer, CutSet.open_writer(
-            output_dir / f"reazonspeech_cuts_{part}.jsonl.gz"
-        ) as cut_writer:
+        with (
+            RecordingSet.open_writer(
+                output_dir / f"reazonspeech_recordings_{part}.jsonl.gz"
+            ) as rec_writer,
+            SupervisionSet.open_writer(
+                output_dir / f"reazonspeech_supervisions_{part}.jsonl.gz"
+            ) as sup_writer,
+            CutSet.open_writer(
+                output_dir / f"reazonspeech_cuts_{part}.jsonl.gz"
+            ) as cut_writer,
+        ):
             for recording, segment in tqdm(
                 parallel_map(
                     parse_utterance,

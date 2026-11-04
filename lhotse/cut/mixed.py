@@ -1396,9 +1396,11 @@ class MixedCut(Cut):
 
             # We'll apply the transforms now (if any).
             transforms = [
-                tnfm
-                if isinstance(tnfm, AudioTransform)
-                else AudioTransform.from_dict(tnfm)
+                (
+                    tnfm
+                    if isinstance(tnfm, AudioTransform)
+                    else AudioTransform.from_dict(tnfm)
+                )
                 for tnfm in self.transforms or []
             ]
             for tfn in transforms:
@@ -1618,23 +1620,25 @@ class MixedCut(Cut):
                 return self
             first_non_padding_idx = self.tracks.index(self._first_non_padding_track)
             new_tracks = [
-                fastcopy(
-                    t,
-                    cut=fastcopy(
-                        t.cut,
-                        supervisions=[
-                            SupervisionSegment(
-                                id=self.id,
-                                recording_id=t.cut.recording_id,
-                                start=-t.offset,
-                                duration=self.duration,
-                                channel=-1,
-                            )
-                        ],
-                    ),
+                (
+                    fastcopy(
+                        t,
+                        cut=fastcopy(
+                            t.cut,
+                            supervisions=[
+                                SupervisionSegment(
+                                    id=self.id,
+                                    recording_id=t.cut.recording_id,
+                                    start=-t.offset,
+                                    duration=self.duration,
+                                    channel=-1,
+                                )
+                            ],
+                        ),
+                    )
+                    if idx == first_non_padding_idx
+                    else t
                 )
-                if idx == first_non_padding_idx
-                else t
                 for idx, t in enumerate(self.tracks)
             ]
         else:

@@ -7,6 +7,7 @@ Every class gets two kinds of tests:
 2. **Restoration correctness**: items yielded after restore == remaining
    items from an uninterrupted run.
 """
+
 import json
 import random
 from contextlib import contextmanager
@@ -284,9 +285,10 @@ class TestLazyIteratorChainStateful:
         assert list(outer) == [1, 2, 3, 4, 5, 6]
 
     def test_restore_yields_remaining_items(self, tmp_path):
-        with jsonl_file(tmp_path, n=5, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=5, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=5, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=5, name="b.jsonl") as p2,
+        ):
             s1a = LazyJsonlIterator(p1)
             s2a = LazyJsonlIterator(p2)
             chain_full = LazyIteratorChain(s1a, s2a)
@@ -311,9 +313,10 @@ class TestLazyIteratorChainStateful:
             assert first_k + remaining == all_items
 
     def test_restore_within_first_shard(self, tmp_path):
-        with jsonl_file(tmp_path, n=5, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=5, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=5, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=5, name="b.jsonl") as p2,
+        ):
             s1a = LazyJsonlIterator(p1)
             s2a = LazyJsonlIterator(p2)
             chain_full = LazyIteratorChain(s1a, s2a)
@@ -338,9 +341,11 @@ class TestLazyIteratorChainStateful:
     def test_restore_with_shuffled_shards(self, tmp_path):
         """When shuffle_iters=True and seed is set, shard order is randomized.
         Restoration must replay the exact saved shard order."""
-        with jsonl_file(tmp_path, n=4, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=4, name="b.jsonl"
-        ) as p2, jsonl_file(tmp_path, n=4, name="c.jsonl") as p3:
+        with (
+            jsonl_file(tmp_path, n=4, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=4, name="b.jsonl") as p2,
+            jsonl_file(tmp_path, n=4, name="c.jsonl") as p3,
+        ):
             # Full run with shuffled shards
             chain_full = LazyIteratorChain(
                 LazyJsonlIterator(p1),
@@ -453,9 +458,10 @@ class TestLazyIteratorChainStateful:
         were restored, leaving skipped sources with a stale _restored flag
         that caused them to start from the saved position instead of fresh
         on the next epoch."""
-        with jsonl_file(tmp_path, n=5, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=5, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=5, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=5, name="b.jsonl") as p2,
+        ):
 
             def make():
                 s1 = LazyJsonlIterator(p1)
@@ -499,9 +505,10 @@ class TestLazyIteratorMultiplexerStateful:
         assert len(mux.sources) == 2
 
     def test_restore_yields_remaining_items(self, tmp_path):
-        with jsonl_file(tmp_path, n=8, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=8, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=8, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=8, name="b.jsonl") as p2,
+        ):
             s1a = LazyJsonlIterator(p1)
             s2a = LazyJsonlIterator(p2)
             mux_full = LazyIteratorMultiplexer(s1a, s2a, seed=42)
@@ -537,9 +544,10 @@ class TestLazyIteratorMultiplexerStateful:
             next(iter(mux))
 
     def test_restore_does_not_poison_next_epoch(self, tmp_path):
-        with jsonl_file(tmp_path, n=1, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=5, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=1, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=5, name="b.jsonl") as p2,
+        ):
 
             def make():
                 return LazyIteratorMultiplexer(
@@ -905,9 +913,10 @@ class TestNestedStatefulGraph:
         Test state_dict on a nested pipeline:
         LazyRepeater(LazyMapper(LazyIteratorChain(...)))
         """
-        with jsonl_file(tmp_path, n=5, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=5, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=5, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=5, name="b.jsonl") as p2,
+        ):
             s1 = LazyJsonlIterator(p1)
             s2 = LazyJsonlIterator(p2)
             chain = LazyIteratorChain(s1, s2)
@@ -921,9 +930,10 @@ class TestNestedStatefulGraph:
 
     def test_nested_load_state_dict(self, tmp_path):
         """Round-trip state_dict -> load_state_dict on a nested pipeline."""
-        with jsonl_file(tmp_path, n=5, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=5, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=5, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=5, name="b.jsonl") as p2,
+        ):
             s1 = LazyJsonlIterator(p1)
             s2 = LazyJsonlIterator(p2)
             chain = LazyIteratorChain(s1, s2)
@@ -944,9 +954,10 @@ class TestNestedStatefulGraph:
 
     def test_chain_of_jsonl_restore(self, tmp_path):
         """End-to-end: chain -> checkpoint -> restore yields correct remaining items."""
-        with jsonl_file(tmp_path, n=6, name="a.jsonl") as p1, jsonl_file(
-            tmp_path, n=6, name="b.jsonl"
-        ) as p2:
+        with (
+            jsonl_file(tmp_path, n=6, name="a.jsonl") as p1,
+            jsonl_file(tmp_path, n=6, name="b.jsonl") as p2,
+        ):
             # Full run
             s1a = LazyJsonlIterator(p1)
             s2a = LazyJsonlIterator(p2)

@@ -604,8 +604,9 @@ def test_lazy_mode_does_not_read_tars_at_iter_time(shar_dir_numpy):
         counts["read_member"] += 1
         return real_read_member(self, offset)
 
-    with patch.object(IndexedTarReader, "__getitem__", counting_getitem), patch.object(
-        IndexedTarReader, "_read_member", counting_read_member
+    with (
+        patch.object(IndexedTarReader, "__getitem__", counting_getitem),
+        patch.object(IndexedTarReader, "_read_member", counting_read_member),
     ):
         it = LazyIndexedSharIterator(in_dir=shar_dir_numpy, lazy=True)
         items = list(it)

@@ -50,11 +50,10 @@ def test_remove_missing_recordings_and_supervisions():
 
 
 def test_remove_missing_recordings_and_supervisions_lazy():
-    with as_lazy(
-        DummyManifest(RecordingSet, begin_id=0, end_id=100)
-    ) as recordings, as_lazy(
-        DummyManifest(SupervisionSet, begin_id=50, end_id=150)
-    ) as supervisions:
+    with (
+        as_lazy(DummyManifest(RecordingSet, begin_id=0, end_id=100)) as recordings,
+        as_lazy(DummyManifest(SupervisionSet, begin_id=50, end_id=150)) as supervisions,
+    ):
         fix_recs, fix_sups = remove_missing_recordings_and_supervisions(
             recordings, supervisions
         )

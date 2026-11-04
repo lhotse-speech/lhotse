@@ -17,6 +17,7 @@ development set of 10 hours, and a similar evaluation set of 10 hours.
 Both the development and evaluation data have been released in the 2016 MGB
 challenge
 """
+
 from itertools import chain
 from logging import info
 from os import path, system
@@ -125,9 +126,10 @@ def prepare_mgb2(
                 corpus_dir / part / "segments.non_overlap_speech",
                 output_dir / part / "segments",
             )
-            with open(corpus_dir / part / "wav.scp", "r") as f_in, open(
-                output_dir / part / "wav.scp", "w"
-            ) as f_out:
+            with (
+                open(corpus_dir / part / "wav.scp", "r") as f_in,
+                open(output_dir / part / "wav.scp", "w") as f_out,
+            ):
                 for line in f_in:
                     f_out.write(line.replace("wav/", f"{corpus_dir}/{part}/wav/"))
 

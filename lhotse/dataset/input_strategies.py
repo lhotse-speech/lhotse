@@ -121,7 +121,8 @@ class PrecomputedFeatures(BatchIO):
         Reads the pre-computed features from disk/other storage.
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
 
-        :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding."""
+        :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
+        """
         return collate_features(
             cuts,
             pad_direction=pad_direction,

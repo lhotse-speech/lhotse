@@ -15,6 +15,7 @@ for folder in Standard Premium Basic; do
   done
 done
 """
+
 import logging
 import re
 import shutil

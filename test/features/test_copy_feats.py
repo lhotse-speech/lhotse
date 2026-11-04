@@ -64,9 +64,11 @@ def test_cut_set_copy_feats_output_path(cuts):
             fastcopy(cuts[0], id="cut-no-feats").drop_features(),
         ]
     )
-    with NamedTemporaryFile(
-        suffix=".jsonl"
-    ) as f, TemporaryDirectory() as d, NumpyFilesWriter(d) as w:
+    with (
+        NamedTemporaryFile(suffix=".jsonl") as f,
+        TemporaryDirectory() as d,
+        NumpyFilesWriter(d) as w,
+    ):
         cpy = cuts.copy_feats(writer=w, output_path=f.name)
         assert len(cpy) == len(cuts)
         assert list(cpy.ids) == list(cuts.ids)

@@ -13,7 +13,6 @@ a blind test set that allows for automatic online evaluation of uploaded data. D
 evaluation server can be found online.
 """
 
-
 import json
 import logging
 import re

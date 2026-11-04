@@ -71,11 +71,12 @@ def prepare_kespeech(
             part_path = tasks_dir / part
             futures = []
 
-            with open(file=part_path / "wav.scp") as wav_scp, open(
-                file=part_path / "text"
-            ) as text, open(file=part_path / "utt2subdialect") as utt2subdialect, open(
-                file=part_path / "utt2spk"
-            ) as utt2spk:
+            with (
+                open(file=part_path / "wav.scp") as wav_scp,
+                open(file=part_path / "text") as text,
+                open(file=part_path / "utt2subdialect") as utt2subdialect,
+                open(file=part_path / "utt2spk") as utt2spk,
+            ):
                 for wav_line, text_line, dialect_line, spk_line in zip(
                     wav_scp, text, utt2subdialect, utt2spk
                 ):

@@ -3,6 +3,7 @@
 ║ Export/Import CutSet to HuggingFace Dataset ║
 ╚═════════════════════════════════════════════╝
 """
+
 from hashlib import md5
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -279,9 +280,9 @@ def export_cuts_to_hf(cutset: CutSet):
     cut_info, cut_info_description = convert_cuts_info_to_hf(cutset)
     sup_dicts, sup_dicts_info = convert_supervisions_info_to_hf(
         cutset,
-        exclude_attributes={"start", "end", "channel"}
-        if has_one_supervision_per_cut(cutset)
-        else None,
+        exclude_attributes=(
+            {"start", "end", "channel"} if has_one_supervision_per_cut(cutset) else None
+        ),
     )
 
     if has_one_supervision_per_cut(cutset):
@@ -340,7 +341,7 @@ class LazyHFDatasetIterator(IteratorNode):
         text_key: str = "sentence",
         lang_key: str = "language",
         gender_key: str = "gender",
-        **dataset_kwargs
+        **dataset_kwargs,
     ):
         assert is_module_available("datasets")
         self.audio_key = audio_key

@@ -21,6 +21,7 @@ The implementation is stateless, and passes the waveform remainders
 back to the user to feed them to the modules once new data becomes available.
 The implementation is compatible with JIT scripting via TorchScript.
 """
+
 import math
 import warnings
 from typing import List, Optional, Tuple

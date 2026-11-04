@@ -48,6 +48,7 @@ Read the documentation of the items below to understand each component better.
                │           └────────┘  └────────┘  └────────┘│
                └─────────────────────────────────────────────┘
 """
+
 import logging
 import pickle
 import random
@@ -150,9 +151,12 @@ def export_to_webdataset(
 
     total = 0
     ok = 0
-    with writer, tqdm.auto.tqdm(
-        desc="Creating WebDataset tarball(s)", disable=not verbose
-    ) as pbar:
+    with (
+        writer,
+        tqdm.auto.tqdm(
+            desc="Creating WebDataset tarball(s)", disable=not verbose
+        ) as pbar,
+    ):
         for cut in cuts:
             total += 1
             success = writer.write(cut)

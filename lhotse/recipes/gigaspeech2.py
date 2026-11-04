@@ -127,11 +127,14 @@ def prepare_gigaspeech2(
                 logging.info(f"GigaSpeech 2 {lang} {part} already prepared - skipping.")
                 continue
 
-            with RecordingSet.open_writer(
-                output_dir / f"gigaspeech2-{lang}_recordings_{part}.jsonl.gz"
-            ) as rec_writer, SupervisionSet.open_writer(
-                output_dir / f"gigaspeech2-{lang}_supervisions_{part}.jsonl.gz"
-            ) as sup_writer:
+            with (
+                RecordingSet.open_writer(
+                    output_dir / f"gigaspeech2-{lang}_recordings_{part}.jsonl.gz"
+                ) as rec_writer,
+                SupervisionSet.open_writer(
+                    output_dir / f"gigaspeech2-{lang}_supervisions_{part}.jsonl.gz"
+                ) as sup_writer,
+            ):
                 part_dir = lang_dir / part.replace("_raw", "").replace("_refined", "")
                 tsv_path = lang_dir / f"{part}.tsv"
 

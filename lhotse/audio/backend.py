@@ -53,7 +53,7 @@ def available_audio_backends() -> List[str]:
 
 @contextmanager
 def audio_backend(
-    backend: Union["AudioBackend", str]
+    backend: Union["AudioBackend", str],
 ) -> Generator["AudioBackend", None, None]:
     """
     Context manager that sets Lhotse's audio backend to the specified value
@@ -908,7 +908,7 @@ def check_torchaudio_version_gt(version: str) -> bool:
 
 
 def torchaudio_info(
-    path_or_fileobj: Union[Path, str, BytesIO]
+    path_or_fileobj: Union[Path, str, BytesIO],
 ) -> LibsndfileCompatibleAudioInfo:
     """
     Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
@@ -979,7 +979,7 @@ def torchaudio_info(
 
 
 def torchaudio_ffmpeg_streamer_info(
-    path_or_fileobj: Union[Path, str, BytesIO]
+    path_or_fileobj: Union[Path, str, BytesIO],
 ) -> LibsndfileCompatibleAudioInfo:
     from torchaudio.io import StreamReader
 

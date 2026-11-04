@@ -355,9 +355,11 @@ def parse_ami_annotations(
                     (
                         start_time,
                         end_time,
-                        (maybe_space + word.text + maybe_hyphen)
-                        if keep_punctuation
-                        else word.text,
+                        (
+                            (maybe_space + word.text + maybe_hyphen)
+                            if keep_punctuation
+                            else word.text
+                        ),
                     )
                 )
 
@@ -487,9 +489,11 @@ def split_segment(
         # Now we split each subsegment based on commas to get at most max_words_per_segment
         # words per subsegment.
         subsegments = [
-            list(split_on_comma_(subseg))
-            if len(subseg) > max_words_per_segment
-            else [subseg]
+            (
+                list(split_on_comma_(subseg))
+                if len(subseg) > max_words_per_segment
+                else [subseg]
+            )
             for subseg in subsegments
         ]
         # flatten the list of lists

@@ -177,11 +177,12 @@ def test_shar_lazy_reader_with_attached_attributes(cuts: CutSet, shar_dir: Path)
 
     # Create a custom attribute shards that we will dynamically attach
     cuts = cuts.from_shar(in_dir=shar_dir)
-    with JsonlShardWriter(
-        f"{shar_dir}/my_attributes.%06d.jsonl.gz", shard_size=10
-    ) as w1, JsonlShardWriter(
-        f"{shar_dir}/a_number.%06d.jsonl.gz", shard_size=10
-    ) as w2:
+    with (
+        JsonlShardWriter(
+            f"{shar_dir}/my_attributes.%06d.jsonl.gz", shard_size=10
+        ) as w1,
+        JsonlShardWriter(f"{shar_dir}/a_number.%06d.jsonl.gz", shard_size=10) as w2,
+    ):
         for idx, cut in enumerate(cuts):
             w1.write(
                 {

@@ -12,6 +12,7 @@ For more details about WHAM, see:
   https://arxiv.org/abs/1907.01160
 - Original dataset: https://wham.csail.mit.edu/
 """
+
 import logging
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union

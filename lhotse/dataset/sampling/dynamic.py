@@ -325,7 +325,7 @@ class DurationBatcher:
 
     def _collect_batch(self) -> Union[CutSet, Tuple[CutSet]]:
         def detuplify(
-            cuts: List[Union[Cut, Tuple[Cut]]]
+            cuts: List[Union[Cut, Tuple[Cut]]],
         ) -> Union[CutSet, Tuple[CutSet]]:
             """Helper to do the right thing whether we sampled single cuts or cut tuples."""
             if isinstance(cuts[0], tuple):
