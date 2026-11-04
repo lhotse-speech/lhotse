@@ -377,3 +377,47 @@ def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):
     supervision = fastcopy(supervision, start=start)
     trimmed = supervision.trim(50)
     assert trimmed.start == start
+
+
+@pytest.mark.parametrize("score", [None, 0.0, 0.95, -2.0])
+@pytest.mark.parametrize(
+    "start,end,expected_start,expected_duration",
+    [
+        (0.0, 4.0, 1.0, 2.0),
+        (1.5, 4.0, 1.5, 1.5),
+        (0.0, 2.0, 1.0, 1.0),
+        (1.5, 2.5, 1.5, 1.0),
+    ],
+)
+def test_alignment_trim_preserves_score(
+    score, start, end, expected_start, expected_duration
+):
+    item = AlignmentItem("word", start=1.0, duration=2.0, score=score)
+    actual = item.trim(start=start, end=end)
+    assert actual.symbol == "word"
+    assert actual.start == expected_start
+    assert actual.duration == expected_duration
+    assert actual.score == score
+    assert item == AlignmentItem("word", start=1.0, duration=2.0, score=score)
+
+
+@pytest.mark.parametrize("start,end", [(0.0, 0.5), (0.15, 0.35)])
+def test_supervision_trim_preserves_ctm_scores(
+    external_supervision_set_with_scores, start, end
+):
+    original = external_supervision_set_with_scores["segment-1"]
+    actual = original.trim(start=start, end=end)
+    assert [item.score for item in actual.alignment["word"]] == [
+        0.9,
+        0.8,
+        0.85,
+        0.7,
+        0.98,
+    ]
+    assert [item.score for item in original.alignment["word"]] == [
+        0.9,
+        0.8,
+        0.85,
+        0.7,
+        0.98,
+    ]
