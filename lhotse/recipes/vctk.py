@@ -93,7 +93,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
-from lhotse.utils import Pathlike, resumable_download
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 EDINBURGH_VCTK_URL = (
     "https://datashare.ed.ac.uk/bitstream/handle/10283/3443/VCTK-Corpus-0.92.zip"
@@ -136,7 +136,10 @@ def download_vctk(
     shutil.rmtree(part_dir, ignore_errors=True)
     opener = zipfile.ZipFile if archive_name.endswith(".zip") else tarfile.open
     with opener(archive_path) as archive:
-        archive.extractall(path=target_dir)
+        if isinstance(archive, tarfile.TarFile):
+            safe_extract(archive, path=target_dir)
+        else:
+            archive.extractall(path=target_dir)
     completed_detector.touch()
     return part_dir
 
