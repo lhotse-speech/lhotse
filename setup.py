@@ -170,8 +170,9 @@ docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlin
 checkpoint_requires = ["torchdata"]
 gzip_requires = ["indexed_gzip>=1.10"]
 tests_require = [
-    "pytest",
-    "pytest-forked",
+    # pytest-forked 1.7.5 cannot serialize test reports from pytest 9.2.
+    "pytest>=9.1.1,<9.2",
+    "pytest-forked>=1.7.5",
     "pytest-xdist",
     "pytest-cov",
     "flake8==5.0.4",
