@@ -113,6 +113,52 @@ def test_specaugment_load_state_dict():
         assert getattr(specaug, key) == value
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        dict(num_frame_masks=0, num_feature_masks=0),
+        dict(max_frames_mask_fraction=0.0, num_feature_masks=0),
+    ],
+)
+def test_specaugment_with_all_masks_disabled_keeps_the_features(
+    deterministic_rng, config
+):
+    features = torch.rand(2, 500, 80)
+    specaug = SpecAugment(time_warp_factor=None, p=1.0, **config)
+    assert torch.equal(specaug(features), features)
+
+
+def test_specaugment_with_frame_masks_disabled_masks_only_feature_bins(
+    deterministic_rng,
+):
+    features = torch.rand(1, 500, 80)
+    specaug = SpecAugment(
+        time_warp_factor=None,
+        num_frame_masks=0,
+        num_feature_masks=2,
+        features_mask_size=27,
+        p=1.0,
+    )
+    changed = specaug(features) != features
+    assert changed.any()
+    # A masked feature bin is masked in every frame
+    assert (changed.any(dim=1) == changed.all(dim=1)).all()
+
+
+@pytest.mark.parametrize("num_frames", [1, 3, 6])
+def test_specaugment_handles_features_too_short_for_a_frame_mask(
+    deterministic_rng, num_frames
+):
+    features = torch.rand(1, num_frames, 80)
+    specaug = SpecAugment(time_warp_factor=None, num_feature_masks=0, p=1.0)
+    assert torch.equal(specaug(features), features)
+
+
+def test_specaugment_rejects_negative_max_frames_mask_fraction():
+    with pytest.raises(AssertionError):
+        SpecAugment(max_frames_mask_fraction=-0.1)
+
+
 @pytest.mark.parametrize("sample_sigma", [True, False])
 def test_randomized_smoothing(deterministic_rng, sample_sigma):
     torch.manual_seed(0)

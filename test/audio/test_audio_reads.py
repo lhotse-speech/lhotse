@@ -1,4 +1,6 @@
 import shutil
+import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -22,6 +24,11 @@ from lhotse.audio.backend import (
 )
 from lhotse.serialization import IOBackend, io_backend
 from lhotse.utils import is_torchaudio_available
+
+
+def test_recording_import_without_decimal_extension():
+    code = "import sys; sys.modules['_decimal'] = None; from lhotse import Recording"
+    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 @pytest.mark.parametrize(
