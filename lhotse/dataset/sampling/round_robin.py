@@ -118,6 +118,7 @@ class RoundRobinSampler(CutSampler):
         Return the current state of the sampler in a state_dict.
         Together with ``load_state_dict()``, this can be used to restore the
         training loop's state to the one stored in the state_dict.
+        This includes the RNG state used for randomized sampler selection.
         """
         state_dict = super().state_dict()
         state_dict.update(
@@ -125,6 +126,9 @@ class RoundRobinSampler(CutSampler):
                 "samplers": [s.state_dict() for s in self.samplers],
                 "stop_early": self.stop_early,
                 "randomize": self.randomize,
+                "rng_state": self.rng.bit_generator.state
+                if self.rng is not None
+                else None,
                 "_cur_sampler_idx": self._cur_sampler_idx,
                 "_num_dl_workers": self._num_dl_workers,
                 # Explicit list copy below allows to restore within the same process.
@@ -139,6 +143,9 @@ class RoundRobinSampler(CutSampler):
         """
         Restore the state of the sampler that is described in a state_dict.
         This will result in the sampler yielding batches from where the previous training left it off.
+
+        Older checkpoints without an RNG state remain loadable, but randomized
+        sampler selection restarts from the epoch seed in that case.
 
         .. caution::
             The samplers are expected to be initialized with the same CutSets,
@@ -155,6 +162,7 @@ class RoundRobinSampler(CutSampler):
         """
         self.stop_early = state_dict.pop("stop_early")
         self.randomize = state_dict.pop("randomize")
+        rng_state = state_dict.pop("rng_state", None)
         self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
         self._num_dl_workers = state_dict.pop("_num_dl_workers")
         self._nondepleted_samplers_indices = state_dict.pop(
@@ -167,9 +175,14 @@ class RoundRobinSampler(CutSampler):
         for sampler, sampler_sd in zip(self.samplers, state_dict.pop("samplers")):
             sampler.load_state_dict(sampler_sd)
         super().load_state_dict(state_dict)
+        self.rng = None
+        if rng_state is not None:
+            self.rng = np.random.default_rng(seed=self.seed + self.epoch)
+            self.rng.bit_generator.state = rng_state
 
     def __iter__(self):
-        self.rng = np.random.default_rng(seed=self.seed + self.epoch)
+        if not self._just_restored_state or self.rng is None:
+            self.rng = np.random.default_rng(seed=self.seed + self.epoch)
         for sampler in self.samplers:
             iter(sampler)
         if self._just_restored_state:

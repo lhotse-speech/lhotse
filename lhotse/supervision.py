@@ -92,7 +92,7 @@ class AlignmentItem(NamedTuple):
 
     def trim(self, end: Seconds, start: Seconds = 0) -> "AlignmentItem":
         """
-        See :meth:`SupervisionSegment.trim`.
+        See :meth:`SupervisionSegment.trim`. Retain the stored alignment score.
         """
         assert start >= 0
         start_exceeds_by = abs(min(0, self.start - start))
@@ -110,6 +110,7 @@ class AlignmentItem(NamedTuple):
             symbol=self.symbol,
             start=new_start,
             duration=new_duration,
+            score=self.score,
         )
 
     def transform(self, transform_fn: Callable[[str], str]) -> "AlignmentItem":

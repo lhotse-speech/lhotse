@@ -53,7 +53,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import CutSet, Recording, RecordingSet
-from lhotse.utils import Pathlike, resumable_download
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 BUT_REVERB_DB_URL = (
     "http://merlin.fit.vutbr.cz/ReverbDB/BUT_ReverbDB_rel_19_06_RIR-Only.tgz"
@@ -84,7 +84,7 @@ def download_but_reverb_db(
     if not tgz_dir.exists():
         logging.info(f"Untarring {tgz_name}.")
         with tarfile.open(tgz_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
     return tgz_dir
 
 
