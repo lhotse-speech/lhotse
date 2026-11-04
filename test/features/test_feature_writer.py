@@ -14,6 +14,7 @@ from lhotse import (
     NumpyFilesWriter,
     NumpyHdf5Writer,
 )
+from lhotse.features.io import get_reader, get_writer
 from lhotse.utils import is_module_available
 
 
@@ -81,3 +82,11 @@ def test_chunk_writer_saved_file(writer_type, ext):
         filename = f"random0.3_vad.alpha{ext}"
         with writer_type(f"{d}/{filename}") as writer:
             assert writer.storage_path_ == Path(f"{d}/{filename}")
+
+
+@pytest.mark.parametrize("get_backend", [get_reader, get_writer])
+def test_unknown_storage_type_lists_available_types(get_backend):
+    with pytest.raises(
+        ValueError, match="Unknown features storage type: 'numpy'.*numpy_files"
+    ):
+        get_backend("numpy")
