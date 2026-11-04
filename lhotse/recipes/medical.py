@@ -26,7 +26,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, resumable_download
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 MEDICAL = ("test", "dev", "train")
 MEDICAL_SPLITS = (
@@ -70,7 +70,7 @@ def download_medical(
         if "tar.gz" in part:
             shutil.rmtree(part_dir, ignore_errors=True)
             with tarfile.open(part_path) as tar:
-                tar.extractall(target_dir)
+                safe_extract(tar, path=target_dir)
 
     return target_dir
 

@@ -642,10 +642,21 @@ class LazyShuffledRange:
 
         # Pre-compute round keys from the seed.
         self._num_rounds = 6
-        rng = np.random.RandomState(seed & 0xFFFFFFFF)
-        self._round_keys = [
-            int(rng.randint(0, 2**63)) for _ in range(self._num_rounds)
-        ]
+        if type(self) is LazyShuffledRange:
+            bit_generator = np.random.MT19937(0)
+            rng = np.random.RandomState(bit_generator)
+            rng.seed(seed & 0xFFFFFFFF)
+            # Each legacy int64 draw combines two successive 32-bit words.
+            words = bit_generator.random_raw(2 * self._num_rounds).tolist()
+            self._round_keys = [
+                ((words[i] << 32) | words[i + 1]) & 0x7FFFFFFFFFFFFFFF
+                for i in range(0, len(words), 2)
+            ]
+        else:
+            rng = np.random.RandomState(seed & 0xFFFFFFFF)
+            self._round_keys = [
+                int(rng.randint(0, 2**63)) for _ in range(self._num_rounds)
+            ]
 
     def __len__(self) -> int:
         if self.n <= self.shard_id:
