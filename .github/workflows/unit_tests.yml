@@ -28,9 +28,8 @@ jobs:
           - python-version: "3.14"  # note: no torchaudio
             torch-install-cmd: "pip install torch==2.14.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
-          # TorchCodec does not publish Python 3.15 wheels yet.
-          - python-version: "3.15"  # note: no torchaudio, no torchcodec
-            torch-install-cmd: "pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu"
+          - python-version: "3.15"  # note: no torchaudio
+            torch-install-cmd: "pip install torch==2.15.0 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
             extra_deps: "multi-storage-client==0.16.0"
 
       fail-fast: false
@@ -60,9 +59,8 @@ jobs:
         pip install lilcom '.[tests]'
         # Enable some optional tests
         pip install h5py dill smart_open[http] webdataset==0.2.5 scipy nara_wpe pyloudnorm pillow aistore>=1.17.0 ${{ matrix.extra_deps }}
-        # No wheels for Python >=3.14; the legacy source build is incompatible.
-        # Kaldi tests remain enabled on older versions and skip when unavailable.
-        pip install "kaldi_native_io; python_version < '3.14'"
+        # 1.23 adds wheels for Python 3.14 and 3.15.
+        pip install "kaldi_native_io>=1.23.0"
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

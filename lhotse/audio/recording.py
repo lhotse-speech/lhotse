@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP
 from io import BytesIO
 from math import ceil, isclose
 from pathlib import Path
@@ -6,7 +7,6 @@ from typing import Callable, Dict, List, Literal, Optional, Sequence, Tuple, Uni
 
 import numpy as np
 import torch
-from _decimal import ROUND_HALF_UP
 
 from lhotse.audio.backend import get_current_audio_backend, info, save_audio
 from lhotse.audio.source import AudioSource
