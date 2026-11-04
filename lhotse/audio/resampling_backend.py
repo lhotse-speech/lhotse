@@ -19,8 +19,6 @@ def set_current_resampling_backend(backend: ResamplingBackend) -> None:
 
 
 def get_current_resampling_backend() -> ResamplingBackend:
-    global CURRENT_RESAMPLING_BACKEND
-
     if CURRENT_RESAMPLING_BACKEND is not None:
         return CURRENT_RESAMPLING_BACKEND
 

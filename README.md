@@ -86,27 +86,77 @@ To install the latest, unreleased version, do:
 
 ### Development installation
 
-For development installation, you can fork/clone the GitHub repo and install with pip:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.7 and CMake
+(native extensions may need to compile on the newest Python), then clone the repository:
 
     git clone https://github.com/lhotse-speech/lhotse
     cd lhotse
-    pip install -e '.[dev]'
-    pre-commit install  # installs pre-commit hooks with style checks
+    uv sync --locked
+    uv run --locked pre-commit install
 
-    # Running unit tests
-    pytest test
+`uv sync` creates an editable installation in `.venv` using Python 3.15.2 from
+`.python-version`. The default development group installs the existing `tests`
+extra and contributor tools. Other Python versions remain supported; select one
+with `uv sync --locked --python 3.10`. Set `UV_PROJECT_ENVIRONMENT=.venv-py310`
+to keep a separate environment instead of replacing `.venv`.
 
-    # Running linter checks
-    pre-commit run
+    # Run the full suite with the optional integrations used in CI.
+    uv sync --locked --extra tests --group ci
+    uv run --no-sync pytest test
 
-This is an editable installation (`-e` option), meaning that your changes to the source code are automatically
-reflected when importing lhotse (no re-install needed). The `[dev]` part means you're installing extra dependencies
-that are used to run tests, build documentation or launch jupyter notebooks.
+    # Run the locked formatting and lint checks without installing PyTorch.
+    uv run --locked --only-group lint pre-commit run --all-files
+
+    # Build documentation using the published docs extra.
+    uv run --locked --no-default-groups --extra docs sphinx-build -b html docs docs/_build/html
+
+The CI dependency group declares Python-specific PyTorch versions and optional
+integrations. The repository's uv environment uses CPU PyTorch wheels on Linux;
+training applications should select their own accelerator environment. FFmpeg,
+SoX, and libsndfile are system dependencies; install them through your platform's
+package manager, then run `uv run --no-sync lhotse install-sph2pipe` for SPHERE
+files. On macOS, `brew install cmake ffmpeg sox libsndfile hdf5` supplies the build
+tools and audio libraries. HDF5 headers are needed when h5py has no wheel for the
+selected Python; set `HDF5_DIR` to its installation prefix when necessary.
+
+Dependencies and compatibility constraints live in `pyproject.toml`; commit the
+corresponding generated `uv.lock` changes. CI uses `--locked` to reject stale
+locks. Use `uv lock --upgrade-package PACKAGE` for a targeted update, and
+`uv lock --check` to check freshness. The lock includes all supported Python
+branches, including older compatible versions where an upstream package has
+raised its Python requirement. `uv.lock` fixes package versions; system libraries
+and Python interpreters are managed separately.
+
+The `uv_lock` GitHub workflow checks dependency metadata changes. If the lock is
+stale, it keeps the check failing and uploads a refreshed lock plus an applicable
+patch as the `uv-lock-update` artifact. Review and commit that update; the workflow
+does not need write access to pull requests, including contributions from forks.
+
+CUDA-enabled PyTorch works with the published Lhotse package. For a separate
+accelerator environment, let uv detect the installed driver and select PyTorch:
+
+    uv venv --python 3.15.2 .venv-cuda
+    uv pip install --python .venv-cuda --no-sources --torch-backend auto -e .
+
+Use `uv run --no-project --python .venv-cuda ...` in that environment. Running
+`uv sync` against this repository applies its CPU wheel selection on Linux.
+See uv's [PyTorch backend documentation](https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection)
+for explicit CUDA backend choices.
+
+For a release, update `VERSION`, refresh `uv.lock` with `uv lock`, then run
+`bash tools/make_release.sh`. The script checks the lock and builds the wheel and
+source archive with the release version; it prints `uv publish` commands for the
+separate upload step.
+
+Pip-based editable installation remains available with `pip install -e '.[dev]'`.
+The published `dev` and `all` extras retain documentation and notebook dependencies;
+they are broader than the default uv development group. Tools invoked by the
+repository's pre-commit hooks require uv.
 
 ### Environment variables
 
 Lhotse uses several environment variables to customize it's behavior. They are as follows:
-- `LHOTSE_REQUIRE_TORCHAUDIO` - when it's set and not any of `1|True|true|yes`, we'll not check for torchaudio being installed and remove it from the requirements. It will disable many functionalities of Lhotse but the basic capabilities will remain (including reading audio with `soundfile`).
+- `LHOTSE_REQUIRE_TORCHAUDIO` is obsolete and has no effect; torchaudio is an optional dependency.
 - `LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE` - used when we load audio from a file and receive a different number of samples than declared in `Recording.num_samples`. This is sometimes necessary because different codecs (or even different versions of the same codec) may use different padding when decoding compressed audio. Typically values up to 0.1, or even 0.3 (second) are still reasonable, and anything beyond that indicates a serious issue.
 - `LHOTSE_AUDIO_BACKEND` - may be set to any of the values returned from CLI `lhotse list-audio-backends` to override the default behavior of trial-and-error and always use a specific audio backend.
 - `LHOTSE_IO_BACKEND` - may be set to any of the values returned from CLI `lhotse list-io-backends` to override how Lhotse opens paths, URLs, and URIs via `open_best()` (for example when reading manifests or URL-backed `AudioSource`s). The same list is also available in Python via `lhotse.available_io_backends()`.

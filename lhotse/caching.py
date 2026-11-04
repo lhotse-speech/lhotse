@@ -14,7 +14,6 @@ LHOTSE_CACHED_METHOD_REGISTRY = {"cached": {}, "noncached": {}}
 
 def set_caching_enabled(enabled: bool) -> None:
     global LHOTSE_CACHING_ENABLED
-    global LHOTSE_CACHED_METHOD_REGISTRY
     assert isinstance(enabled, bool)
     LHOTSE_CACHING_ENABLED = enabled
 
@@ -52,7 +51,6 @@ def dynamic_lru_cache(method: Callable) -> Callable:
     """
     # Create an LRU cached variant of the method and register it
     # together with the original, noncached method.
-    global LHOTSE_CACHED_METHOD_REGISTRY
     name = method.__qualname__  # example: "Recording.load_audio()"
     if name in LHOTSE_CACHED_METHOD_REGISTRY["cached"]:
         raise ValueError(

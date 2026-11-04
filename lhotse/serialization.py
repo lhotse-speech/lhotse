@@ -1115,8 +1115,6 @@ def get_current_io_backend() -> "IOBackend":
     """
     Return the backend currently set by the user, or default.
     """
-    global CURRENT_IO_BACKEND
-
     # First check if the user has programmatically overridden the backend.
     if CURRENT_IO_BACKEND is not None:
         return CURRENT_IO_BACKEND

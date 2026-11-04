@@ -74,8 +74,6 @@ _precompiled_resamplers: Dict[Tuple[int, int], torch.nn.Module] = {}
 def get_or_create_resampler(
     source_sampling_rate: int, target_sampling_rate: int
 ) -> torch.nn.Module:
-    global _precompiled_resamplers
-
     tpl = (source_sampling_rate, target_sampling_rate)
     if tpl not in _precompiled_resamplers:
         _precompiled_resamplers[tpl] = ResampleTensor(

@@ -1,24 +1,20 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
 name: black
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   black:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      # Black 22.3.0 uses asyncio APIs that changed in Python 3.14.
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
-          python-version: "3.11"
-      - uses: psf/black@stable
-        with:
-          options: "--check --diff --color"
-          version: "22.3.0"
+          version-file: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Check formatting
+        run: uv run --locked --only-group lint black --check --diff --color .

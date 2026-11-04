@@ -903,6 +903,7 @@ def test_s3_pointer_uses_range_reader_with_active_aistore_backend(
 
 
 def test_non_ais_url_pointer_retains_open_best_backend(tmp_path, monkeypatch):
+    from lhotse.serialization import SmartOpenIOBackend, io_backend
     from lhotse.shar import lazy_pointer
 
     tar_path = tmp_path / "audio.tar"
@@ -933,7 +934,9 @@ def test_non_ais_url_pointer_retains_open_best_backend(tmp_path, monkeypatch):
         ),
     )
 
-    assert lazy_pointer.read_payload(pointer) == payload
+    # A contributor's AIS_ENDPOINT may otherwise select AIStore for HTTPS URLs.
+    with io_backend(SmartOpenIOBackend()):
+        assert lazy_pointer.read_payload(pointer) == payload
     assert opened == [("https://example.com/audio.tar", "rb")]
 
 

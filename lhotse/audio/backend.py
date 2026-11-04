@@ -74,8 +74,6 @@ def get_current_audio_backend() -> "AudioBackend":
     """
     Return the audio backend currently set by the user, or default.
     """
-    global CURRENT_AUDIO_BACKEND
-
     # First check if the user has programmatically overridden the audio backend.
     if CURRENT_AUDIO_BACKEND is not None:
         return CURRENT_AUDIO_BACKEND

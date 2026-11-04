@@ -2,28 +2,19 @@ name: isort
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   isort:
-
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [ 3.12 ]
-
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v1
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install isort
-      run: |
-        python -m pip install --upgrade pip isort==5.10.1
-    - name: Check that imports are sorted
-      run: |
-        isort --check --diff lhotse
-        isort --check --diff test
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Check import order
+        run: uv run --locked --only-group lint isort --check --diff lhotse test setup.py _lhotse_version.py
