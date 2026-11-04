@@ -600,7 +600,7 @@ def safe_extract(
 
     See: https://github.com/lhotse-speech/lhotse/pull/872
     """
-    from lhotse._safe_tar import guarded_tar_extraction
+    from lhotse.workarounds import guarded_tar_extraction
 
     path = Path(path)
     with guarded_tar_extraction(tar=tar, path=path):
