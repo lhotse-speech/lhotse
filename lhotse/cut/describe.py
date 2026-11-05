@@ -286,48 +286,45 @@ def find_segments_with_speaker_count(
     if len(cut.supervisions) == 0:
         return [] if min_speakers > 0 else [TimeSpan(0, cut.duration)]
 
-    # We collect all the timestamps of the supervisions in the cut. Each timestamp is
-    # a tuple of (time, is_speaker_start).
+    # Use speaker-count deltas, with -2 marking cut boundaries so they sort
+    # before supervision ends (-1) and starts (+1) at the same timestamp.
     timestamps = []
     # Add timestamp for cut start
-    timestamps.append((0.0, None))
+    timestamps.append((0.0, -2))
     for segment in cut.supervisions:
-        timestamps.append((segment.start, True))
-        timestamps.append((segment.end, False))
+        timestamps.append((segment.start, 1))
+        timestamps.append((segment.end, -1))
     # Add timestamp for cut end
-    timestamps.append((cut.duration, None))
+    timestamps.append((cut.duration, -2))
 
-    # Sort the timestamps. We need the following priority order:
-    # 1. Time mark of the timestamp: lower time mark comes first.
-    # 2. For timestamps with the same time mark, None < False < True.
-    timestamps.sort(key=lambda x: (x[0], x[1] is not None, x[1] is True))
+    timestamps.sort()
 
-    # We remove the timestamps that are not relevant for the search. The desired range
-    # is given by the range of the cut start and end timestamps.
-    cut_start_idx, cut_end_idx = [i for i, t in enumerate(timestamps) if t[1] is None]
-    timestamps = timestamps[cut_start_idx : cut_end_idx + 1]
+    # Skip events before the first cut boundary without copying the timestamps.
+    timestamps = iter(timestamps)
+    for _, delta in timestamps:
+        if delta == -2:
+            break
 
     # Now we iterate over the timestamps and count the number of speakers in any
-    # given time interval. If the number of speakers is in the desired range,
-    # we keep the interval.
+    # given time interval. Merge consecutive nonempty intervals as we collect them.
     num_speakers = 0
     seg_start = 0.0
-    intervals = []
-    for timestamp, is_start in timestamps[1:]:
+    merged_intervals = []
+    pending_start = pending_end = None
+    for timestamp, delta in timestamps:
         if num_speakers >= min_speakers and num_speakers <= max_speakers:
-            intervals.append((seg_start, timestamp))
-        if is_start is not None:
-            num_speakers += 1 if is_start else -1
+            if not seg_start == timestamp:
+                if pending_start is None:
+                    pending_start = seg_start
+                pending_end = timestamp
+        elif pending_start is not None and not seg_start == timestamp:
+            merged_intervals.append(TimeSpan(pending_start, pending_end))
+            pending_start = None
+        if delta == -2:
+            break
+        num_speakers += delta
         seg_start = timestamp
 
-    # Merge consecutive intervals and remove empty intervals.
-    merged_intervals = []
-    for start, end in intervals:
-        if start == end:
-            continue
-        if merged_intervals and merged_intervals[-1][1] == start:
-            merged_intervals[-1] = (merged_intervals[-1][0], end)
-        else:
-            merged_intervals.append((start, end))
-
-    return [TimeSpan(start, end) for start, end in merged_intervals]
+    if pending_start is not None:
+        merged_intervals.append(TimeSpan(pending_start, pending_end))
+    return merged_intervals
