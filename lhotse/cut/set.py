@@ -493,6 +493,8 @@ class CutSet(Serializable, AlgorithmMixin):
         indexed: Optional[bool] = None,
         index_path=None,
         indexes_root: Optional[Pathlike] = None,
+        index_pack: Optional[Pathlike] = None,
+        index_pack_max_open_files: int = 32,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -630,6 +632,15 @@ class CutSet(Serializable, AlgorithmMixin):
             of ``.idx`` paths (when ``fields`` is used).  When set and
             ``indexed`` is ``None``, auto-detection checks the provided
             index paths for every requested field.
+        :param indexes_root: optional root directory mirroring the layout of the data,
+            under which the ``.idx`` files are looked up. Mutually exclusive with ``index_path``.
+        :param index_pack: optional path to an ``.idxpack`` created with
+            :func:`~lhotse.shar.index_pack.write_shar_index_pack`, which replaces all
+            ``.idx`` sidecars (none is opened). It implies indexed mode, and the source is looked up
+            in the pack by the same ``in_dir`` / ``fields`` arguments it was packed with.
+            Mutually exclusive with ``index_path`` and ``indexes_root``.
+        :param index_pack_max_open_files: bound on the number of shard files kept open
+            for reading through ``index_pack``.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
             :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator`,
@@ -646,7 +657,16 @@ class CutSet(Serializable, AlgorithmMixin):
                 "Either set indexed=True (or None) or remove index_path/indexes_root."
             )
 
-        if use_indexed is None:
+        if index_pack is not None and indexed is False:
+            raise ValueError(
+                "index_pack is set but indexed=False — this is contradictory. "
+                "Either set indexed=True (or None) or remove index_pack."
+            )
+
+        if use_indexed is None and index_pack is not None:
+            # A pack can only be read by the indexed reader.
+            use_indexed = True
+        elif use_indexed is None:
             # Automatic selection must preserve streaming-specific behavior.
             use_indexed = (
                 not split_for_dataloading
@@ -684,6 +704,8 @@ class CutSet(Serializable, AlgorithmMixin):
                     split_for_dataloading=split_for_dataloading,
                     index_path=index_path,
                     indexes_root=indexes_root,
+                    index_pack=index_pack,
+                    index_pack_max_open_files=index_pack_max_open_files,
                 )
             )
 
