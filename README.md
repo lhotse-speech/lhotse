@@ -126,6 +126,11 @@ them; installation and data requirements are described in each notebook.
 | [AIStore batch loading](https://github.com/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb) (requires an AIStore endpoint) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb) |
 | [Resumable, indexed dataloading](https://github.com/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb) (`torchdata` for the optional multi-worker example) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb) |
 
+The video notebook currently uses TorchAudio's `StreamReader`, which was removed
+in TorchAudio 2.9. Its setup cell installs matching PyTorch/TorchAudio 2.8 versions;
+FFmpeg 4, 5, or 6 is also required. The AIStore notebook uses 100 training and
+20 development recordings and creates and removes its own temporary bucket.
+
 ### Tutorial presentations and materials
 
 These conference materials provide additional background and may use older APIs:

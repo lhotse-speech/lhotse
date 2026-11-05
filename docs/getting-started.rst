@@ -50,9 +50,11 @@ and data requirements:
 * `Lhotse Shar: storage format optimized for sequential I/O and modularity <https://github.com/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb>`_ |tutorial04|
 
 * `Image and Video Support in Lhotse <https://github.com/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb>`_ |tutorial05|
+  (video requires matching PyTorch/TorchAudio 2.8 versions and FFmpeg).
 
 * `AIStore batch loading <https://github.com/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb>`_ |tutorial06|
-  (requires an AIStore endpoint).
+  (requires an AIStore endpoint; uploads 100 training and 20 development recordings
+  to its own temporary bucket).
 
 * `Resumable, indexed dataloading <https://github.com/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb>`_ |tutorial07|
   (``torchdata`` is needed for the optional multi-worker example).
