@@ -3,45 +3,59 @@ Getting started
 
 .. image:: logo.png
 
-Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside `k2`_, it is a part of the next generation `Kaldi`_ speech processing library.
+Lhotse is a Python library for preparing multimodal datasets and building scalable
+PyTorch data pipelines. It provides manifests for audio, video, images, and text,
+on-the-fly augmentation, dynamic batching, efficient sharded storage, and indexed,
+resumable dataloading.
 
 
 About
 -----
 
-Main goals (updated for 2025)
-*****************************
+Key features
+************
 
-* Scale to multimodal data pipelines including audio, text, image, and video modalities.
+* Multimodal recordings, supervision segments, images, and audio/video cuts.
 
-* Provide state-of-the-art dataloading algorithms such as dataset blending and efficient on-the-fly bucketing.
+* Lazy JSONL processing, filtering, mapping, shuffling, and dataset blending.
 
-* Handle data randomization (or de-duplication) for distributed multi-node training.
+* On-the-fly augmentation with supervision timing updates, plus precomputed or
+  on-the-fly feature extraction.
 
-* Attract a wider community to multimodal processing tasks with a **Python-centric design**.
+* Dynamic batching and bucketing, with data partitioning across distributed
+  ranks and dataloader workers to avoid overlapping samples.
 
-* Provide **standard data preparation recipes** for commonly used corpora.
+* Modular, sharded sequential I/O with Lhotse Shar.
 
-* Flexible data preparation for model training with the notion of **audio/video cuts**.
+* Indexed manifests, packed shard indexes, and checkpointing for supported
+  pipelines; see :doc:`indexed-manifests` for exact restore requirements.
 
-* Support for efficient sequential I/O data formats such as Lhotse Shar (similar to webdataset).
+* Standard data preparation recipes for commonly used corpora; see :doc:`corpus`.
 
 Tutorials
 *********
 
-We currently have the following tutorials available in `examples` directory:
+The notebooks in the `examples directory <https://github.com/lhotse-speech/lhotse/tree/master/examples>`_
+can be read on GitHub or run in Colab. Check each notebook for its installation
+and data requirements:
 
-* Basic complete Lhotse workflow |tutorial00|
+* `Basic complete Lhotse workflow <https://github.com/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb>`_ |tutorial00|
 
-* Transforming data with Cuts |tutorial01|
+* `Transforming data with Cuts <https://github.com/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb>`_ |tutorial01|
 
-* WebDataset integration |tutorial02|
+* `WebDataset integration <https://github.com/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb>`_ |tutorial02|
 
-* How to combine multiple datasets |tutorial03|
+* `How to combine multiple datasets <https://github.com/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb>`_ |tutorial03|
 
-* Lhotse Shar: storage format optimized for sequential I/O and modularity |tutorial04|
+* `Lhotse Shar: storage format optimized for sequential I/O and modularity <https://github.com/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb>`_ |tutorial04|
 
-* Image and Video Support in Lhotse |tutorial05|
+* `Image and Video Support in Lhotse <https://github.com/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb>`_ |tutorial05|
+
+* `AIStore batch loading <https://github.com/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb>`_ |tutorial06|
+  (requires an AIStore endpoint).
+
+* `Resumable, indexed dataloading <https://github.com/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb>`_ |tutorial07|
+  (``torchdata`` is needed for the optional multi-worker example).
 
 .. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb
@@ -56,6 +70,11 @@ We currently have the following tutorials available in `examples` directory:
 .. |tutorial05| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb
 
+.. |tutorial06| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb
+.. |tutorial07| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb
+
 
 Examples of use
 ***************
@@ -64,15 +83,22 @@ Check out the following links to see how Lhotse is being put to use:
 
 * `Icefall recipes`_: where k2 and Lhotse meet.
 
-* Minimal ESPnet+Lhotse example: |mini librispeech colab notebook|
+* `NVIDIA NeMo <https://docs.nvidia.com/nemo/speech/nightly/dataloaders.html>`_:
+  Lhotse dataloading with dynamic batching, dataset mixing, and Shar support.
 
- .. |mini librispeech colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
+* Minimal ESPnet+Lhotse example: |mini librispeech colab notebook|
+  (Google sign-in may be required).
+
+.. |mini librispeech colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH
 
 Main ideas
 **********
 
-Like Kaldi, Lhotse provides standard data preparation recipes, but extends that with a seamless PyTorch integration through task-specific Dataset classes. The data and meta-data are represented in human-readable text manifests and exposed to the user through convenient Python classes.
+Lhotse shares its roots with `Kaldi`_ and works alongside `k2`_. It provides
+standard data preparation recipes and PyTorch integration through task-specific
+Dataset classes. The data and metadata are represented in human-readable text
+manifests and exposed through Python classes.
 
 .. image:: lhotse-concept-graph.png
 
@@ -83,98 +109,49 @@ Lhotse introduces the notion of audio cuts, designed to ease the training data c
 Installation
 ------------
 
-Lhotse supports Python version 3.10 and later, including Python 3.15.
+This documentation follows the development version on ``master``, which requires
+Python 3.10 or later. Some APIs and extras may not yet be available in the latest
+stable release; see `PyPI <https://pypi.org/project/lhotse/>`_ for that release's
+Python requirements.
 
 Pip
 ***
 
 Lhotse is available on PyPI::
 
-    pip install lhotse
+    python -m pip install lhotse
 
 To install the latest, unreleased version, do::
 
-    pip install git+https://github.com/lhotse-speech/lhotse
+    python -m pip install git+https://github.com/lhotse-speech/lhotse
 
-*Hint: for up to 50% faster reading of JSONL manifests, use:* ``pip install lhotse[orjson]`` *to leverage the* `orjson`_ *library.*
+Quick start
+***********
+
+Download the small public `YesNo corpus <https://www.openslr.org/1/>`_, prepare
+its training split, and load a batch of audio and transcripts. No precomputed
+features or worker processes are needed. The example is shared with the README:
+
+.. literalinclude:: ../README.md
+   :language: python
+   :start-after: ```python
+   :end-before: ```
+
+The sampler groups cuts into batches with at most 60 seconds of audio.
+``K2SpeechRecognitionDataset`` loads and pads waveforms when requested and does
+not require k2 to be installed.
 
 Development installation
 ************************
 
-Install `uv <https://docs.astral.sh/uv/getting-started/installation/>`_ 0.13.7,
-and CMake (native extensions may need source builds on the newest Python), then
-clone the repository::
-
-    git clone https://github.com/lhotse-speech/lhotse
-    cd lhotse
-    uv sync --locked
-    uv run --locked pre-commit install
-
-This creates an editable installation in ``.venv`` using Python 3.15.2 from
-``.python-version``. The default development group selects the existing ``tests``
-extra and contributor tools. To use another supported interpreter, pass
-``--python 3.10`` to ``uv sync``. Set ``UV_PROJECT_ENVIRONMENT=.venv-py310``
-to keep a separate environment instead of replacing ``.venv``.
-
-Run the complete suite with the optional CI integrations::
-
-    uv sync --locked --extra tests --group ci
-    uv run --no-sync pytest test
-
-Run formatting and lint checks in the isolated tooling environment::
-
-    uv run --locked --only-group lint pre-commit run --all-files
-
-Build documentation using the published ``docs`` extra::
-
-    uv run --locked --no-default-groups --extra docs sphinx-build -b html docs docs/_build/html
-
-Install FFmpeg, SoX, and libsndfile through your platform's package manager
-(on macOS: ``brew install cmake ffmpeg sox libsndfile hdf5``), then install SPHERE support
-with ``uv run --no-sync lhotse install-sph2pipe``. HDF5 headers are needed when
-h5py has no wheel for the selected interpreter; set ``HDF5_DIR`` to its installation
-prefix when necessary.
-
-Declare dependencies and CI constraints in ``pyproject.toml`` and commit changes
-to the generated ``uv.lock``. Use ``uv lock --upgrade-package PACKAGE`` for a
-targeted update and ``uv lock --check`` to verify freshness. CI installs with
-``--locked``. The lock contains the Python-specific PyTorch combinations and
-optional dependencies previously installed directly by the workflows. Linux uv
-environments use CPU PyTorch wheels; downstream training applications choose
-their own accelerator packages. Python interpreters and system libraries are
-managed separately from the package lock.
-
-The ``uv_lock`` GitHub workflow checks dependency metadata changes. A stale lock
-keeps the check failing and produces a ``uv-lock-update`` artifact containing a
-refreshed lock and patch. Review and commit the update. The workflow only needs
-read access and works for pull requests from forks.
-
-CUDA-enabled PyTorch works with the published Lhotse package. To let uv detect
-the installed driver in a separate accelerator environment::
-
-    uv venv --python 3.15.2 .venv-cuda
-    uv pip install --python .venv-cuda --no-sources --torch-backend auto -e .
-
-Use ``uv run --no-project --python .venv-cuda ...`` in that environment.
-``uv sync`` against this repository applies its CPU wheel selection on Linux.
-See uv's `PyTorch backend documentation
-<https://docs.astral.sh/uv/guides/integration/pytorch/#automatic-backend-selection>`_
-for explicit CUDA backend choices.
-
-To prepare a release, update ``VERSION``, run ``uv lock``, then invoke
-``bash tools/make_release.sh``. It checks the lock and builds the wheel and source
-archive with the release version, then prints ``uv publish`` commands for the
-separate upload step.
-
-Pip-based editable installation remains supported: ``pip install -e '.[dev]'``.
-The published ``dev`` and ``all`` extras include documentation and notebooks,
-while the default uv development group selects tests and tooling. The repository's
-pre-commit hooks require uv and use its locked tool versions.
+See :doc:`contributing` for the locked uv environment, system dependencies,
+tests, formatting, documentation builds, accelerator environments, dependency
+updates, and releases.
 
 Environment variables
 *********************
 
-Lhotse uses several environment variables to customize it's behavior. They are as follows:
+Lhotse uses several environment variables to customize its behavior. They are as follows:
 
 * ``LHOTSE_REQUIRE_TORCHAUDIO`` is obsolete and has no effect; torchaudio is optional.
 
@@ -193,6 +170,12 @@ Lhotse uses several environment variables to customize it's behavior. They are a
   excludes successfully mirrored audio from AIStore requests.
 
 * ``LHOTSE_RESAMPLING_BACKEND`` - may be set to any of the value returned from CLI ``lhotse list-resampling-backends`` to override the default behavior.
+
+* ``LHOTSE_FEATURES_STORAGE_BACKEND`` overrides the default feature storage
+  backend (``numpy_files``). Use ``lhotse.available_storage_backends()`` for
+  usable choices, or ``lhotse.storage_backend_statuses()`` / CLI
+  ``lhotse list-storage-backends`` for all backends and their installation hints.
+  With ``lilcom`` installed, ``lilcom_chunky`` is the preferred compressed backend.
 
 * ``LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE`` - when set to 1 we'll emit full exception stack traces when every available audio backend fails to load a given file (they might be very large).
 
@@ -214,33 +197,63 @@ Lhotse uses several environment variables to customize it's behavior. They are a
 
 * ``READTHEDOCS`` is internally used for documentation builds.
 
+* ``LHOTSE_MSC_OVERRIDE_PROTOCOLS`` selects a comma-separated list of URL schemes
+  to route through ``MSCIOBackend`` without changing manifests. For example,
+  ``LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3,gs`` routes ``s3://bucket/key`` and
+  ``gs://bucket/key`` through ``msc://bucket/key``.
+
+* ``LHOTSE_MSC_PROFILE`` overrides the bucket name with an MSC profile. With
+  ``LHOTSE_MSC_OVERRIDE_PROTOCOLS=s3`` and ``LHOTSE_MSC_PROFILE=msc-s3-profile``,
+  ``s3://bucket/key`` becomes ``msc://msc-s3-profile/key``.
+
+* ``LHOTSE_MSC_BACKEND_FORCED=True`` forces ``MSCIOBackend`` for all URLs. The
+  configured MSC client must support their formats.
 
 Optional dependencies
 *********************
 
-**Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package:
+**Other pip packages.** Install the supporting packages needed for your workflow.
+The extras below describe ``master``. For development-only extras, include them
+in the source installation::
 
-* ``pip install lhotse[lilcom]`` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, ``lilcom_chunky`` is the preferred feature-storage backend once this dependency is installed.
+    python -m pip install 'lhotse[checkpoint,gzip] @ git+https://github.com/lhotse-speech/lhotse'
 
-* ``torchcodec`` (>= 0.9, requires torch >= 2.9) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
+* ``python -m pip install "lhotse[checkpoint]"`` installs ``torchdata`` for
+  multi-worker checkpointing with ``torchdata.stateful_dataloader.StatefulDataLoader``.
+
+* ``python -m pip install "lhotse[gzip]"`` enables indexed gzip JSONL. Keep both
+  ``.idx`` and ``.gzidx`` sidecars with the source; see :doc:`indexed-manifests`.
+
+* ``python -m pip install "lhotse[pillow]"`` enables image loading with Pillow.
+
+* ``python -m pip install "lhotse[lilcom]"`` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, ``lilcom_chunky`` is the preferred feature-storage backend once this dependency is installed.
+
+* ``torchcodec`` (>= 0.9, requires torch >= 2.9) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``python -m pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
 
 * ``torchaudio`` used to be a core dependency in Lhotse, but is now optional. Refer to official PyTorch documentation for installation at `official Pytorch documentation for installation`_.
 
-* ``pip install lhotse[kaldi]`` for a maximal feature set related to Kaldi compatibility. It includes libraries such as ``kaldi_native_io`` (a more efficient variant of ``kaldi_io``) and ``kaldifeat`` that port some of Kaldi functionality into Python.
+* ``python -m pip install "lhotse[kaldi]"`` for a maximal feature set related to Kaldi compatibility. It includes libraries such as ``kaldi_native_io`` (a more efficient variant of ``kaldi_io``) and ``kaldifeat`` that port some of Kaldi functionality into Python.
 
-* ``pip install lhotse[orjson]`` for up to 50% faster reading of JSONL manifests.
+* ``python -m pip install "lhotse[orjson]"`` for faster JSONL serialization and reading.
 
-* ``pip install lhotse[webdataset]``. We support "compiling" your data into WebDataset tarball format for more effective IO. You can still interact with the data as if it was a regular lazy CutSet. To learn more, check out the following tutorial: |tutorial02|
+* ``python -m pip install "lhotse[webdataset]"``. We support "compiling" your data into WebDataset tarball format for more effective IO. You can still interact with the data as if it was a regular lazy CutSet. To learn more, check out the following tutorial: |tutorial02|
 
-* ``pip install h5py`` if you want to extract speech features and store them as HDF5 arrays.
+* ``python -m pip install h5py`` if you want to extract speech features and store them as HDF5 arrays.
 
-* ``pip install dill``. When ``dill`` is installed, we'll use it to pickle CutSet that uses a lambda function in calls such as ``.map`` or ``.filter``. This is helpful in PyTorch DataLoader with ``num_jobs>0``. Without ``dill``, depending on your environment, you'll see an exception or a hanging script.
+* ``python -m pip install "lhotse[dill]"`` installs support for serializing lazy transforms
+  such as lambdas in ``CutSet.map()`` or ``CutSet.filter()``. Dill is disabled by
+  default even when installed: also set ``LHOTSE_DILL_ENABLED=1`` or call
+  ``lhotse.set_dill_enabled(True)``. This can help with serialization in a PyTorch
+  ``DataLoader`` with ``num_workers > 0``.
 
-* ``pip install aistore`` to read manifests, tar fles, and other data from AIStore using AIStore-supported URLs (set ``AIS_ENDPOINT`` environment variable to activate it). See |AIStore| for more details.
+* ``python -m pip install aistore`` to read manifests, tar files, and other data from AIStore using AIStore-supported URLs (set ``AIS_ENDPOINT`` environment variable to activate it). See `AIStore`_ for more details.
 
-* ``pip install smart_open`` to read and write manifests and data in any location supported by ``smart_open`` (e.g. cloud, http).
+* ``python -m pip install smart_open`` to read and write manifests and data in any location supported by ``smart_open`` (e.g. cloud, http).
 
-* ``pip install opensmile`` for feature extraction using the OpenSmile toolkit's Python wrapper.
+* ``python -m pip install opensmile`` for feature extraction using the OpenSmile toolkit's Python wrapper.
+
+* ``python -m pip install multi-storage-client`` for reading and writing data in
+  multiple storage backends. See `Multi-Storage Client <https://github.com/NVIDIA/multi-storage-client>`_.
 
 **sph2pipe.** For reading older LDC SPHERE (.sph) audio files that are compressed with codecs unsupported by ffmpeg and sox, please run::
 
@@ -257,12 +270,15 @@ It will download it to ``~/.lhotse/tools``, compile it, and auto-register in ``P
 Examples
 --------
 
+The following voice activity detection example requires a licensed Switchboard
+corpus at the specified path. For a public-data example, use the quick start above.
+
 We have example recipes showing how to prepare data and load it in Python as a PyTorch ``Dataset``.
 They are located in the ``examples`` directory.
 
 A short snippet to show how Lhotse can make audio data preparation quick and easy:
 
-.. code-block::
+.. code-block:: python
 
     from torch.utils.data import DataLoader
     from lhotse import CutSet, Fbank
