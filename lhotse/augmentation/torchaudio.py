@@ -119,22 +119,10 @@ class Resample(AudioTransform):
                 resampled_by_channel.append(resampled_samples)
             return np.stack(resampled_by_channel, axis=0)
 
-        if is_torchaudio_available():
-            if isinstance(samples, np.ndarray):
-                samples = torch.from_numpy(samples)
-            augmented = self.resampler(samples)
-            return augmented.numpy()
-        else:
-            import scipy
-
-            gcd = np.gcd(self.source_sampling_rate, self.target_sampling_rate)
-            augmented = scipy.signal.resample_poly(
-                samples,
-                up=self.target_sampling_rate // gcd,
-                down=self.source_sampling_rate // gcd,
-                axis=-1,
-            )
-            return augmented
+        if isinstance(samples, np.ndarray):
+            samples = torch.from_numpy(samples)
+        augmented = self.resampler(samples)
+        return augmented.numpy()
 
     def reverse_timestamps(
         self, offset: Seconds, duration: Optional[Seconds], sampling_rate: int

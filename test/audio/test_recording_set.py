@@ -1,5 +1,6 @@
 from functools import lru_cache
 from math import isclose
+from test.markers import requires_sph2pipe
 
 import audioread
 import numpy as np
@@ -78,6 +79,7 @@ def test_get_stereo_audio_from_single_file(recording_set):
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
+@requires_sph2pipe
 def test_load_audio_from_sphere_file(recording_set):
     samples = recording_set.load_audio("recording-3")
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
@@ -174,6 +176,7 @@ def test_add_recording_sets():
         (4, "test/fixtures/stereo.sph"),
     ],
 )
+@requires_sph2pipe
 def test_recording_from_sphere(relative_path_depth, expected_source_path):
     rec = Recording.from_file(
         "test/fixtures/stereo.sph", relative_path_depth=relative_path_depth

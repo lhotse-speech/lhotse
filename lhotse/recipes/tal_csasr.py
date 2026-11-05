@@ -18,7 +18,7 @@ from lhotse.utils import Pathlike
 
 
 def text_normalize(line: str):
-    """
+    r"""
     Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/tal_mix_data_prep.sh#L52
     sed 's/Ａ/A/g' | sed 's/Ｃ/C/g' | sed 's/Ｄ/D/g' | sed 's/Ｇ/G/g' | \
     sed 's/Ｈ/H/g' | sed 's/Ｕ/U/g' | sed 's/Ｙ/Y/g' | sed 's/ａ/a/g' | \
@@ -41,7 +41,7 @@ def text_normalize(line: str):
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
     line = re.sub(
-        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|\.',
+        r'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、|\.',
         "",
         line,
     )
