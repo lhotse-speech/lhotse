@@ -1,9 +1,20 @@
 from pathlib import Path
+from unittest import mock
 
 import pytest
 import torch
 
+import lhotse.audio.source
 from lhotse import Recording
+from lhotse.audio import VideoInfo
+from lhotse.audio.backend import (
+    torchaudio_ffmpeg_backend_available,
+    torchcodec_supports_video,
+)
+
+requires_torchcodec = pytest.mark.skipif(
+    not torchcodec_supports_video(), reason="Requires torchcodec>=0.10"
+)
 
 COLOR = 3
 HEIGHT = 240
@@ -128,3 +139,46 @@ def test_video_recording_load_video_over_duration(video_recording):
     full_video, _ = video_recording.load_video(with_audio=False)
 
     torch.testing.assert_close(video, full_video)
+
+
+@requires_torchcodec
+def test_video_recording_load_video_audio_matches_load_audio(video_recording):
+    _, audio = video_recording.load_video(offset=1.0, duration=2.0)
+
+    expected = torch.from_numpy(video_recording.load_audio(offset=1.0, duration=2.0))
+    assert audio.shape == (AUDIO_CHANNELS, 96000)
+    torch.testing.assert_close(audio, expected, rtol=0, atol=0)
+
+
+@requires_torchcodec
+def test_video_recording_without_audio_stream(tmp_path):
+    from torchcodec.encoders import VideoEncoder
+
+    frames = torch.zeros(30, COLOR, 48, 64, dtype=torch.uint8)
+    path = tmp_path / "video_only.mp4"
+    VideoEncoder(frames, frame_rate=24).to_file(path)
+
+    recording = Recording.from_file(path)
+    assert recording.video == VideoInfo(fps=24.0, num_frames=30, height=48, width=64)
+    assert recording.duration == 1.25
+
+    video, audio = recording.load_video(offset=0.5, duration=0.25, with_audio=False)
+    assert video.dtype == torch.uint8
+    assert video.shape == (6, COLOR, 48, 64)
+    assert audio is None
+
+
+@pytest.mark.skipif(
+    not (torchcodec_supports_video() and torchaudio_ffmpeg_backend_available()),
+    reason="Requires torchcodec>=0.10 and torchaudio with the FFMPEG backend",
+)
+def test_video_recording_torchcodec_and_torchaudio_frames_are_equal(video_recording):
+    video, _ = video_recording.load_video(offset=1.0, duration=2.0, with_audio=False)
+    with mock.patch.object(
+        lhotse.audio.source, "torchcodec_supports_video", lambda: False
+    ):
+        video_torchaudio, _ = video_recording.load_video(
+            offset=1.0, duration=2.0, with_audio=False
+        )
+
+    assert torch.equal(video, video_torchaudio)

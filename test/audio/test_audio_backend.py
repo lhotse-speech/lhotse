@@ -6,7 +6,7 @@ import pytest
 
 import lhotse
 from lhotse import Recording
-from lhotse.audio import AudioLoadingError
+from lhotse.audio import AudioLoadingError, VideoInfo
 from lhotse.audio.backend import (
     CompositeAudioBackend,
     LibsndfileBackend,
@@ -321,4 +321,6 @@ def test_video_file_falls_back_when_torchaudio_has_no_ffmpeg(monkeypatch):
         recording = Recording.from_file(path)
         audio = recording.load_audio()
     assert audio.shape == (6, recording.num_samples)
+    assert recording.video == VideoInfo(fps=25.0, num_frames=132, height=240, width=320)
     assert not TorchaudioFFMPEGBackend().handles_special_case(path)
+    assert TorchcodecBackend().handles_special_case(path)

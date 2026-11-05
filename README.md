@@ -44,6 +44,8 @@ python -m pip install git+https://github.com/lhotse-speech/lhotse
 ```
 
 PyTorch is required; torchaudio and TorchCodec are optional audio backends.
+Reading video requires TorchCodec 0.10 or later (`python -m pip install torchcodec`)
+and an FFmpeg version that it supports.
 See [optional dependencies](#optional-dependencies) for additional formats and
 integrations.
 
@@ -121,14 +123,13 @@ them; installation and data requirements are described in each notebook.
 | [Transforming data with cuts](https://github.com/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb) |
 | [WebDataset integration](https://github.com/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb) |
 | [Combining multiple datasets](https://github.com/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb) |
-| [Lhotse Shar](https://github.com/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb) |
+| [Lhotse Shar: modular data format](https://github.com/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb) |
 | [Image and video loading](https://github.com/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb) |
 | [AIStore batch loading](https://github.com/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb) (requires an AIStore endpoint) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb) |
 | [Resumable, indexed dataloading](https://github.com/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb) (`torchdata` for the optional multi-worker example) | [Colab](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb) |
 
-The video notebook currently uses TorchAudio's `StreamReader`, which was removed
-in TorchAudio 2.9. Its setup cell installs matching PyTorch/TorchAudio 2.8 versions;
-FFmpeg 4, 5, or 6 is also required. The AIStore notebook uses 100 training and
+The video notebook reads video frames and audio tracks with TorchCodec 0.10 or
+later, which also requires FFmpeg. The AIStore notebook uses 100 training and
 20 development recordings and creates and removes its own temporary bucket.
 
 ### Tutorial presentations and materials
