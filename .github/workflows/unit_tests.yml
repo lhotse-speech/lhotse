@@ -62,7 +62,10 @@ jobs:
       - name: Install sph2pipe
         run: uv run --no-sync lhotse install-sph2pipe
       - name: Test with pytest and coverage
-        run: uv run --no-sync pytest --cov --forked -n auto test
+        run: uv run --no-sync pytest --cov --cov-report=xml --forked -n auto test
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7.1.1
         continue-on-error: true
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}

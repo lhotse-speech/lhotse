@@ -2,10 +2,10 @@
 <img src="https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/logo.png" width=376 alt="Lhotse logo">
 
 [![PyPI release](https://img.shields.io/pypi/v/lhotse.svg)](https://pypi.org/project/lhotse/)
-[![PyPI Python versions](https://img.shields.io/pypi/pyversions/lhotse.svg)](https://pypi.org/project/lhotse/)
+[![Tested Python versions](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Flhotse-speech%2Flhotse%2Fmaster%2F.github%2Fworkflows%2Funit_tests.yml&query=%24.jobs.unit_tests.strategy.matrix%5B%27python-version%27%5D&label=python&color=blue)](https://github.com/lhotse-speech/lhotse/actions/workflows/unit_tests.yml)
 [![Downloads](https://static.pepy.tech/badge/lhotse)](https://pepy.tech/projects/lhotse)
 [![Unit tests](https://github.com/lhotse-speech/lhotse/actions/workflows/unit_tests.yml/badge.svg?branch=master)](https://github.com/lhotse-speech/lhotse/actions/workflows/unit_tests.yml)
-[![Documentation status](https://readthedocs.org/projects/lhotse/badge/?version=latest)](https://lhotse.readthedocs.io/en/latest/)
+[![Documentation status](https://app.readthedocs.org/projects/lhotse/badge/?version=latest)](https://lhotse.readthedocs.io/en/latest/)
 [![Coverage](https://codecov.io/gh/lhotse-speech/lhotse/branch/master/graph/badge.svg)](https://codecov.io/gh/lhotse-speech/lhotse)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb)
@@ -35,7 +35,7 @@ python -m pip install lhotse
 This README and the `latest` documentation describe the development version on
 `master`, which requires **Python 3.10 or later**. Some APIs and extras described
 below may not yet be available in the stable release. The Python badge above
-reflects the published package; check PyPI for that release's requirements.
+lists the versions tested on `master`; check PyPI for the stable release's requirements.
 
 To use the development version:
 
