@@ -61,8 +61,8 @@ from torch.utils.data import DataLoader
 from lhotse import CutSet
 from lhotse.dataset import (
     AudioSamples,
+    DynamicCutSampler,
     K2SpeechRecognitionDataset,
-    SimpleCutSampler,
 )
 from lhotse.recipes import download_yesno, prepare_yesno
 
@@ -71,10 +71,12 @@ manifests = prepare_yesno(corpus_dir=corpus_dir)["train"]
 cuts = CutSet.from_manifests(
     recordings=manifests["recordings"],
     supervisions=manifests["supervisions"],
+    output_path=Path("data") / "cuts.jsonl.gz",
+    lazy=True,
 )
 
 dataset = K2SpeechRecognitionDataset(input_strategy=AudioSamples())
-sampler = SimpleCutSampler(cuts, max_duration=60, shuffle=False)
+sampler = DynamicCutSampler(cuts, max_duration=60, shuffle=False)
 dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
 batch = next(iter(dataloader))
 
@@ -82,10 +84,10 @@ print(batch["inputs"].shape)  # Padded waveforms: (batch, samples).
 print(batch["supervisions"]["text"])
 ```
 
-`CutSet` describes training examples without loading their audio into memory.
-The sampler groups cuts into batches with at most 60 seconds of audio, and the
-dataset loads and pads their waveforms when requested. Despite its name,
-`K2SpeechRecognitionDataset` does not require k2.
+The cuts are saved as a JSONL manifest and opened lazily, without loading their
+audio into memory. `DynamicCutSampler` streams the cuts into batches with at most
+60 seconds of audio, and the dataset loads and pads their waveforms when requested.
+Despite its name, `K2SpeechRecognitionDataset` does not require k2.
 
 ## Key features
 

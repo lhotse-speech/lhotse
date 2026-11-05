@@ -137,7 +137,8 @@ features or worker processes are needed. The example is shared with the README:
    :start-after: ```python
    :end-before: ```
 
-The sampler groups cuts into batches with at most 60 seconds of audio.
+``DynamicCutSampler`` streams the lazy manifest into batches with at most
+60 seconds of audio.
 ``K2SpeechRecognitionDataset`` loads and pads waveforms when requested and does
 not require k2 to be installed.
 
