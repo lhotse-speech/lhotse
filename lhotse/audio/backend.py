@@ -460,7 +460,7 @@ class TorchaudioFFMPEGBackend(AudioBackend):
         # The only backend to support video.
         is_fileobj = not isinstance(path_or_fd, Path)
         return (
-            is_torchaudio_available()
+            self.is_applicable(path_or_fd)
             and not is_fileobj
             and any(str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS)
         )
