@@ -304,9 +304,11 @@ class LazySharIterator(IteratorNode):
 
             # Open every tarfile/jsonl so it's ready for streaming
             field_iters = {
-                field: TarIterator(path)
-                if extension_contains(".tar", path)
-                else _jsonl_tar_adaptor(LazyJsonlIterator(path), field=field)
+                field: (
+                    TarIterator(path)
+                    if extension_contains(".tar", path)
+                    else _jsonl_tar_adaptor(LazyJsonlIterator(path), field=field)
+                )
                 for field, path in field_paths.items()
             }
 
@@ -330,7 +332,7 @@ class LazySharIterator(IteratorNode):
                     continue
 
                 # Filling shar placeholders with actual data from tar files etc.
-                for (field, (maybe_manifest, data_path)) in zip(
+                for field, (maybe_manifest, data_path) in zip(
                     field_iters.keys(),
                     field_data,
                 ):

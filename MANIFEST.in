@@ -1,5 +1,4 @@
-include LICENSE README.md VERSION
-include docs/requirements.txt
+include LICENSE NOTICE README.md VERSION _lhotse_version.py
 recursive-exclude * __pycache__
 recursive-exclude * *.pyc
 recursive-exclude * *.pyo

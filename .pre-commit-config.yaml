@@ -1,26 +1,26 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.2.0
+    rev: v6.0.0
     hooks:
       - id: check-executables-have-shebangs
       - id: end-of-file-fixer
       - id: mixed-line-ending
       - id: trailing-whitespace
 
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.1
+  - repo: local
     hooks:
       - id: flake8
-        args: ['--select=E9,F63,F7,F82']
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
+        name: flake8
+        entry: uv run --locked --only-group lint flake8 --select=E9,F63,F7,F82
+        language: system
+        types: [python]
       - id: isort
-        args: [--profile=black]
-
-  - repo: https://github.com/psf/black
-    rev: 22.3.0
-    hooks:
+        name: isort
+        entry: uv run --locked --only-group lint isort --profile=black
+        language: system
+        types: [python]
       - id: black
-        additional_dependencies: ['click==8.0.1']
+        name: black
+        entry: uv run --locked --only-group lint black
+        language: system
+        types: [python]

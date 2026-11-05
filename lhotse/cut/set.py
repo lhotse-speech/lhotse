@@ -856,13 +856,17 @@ class CutSet(Serializable, AlgorithmMixin):
         stored_rids = set()
         stored_sids = set()
 
-        with RecordingSet.open_writer(
-            output_dir / "recordings.jsonl.gz" if output_dir is not None else None
-        ) as rw, SupervisionSet.open_writer(
-            output_dir / "supervisions.jsonl.gz" if output_dir is not None else None
-        ) as sw, FeatureSet.open_writer(
-            output_dir / "features.jsonl.gz" if output_dir is not None else None
-        ) as fw:
+        with (
+            RecordingSet.open_writer(
+                output_dir / "recordings.jsonl.gz" if output_dir is not None else None
+            ) as rw,
+            SupervisionSet.open_writer(
+                output_dir / "supervisions.jsonl.gz" if output_dir is not None else None
+            ) as sw,
+            FeatureSet.open_writer(
+                output_dir / "features.jsonl.gz" if output_dir is not None else None
+            ) as fw,
+        ):
 
             def save(cut: DataCut):
                 if cut.has_recording and cut.recording_id not in stored_rids:
@@ -2372,13 +2376,16 @@ class CutSet(Serializable, AlgorithmMixin):
                 cuts_writer.write(cut, flush=True)
 
         futures = []
-        with cuts_writer, storage_type(
-            storage_path, mode="w" if overwrite else "a"
-        ) as feats_writer, tqdm(
-            desc="Computing features in batches", total=sampler.num_cuts
-        ) as progress, ThreadPoolExecutor(
-            max_workers=1  # We only want one background worker so that serialization is deterministic.
-        ) as executor:
+        with (
+            cuts_writer,
+            storage_type(storage_path, mode="w" if overwrite else "a") as feats_writer,
+            tqdm(
+                desc="Computing features in batches", total=sampler.num_cuts
+            ) as progress,
+            ThreadPoolExecutor(
+                max_workers=1  # We only want one background worker so that serialization is deterministic.
+            ) as executor,
+        ):
             # Display progress bar correctly.
             progress.update(len(cuts_writer.ignore_ids))
             for batch in dloader:
@@ -2644,9 +2651,10 @@ class CutSet(Serializable, AlgorithmMixin):
 
         progbar = partial(tqdm, desc="Copying CutSet data") if verbose else lambda x: x
 
-        with CutSet.open_writer(
-            output_dir / "cuts.jsonl.gz"
-        ) as manifest_writer, feature_writer_type(feature_storage) as feature_writer:
+        with (
+            CutSet.open_writer(output_dir / "cuts.jsonl.gz") as manifest_writer,
+            feature_writer_type(feature_storage) as feature_writer,
+        ):
 
             def _copy_single(cut):
                 cut = fastcopy(cut)
@@ -3157,14 +3165,18 @@ def mix(
                         track.snr
                         if snr is None
                         # When new SNR is specified but none was specified before, assign the new SNR value.
-                        else snr
-                        if track.snr is None
-                        # When both new and previous SNR were specified, assign their sum,
-                        # as the SNR for each track is defined with regard to the first track energy.
-                        else track.snr + snr
-                        if snr is not None and track is not None
-                        # When no SNR was specified whatsoever, use none.
-                        else None
+                        else (
+                            snr
+                            if track.snr is None
+                            # When both new and previous SNR were specified, assign their sum,
+                            # as the SNR for each track is defined with regard to the first track energy.
+                            else (
+                                track.snr + snr
+                                if snr is not None and track is not None
+                                # When no SNR was specified whatsoever, use none.
+                                else None
+                            )
+                        )
                     ),
                     tag=track.tag if track.tag is not None else tag,
                     is_snr_reference=False,
@@ -3481,18 +3493,20 @@ def create_cut_set_eager(
                     features=feats,
                     recording=recordings[feats.recording_id] if rec_ok else None,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
-                    supervisions=list(
-                        supervisions.find(
-                            recording_id=feats.recording_id,
-                            channel=channel,
-                            start_after=feats.start,
-                            end_before=feats.end,
-                            adjust_offset=True,
-                            tolerance=tolerance,
+                    supervisions=(
+                        list(
+                            supervisions.find(
+                                recording_id=feats.recording_id,
+                                channel=channel,
+                                start_after=feats.start,
+                                end_before=feats.end,
+                                adjust_offset=True,
+                                tolerance=tolerance,
+                            )
                         )
-                    )
-                    if sup_ok
-                    else [],
+                        if sup_ok
+                        else []
+                    ),
                 )
             )
     else:
@@ -3513,9 +3527,11 @@ def create_cut_set_eager(
                     duration=recording.duration,
                     channel=channel,
                     recording=recording,
-                    supervisions=list(supervisions.find(recording_id=recording.id))
-                    if sup_ok
-                    else [],
+                    supervisions=(
+                        list(supervisions.find(recording_id=recording.id))
+                        if sup_ok
+                        else []
+                    ),
                 )
             )
     cuts = CutSet(cuts)
@@ -3631,18 +3647,20 @@ def create_cut_set_lazy(
                     features=feats,
                     recording=rec,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
-                    supervisions=list(
-                        sups.find(
-                            recording_id=feats.recording_id,
-                            channel=channel,
-                            start_after=feats.start,
-                            end_before=feats.end,
-                            adjust_offset=True,
-                            tolerance=tolerance,
+                    supervisions=(
+                        list(
+                            sups.find(
+                                recording_id=feats.recording_id,
+                                channel=channel,
+                                start_after=feats.start,
+                                end_before=feats.end,
+                                adjust_offset=True,
+                                tolerance=tolerance,
+                            )
                         )
-                    )
-                    if sup_ok
-                    else [],
+                        if sup_ok
+                        else []
+                    ),
                 )
                 writer.write(cut)
         return CutSet.from_jsonl_lazy(output_path)
@@ -3675,9 +3693,9 @@ def create_cut_set_lazy(
                 duration=recording.duration,
                 channel=channel,
                 recording=recording,
-                supervisions=list(sups.find(recording_id=recording.id))
-                if sup_ok
-                else [],
+                supervisions=(
+                    list(sups.find(recording_id=recording.id)) if sup_ok else []
+                ),
             )
             writer.write(cut)
 
@@ -4253,9 +4271,9 @@ class LazyCutMixer(IteratorNode):
         rng_state = self._rng.getstate() if self._rng is not None else self._rng_state
         sd = {
             "num_times_iterated": self.num_times_iterated,
-            "rng_state": _rng_state_to_json(rng_state)
-            if rng_state is not None
-            else None,
+            "rng_state": (
+                _rng_state_to_json(rng_state) if rng_state is not None else None
+            ),
             "iteration_seed": self._iteration_seed,
         }
         source_state = _try_collect_child_state(self.source)

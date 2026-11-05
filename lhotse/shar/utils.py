@@ -20,9 +20,11 @@ def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manife
             # Removes the transform metadata because they were already executed.
             transforms=None,
             duration=cut.duration if cut is not None else manifest.duration,
-            num_samples=compute_num_samples(cut.duration, manifest.sampling_rate)
-            if cut is not None
-            else manifest.num_samples,
+            num_samples=(
+                compute_num_samples(cut.duration, manifest.sampling_rate)
+                if cut is not None
+                else manifest.num_samples
+            ),
         )
     elif isinstance(manifest, Array):
         return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")

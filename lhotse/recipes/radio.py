@@ -17,15 +17,15 @@ Description
 ------------------------------------------------------------
 The data consist of ∼4000 hours of speech collected between
 September 27, 2023 to October 1, 2023, in 9449 locations all over the world,
-from 17171 stations. 
+from 17171 stations.
 
 These data were used for Geolocation of speech in order to answer the question,
-Where are you from? in the paper 
+Where are you from? in the paper
 
 Where are you from? Geolocating Speech and Applications to Language
 Identification, presented at NAACL 2024. Please read for a full descrption
-and please cite as 
- 
+and please cite as
+
 @inproceedings{foley2024you,
   title={Where are you from? Geolocating Speech and Applications to Language Identification},
   author={Foley, Patrick and Wiesner, Matthew and Odoom, Bismarck and Perera, Leibny Paola Garcia and Murray, Kenton and Koehn, Philipp},
@@ -34,6 +34,7 @@ and please cite as
   year={2024}
 }
 """
+
 import json
 import re
 from functools import partial

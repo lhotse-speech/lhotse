@@ -14,9 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def run_without_lilcom(tmp_path: Path, script: str) -> subprocess.CompletedProcess:
     sitecustomize = tmp_path / "sitecustomize.py"
-    sitecustomize.write_text(
-        textwrap.dedent(
-            """
+    sitecustomize.write_text(textwrap.dedent("""
             import builtins
             import importlib.util
 
@@ -41,9 +39,7 @@ def run_without_lilcom(tmp_path: Path, script: str) -> subprocess.CompletedProce
 
 
             importlib.util.find_spec = _blocked_find_spec
-            """
-        )
-    )
+            """))
 
     env = os.environ.copy()
     pythonpath = env.get("PYTHONPATH")
@@ -65,8 +61,7 @@ def run_without_lilcom(tmp_path: Path, script: str) -> subprocess.CompletedProce
 def test_lhotse_imports_and_loads_numpy_features_without_lilcom(tmp_path):
     result = run_without_lilcom(
         tmp_path,
-        textwrap.dedent(
-            """
+        textwrap.dedent("""
             import lhotse
 
             assert "lilcom_chunky" not in lhotse.available_storage_backends()
@@ -83,8 +78,7 @@ def test_lhotse_imports_and_loads_numpy_features_without_lilcom(tmp_path):
                 pass
             else:
                 raise AssertionError("LilcomFilesWriter should fail when lilcom is unavailable.")
-            """
-        ),
+            """),
     )
     assert result.returncode == 0, result.stderr or result.stdout
 
@@ -92,8 +86,7 @@ def test_lhotse_imports_and_loads_numpy_features_without_lilcom(tmp_path):
 def test_default_feature_storage_falls_back_to_numpy_without_lilcom(tmp_path):
     result = run_without_lilcom(
         tmp_path,
-        textwrap.dedent(
-            """
+        textwrap.dedent("""
             from tempfile import TemporaryDirectory
 
             import lhotse
@@ -117,8 +110,7 @@ def test_default_feature_storage_falls_back_to_numpy_without_lilcom(tmp_path):
                 )
                 copied_features = copied[0].features
                 assert copied_features.storage_type == "numpy_files"
-            """
-        ),
+            """),
     )
     assert result.returncode == 0, result.stderr or result.stdout
 

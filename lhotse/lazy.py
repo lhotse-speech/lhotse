@@ -223,7 +223,7 @@ def supports_graph_restore(source: Any, *, require_length: bool = False) -> bool
 
 
 def resolve_iteration_seed(
-    seed: Optional[Union[int, Literal["trng", "randomized"]]]
+    seed: Optional[Union[int, Literal["trng", "randomized"]]],
 ) -> int:
     from lhotse.dataset.dataloading import resolve_seed
 

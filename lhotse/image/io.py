@@ -30,15 +30,13 @@ class ImageReader(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @abstractmethod
     def read(
         self,
         key: str,
-    ) -> np.ndarray:
-        ...
+    ) -> np.ndarray: ...
 
 
 class ImageWriter(metaclass=ABCMeta):
@@ -62,17 +60,14 @@ class ImageWriter(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     @abstractmethod
-    def storage_path(self) -> str:
-        ...
+    def storage_path(self) -> str: ...
 
     @abstractmethod
-    def write(self, key: str, value: np.ndarray) -> str:
-        ...
+    def write(self, key: str, value: np.ndarray) -> str: ...
 
     def store_image(
         self,
@@ -124,8 +119,7 @@ class ImageWriter(metaclass=ABCMeta):
     def __enter__(self):
         return self
 
-    def __exit__(self, *args, **kwargs):
-        ...
+    def __exit__(self, *args, **kwargs): ...
 
 
 READER_BACKENDS = {}

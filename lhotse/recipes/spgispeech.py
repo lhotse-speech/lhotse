@@ -21,6 +21,7 @@ end-to-end speech recognition. ArXiv, abs/2104.02014.
 
 ArXiv link: https://arxiv.org/abs/2104.02014
 """
+
 import logging
 import string
 from pathlib import Path
@@ -138,9 +139,12 @@ def prepare_spgispeech(
                 rec_writer.write(recording)
 
         # Read supervisions and write them to manifest
-        with SupervisionSet.open_writer(
-            output_dir / f"spgispeech_supervisions_{part}.jsonl.gz"
-        ) as sup_writer, open(corpus_dir / f"{part}.csv", "r") as f:
+        with (
+            SupervisionSet.open_writer(
+                output_dir / f"spgispeech_supervisions_{part}.jsonl.gz"
+            ) as sup_writer,
+            open(corpus_dir / f"{part}.csv", "r") as f,
+        ):
             # Skip the header
             next(f)
             for line in tqdm(f, desc="Processing utterances"):

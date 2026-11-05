@@ -604,8 +604,9 @@ def test_lazy_mode_does_not_read_tars_at_iter_time(shar_dir_numpy):
         counts["read_member"] += 1
         return real_read_member(self, offset)
 
-    with patch.object(IndexedTarReader, "__getitem__", counting_getitem), patch.object(
-        IndexedTarReader, "_read_member", counting_read_member
+    with (
+        patch.object(IndexedTarReader, "__getitem__", counting_getitem),
+        patch.object(IndexedTarReader, "_read_member", counting_read_member),
     ):
         it = LazyIndexedSharIterator(in_dir=shar_dir_numpy, lazy=True)
         items = list(it)
@@ -903,6 +904,7 @@ def test_s3_pointer_uses_range_reader_with_active_aistore_backend(
 
 
 def test_non_ais_url_pointer_retains_open_best_backend(tmp_path, monkeypatch):
+    from lhotse.serialization import SmartOpenIOBackend, io_backend
     from lhotse.shar import lazy_pointer
 
     tar_path = tmp_path / "audio.tar"
@@ -933,7 +935,9 @@ def test_non_ais_url_pointer_retains_open_best_backend(tmp_path, monkeypatch):
         ),
     )
 
-    assert lazy_pointer.read_payload(pointer) == payload
+    # A contributor's AIS_ENDPOINT may otherwise select AIStore for HTTPS URLs.
+    with io_backend(SmartOpenIOBackend()):
+        assert lazy_pointer.read_payload(pointer) == payload
     assert opened == [("https://example.com/audio.tar", "rb")]
 
 

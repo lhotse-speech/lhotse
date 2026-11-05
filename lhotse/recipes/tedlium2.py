@@ -6,29 +6,29 @@ licensed under Creative Commons BY-NC-ND 3.0 (http://creativecommons.org/license
 
 All talks and text are property of TED Conferences LLC.
 
---- 
+---
 
-The TED-LIUM corpus was made from audio talks and their transcriptions available on the TED website. We have prepared and filtered these data in order to train acoustic models to participate to the International Workshop on Spoken Language Translation 2011 (the LIUM English/French SLT system reached the first rank in the SLT task). 
+The TED-LIUM corpus was made from audio talks and their transcriptions available on the TED website. We have prepared and filtered these data in order to train acoustic models to participate to the International Workshop on Spoken Language Translation 2011 (the LIUM English/French SLT system reached the first rank in the SLT task).
 
-More details are given in this paper: 
+More details are given in this paper:
 
 A. Rousseau, P. Deléglise, and Y. Estève, "Enhancing the TED-LIUM Corpus with Selected Data for Language Modeling and More TED Talks",
 in Proceedings of the Ninth International Conference on Language Resources and Evaluation (LREC’14), May 2014.
 
 
-Please cite this reference if you use these data in your research work. 
+Please cite this reference if you use these data in your research work.
 
---- 
+---
 
-Contents: 
+Contents:
 
-- 1495 audio talks in NIST sphere format (SPH) 
-- 1495 transcripts in STM format 
-- Dictionary with pronunciation (159848 entries) 
+- 1495 audio talks in NIST sphere format (SPH)
+- 1495 transcripts in STM format
+- Dictionary with pronunciation (159848 entries)
 - Selected monolingual data for language modeling from WMT12 publicly available corpora
 
 
-SPH format info: 
+SPH format info:
 
 Channels			: 1
 Sample Rate		: 16000

@@ -28,6 +28,7 @@ the original owners of the video.
 
 This Lhotse recipe prepares the VoxCeleb1 and VoxCeleb2 datasets.
 """
+
 import logging
 import shutil
 import tempfile
@@ -336,7 +337,7 @@ def _prepare_voxceleb_v1(
 
 
 def _prepare_voxceleb_trials(
-    manifests: Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]
+    manifests: Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]],
 ) -> Dict[str, Tuple[CutSet, CutSet]]:
     """
     Prepare the trials file for the VoxCeleb1 corpus.

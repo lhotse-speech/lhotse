@@ -281,9 +281,10 @@ def upload(
 
     local_features: FeatureSet = FeatureSet.from_file(feature_manifest)
 
-    with FeatureSet.open_writer(
-        output_manifest
-    ) as manifest_writer, ProcessPoolExecutor(num_jobs) as ex:
+    with (
+        FeatureSet.open_writer(output_manifest) as manifest_writer,
+        ProcessPoolExecutor(num_jobs) as ex,
+    ):
         futures = []
         for item in tqdm(local_features, desc="Submitting parallel uploading tasks..."):
             futures.append(ex.submit(_upload_one, item, url))
