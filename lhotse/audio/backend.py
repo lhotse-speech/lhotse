@@ -1161,9 +1161,15 @@ def torchcodec_load(
     sample_rate = decoder.metadata.sample_rate
 
     if offset > 0 or duration is not None:
-        # Decoded timestamps do not always start at 0 (e.g. MP3 encoder delay,
-        # MPEG-TS streams). Like get_all_samples(), count from the first sample.
-        begin = max(0.0, decoder.metadata.begin_stream_seconds_from_header or 0.0)
+        # Decoded timestamps do not always start at 0: MP3 has an encoder delay,
+        # and MPEG-TS streams start later. For these codecs the header start is
+        # the timestamp of the first decoded sample, so count from it, like
+        # get_all_samples(). Other codecs are read as before: with FFmpeg 8.1,
+        # Opus in WebM can report a positive header start while its decoded
+        # audio starts at 0.
+        begin = 0.0
+        if decoder.metadata.codec in ("mp3", "mp2", "aac"):
+            begin = max(0.0, decoder.metadata.begin_stream_seconds_from_header or 0.0)
         stop_seconds = (begin + offset + duration) if duration is not None else None
         samples = decoder.get_samples_played_in_range(
             start_seconds=begin + offset,
