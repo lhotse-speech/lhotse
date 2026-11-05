@@ -16,7 +16,7 @@ clone the repository::
 This creates an editable installation in ``.venv`` using Python 3.15.2 from
 ``.python-version``. The default development group selects the existing ``tests``
 extra and contributor tools. To use another supported interpreter, pass
-``--python 3.10`` to ``uv sync``. Set ``UV_PROJECT_ENVIRONMENT=.venv-py310``
+``--python 3.11`` to ``uv sync``. Set ``UV_PROJECT_ENVIRONMENT=.venv-py311``
 to keep a separate environment instead of replacing ``.venv``.
 
 Pip-based editable installation remains supported: ``python -m pip install -e '.[dev]'``.
