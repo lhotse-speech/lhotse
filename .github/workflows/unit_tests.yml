@@ -21,10 +21,42 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Install system dependencies
+      - name: Identify the system package cache
+        id: system-image
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libsndfile1-dev ffmpeg sox cmake libhdf5-dev
+          echo "image=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+          echo "APT_CACHE_DIR=$RUNNER_TEMP/apt-cache" >> "$GITHUB_ENV"
+      - name: Cache system packages
+        id: apt-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ env.APT_CACHE_DIR }}
+          # Share native packages across Python versions, but never across runner images.
+          key: apt-v1-${{ runner.arch }}-${{ steps.system-image.outputs.image }}-${{ hashFiles('.github/workflows/unit_tests.yml') }}
+      - name: Install system dependencies
+        timeout-minutes: 5
+        env:
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+        run: |
+          mkdir -p "$APT_CACHE_DIR/archives/partial" "$APT_CACHE_DIR/lists/partial"
+          apt_options=(
+            -o "Dir::Cache::archives=$APT_CACHE_DIR/archives"
+            -o "Dir::State::lists=$APT_CACHE_DIR/lists"
+            -o APT::Keep-Downloaded-Packages=true
+            -o Acquire::Retries=2
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          if [[ "$APT_CACHE_HIT" == true ]]; then
+            # Cached indexes and archives allow a normal dpkg install without downloads.
+            apt_options+=(--no-download)
+          else
+            sudo apt-get "${apt_options[@]}" update
+          fi
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
+            libsndfile1-dev ffmpeg sox cmake libhdf5-dev
+          # APT creates root-owned files; the cache action runs as the runner user.
+          sudo chmod -R a+rX "$APT_CACHE_DIR"
       - name: Install locked Python dependencies
         run: uv sync --locked --no-default-groups --extra tests --group ci
       - name: Install sph2pipe
