@@ -7,13 +7,12 @@ name = "lhotse"
 dynamic = ["version"]
 description = "Data preparation for speech processing models training."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "The Lhotse Development Team"}]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -94,10 +93,9 @@ all = ["lhotse[dev]"]
 lint = ["black>=26.10.1", "isort>=9.0.2", "flake8>=7.4.1", "pre-commit>=4.6.2"]
 dev = ["lhotse[tests]", {include-group = "lint"}]
 ci = [
-    "torch==2.8.0; python_version == '3.10'",
     "torch==2.9.1; python_version == '3.11'",
     "torch==2.10.0; python_version == '3.12'",
-    "torch==2.12.1; python_version == '3.13'",
+    "torch==2.13.0; python_version == '3.13'",
     "torch==2.14.1; python_version == '3.14'",
     "torch==2.15.0; python_version >= '3.15'",
     "torchcodec==0.17.0; python_version >= '3.13'",
@@ -147,7 +145,7 @@ profile = "black"
 skip = ["lhotse/__init__.py"]
 
 [tool.black]
-target-version = ["py310"]
+target-version = ["py311"]
 force-exclude = '''
 /(
     \.git

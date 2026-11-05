@@ -112,7 +112,7 @@ Installation
 ------------
 
 This documentation follows the development version on ``master``, which requires
-Python 3.10 or later. Some APIs and extras may not yet be available in the latest
+Python 3.11 or later. Some APIs and extras may not yet be available in the latest
 stable release; see `PyPI <https://pypi.org/project/lhotse/>`_ for that release's
 Python requirements.
 

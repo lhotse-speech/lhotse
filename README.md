@@ -33,7 +33,7 @@ python -m pip install lhotse
 ```
 
 This README and the `latest` documentation describe the development version on
-`master`, which requires **Python 3.10 or later**. Some APIs and extras described
+`master`, which requires **Python 3.11 or later**. Some APIs and extras described
 below may not yet be available in the stable release. The Python badge above
 lists the versions tested on `master`; check PyPI for the stable release's requirements.
 
