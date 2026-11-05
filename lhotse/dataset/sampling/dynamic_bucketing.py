@@ -614,6 +614,7 @@ class DynamicBucketer:
         constraint: Optional[SamplingConstraint] = None,
         drop_last: bool = False,
         buffer_size: int = 10000,
+        buffer_duration: Optional[Seconds] = None,
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
         rng: random.Random = None,
@@ -631,6 +632,7 @@ class DynamicBucketer:
         self.constraint = constraint
         self.drop_last = drop_last
         self.buffer_size = buffer_size
+        self.buffer_duration = buffer_duration
         self.quadratic_duration = quadratic_duration
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         if rng is None:
@@ -645,6 +647,9 @@ class DynamicBucketer:
             f"sorted order (got: {duration_bins})."
         )
         check_constraint(constraint, max_duration, max_cuts)
+        assert (
+            buffer_duration is None or buffer_duration > 0
+        ), f"Argument 'buffer_duration' must be positive (got: {buffer_duration})."
 
         if self.constraint is None:
             self.constraint = TimeConstraint(
@@ -655,19 +660,28 @@ class DynamicBucketer:
 
         # A heuristic diagnostic first, for finding the right settings.
         if max_duration is not None:
-            mean_duration = np.mean(duration_bins)
-            expected_buffer_duration = buffer_size * mean_duration
+            if buffer_duration is not None:
+                expected_buffer_duration = buffer_duration
+                buffer_setting = f"'buffer_duration' setting of {buffer_duration}"
+            else:
+                mean_duration = np.mean(duration_bins)
+                expected_buffer_duration = buffer_size * mean_duration
+                buffer_setting = f"'buffer_size' setting of {buffer_size}"
             expected_bucket_duration = expected_buffer_duration / (
                 len(duration_bins) + 1
             )
             if expected_bucket_duration < max_duration:
                 warnings.warn(
-                    f"Your 'buffer_size' setting of {buffer_size} might be too low to satisfy "
+                    f"Your {buffer_setting} might be too low to satisfy "
                     f"a 'max_duration' of {max_duration} (given our best guess)."
                 )
 
         # Init: create empty buckets (note: `num_buckets = len(duration_bins) + 1`).
         self.buckets: List[Queue] = [Queue() for _ in range(len(duration_bins) + 1)]
+        # Total duration of the cuts held in the buckets (only used with ``buffer_duration``).
+        # The lock is needed because the producer thread updates it when ``concurrent=True``.
+        self._buffered_duration = 0.0
+        self._buffered_duration_lock = threading.Lock()
 
         self._producer_thread = None
         self._source_exhausted = False
@@ -800,6 +814,7 @@ class DynamicBucketer:
                 f"saved {len(bucket_tokens)} buckets, expected {len(self.buckets)}."
             )
         source_capabilities = self._restore_source_capabilities()
+        self._buffered_duration = 0.0
         for bucket, tokens in zip(self.buckets, bucket_tokens):
             with bucket.mutex:
                 bucket.queue.clear()
@@ -824,6 +839,7 @@ class DynamicBucketer:
                 # yields tuples, even for the 1-source case), so the queue is
                 # type-uniform across initial fill, refill, and restore.
                 bucket.put(tuple(items))
+                self._update_buffered_duration(items[0].duration)
 
         # Create and restore BucketSelectionState
         selection_state = BucketSelectionState(
@@ -898,6 +914,13 @@ class DynamicBucketer:
                 else:
                     for _ in range(batch_size):
                         sampling_bucket.get()
+                if self.buffer_duration is not None:
+                    self._update_buffered_duration(
+                        -sum(
+                            c.duration
+                            for c in (batch[0] if isinstance(batch, tuple) else batch)
+                        )
+                    )
                 stop_after_yield = False
                 if self.concurrent:
                     try:
@@ -1019,15 +1042,10 @@ class DynamicBucketer:
         def producer():
             try:
                 while not self._source_exhausted:
-                    if sum(b.qsize() for b in self.buckets) == self.buffer_size:
+                    if self._buffer_is_full():
                         time.sleep(0.1)
                         continue
-                    cuts = next(self.cuts_iter)
-                    bucket_idx = self.constraint.select_bucket(
-                        buckets=self.duration_bins,
-                        example=cuts[0] if isinstance(cuts, tuple) else cuts,
-                    )
-                    self.buckets[bucket_idx].put(cuts)
+                    self._put_in_bucket(next(self.cuts_iter))
             except StopIteration:
                 self._source_exhausted = True
 
@@ -1037,24 +1055,46 @@ class DynamicBucketer:
 
     def _maybe_wait_for_producer(self):
         """Triggers wait for producer if the bucket buffers are less than 10% utilized."""
-        while (
-            sum(b.qsize() for b in self.buckets) < self.buffer_size / 10
-            and not self._source_exhausted
-        ):
+        while self._buffer_utilization() < 0.1 and not self._source_exhausted:
             time.sleep(1.0)
 
     def _collect_cuts_in_buckets(self, n_cuts: int) -> None:
-        """Fetches ``n_cuts`` from the input data iterable. Doesn't use concurrency."""
+        """
+        Fetches ``n_cuts`` from the input data iterable. Doesn't use concurrency.
+        When ``buffer_duration`` is set, ``n_cuts`` is ignored and we fetch as many cuts
+        as needed for the total buffered duration to reach ``buffer_duration``.
+        """
         try:
-            for _ in range(n_cuts):
-                cuts = next(self.cuts_iter)
-                bucket_idx = self.constraint.select_bucket(
-                    buckets=self.duration_bins,
-                    example=cuts[0] if isinstance(cuts, tuple) else cuts,
-                )
-                self.buckets[bucket_idx].put(cuts)
+            if self.buffer_duration is not None:
+                while not self._buffer_is_full():
+                    self._put_in_bucket(next(self.cuts_iter))
+            else:
+                for _ in range(n_cuts):
+                    self._put_in_bucket(next(self.cuts_iter))
         except StopIteration:
             pass
+
+    def _put_in_bucket(self, cuts: Union[Cut, Tuple[Cut]]) -> None:
+        example = cuts[0] if isinstance(cuts, tuple) else cuts
+        bucket_idx = self.constraint.select_bucket(
+            buckets=self.duration_bins, example=example
+        )
+        self.buckets[bucket_idx].put(cuts)
+        if self.buffer_duration is not None:
+            self._update_buffered_duration(example.duration)
+
+    def _update_buffered_duration(self, delta: Seconds) -> None:
+        with self._buffered_duration_lock:
+            self._buffered_duration += delta
+
+    def _buffer_utilization(self) -> float:
+        """The fraction of the buffer capacity (cuts or seconds) that's currently used."""
+        if self.buffer_duration is not None:
+            return self._buffered_duration / self.buffer_duration
+        return sum(b.qsize() for b in self.buckets) / self.buffer_size
+
+    def _buffer_is_full(self) -> bool:
+        return self._buffer_utilization() >= 1.0
 
     def __del__(self):
         if (
