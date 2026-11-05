@@ -101,6 +101,7 @@ class DynamicBucketingSampler(CutSampler):
         duration_bins: List[Seconds] = None,
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 20000,
+        buffer_duration: Optional[Seconds] = None,
         quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
@@ -139,6 +140,13 @@ class DynamicBucketingSampler(CutSampler):
             Increasing ``max_duration`` (batch_size) or ``num_buckets`` might require increasing this number.
             Larger number here will also improve shuffling capabilities.
             It will result in larger memory usage.
+            Ignored if ``buffer_duration`` is provided.
+        :param buffer_duration: When set, the buffer holds cuts up to this total duration (in seconds)
+            instead of holding ``buffer_size`` cuts.
+            This is useful when the cut duration distribution changes during training
+            (e.g., when mixing or switching datasets), as the buffer then always covers
+            a similar amount of audio regardless of how long the cuts are.
+            Note: with multiple CutSets, the duration of the cuts in the first CutSet is used.
         :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
             a cuts duration. This helps get a more even GPU utilization across different input lengths
             when models have quadratic input complexity. Set between 15 and 40 for transformers.
@@ -175,6 +183,7 @@ class DynamicBucketingSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
+        self.buffer_duration = buffer_duration
         self.quadratic_duration = quadratic_duration
         self.sync_buckets = sync_buckets
         if concurrent and has_graph_restorable_sources(cuts):
@@ -231,6 +240,7 @@ class DynamicBucketingSampler(CutSampler):
                 "max_cuts": self.max_cuts,
                 "consistent_ids": self.consistent_ids,
                 "buffer_size": self.buffer_size,
+                "buffer_duration": self.buffer_duration,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "quadratic_duration": self.quadratic_duration,
             }
@@ -288,6 +298,7 @@ class DynamicBucketingSampler(CutSampler):
             _emit_shuffle_buffer_size_warning()
             shuffle_buffer_size = sd.pop("shuffle_buffer_size")
             self.buffer_size += shuffle_buffer_size
+        self.buffer_duration = sd.pop("buffer_duration", None)
         self.quadratic_duration = sd.pop("quadratic_duration", None)
         sd.pop("strict", None)  # backward compatibility
         # Older checkpoints duplicate the RNG state stored in bucketer_state.
@@ -364,6 +375,7 @@ class DynamicBucketingSampler(CutSampler):
             constraint=self.constraint,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
+            buffer_duration=self.buffer_duration,
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
             rng=self.rng,
