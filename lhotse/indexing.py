@@ -1122,6 +1122,31 @@ def read_tar_member_at(
         return data, path, info
 
 
+def read_tar_pair_at(
+    fh, offset: int = 0, *, read_data: bool = True
+) -> Tuple[Optional[Manifest], Path]:
+    """Decode one Shar (data, metadata) member pair starting at ``offset`` of an
+    open file handle.
+
+    Returns the same ``(manifest, data_path)`` tuple as
+    :meth:`IndexedTarReader.__getitem__`. With ``read_data=False`` the payload
+    is skipped and the manifest keeps its placeholder, as in
+    :meth:`IndexedTarReader.read_metadata`. A pair that was fetched as an exact
+    byte range can be decoded by wrapping it in :class:`io.BytesIO`.
+    """
+    data, data_path, info = read_tar_member_at(fh, offset, read_data=read_data)
+    next_offset = info.offset_data + _ceil_block(info.size)
+    meta_bytes, _, _ = read_tar_member_at(fh, next_offset)
+    if meta_bytes is None:
+        return None, data_path
+    meta = deserialize_item(decode_json_line(meta_bytes.decode("utf-8")))
+    if read_data:
+        from lhotse.shar.utils import fill_shar_placeholder
+
+        fill_shar_placeholder(manifest=meta, data=data, tarpath=data_path)
+    return meta, data_path
+
+
 _URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://")
 
 

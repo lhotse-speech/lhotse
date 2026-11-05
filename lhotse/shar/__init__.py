@@ -1,3 +1,4 @@
+from .index_pack import write_shar_index_pack
 from .readers import *
 from .writers import *
 
@@ -10,4 +11,5 @@ __all__ = [
     "SharWriter",
     "TarIterator",
     "TarWriter",
+    "write_shar_index_pack",
 ]

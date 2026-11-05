@@ -215,6 +215,73 @@ Indexed Shar supports binary fields added separately with
 the tar while deferring binary payload reads. Extended tar headers preserve
 long and Unicode cut IDs.
 
+Packing Shar sidecars into an ``.idxpack``
+------------------------------------------
+
+An indexed Shar reader opens one ``.idx`` sidecar per shard and per field, which
+is slow for directories with thousands of shards. Combine the sidecars of one or
+more Shar directories into a single index pack (the pack format is described in the
+section on packing many sidecars above):
+
+.. code-block:: bash
+
+   lhotse index shar /data/shar_a/          # sidecars must exist
+   lhotse index shar-pack shar.idxpack /data/shar_a /data/shar_b
+
+or from Python:
+
+.. code-block:: python
+
+   from lhotse.shar import write_shar_index_pack
+
+   write_shar_index_pack("shar.idxpack", ["/data/shar_a", "/data/shar_b"])
+
+Then pass the pack to the reader; no ``.idx`` file is opened or created:
+
+.. code-block:: python
+
+   from lhotse import CutSet
+
+   cuts = CutSet.from_shar(in_dir="/data/shar_a", index_pack="shar.idxpack")
+
+   # equivalently, with the iterator itself
+   from lhotse.shar import LazyIndexedSharIterator
+
+   it = LazyIndexedSharIterator(
+       in_dir="/data/shar_a", index_pack="shar.idxpack", index_pack_max_open_files=32
+   )
+
+The reader behaves exactly like the sidecar-based one: it yields the same cuts in
+the same order, supports ``shuffle``, worker partitioning, ``lazy`` pointers and
+random access, and a ``state_dict()`` taken from one can be restored into the
+other. ``index_pack`` is mutually exclusive with ``index_path`` and
+``indexes_root``. ``index_pack_max_open_files`` bounds the number of shard files
+held open (shared by all readers of one pack in a process).
+
+**Sources and their identity.** One pack may hold several Shar *sources*, each read
+by its own reader (for example one per directory of a multiplexed dataset). A
+source is either a Shar directory or a per-field mapping
+``{"cuts": [...], "recording": [...], ...}`` as accepted by the ``fields``
+argument of the reader (a mapping with only ``"cuts"`` reads metadata without
+touching any tar). A reader finds its source in the pack through the arguments it
+is given:
+
+* a directory is identified by ``str(Path(in_dir))``. The path is not resolved, so
+  write and read it with the same spelling (a trailing slash does not matter);
+* a mapping is identified by its field names and its ordered shard paths.
+
+A pack written from a directory is therefore not found when the same files are
+requested as a mapping; list both as sources if both are needed. Files shared by
+several sources are stored once.
+
+While packing, Lhotse verifies that every field has the same shards and the same
+number of records per shard as the cuts, that no source is newer than its
+sidecar, and that bytes after the last indexed sample of a tar are the all-zero
+end-of-archive padding. Shards must be local files; ``.jsonl``, ``.jsonl.gz``
+(requires ``indexed_gzip``) cuts and uncompressed ``.tar`` fields are supported,
+and compressed tars are rejected. The pack file may be stored inside the Shar
+directory; it is ignored when the directory is listed.
+
 How iterator composition works
 ------------------------------
 

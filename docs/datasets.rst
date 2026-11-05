@@ -175,6 +175,9 @@ Create indexes for existing data with:
     lhotse index tar /path/to/recording.tar
     lhotse index shar /path/to/shar_dir/
 
+For Shar directories with many shards, the sidecars can be combined into a single index pack
+(``lhotse index shar-pack``, then ``CutSet.from_shar(..., index_pack=...)``); see :doc:`indexed-manifests`.
+
 Using StatefulDataLoader for checkpointing
 ******************************************
 

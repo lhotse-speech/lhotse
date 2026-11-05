@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from lhotse.cut import Cut
 from lhotse.dataset.dataloading import PartitionedIndexedIterator, resolve_seed
+from lhotse.index_pack import IndexPack
 from lhotse.indexing import (
+    IndexedJsonlReader,
+    IndexedTarReader,
     create_jsonl_index,
     create_tar_index,
     index_exists,
@@ -19,6 +22,11 @@ from lhotse.lazy import (
     normalize_graph_token,
 )
 from lhotse.serialization import deserialize_item, extension_contains
+from lhotse.shar.index_pack import (
+    PackedSharSource,
+    PackedTarShardReader,
+    shar_source_spec,
+)
 from lhotse.shar.readers.lazy import _discover_fields
 from lhotse.utils import Pathlike, exactly_one_not_null, is_valid_url
 
@@ -65,6 +73,24 @@ class LazyIndexedSharIterator(IteratorNode):
         * A dict (when ``fields`` is used) — keys must match ``fields``
           keys, and each value is a list of ``.idx`` file paths
           (one per shard, matching the order in ``fields``).
+    :param indexes_root: optional root directory that mirrors the layout of
+        the data files, under which the ``.idx`` files are looked up.
+        Mutually exclusive with ``index_path``.
+    :param lazy: if ``True``, binary fields are attached as lazy pointers
+        into the tar shards instead of being read into memory.
+    :param index_pack: optional path to (or an open
+        :class:`~lhotse.index_pack.IndexPack` of) an ``.idxpack`` created with
+        :func:`~lhotse.shar.index_pack.write_shar_index_pack`. The offsets are
+        then read from the pack and no ``.idx`` sidecar is opened or required.
+        The source is looked up in the pack by the same ``in_dir`` / ``fields``
+        arguments it was packed with (see :mod:`lhotse.shar.index_pack`).
+        Mutually exclusive with ``index_path`` and ``indexes_root``.
+        Shards must be local files; tar shards must be uncompressed.
+        Iteration order, shuffling, partitioning and ``state_dict`` are
+        identical to the sidecar-based reader.
+    :param index_pack_max_open_files: bound on the number of shard files kept
+        open for reading through ``index_pack`` (shared by all readers of the
+        same pack in a process).
     """
 
     is_checkpointable = True
@@ -80,13 +106,39 @@ class LazyIndexedSharIterator(IteratorNode):
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
         indexes_root: Optional[Pathlike] = None,
         lazy: bool = False,
+        index_pack: Optional[Union[Pathlike, IndexPack]] = None,
+        index_pack_max_open_files: int = 32,
     ) -> None:
         if index_path is not None and indexes_root is not None:
             raise ValueError(
                 "Pass either 'index_path' (explicit per-shard paths or directory) "
                 "or 'indexes_root' (a root that mirrors data layout), not both."
             )
+        if index_pack is not None and (
+            index_path is not None or indexes_root is not None
+        ):
+            raise ValueError(
+                "'index_pack' is mutually exclusive with 'index_path' and 'indexes_root': "
+                "a pack contains the offsets of its shards."
+            )
         self.in_dir = Path(in_dir) if in_dir is not None else None
+        self._packed: Optional[PackedSharSource] = None
+        self._cuts_readers: Optional[List[IndexedJsonlReader]] = None
+        # Lazily-created indexed readers for non-cuts fields.
+        self._indexed_readers: Optional[Dict[int, dict]] = None
+        if index_pack is not None:
+            self._init_from_pack(fields, in_dir, index_pack, index_pack_max_open_files)
+        else:
+            self._init_from_sidecars(fields, in_dir, index_path, indexes_root)
+        self._init_iteration(shuffle, seed, split_for_dataloading, lazy)
+
+    def _init_from_sidecars(
+        self,
+        fields: Optional[Dict[str, Sequence[Pathlike]]],
+        in_dir: Optional[Pathlike],
+        index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]],
+        indexes_root: Optional[Pathlike],
+    ) -> None:
         self.fields, self.streams = self._resolve_streams(fields=fields, in_dir=in_dir)
 
         self.num_shards = len(self.streams["cuts"])
@@ -115,6 +167,37 @@ class LazyIndexedSharIterator(IteratorNode):
             auto_create_index=True,
         )
 
+        # Build indexed readers for cuts JSONL shards and compute lengths.
+        self._cuts_readers = self._open_cuts_readers()
+        self._shard_lens = [len(r) for r in self._cuts_readers]
+
+        # Cumulative lengths for global -> (shard, local) mapping.
+        self._cum_lens: List[int] = []
+        total = 0
+        for sl in self._shard_lens:
+            self._cum_lens.append(total)
+            total += sl
+        self._total_len = total
+
+    def _open_cuts_readers(self) -> List[IndexedJsonlReader]:
+        cuts_idx_paths = (
+            self._index_streams.get("cuts") if self._index_streams else None
+        )
+        return [
+            IndexedJsonlReader(
+                p,
+                index_path=cuts_idx_paths[i] if cuts_idx_paths else None,
+            )
+            for i, p in enumerate(self.streams["cuts"])
+        ]
+
+    def _init_iteration(
+        self,
+        shuffle: bool,
+        seed: Union[int, str],
+        split_for_dataloading: bool,
+        lazy: bool,
+    ) -> None:
         self.shuffle = shuffle
         self.seed = seed
         # ``split_for_dataloading`` is preserved for backwards-compat with
@@ -133,31 +216,34 @@ class LazyIndexedSharIterator(IteratorNode):
             seed=resolve_seed(self.seed) if isinstance(self.seed, int) else 0,
         )
 
-        # Build indexed readers for cuts JSONL shards and compute lengths.
-        from lhotse.indexing import IndexedJsonlReader
-
-        cuts_idx_paths = (
-            self._index_streams.get("cuts") if self._index_streams else None
+    def _init_from_pack(
+        self,
+        fields: Optional[Dict[str, Sequence[Pathlike]]],
+        in_dir: Optional[Pathlike],
+        index_pack: Union[Pathlike, IndexPack],
+        max_open_files: int,
+    ) -> None:
+        assert exactly_one_not_null(
+            fields, in_dir
+        ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
+        if fields is not None:
+            assert (
+                "cuts" in fields
+            ), "To initialize Shar reader, please provide the value for key 'cuts' in 'fields'."
+        self._packed = PackedSharSource(
+            index_pack,
+            shar_source_spec(fields=fields, in_dir=in_dir),
+            max_open_files=max_open_files,
         )
-        self._cuts_readers: List[IndexedJsonlReader] = [
-            IndexedJsonlReader(
-                p,
-                index_path=cuts_idx_paths[i] if cuts_idx_paths else None,
-            )
-            for i, p in enumerate(self.streams["cuts"])
-        ]
-        self._shard_lens = [len(r) for r in self._cuts_readers]
-
-        # Cumulative lengths for global -> (shard, local) mapping.
-        self._cum_lens: List[int] = []
-        total = 0
-        for sl in self._shard_lens:
-            self._cum_lens.append(total)
-            total += sl
-        self._total_len = total
-
-        # Lazily-created indexed readers for non-cuts fields.
-        self._indexed_readers: Optional[Dict[int, dict]] = None
+        # With ``fields`` the caller's own shard paths are known; with ``in_dir``
+        # they come from the pack.
+        self.streams = fields
+        self.shards = None
+        self.fields = set(self._packed.field_names)
+        self.num_shards = self._packed.num_shards
+        self._total_len = len(self._packed)
+        self._index_streams = None
+        self._raw_index_path = None
 
     @staticmethod
     def _join_index_dir(index_dir: Pathlike, filename: str) -> Pathlike:
@@ -269,9 +355,20 @@ class LazyIndexedSharIterator(IteratorNode):
         in_dir: Optional[Pathlike] = None,
         index_path: Optional[Union[Pathlike, Dict[str, Sequence[Pathlike]]]] = None,
         indexes_root: Optional[Pathlike] = None,
+        index_pack: Optional[Union[Pathlike, IndexPack]] = None,
     ) -> bool:
         if index_path is not None and indexes_root is not None:
             return False
+        if index_pack is not None:
+            if index_path is not None or indexes_root is not None:
+                return False
+            try:
+                PackedSharSource(
+                    index_pack, shar_source_spec(fields=fields, in_dir=in_dir)
+                )
+                return True
+            except (OSError, TypeError, ValueError):
+                return False
         try:
             _, streams = cls._resolve_streams(fields=fields, in_dir=in_dir)
             if any(
@@ -315,14 +412,20 @@ class LazyIndexedSharIterator(IteratorNode):
                 f"index {idx} out of range for LazyIndexedSharIterator "
                 f"with {self._total_len} cuts"
             )
+        if self._packed is not None:
+            return self._packed.locate(idx)
         # Binary search over cumulative lengths.
         shard_idx = bisect.bisect_right(self._cum_lens, idx) - 1
         return shard_idx, idx - self._cum_lens[shard_idx]
 
     def _ensure_indexed_readers(self, shard_idx: int) -> dict:
         """Lazily create and cache indexed readers for *shard_idx*."""
-        from lhotse.indexing import IndexedJsonlReader, IndexedTarReader
-
+        if self._packed is not None:
+            # Packed readers are cheap views into the pack, so they are not cached.
+            return {
+                field: self._packed.field_reader(field, shard_idx)
+                for field in self.fields
+            }
         if self._indexed_readers is None:
             self._indexed_readers = {}
         if shard_idx in self._indexed_readers:
@@ -360,16 +463,17 @@ class LazyIndexedSharIterator(IteratorNode):
         shard_idx, pos = self._resolve_index(idx)
 
         # Read and deserialize the cut.
-        cut = deserialize_item(self._cuts_readers[shard_idx][pos])
+        if self._packed is not None:
+            cut = deserialize_item(self._packed.cuts_reader(shard_idx)[pos])
+        else:
+            cut = deserialize_item(self._cuts_readers[shard_idx][pos])
 
         # Attach field data from tar / JSONL readers.
         if self.fields:
-            from lhotse.indexing import IndexedTarReader
-
             readers = self._ensure_indexed_readers(shard_idx)
             for field in self.fields:
                 reader = readers[field]
-                if isinstance(reader, IndexedTarReader):
+                if isinstance(reader, (IndexedTarReader, PackedTarShardReader)):
                     if not self._lazy or getattr(cut, field, None) is None:
                         # Fields added with include_cuts=False have no placeholder
                         # in the original cuts. Recover just their metadata in lazy mode.
@@ -404,11 +508,18 @@ class LazyIndexedSharIterator(IteratorNode):
                     if field in item:
                         setattr(cut, field, item[field])
 
-        cut.shard_origin = self.shards[shard_idx]["cuts"]
+        cut.shard_origin = self._cuts_shard_path(shard_idx)
         cut.shar_epoch = item_epoch
         global_idx = idx if idx >= 0 else idx + self._total_len
         attach_graph_origin(cut, (global_idx, item_epoch))
         return cut
+
+    def _cuts_shard_path(self, shard_idx: int) -> Pathlike:
+        if self._packed is None:
+            return self.shards[shard_idx]["cuts"]
+        if self.streams is not None:
+            return self.streams["cuts"][shard_idx]
+        return Path(self._packed.cuts_shard_path(shard_idx))
 
     def __iter__(self):
         for global_idx in self._iter_state.iterate(self._total_len):
@@ -453,18 +564,7 @@ class LazyIndexedSharIterator(IteratorNode):
         self.__dict__ = state
         self._indexed_readers = None
         # Re-open cuts readers with index paths if available.
-        from lhotse.indexing import IndexedJsonlReader
-
-        cuts_idx_paths = (
-            self._index_streams.get("cuts") if self._index_streams else None
-        )
-        self._cuts_readers = [
-            IndexedJsonlReader(
-                p,
-                index_path=cuts_idx_paths[i] if cuts_idx_paths else None,
-            )
-            for i, p in enumerate(self.streams["cuts"])
-        ]
+        self._cuts_readers = self._open_cuts_readers() if self._packed is None else None
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
