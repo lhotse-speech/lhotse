@@ -9,6 +9,7 @@ from lhotse import Recording
 from lhotse.audio import AudioLoadingError, VideoInfo
 from lhotse.audio.backend import (
     CompositeAudioBackend,
+    FfmpegTorchaudioStreamerBackend,
     LibsndfileBackend,
     TorchaudioDefaultBackend,
     TorchaudioFFMPEGBackend,
@@ -324,3 +325,19 @@ def test_video_file_falls_back_when_torchaudio_has_no_ffmpeg(monkeypatch):
     assert recording.video == VideoInfo(fps=25.0, num_frames=132, height=240, width=320)
     assert not TorchaudioFFMPEGBackend().handles_special_case(path)
     assert TorchcodecBackend().handles_special_case(path)
+
+
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+def test_torchcodec_is_preferred_over_torchaudio(monkeypatch):
+    # Pretend torchaudio with a working FFMPEG backend is also installed.
+    monkeypatch.setattr(lhotse.audio.backend, "is_torchaudio_available", lambda: True)
+    monkeypatch.setattr(
+        lhotse.audio.backend, "torchaudio_ffmpeg_backend_available", lambda: True
+    )
+    monkeypatch.setattr(
+        lhotse.audio.backend, "torchaudio_supports_ffmpeg", lambda: True
+    )
+    video_path = Path("test/fixtures/big_buck_bunny_small.mp4")
+    assert TorchcodecBackend().handles_special_case(video_path)
+    assert not TorchaudioFFMPEGBackend().handles_special_case(video_path)
+    assert not FfmpegTorchaudioStreamerBackend().handles_special_case(BytesIO(b""))

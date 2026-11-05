@@ -43,9 +43,9 @@ To use the development version:
 python -m pip install git+https://github.com/lhotse-speech/lhotse
 ```
 
-PyTorch is required; torchaudio and TorchCodec are optional audio backends.
-Reading video requires TorchCodec 0.10 or later (`python -m pip install torchcodec`)
-and an FFmpeg version that it supports.
+PyTorch is required; torchaudio and TorchCodec 0.10 or later are optional audio
+backends. TorchCodec also reads video (`python -m pip install torchcodec`) and
+requires an FFmpeg version that it supports.
 See [optional dependencies](#optional-dependencies) for additional formats and
 integrations.
 

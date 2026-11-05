@@ -7,13 +7,11 @@ import torch
 import lhotse.audio.source
 from lhotse import Recording
 from lhotse.audio import VideoInfo
-from lhotse.audio.backend import (
-    torchaudio_ffmpeg_backend_available,
-    torchcodec_supports_video,
-)
+from lhotse.audio.backend import torchaudio_ffmpeg_backend_available
+from lhotse.utils import is_torchcodec_available
 
 requires_torchcodec = pytest.mark.skipif(
-    not torchcodec_supports_video(), reason="Requires torchcodec>=0.10"
+    not is_torchcodec_available(), reason="Requires torchcodec>=0.10"
 )
 
 COLOR = 3
@@ -169,13 +167,13 @@ def test_video_recording_without_audio_stream(tmp_path):
 
 
 @pytest.mark.skipif(
-    not (torchcodec_supports_video() and torchaudio_ffmpeg_backend_available()),
+    not (is_torchcodec_available() and torchaudio_ffmpeg_backend_available()),
     reason="Requires torchcodec>=0.10 and torchaudio with the FFMPEG backend",
 )
 def test_video_recording_torchcodec_and_torchaudio_frames_are_equal(video_recording):
     video, _ = video_recording.load_video(offset=1.0, duration=2.0, with_audio=False)
     with mock.patch.object(
-        lhotse.audio.source, "torchcodec_supports_video", lambda: False
+        lhotse.audio.source, "is_torchcodec_available", lambda: False
     ):
         video_torchaudio, _ = video_recording.load_video(
             offset=1.0, duration=2.0, with_audio=False

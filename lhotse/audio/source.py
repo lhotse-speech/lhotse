@@ -16,7 +16,6 @@ from lhotse.audio.backend import (
     read_audio,
     torchaudio_ffmpeg_backend_available,
     torchcodec_load_video,
-    torchcodec_supports_video,
 )
 from lhotse.audio.utils import (
     DurationMismatchError,
@@ -26,7 +25,14 @@ from lhotse.audio.utils import (
 )
 from lhotse.caching import AudioCache
 from lhotse.serialization import open_best
-from lhotse.utils import Pathlike, Seconds, asdict_nonull, compute_num_samples, fastcopy
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    asdict_nonull,
+    compute_num_samples,
+    fastcopy,
+    is_torchcodec_available,
+)
 
 PathOrFilelike = Union[str, BytesIO, FileIO]
 
@@ -166,7 +172,7 @@ class AudioSource:
         with_audio: bool = True,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         try:
-            if torchcodec_supports_video():
+            if is_torchcodec_available():
                 return torchcodec_load_video(
                     self.source,
                     offset=offset,

@@ -344,8 +344,10 @@ class FfmpegTorchaudioStreamerBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # Prefer torchcodec for in-memory data when it's available.
         return (
-            is_torchaudio_available()
+            not is_torchcodec_available()
+            and is_torchaudio_available()
             and torchaudio_supports_ffmpeg()
             and isinstance(path_or_fd, BytesIO)
         )
@@ -458,10 +460,11 @@ class TorchaudioFFMPEGBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        # The only backend to support video.
+        # Read video files only when torchcodec is unavailable.
         is_fileobj = not isinstance(path_or_fd, Path)
         return (
-            self.is_applicable(path_or_fd)
+            not is_torchcodec_available()
+            and self.is_applicable(path_or_fd)
             and not is_fileobj
             and any(str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS)
         )
@@ -591,7 +594,7 @@ class LibsndfileBackend(AudioBackend):
 
 class TorchcodecBackend(AudioBackend):
     """
-    A backend that uses torchcodec (>= 0.5), a PyTorch-native audio decoder/encoder
+    A backend that uses torchcodec (>= 0.10), a PyTorch-native audio decoder/encoder
     built on FFmpeg. Supports reading and saving most audio formats.
     """
 
@@ -609,12 +612,11 @@ class TorchcodecBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        # Read video files when torchaudio's FFMPEG backend is unavailable.
+        # Torchcodec is preferred over torchaudio for video files.
         return (
             isinstance(path_or_fd, Path)
             and str(path_or_fd).endswith(SUPPORTED_VIDEO_EXTENSIONS)
             and self.is_applicable(path_or_fd)
-            and not TorchaudioFFMPEGBackend().is_applicable(path_or_fd)
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -896,19 +898,6 @@ def torchaudio_ffmpeg_backend_available() -> bool:
         return False
 
     return True
-
-
-@lru_cache(maxsize=1)
-def torchcodec_supports_video() -> bool:
-    """
-    Returns ``True`` when torchcodec can read video for Lhotse.
-    This requires torchcodec 0.10+, which provides the transforms used to rescale video.
-    """
-    if not is_torchcodec_available():
-        return False
-    from importlib.util import find_spec
-
-    return find_spec("torchcodec.transforms") is not None
 
 
 @lru_cache(maxsize=1)

@@ -1,3 +1,4 @@
+import importlib.metadata
 import os
 import tarfile
 from io import BytesIO
@@ -24,6 +25,7 @@ from lhotse.utils import (
     add_durations,
     compute_num_windows,
     compute_start_duration_for_extended_cut,
+    is_torchcodec_available,
     overlaps,
     overspans,
     safe_extract,
@@ -325,3 +327,26 @@ def test_cli_list_storage_backends_marks_missing_optional_dependencies(monkeypat
     assert (
         "lilcom_hdf5 (unavailable, requires: pip install h5py lilcom)" in result.output
     )
+
+
+@pytest.mark.parametrize(
+    ["installed_version", "expected"],
+    [
+        ("0.7.0", False),
+        ("0.9.1", False),
+        ("0.10.0.dev20251201", True),
+        ("0.10.0+cpu", True),
+        ("0.17.0", True),
+        ("1.0.0", True),
+    ],
+)
+def test_is_torchcodec_available_requires_minimum_version(
+    monkeypatch, installed_version, expected
+):
+    monkeypatch.setattr(lhotse.utils, "is_module_available", lambda name: True)
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: installed_version)
+    is_torchcodec_available.cache_clear()
+    try:
+        assert is_torchcodec_available() is expected
+    finally:
+        is_torchcodec_available.cache_clear()
