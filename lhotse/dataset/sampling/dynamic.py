@@ -238,7 +238,11 @@ class DynamicCutSampler(CutSampler):
         self.cuts_iter = iter(self.cuts_iter)
 
     def _capture_cuts_state(self) -> Optional[list]:
-        sources = self._active_cuts if self._active_cuts is not None else self.cuts
+        sources = (
+            self._active_cuts
+            if self._active_cuts is not None
+            else self._make_epoch_sources()
+        )
         return capture_sources_state(sources)
 
     def _restore_cuts_state(self, cuts_state: list) -> None:
