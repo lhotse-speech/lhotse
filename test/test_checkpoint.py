@@ -4,6 +4,7 @@ Tests for lhotse/checkpoint.py — iterator graph traversal and DataloaderCheckp
 Every collect/restore test verifies the core property:
     items_before_checkpoint + items_after_restore == all_items_uninterrupted
 """
+
 import json
 
 import pytest

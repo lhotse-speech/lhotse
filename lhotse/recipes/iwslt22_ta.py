@@ -62,13 +62,11 @@ def download_iwslt22_ta(
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     """
-    logging.info(
-        """
+    logging.info("""
         To obtain this data your institution needs to have an LDC subscription.
         You also should download the pre-defined splits with
         git clone https://github.com/kevinduh/iwslt22-dialect.git
-    """
-    )
+    """)
 
 
 def prepare_iwslt22_ta(

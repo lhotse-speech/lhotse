@@ -2,6 +2,7 @@
 This is an experimental workflow that can be used to simulate multi-speaker meetings from
 a CutSet containing MonoCut objects.
 """
+
 import abc
 import random
 from itertools import groupby

@@ -23,7 +23,7 @@ from lhotse.utils import Pathlike, check_and_rglob
 
 
 def create_supervision(
-    sessions_and_transcript_path: Tuple[Dict[str, Dict[str, str]], Pathlike]
+    sessions_and_transcript_path: Tuple[Dict[str, Dict[str, str]], Pathlike],
 ) -> List[SupervisionSegment]:
 
     sessions, transcript_path = sessions_and_transcript_path
@@ -65,7 +65,6 @@ def prepare_fisher_spanish(
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
-
     """
     Prepares manifests for Fisher Spanish.
     We create two manifests: one with recordings, and the other one with text supervisions.

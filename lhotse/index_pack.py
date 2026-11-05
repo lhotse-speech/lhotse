@@ -384,9 +384,7 @@ def write_index_pack(
         flags = (
             _COLLECTION_FIXED_ARRAY
             if is_array
-            else 0
-            if collection.offsets_required
-            else _COLLECTION_PATHS_ONLY
+            else 0 if collection.offsets_required else _COLLECTION_PATHS_ONLY
         )
         collection_rows.append(
             (
@@ -584,11 +582,15 @@ def write_index_pack(
                         (
                             _SEGMENT_FIXED_ARRAY
                             if segment.fixed_array
-                            else _SEGMENT_PATH_ONLY
-                            if segment.path_only
-                            else _SEGMENT_GZIP_JSONL
-                            if segment.gzip_index_path is not None
-                            else 0
+                            else (
+                                _SEGMENT_PATH_ONLY
+                                if segment.path_only
+                                else (
+                                    _SEGMENT_GZIP_JSONL
+                                    if segment.gzip_index_path is not None
+                                    else 0
+                                )
+                            )
                         ),
                         segment.offsets_count,
                         source_size,
@@ -2101,7 +2103,7 @@ def _register_index_pack(pack: IndexPack) -> None:
     _INDEX_PACK_CACHE[str(pack.path.absolute())] = pack
 
 
-_INDEX_PACK_CACHE: weakref.WeakValueDictionary[
-    str, IndexPack
-] = weakref.WeakValueDictionary()
+_INDEX_PACK_CACHE: weakref.WeakValueDictionary[str, IndexPack] = (
+    weakref.WeakValueDictionary()
+)
 _INDEX_PACK_CACHE_PID = os.getpid()

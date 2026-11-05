@@ -189,13 +189,16 @@ def prepare_atcosim(
     csv_path = corpus_dir / "TXTdata/fulldata.csv"
     df = pd.read_csv(csv_path, quoting=csv.QUOTE_NONE)
 
-    with RecordingSet.open_writer(
-        output_dir / f"atcosim_recordings_all.jsonl.gz",
-        overwrite=True,
-    ) as recs_writer, SupervisionSet.open_writer(
-        output_dir / f"atcosim_supervisions_all.jsonl.gz",
-        overwrite=True,
-    ) as sups_writer:
+    with (
+        RecordingSet.open_writer(
+            output_dir / f"atcosim_recordings_all.jsonl.gz",
+            overwrite=True,
+        ) as recs_writer,
+        SupervisionSet.open_writer(
+            output_dir / f"atcosim_supervisions_all.jsonl.gz",
+            overwrite=True,
+        ) as sups_writer,
+    ):
         for idx, row in tqdm(
             df.iterrows(),
             desc="Preparing",

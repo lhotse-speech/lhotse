@@ -314,9 +314,10 @@ def test_cut_set_batch_feature_extraction_manifest_path(
 ):
     extractor = Fbank()
     cut_set = cut_set.resample(16000)
-    with NamedTemporaryFile() as feat_f, NamedTemporaryFile(
-        suffix=suffix
-    ) as manifest_f:
+    with (
+        NamedTemporaryFile() as feat_f,
+        NamedTemporaryFile(suffix=suffix) as manifest_f,
+    ):
         with exception_expectation:
             cut_set_with_feats = cut_set.compute_and_store_features_batch(
                 extractor=extractor,
@@ -338,9 +339,10 @@ def test_cut_set_batch_feature_extraction_resume(cut_set, overwrite):
     cut_set = cut_set.resample(16000)
     subsets = cut_set.split(num_splits=2)
     processed = []
-    with NamedTemporaryFile() as feat_f, NamedTemporaryFile(
-        suffix=".jsonl.gz"
-    ) as manifest_f:
+    with (
+        NamedTemporaryFile() as feat_f,
+        NamedTemporaryFile(suffix=".jsonl.gz") as manifest_f,
+    ):
         for cuts in subsets:
             processed.append(
                 cuts.compute_and_store_features_batch(

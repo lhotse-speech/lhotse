@@ -1,11 +1,161 @@
+[build-system]
+requires = ["setuptools==84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lhotse"
+dynamic = ["version"]
+description = "Data preparation for speech processing models training."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{name = "The Lhotse Development Team"}]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "audioread>=2.1.9",
+    "soundfile>=0.10",
+    "click>=7.1.1",
+    "cytoolz>=0.10.1",
+    "intervaltree>=3.1.0",
+    "numpy>=1.18.1",
+    "packaging",
+    "pyyaml>=5.3.1",
+    "tabulate>=0.8.1",
+    "torch",
+    "tqdm",
+]
+
+[project.scripts]
+lhotse = "lhotse.bin.lhotse:cli"
+
+[project.urls]
+Homepage = "https://github.com/lhotse-speech/lhotse"
+Documentation = "https://lhotse.readthedocs.io/"
+
+[project.optional-dependencies]
+aistore = ["aistore>=1.17.0"]
+checkpoint = ["torchdata"]
+dill = ["dill"]
+gzip = ["indexed-gzip>=1.10"]
+h5py = ["h5py"]
+kaldi = ["kaldi-native-io", "kaldifeat"]
+lilcom = ["lilcom>=1.1.0"]
+orjson = ["orjson>=3.6.6"]
+pillow = ["pillow"]
+webdataset = ["webdataset>=1.0.2,<2"]
+docs = [
+    "sphinx>=8.1.3,<10",
+    "sphinx-rtd-theme>=3.1.0,<4",
+    "sphinx-click>=6.2.0,<7",
+    "sphinx-autodoc-typehints>=3.0.1,<4",
+]
+tests = [
+    # pytest-forked 1.7.5 cannot serialize test reports from pytest 9.2.
+    "pytest>=9.1.1,<9.2",
+    "pytest-forked>=1.7.5",
+    "pytest-xdist",
+    "pytest-cov",
+    # Coverage 7.10 adds the os._exit() patch needed with pytest-forked.
+    "coverage>=7.10",
+    "hypothesis>=6.168.5",
+    "black>=26.10.1",
+    "isort>=9.0.2",
+    "flake8>=7.4.1",
+    "pre-commit>=4.6.2",
+    "lhotse[lilcom,checkpoint]",
+]
+# Keep the published aggregate extras available to pip users.
+dev = [
+    "lhotse[docs,tests,orjson,webdataset,dill,pillow]",
+    "scipy",
+    "jupyterlab",
+    "matplotlib",
+]
+all = ["lhotse[dev]"]
+
+[dependency-groups]
+lint = ["black>=26.10.1", "isort>=9.0.2", "flake8>=7.4.1", "pre-commit>=4.6.2"]
+dev = ["lhotse[tests]", {include-group = "lint"}]
+ci = [
+    "torch==2.8.0; python_version == '3.10'",
+    "torch==2.9.1; python_version == '3.11'",
+    "torch==2.10.0; python_version == '3.12'",
+    "torch==2.12.1; python_version == '3.13'",
+    "torch==2.14.1; python_version == '3.14'",
+    "torch==2.15.0; python_version >= '3.15'",
+    "torchcodec==0.17.0; python_version >= '3.13'",
+    "lhotse[aistore,dill,h5py,orjson,pillow,webdataset]",
+    "smart-open[http]",
+    "scipy",
+    "nara-wpe",
+    "pyloudnorm",
+    "multi-storage-client>=1.3.1,<2; python_version < '3.15'",
+    # MSC 1.x has no Python 3.15 wheels or source distribution yet.
+    "multi-storage-client==0.16.0; python_version >= '3.15'",
+    "kaldi-native-io>=1.23.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["lhotse", "lhotse.*"]
+namespaces = false
+
+[tool.uv]
+required-version = "==0.13.7"
+cache-keys = [
+    {file = "pyproject.toml"},
+    {file = "setup.py"},
+    {file = "_lhotse_version.py"},
+    {file = "VERSION"},
+    {git = {commit = true}},
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{index = "pytorch-cpu", marker = "sys_platform == 'linux'"}]
+# Python 3.15 macOS wheels are currently published only on the PyTorch index.
+torchcodec = [{index = "pytorch-cpu", marker = "sys_platform == 'linux' or (sys_platform == 'darwin' and python_version >= '3.15')"}]
+# Dill 0.4.1 uses co_lnotab, removed in Python 3.15. Keep the upstream fix
+# until a release includes https://github.com/uqfoundation/dill/pull/755.
+dill = [{git = "https://github.com/uqfoundation/dill.git", rev = "37d2bf717ac7ac110f06be5210f989847959c2cd", marker = "python_version >= '3.15'"}]
+
 [tool.isort]
 profile = "black"
 skip = ["lhotse/__init__.py"]
 
 [tool.black]
+target-version = ["py310"]
 force-exclude = '''
 /(
     \.git
   | \.github
 )/
 '''
+
+[tool.coverage.run]
+source = ["lhotse"]
+# pytest-forked ends each test process with os._exit(); save its coverage first.
+patch = ["_exit"]

@@ -1,14 +1,14 @@
 """
 About the CDSD (Chinese Dysarthric Speech Database) dataset:
 
-    This database comprises speech data from 24 participants with dysarthria. 
-    
-    Among these participants, one recorded an additional 10 hours of speech data, while each recorded one hour, resulting in 34 hours of speech material. 
+    This database comprises speech data from 24 participants with dysarthria.
 
-    To accommodate participants with varying cognitive levels, the text pool primarily consists of content from the AISHELL-1 dataset and speeches by primary and secondary school students. When participants read these texts, they must use a mobile device or the ZOOM F8n multi-track field recorder to record their speeches. 
-    
-    In this paper, the authors elucidate the data collection and annotation processes and present an approach for establishing a baseline for dysarthric speech recognition. Furthermore, the authors conducted a speaker-dependent dysarthric speech recognition experiment using an additional 10 hours of speech data from one of the participants. 
-    
+    Among these participants, one recorded an additional 10 hours of speech data, while each recorded one hour, resulting in 34 hours of speech material.
+
+    To accommodate participants with varying cognitive levels, the text pool primarily consists of content from the AISHELL-1 dataset and speeches by primary and secondary school students. When participants read these texts, they must use a mobile device or the ZOOM F8n multi-track field recorder to record their speeches.
+
+    In this paper, the authors elucidate the data collection and annotation processes and present an approach for establishing a baseline for dysarthric speech recognition. Furthermore, the authors conducted a speaker-dependent dysarthric speech recognition experiment using an additional 10 hours of speech data from one of the participants.
+
 arXiv link: https://arxiv.org/abs/2310.15930v1
 """
 

@@ -53,7 +53,7 @@ from .utils import (
 from .workflows import *
 
 try:
-    # Try to get Lhotse's version (should be created during running pip install / python setup.py ...)
+    # Builds and editable installations embed the resolved package version.
     from .version import __version__
 except:
     # Use a default placeholder when the version is unavailable...

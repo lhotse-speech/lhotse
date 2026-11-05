@@ -1,4 +1,5 @@
 import importlib
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -57,8 +58,11 @@ def test_lhotse_load_audio():
 
 @notorchaudio
 @pytest.mark.parametrize("sr", [8000, 16000, 22500, 24000, 44100])
-def test_lhotse_resample(sr):
+def test_lhotse_resample(sr, monkeypatch):
     import lhotse
+
+    # Resampling must not require optional dependencies such as scipy.
+    monkeypatch.setitem(sys.modules, "scipy", None)
 
     cuts = lhotse.CutSet.from_file("test/fixtures/libri/cuts.json")
     cut = cuts[0]

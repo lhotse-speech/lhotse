@@ -231,14 +231,21 @@ class CutSampler(Sampler, Dillable):
             "shuffle": self.shuffle,
             "diagnostics": self.diagnostics.state_dict(),
         }
-        cuts_state = self._capture_cuts_state()
+        pending_restore = getattr(self, "_needs_fast_forward", False)
+        cuts_state = (
+            deepcopy(self._cuts_state)
+            if pending_restore
+            else self._capture_cuts_state()
+        )
         if cuts_state is not None:
             sd["cuts_state"] = cuts_state
         # Capture stateful transform RNG states (e.g. PerturbSpeed, PerturbVolume, ...).
         # These are needed to restore augmentation decisions exactly when using the
         # indexed O(1) restore path (which skips the O(N) fast-forward that would
         # otherwise naturally advance the RNGs).
-        if self._transforms:
+        if pending_restore and self._transforms_state is not None:
+            sd["transforms_state"] = deepcopy(self._transforms_state)
+        elif self._transforms and not pending_restore:
             transforms_state = []
             for tfn in self._transforms:
                 if hasattr(tfn, "state_dict"):

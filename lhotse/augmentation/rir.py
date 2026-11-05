@@ -63,15 +63,20 @@ class ReverbWithImpulseResponse(AudioTransform):
         return {
             "name": type(self).__name__,
             "kwargs": {
-                "rir": self.rir.to_dict()
-                if isinstance(self.rir, (Recording, Cut))
-                else self.rir,
+                "rir": (
+                    self.rir.to_dict()
+                    if isinstance(self.rir, (Recording, Cut))
+                    else self.rir
+                ),
                 "normalize_output": self.normalize_output,
                 "early_only": self.early_only,
                 "rir_channels": list(self.rir_channels),
-                "rir_generator": self.rir_generator
-                if self.rir_generator is None or isinstance(self.rir_generator, dict)
-                else self.rir_generator.to_dict(),
+                "rir_generator": (
+                    self.rir_generator
+                    if self.rir_generator is None
+                    or isinstance(self.rir_generator, dict)
+                    else self.rir_generator.to_dict()
+                ),
             },
         }
 

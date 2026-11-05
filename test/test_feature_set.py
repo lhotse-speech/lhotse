@@ -8,6 +8,8 @@ from pytest import mark, raises
 
 pytest.importorskip("lilcom", reason="Lilcom tests require lilcom.")
 
+from test.markers import requires_sph2pipe
+
 from lhotse import FbankConfig, MfccConfig
 from lhotse.audio import RecordingSet
 from lhotse.features import (
@@ -169,6 +171,7 @@ def test_compute_global_stats():
         ),
     ],
 )
+@requires_sph2pipe
 def test_feature_set_builder(storage_fn):
     recordings: RecordingSet = RecordingSet.from_json(
         "test/fixtures/audio.json"

@@ -14,15 +14,13 @@ from lhotse.utils import Pathlike
 
 
 def download_bvcc(target_dir) -> None:
-    print(
-        """
+    print("""
     Unfortunately you need to download the data manually due to licensing reason.
 
     See info and instructions how to obtain BVCC dataset used for VoiceMOS challange:
     - https://arxiv.org/abs/2105.02373
     - https://nii-yamagishilab.github.io/ecooper-demo/VoiceMOS2022/index.html
-    - https://codalab.lisn.upsaclay.fr/competitions/695"""
-    )
+    - https://codalab.lisn.upsaclay.fr/competitions/695""")
 
 
 def prepare_bvcc(

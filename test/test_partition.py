@@ -265,7 +265,8 @@ def test_chain_globally_shuffled_no_double_partition_small(tmp_path):
     Chain's _iter_globally_shuffled builds a partitioned LazyShuffledRange over the
     *combined* index range and routes items via __getitem__, which bypasses the source's
     own partitioning. So the chain partition is applied exactly once. With 2 ranks each
-    rank must see 4 items (total/world_size), with the union across ranks covering all 8."""
+    rank must see 4 items (total/world_size), with the union across ranks covering all 8.
+    """
     p1 = tmp_path / "a.jsonl"
     p2 = tmp_path / "b.jsonl"
     DummyManifest(CutSet, begin_id=0, end_id=4).to_jsonl(p1)
@@ -299,7 +300,8 @@ def test_chain_globally_shuffled_no_double_partition_small(tmp_path):
 @pytest.mark.parametrize("world_size", [2, 3, 5])
 def test_chain_sequential_partition_indexed_sources(two_indexed_jsonls, world_size):
     """Chain in sequential mode (shuffle_iters=False) lets each indexed source partition
-    itself. No chain-level partition; single source-level partition applied per source."""
+    itself. No chain-level partition; single source-level partition applied per source.
+    """
     p1, p2 = two_indexed_jsonls
     expected = set(_all_expected_ids(0, 20)) | set(_all_expected_ids(100, 130))
     seen = []
@@ -318,7 +320,8 @@ def test_chain_sequential_partition_indexed_sources(two_indexed_jsonls, world_si
 
 def test_chain_globally_shuffled_no_double_partition_uneven_sources(tmp_path):
     """Chain partition still covers every item when sources have uneven sizes
-    (3 + 5 = 8 items, 2 ranks) — Feistel permutation is bijective over the combined range."""
+    (3 + 5 = 8 items, 2 ranks) — Feistel permutation is bijective over the combined range.
+    """
     p1 = tmp_path / "a.jsonl"
     p2 = tmp_path / "b.jsonl"
     DummyManifest(CutSet, begin_id=0, end_id=3).to_jsonl(p1)
@@ -449,7 +452,8 @@ def test_multiplexer_partition_two_sources_equal_size_small(tmp_path):
 @pytest.mark.parametrize("world_size", [2, 3, 5])
 def test_multiplexer_partition_full_coverage(two_indexed_jsonls, world_size):
     """Multiplexer over partitioned sources: union of items across all ranks
-    equals the full manifest, no duplicates. Tests both equal- and uneven-shard cases."""
+    equals the full manifest, no duplicates. Tests both equal- and uneven-shard cases.
+    """
     p1, p2 = two_indexed_jsonls
     expected = set(_all_expected_ids(0, 20)) | set(_all_expected_ids(100, 130))
     seen = []

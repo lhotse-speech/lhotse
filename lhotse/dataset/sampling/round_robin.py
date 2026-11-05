@@ -126,9 +126,9 @@ class RoundRobinSampler(CutSampler):
                 "samplers": [s.state_dict() for s in self.samplers],
                 "stop_early": self.stop_early,
                 "randomize": self.randomize,
-                "rng_state": self.rng.bit_generator.state
-                if self.rng is not None
-                else None,
+                "rng_state": (
+                    self.rng.bit_generator.state if self.rng is not None else None
+                ),
                 "_cur_sampler_idx": self._cur_sampler_idx,
                 "_num_dl_workers": self._num_dl_workers,
                 # Explicit list copy below allows to restore within the same process.

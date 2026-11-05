@@ -18,6 +18,7 @@ so every DP rank iterated the full cut set. The 0909 validator caught
 sources; this file asserts the contract at the iterator level so the
 next refactor can't quietly regress it.
 """
+
 from __future__ import annotations
 
 import os

@@ -1,74 +1,71 @@
-# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
-# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
-
 name: unit_tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   unit_tests:
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        include:
-          - python-version: "3.10"  # note: no torchaudio, no torchcodec
-            torch-install-cmd: "pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: "multi-storage-client==0.16.0"
-          - python-version: "3.12"  # note: no torchaudio, no torchcodec
-            torch-install-cmd: "pip install torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: "multi-storage-client==0.16.0"
-          - python-version: "3.13"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.12.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: "multi-storage-client==0.16.0"
-          - python-version: "3.14"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.14.1 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
-            extra_deps: "multi-storage-client==0.16.0"
-          - python-version: "3.15"  # note: no torchaudio
-            torch-install-cmd: "pip install torch==2.15.0 torchcodec==0.17.0 --index-url https://download.pytorch.org/whl/cpu"
-            # Dill 0.4.1 uses co_lnotab, removed in Python 3.15. Pin the upstream
-            # fix until it is released: https://github.com/uqfoundation/dill/pull/755
-            extra_deps: "multi-storage-client==0.16.0 dill@git+https://github.com/uqfoundation/dill.git@37d2bf717ac7ac110f06be5210f989847959c2cd"
-
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
       fail-fast: false
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: pip
-        cache-dependency-path: |
-          docs/requirements.txt
-          setup.py
-    - name: Install apt dependencies
-      run: |
-        sudo apt update
-        # CMake and HDF5 headers support source builds on the newest Python.
-        sudo apt install libsndfile1-dev libsndfile1 ffmpeg sox cmake libhdf5-dev
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install wheel numpy
-        # Force the installation of a CPU-only PyTorch
-        ${{ matrix.torch-install-cmd }}
-        # the torchaudio env var does nothing when torchaudio is installed, but doesn't require it's presence when it's not
-        pip install lilcom '.[tests]'
-        # Enable some optional tests
-        pip install h5py dill smart_open[http] webdataset==0.2.5 scipy nara_wpe pyloudnorm pillow aistore>=1.17.0 ${{ matrix.extra_deps }}
-        # 1.23 adds wheels for Python 3.14 and 3.15.
-        pip install "kaldi_native_io>=1.23.0"
-    - name: Install sph2pipe
-      run: |
-        lhotse install-sph2pipe  # Handle sphere files.
-    - name: Test with pytest and coverage
-      run: |
-        export TORCHAUDIO_USE_BACKEND_DISPATCHER=1
-        pytest --cov --forked -n auto test
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version-file: pyproject.toml
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Identify the system package cache
+        id: system-image
+        run: |
+          echo "image=${ImageOS:?}-${ImageVersion:?}" >> "$GITHUB_OUTPUT"
+          echo "APT_CACHE_DIR=$RUNNER_TEMP/apt-cache" >> "$GITHUB_ENV"
+      - name: Cache system packages
+        id: apt-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ env.APT_CACHE_DIR }}
+          # Share native packages across Python versions, but never across runner images.
+          key: apt-v1-${{ runner.arch }}-${{ steps.system-image.outputs.image }}-${{ hashFiles('.github/workflows/unit_tests.yml') }}
+      - name: Install system dependencies
+        timeout-minutes: 5
+        env:
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+        run: |
+          mkdir -p "$APT_CACHE_DIR/archives/partial" "$APT_CACHE_DIR/lists/partial"
+          apt_options=(
+            -o "Dir::Cache::archives=$APT_CACHE_DIR/archives"
+            -o "Dir::State::lists=$APT_CACHE_DIR/lists"
+            -o APT::Keep-Downloaded-Packages=true
+            -o Acquire::Retries=2
+            -o Acquire::http::Timeout=30
+            -o Acquire::https::Timeout=30
+          )
+          if [[ "$APT_CACHE_HIT" == true ]]; then
+            # Cached indexes and archives allow a normal dpkg install without downloads.
+            apt_options+=(--no-download)
+          else
+            sudo apt-get "${apt_options[@]}" update
+          fi
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
+            libsndfile1-dev ffmpeg sox cmake libhdf5-dev
+          # APT creates root-owned files; the cache action runs as the runner user.
+          sudo chmod -R a+rX "$APT_CACHE_DIR"
+      - name: Install locked Python dependencies
+        run: uv sync --locked --no-default-groups --extra tests --group ci
+      - name: Install sph2pipe
+        run: uv run --no-sync lhotse install-sph2pipe
+      - name: Test with pytest and coverage
+        run: uv run --no-sync pytest --cov --cov-report=xml --forked -n auto test
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7.1.1
+        continue-on-error: true
+        with:
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}

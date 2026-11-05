@@ -1,0 +1,49 @@
+name: packaging
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  wheel:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version-file: pyproject.toml
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Build an sdist and wheel using published metadata
+        run: uv build --no-sources
+      - name: Install the wheel in a fresh environment
+        run: |
+          uv venv .venv-wheel
+          uv pip install --python .venv-wheel --torch-backend cpu dist/*.whl
+          uv pip check --python .venv-wheel
+      - name: Check installed imports, version, audio, and CLI without extras
+        run: |
+          uv run --no-project --python .venv-wheel python -I - <<'PY'
+          import importlib.metadata
+          import importlib.util
+          import lhotse
+          import numpy as np
+
+          assert ".venv-wheel" in lhotse.__file__
+          assert lhotse.__version__ == importlib.metadata.version("lhotse")
+          for name in ("torchaudio", "torchcodec", "lilcom", "dill", "h5py", "webdataset"):
+              assert importlib.util.find_spec(name) is None, name
+          audio = lhotse.Recording.from_file("test/fixtures/mono_c0.wav").load_audio()
+          assert audio.shape == (1, 4000)
+          assert audio.dtype == np.float32
+          PY
+          uv run --no-project --python .venv-wheel lhotse --help

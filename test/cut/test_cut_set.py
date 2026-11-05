@@ -702,9 +702,10 @@ def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():
 def test_cut_set_from_files():
     cs1 = DummyManifest(CutSet, begin_id=0, end_id=10)
     cs2 = DummyManifest(CutSet, begin_id=10, end_id=20)
-    with NamedTemporaryFile(suffix=".jsonl.gz") as f1, NamedTemporaryFile(
-        suffix=".jsonl.gz"
-    ) as f2:
+    with (
+        NamedTemporaryFile(suffix=".jsonl.gz") as f1,
+        NamedTemporaryFile(suffix=".jsonl.gz") as f2,
+    ):
         cs1.to_file(f1.name)
         f1.flush()
         cs2.to_file(f2.name)

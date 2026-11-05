@@ -21,6 +21,7 @@ Under Part 6, speakers were made to speak following the 3 styles within either o
 
 We currently only support the part 3 recordings, in "same room close mic" and "separate rooms phone mic" environments.
 """
+
 import itertools
 import logging
 import zipfile
@@ -270,7 +271,7 @@ def prepare_part4(
     from textgrids import TextGrid
 
     def textgrid_field_id_resolver(
-        audio_file: Union[str, Path]
+        audio_file: Union[str, Path],
     ) -> Tuple[TextGrid, str]:
         audio_file = Path(audio_file)
         script_dir = Path(script_audio_dir.script_dir)
@@ -301,7 +302,7 @@ def prepare_part5(
     from textgrids import TextGrid
 
     def textgrid_field_id_resolver(
-        audio_file: Union[str, Path]
+        audio_file: Union[str, Path],
     ) -> Tuple[TextGrid, str]:
         audio_file = Path(audio_file)
         script_dir = Path(script_audio_dir.script_dir)

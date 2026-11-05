@@ -32,7 +32,7 @@ def get_paths(fold_path_and_pattern: Tuple[Pathlike, str]) -> List[Path]:
 
 
 def create_recording(
-    audio_path_and_rel_path_depth: Tuple[Pathlike, Union[int, None]]
+    audio_path_and_rel_path_depth: Tuple[Pathlike, Union[int, None]],
 ) -> Optional[Recording]:
     audio_path, rel_path_depth = audio_path_and_rel_path_depth
     try:
@@ -45,7 +45,7 @@ def create_recording(
 
 
 def create_supervision(
-    sessions_and_transcript_path: Tuple[Dict[str, Dict[str, str]], Pathlike]
+    sessions_and_transcript_path: Tuple[Dict[str, Dict[str, str]], Pathlike],
 ) -> List[SupervisionSegment]:
 
     sessions, transcript_path = sessions_and_transcript_path
@@ -118,7 +118,6 @@ def prepare_fisher_english(
     absolute_paths: bool = False,
     num_jobs: int = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
-
     """
     Prepares manifests for Fisher English Part 1, 2.
     Script assumes that audio_dirs and transcript_dirs are in the corpus_path.
@@ -194,9 +193,10 @@ def prepare_fisher_english(
             (p, None if absolute_paths else 5) for p in audio_paths
         ]
         err_recos = 0
-        with ProcessPoolExecutor(num_jobs) as executor, RecordingSet.open_writer(
-            recs_path
-        ) as writer:
+        with (
+            ProcessPoolExecutor(num_jobs) as executor,
+            RecordingSet.open_writer(recs_path) as writer,
+        ):
             with tqdm(
                 total=len(create_recordings_input), desc="Collect recordings"
             ) as pbar:
@@ -221,9 +221,10 @@ def prepare_fisher_english(
         logging.info(f"Building fresh supervision manifest")
         create_supervisions_input = [(sessions, p) for p in transcript_paths]
         err_sups = 0
-        with ThreadPoolExecutor(
-            os.cpu_count() * 4
-        ) as executor, SupervisionSet.open_writer(sups_path) as writer:
+        with (
+            ThreadPoolExecutor(os.cpu_count() * 4) as executor,
+            SupervisionSet.open_writer(sups_path) as writer,
+        ):
             with tqdm(
                 total=len(create_supervisions_input), desc="Create supervisions"
             ) as pbar:

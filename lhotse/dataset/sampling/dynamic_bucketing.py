@@ -2,6 +2,7 @@ import random
 import threading
 import time
 import warnings
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from itertools import islice
 from queue import Queue
@@ -230,7 +231,8 @@ class DynamicBucketingSampler(CutSampler):
         # incorrectly look like an exhausted iterator.
         bucketer = getattr(self, "_bucketer", None)
         if (
-            bucketer is not None
+            not getattr(self, "_needs_fast_forward", False)
+            and bucketer is not None
             and self.rng is not None
             and getattr(bucketer, "_selection_state", None) is not None
         ):
@@ -255,9 +257,21 @@ class DynamicBucketingSampler(CutSampler):
         if "rng_state" not in sd and "bucketer_state" not in sd:
             pending_rng_state = getattr(self, "_rng_state", None)
             pending_bucketer_state = getattr(self, "_bucketer_state", None)
+            # iter(sampler) prepares the restored bucketer lazily. Its saved
+            # buffers remain authoritative until the first batch is requested.
+            if (
+                not getattr(self, "_needs_fast_forward", False)
+                and getattr(bucketer, "_saved_state", None) is not None
+            ):
+                from lhotse.checkpoint import _rng_state_from_json
+
+                pending_bucketer_state = bucketer._saved_state
+                pending_rng_state = _rng_state_from_json(
+                    pending_bucketer_state["rng_state"]
+                )
             if pending_rng_state is not None and pending_bucketer_state is not None:
                 sd["rng_state"] = pending_rng_state
-                sd["bucketer_state"] = dict(pending_bucketer_state)
+                sd["bucketer_state"] = deepcopy(pending_bucketer_state)
                 tokens = pending_bucketer_state["bucket_tokens"]
                 if self.compact_state and not isinstance(tokens, bytes):
                     from lhotse.dataset.sampling.token_codec import pack_bucket_tokens

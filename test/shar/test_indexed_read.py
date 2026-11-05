@@ -1,6 +1,7 @@
 """
 Tests for indexed Shar reader/writer integration (Phase 4).
 """
+
 from pathlib import Path
 
 # Reuse the standard shar test fixture which specifies all fields

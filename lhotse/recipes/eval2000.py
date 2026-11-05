@@ -1,14 +1,14 @@
 """
- About the eval2000 corpus
-     2000 HUB5 English Evaluation was developed by the Linguistic Data Consortium (LDC) and
-     consists of approximately 11 hours of English conversational telephone speech used in the
-     2000 HUB5 evaluation sponsored by NIST (National Institute of Standards and Technology).
-     The source data consists of conversational telephone speech collected by LDC:
-     (1) 20 unreleased telephone conversations from the Swtichboard studies in which recruited
-      speakers were connected through a robot operator to carry on casual conversations about a
-      daily topic announced by the robot operator at the start of the call; and
-     (2) 20 telephone conversations from CALLHOME American English Speech which consists of
-      unscripted telephone conversations between native English speakers.
+About the eval2000 corpus
+    2000 HUB5 English Evaluation was developed by the Linguistic Data Consortium (LDC) and
+    consists of approximately 11 hours of English conversational telephone speech used in the
+    2000 HUB5 evaluation sponsored by NIST (National Institute of Standards and Technology).
+    The source data consists of conversational telephone speech collected by LDC:
+    (1) 20 unreleased telephone conversations from the Swtichboard studies in which recruited
+     speakers were connected through a robot operator to carry on casual conversations about a
+     daily topic announced by the robot operator at the start of the call; and
+    (2) 20 telephone conversations from CALLHOME American English Speech which consists of
+     unscripted telephone conversations between native English speakers.
 """
 
 import os
