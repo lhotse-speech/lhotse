@@ -20,6 +20,7 @@ Welcome to lhotse's documentation!
    kaldi.rst
    cli.rst
    api.rst
+   contributing.rst
 
 
 Indices and tables

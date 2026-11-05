@@ -13,14 +13,6 @@ on:
       - .github/workflows/uv_lock.yml
   pull_request:
     branches: [master]
-    paths:
-      - pyproject.toml
-      - uv.lock
-      - .python-version
-      - setup.py
-      - _lhotse_version.py
-      - VERSION
-      - .github/workflows/uv_lock.yml
   workflow_dispatch:
 
 permissions:
@@ -31,13 +23,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Detect dependency metadata changes
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # PR checkouts are merge commits; the first parent is the tested base.
+          changed_files=$(git diff --name-only HEAD^1 HEAD -- \
+            pyproject.toml uv.lock .python-version setup.py _lhotse_version.py \
+            VERSION .github/workflows/uv_lock.yml)
+          if [[ -n "$changed_files" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No dependency metadata changes; lockfile validation is not needed."
+          fi
       - uses: astral-sh/setup-uv@v10.3.3
+        if: steps.changes.outputs.changed == 'true'
         with:
           version-file: pyproject.toml
           enable-cache: true
           cache-dependency-glob: uv.lock
       - name: Validate the universal lockfile
         id: lock
+        if: steps.changes.outputs.changed == 'true'
         run: uv lock --check
       - name: Prepare a refreshed lockfile and patch
         id: refresh
