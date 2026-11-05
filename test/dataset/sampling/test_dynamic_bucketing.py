@@ -792,3 +792,103 @@ def test_select_bucket_includes_upper_bound_in_bin():
     )
     with pytest.raises(AssertionError):
         constraint.add(dummy_cut(0, duration=5.0))
+
+
+def _cuts_with_growing_durations():
+    # The first half of the cuts is short and the second half is long,
+    # simulating a change in the duration distribution during training.
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=100)
+    for i, c in enumerate(cuts):
+        c.duration = 1 if i < 50 else 10
+    return cuts
+
+
+def test_dynamic_bucketer_buffer_duration():
+    cuts = _cuts_with_growing_durations()
+
+    bucketer = DynamicBucketer(
+        cuts,
+        duration_bins=[5],
+        max_duration=20,
+        buffer_duration=40,
+        rng=random.Random(0),
+        bucket_rng=random.Random(0),
+        world_size=1,
+    )
+
+    batches = []
+    for batch in bucketer:
+        batches.append(batch)
+        buffered = [c for b in bucketer.buckets for c in b.queue]
+        buffered_duration = sum(c.duration for c in buffered)
+        # The tracked duration matches the actual buffer contents.
+        assert bucketer._buffered_duration == pytest.approx(buffered_duration)
+        # The buffer is filled up to 'buffer_duration' (unless the data is exhausted),
+        # overshooting by less than one cut.
+        if len(batches) * 20 + 40 <= sum(c.duration for c in cuts):
+            assert 40 <= buffered_duration < 40 + 10
+        # The buffer holds many short cuts or few long cuts.
+        assert len(buffered) <= 40
+
+    sampled_cuts = [c for b in batches for c in b]
+    assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts) == len(cuts)
+
+
+@pytest.mark.parametrize("concurrent", [False, True])
+def test_dynamic_bucketing_sampler_buffer_duration(concurrent):
+    cuts = _cuts_with_growing_durations()
+
+    sampler = DynamicBucketingSampler(
+        cuts,
+        max_duration=20,
+        duration_bins=[5],
+        buffer_duration=40,
+        seed=0,
+        concurrent=concurrent,
+    )
+    batches = [b for b in sampler]
+    sampled_cuts = [c for b in batches for c in b]
+
+    # Invariant: no duplicated cut IDs, and every cut was sampled.
+    assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts) == len(cuts)
+    # Invariant: the batches satisfy the constraint.
+    assert all(sum(c.duration for c in b) <= 20 for b in batches)
+
+
+def test_dynamic_bucketing_sampler_buffer_duration_cut_pairs():
+    cuts = _cuts_with_growing_durations()
+
+    sampler = DynamicBucketingSampler(
+        cuts, cuts, max_duration=20, duration_bins=[5], buffer_duration=40, seed=0
+    )
+    batches = [b for b in sampler]
+    sampled_cuts = [c for src_b, _ in batches for c in src_b]
+
+    assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts) == len(cuts)
+    for src_b, tgt_b in batches:
+        assert list(src_b.ids) == list(tgt_b.ids)
+
+
+def test_dynamic_bucketing_sampler_buffer_duration_state_dict():
+    cuts = _cuts_with_growing_durations()
+
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=20, duration_bins=[5], buffer_duration=40, seed=0
+    )
+    sd = sampler.state_dict()
+    assert sd["buffer_duration"] == 40
+
+    restored = DynamicBucketingSampler(cuts, max_duration=20, duration_bins=[5])
+    restored.load_state_dict(sd)
+    assert restored.buffer_duration == 40
+
+
+def test_dynamic_bucketer_buffer_duration_must_be_positive():
+    with pytest.raises(AssertionError):
+        DynamicBucketer(
+            DummyManifest(CutSet, begin_id=0, end_id=10),
+            duration_bins=[5],
+            max_duration=20,
+            buffer_duration=0,
+            world_size=1,
+        )
