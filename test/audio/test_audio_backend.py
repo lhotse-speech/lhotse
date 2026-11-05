@@ -1,9 +1,11 @@
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 import lhotse
+from lhotse import Recording
 from lhotse.audio import AudioLoadingError
 from lhotse.audio.backend import (
     CompositeAudioBackend,
@@ -267,3 +269,18 @@ def test_torchcodec_save_and_load(tmp_path, format):
 def test_torchcodec_audio_backend_contextmanager():
     with lhotse.audio_backend("TorchcodecBackend") as b:
         assert isinstance(b, TorchcodecBackend)
+
+
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+def test_video_file_falls_back_when_torchaudio_has_no_ffmpeg(monkeypatch):
+    # torchaudio>=2.9 is importable but no longer provides torchaudio.io
+    monkeypatch.setattr(lhotse.audio.backend, "is_torchaudio_available", lambda: True)
+    monkeypatch.setattr(
+        lhotse.audio.backend, "torchaudio_ffmpeg_backend_available", lambda: False
+    )
+    path = Path("test/fixtures/big_buck_bunny_small.mp4")
+    with lhotse.audio_backend("default"):
+        recording = Recording.from_file(path)
+        audio = recording.load_audio()
+    assert audio.shape == (6, recording.num_samples)
+    assert not TorchaudioFFMPEGBackend().handles_special_case(path)

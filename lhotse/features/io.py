@@ -6,7 +6,7 @@ from functools import lru_cache
 from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
-from typing import Generator, List, NamedTuple, Optional, Type, Union
+from typing import Dict, Generator, List, NamedTuple, Optional, Type, Union
 
 import numpy as np
 
@@ -322,7 +322,7 @@ def get_reader(name: str) -> Type[FeaturesReader]:
         reader_type = get_reader("lilcom_files")
         reader = reader_type("/storage/features/")
     """
-    return READER_BACKENDS.get(name)
+    return _get_backend(READER_BACKENDS, name)
 
 
 def get_writer(name: str) -> Type[FeaturesWriter]:
@@ -334,7 +334,17 @@ def get_writer(name: str) -> Type[FeaturesWriter]:
         writer_type = get_writer("lilcom_files")
         writer = writer_type("/storage/features/")
     """
-    return WRITER_BACKENDS.get(name)
+    return _get_backend(WRITER_BACKENDS, name)
+
+
+def _get_backend(backends: Dict[str, type], name: str) -> type:
+    try:
+        return backends[name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown features storage type: {name!r}. "
+            f"Available storage types: {', '.join(sorted(backends))}."
+        ) from None
 
 
 class FileIO:
