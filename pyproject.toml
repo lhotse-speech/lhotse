@@ -72,7 +72,8 @@ tests = [
     "pytest-forked>=1.7.5",
     "pytest-xdist",
     "pytest-cov",
-    "coverage",
+    # Coverage 7.10 adds the os._exit() patch needed with pytest-forked.
+    "coverage>=7.10",
     "hypothesis>=6.168.5",
     "black>=26.10.1",
     "isort>=9.0.2",
@@ -153,3 +154,8 @@ force-exclude = '''
   | \.github
 )/
 '''
+
+[tool.coverage.run]
+source = ["lhotse"]
+# pytest-forked ends each test process with os._exit(); save its coverage first.
+patch = ["_exit"]

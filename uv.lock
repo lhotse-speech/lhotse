@@ -3194,7 +3194,7 @@ requires-dist = [
     { name = "audioread", specifier = ">=2.1.9" },
     { name = "black", marker = "extra == 'tests'", specifier = ">=26.10.1" },
     { name = "click", specifier = ">=7.1.1" },
-    { name = "coverage", marker = "extra == 'tests'" },
+    { name = "coverage", marker = "extra == 'tests'", specifier = ">=7.10" },
     { name = "cytoolz", specifier = ">=0.10.1" },
     { name = "dill", marker = "python_full_version >= '3.15' and extra == 'dill'", git = "https://github.com/uqfoundation/dill.git?rev=37d2bf717ac7ac110f06be5210f989847959c2cd" },
     { name = "dill", marker = "python_full_version < '3.15' and extra == 'dill'" },
