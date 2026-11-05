@@ -1161,9 +1161,12 @@ def torchcodec_load(
     sample_rate = decoder.metadata.sample_rate
 
     if offset > 0 or duration is not None:
-        stop_seconds = (offset + duration) if duration is not None else None
+        # Decoded timestamps do not always start at 0 (e.g. MP3 encoder delay,
+        # MPEG-TS streams). Like get_all_samples(), count from the first sample.
+        begin = max(0.0, decoder.metadata.begin_stream_seconds_from_header or 0.0)
+        stop_seconds = (begin + offset + duration) if duration is not None else None
         samples = decoder.get_samples_played_in_range(
-            start_seconds=offset,
+            start_seconds=begin + offset,
             stop_seconds=stop_seconds,
         )
     else:

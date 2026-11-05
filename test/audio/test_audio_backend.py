@@ -243,6 +243,20 @@ def test_torchcodec_read_with_offset_duration(path, offset, duration):
         assert abs(audio.shape[1] - expected_samples) <= 1
 
 
+@pytest.mark.skipif(not is_torchcodec_available(), reason="Requires torchcodec")
+@pytest.mark.parametrize("offset", [0.0, 0.3])
+def test_torchcodec_read_mp3_with_offset_matches_full_read(offset):
+    # The first decoded sample of this MP3 is timestamped 0.138 s (encoder delay).
+    backend = TorchcodecBackend()
+    full, sr = backend.read_audio("test/fixtures/stereo.mp3")
+    audio, _ = backend.read_audio(
+        "test/fixtures/stereo.mp3", offset=offset, duration=0.5
+    )
+    start = round(offset * sr)
+    assert audio.shape == (2, round(0.5 * sr))
+    np.testing.assert_array_equal(audio, full[:, start : start + audio.shape[1]])
+
+
 def test_torchcodec_not_applicable_for_sph():
     backend = TorchcodecBackend()
     assert not backend.is_applicable("test/fixtures/stereo.sph")
