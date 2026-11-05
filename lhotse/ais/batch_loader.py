@@ -726,8 +726,6 @@ class AISBatchLoader:
 
         Returns True iff the pointer was successfully scheduled (either path).
         """
-        from aistore.sdk.utils import parse_url
-
         from lhotse.shar.lazy_pointer import (
             decode_pointer_with_name,
             resolve_pointer_path,
@@ -738,6 +736,9 @@ class AISBatchLoader:
             return False
         if not is_valid_url(tar_path):
             return False
+
+        from aistore.sdk.utils import parse_url
+
         provider, bck_name, obj_name = parse_url(tar_path)
         if not (provider and bck_name and obj_name):
             return False

@@ -4,6 +4,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from test.markers import requires_sph2pipe
 from unittest.mock import Mock
 
 import numpy as np
@@ -40,7 +41,7 @@ def test_recording_import_without_decimal_extension():
         "test/fixtures/libri/libri-1088-134315-0000.wav",
         "test/fixtures/mono_c0.opus",
         "test/fixtures/stereo.opus",
-        "test/fixtures/stereo.sph",
+        pytest.param("test/fixtures/stereo.sph", marks=requires_sph2pipe),
         "test/fixtures/common_voice_en_651325.mp3",
     ],
 )

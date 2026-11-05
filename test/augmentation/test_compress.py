@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import soundfile as sf
-from scipy import signal
 
 from lhotse import AudioSource, Recording
 from lhotse.augmentation import Compress
@@ -18,7 +17,8 @@ def mono_square_wave(sampling_rate: int = 48000) -> np.array:
     """
     duration = 1.0  # seconds
     t = np.linspace(0, duration, int(sampling_rate * duration), endpoint=False)
-    return 0.1 * signal.square(2 * np.pi * 100 * t)  # 100Hz square wave at -20dB
+    phase = np.mod(2 * np.pi * 100 * t, 2 * np.pi)
+    return 0.1 * np.where(phase < np.pi, 1.0, -1.0)  # 100Hz square wave at -20dB
 
 
 def create_recording_from_audio(
