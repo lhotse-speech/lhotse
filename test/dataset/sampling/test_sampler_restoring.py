@@ -306,6 +306,9 @@ class DummyDataset(torch.utils.data.Dataset):
         lambda: DynamicBucketingSampler(
             CUTS, max_duration=10.0, shuffle=True, drop_last=True
         ),
+        lambda: DynamicBucketingSampler(
+            CUTS, max_duration=10.0, shuffle=True, drop_last=True, buffer_duration=50.0
+        ),
     ],
 )
 @pytest.mark.parametrize("num_workers", [0, 1])
