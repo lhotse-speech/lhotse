@@ -1121,8 +1121,22 @@ def is_torchaudio_available() -> bool:
     return is_module_available("torchaudio")
 
 
+@functools.lru_cache(maxsize=1)
 def is_torchcodec_available() -> bool:
-    return is_module_available("torchcodec")
+    """
+    Returns ``True`` when torchcodec 0.10 or later is installed.
+    Older versions are treated as unavailable, so Lhotse falls back to other backends.
+    """
+    if not is_module_available("torchcodec"):
+        return False
+    from importlib.metadata import PackageNotFoundError, version
+
+    from packaging.version import Version
+
+    try:
+        return Version(version("torchcodec")).release >= (0, 10)
+    except PackageNotFoundError:
+        return False
 
 
 def build_rng(seed: Union[int, Literal["trng"]]) -> random.Random:

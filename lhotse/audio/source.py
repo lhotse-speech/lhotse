@@ -12,7 +12,11 @@ import numpy as np
 import soundfile as sf
 import torch
 
-from lhotse.audio.backend import read_audio
+from lhotse.audio.backend import (
+    read_audio,
+    torchaudio_ffmpeg_backend_available,
+    torchcodec_load_video,
+)
 from lhotse.audio.utils import (
     DurationMismatchError,
     VideoInfo,
@@ -21,7 +25,14 @@ from lhotse.audio.utils import (
 )
 from lhotse.caching import AudioCache
 from lhotse.serialization import open_best
-from lhotse.utils import Pathlike, Seconds, asdict_nonull, compute_num_samples, fastcopy
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    asdict_nonull,
+    compute_num_samples,
+    fastcopy,
+    is_torchcodec_available,
+)
 
 PathOrFilelike = Union[str, BytesIO, FileIO]
 
@@ -160,9 +171,23 @@ class AudioSource:
         duration: Optional[Seconds] = None,
         with_audio: bool = True,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        import torchaudio
-
         try:
+            if is_torchcodec_available():
+                return torchcodec_load_video(
+                    self.source,
+                    offset=offset,
+                    duration=duration,
+                    with_audio=with_audio,
+                    width=self.video.width,
+                    height=self.video.height,
+                )
+
+            if not torchaudio_ffmpeg_backend_available():
+                raise ImportError(
+                    "Reading video requires torchcodec>=0.10 (pip install -U torchcodec) "
+                    "or torchaudio<2.9 with FFmpeg."
+                )
+            import torchaudio
 
             # Open the video file for reading.
             stream = torchaudio.io.StreamReader(self.source)

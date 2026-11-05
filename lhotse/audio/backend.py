@@ -25,6 +25,7 @@ from lhotse.utils import (
     Pathlike,
     Seconds,
     compute_num_samples,
+    ifnone,
     is_torchaudio_available,
     is_torchcodec_available,
 )
@@ -343,8 +344,10 @@ class FfmpegTorchaudioStreamerBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # Prefer torchcodec for in-memory data when it's available.
         return (
-            is_torchaudio_available()
+            not is_torchcodec_available()
+            and is_torchaudio_available()
             and torchaudio_supports_ffmpeg()
             and isinstance(path_or_fd, BytesIO)
         )
@@ -457,10 +460,11 @@ class TorchaudioFFMPEGBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        # The only backend to support video.
+        # Read video files only when torchcodec is unavailable.
         is_fileobj = not isinstance(path_or_fd, Path)
         return (
-            self.is_applicable(path_or_fd)
+            not is_torchcodec_available()
+            and self.is_applicable(path_or_fd)
             and not is_fileobj
             and any(str(path_or_fd).endswith(ext) for ext in SUPPORTED_VIDEO_EXTENSIONS)
         )
@@ -590,7 +594,7 @@ class LibsndfileBackend(AudioBackend):
 
 class TorchcodecBackend(AudioBackend):
     """
-    A backend that uses torchcodec (>= 0.5), a PyTorch-native audio decoder/encoder
+    A backend that uses torchcodec (>= 0.10), a PyTorch-native audio decoder/encoder
     built on FFmpeg. Supports reading and saving most audio formats.
     """
 
@@ -605,6 +609,14 @@ class TorchcodecBackend(AudioBackend):
             path_or_fd=path_or_fd,
             offset=offset,
             duration=duration,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # Torchcodec is preferred over torchaudio for video files.
+        return (
+            isinstance(path_or_fd, Path)
+            and str(path_or_fd).endswith(SUPPORTED_VIDEO_EXTENSIONS)
+            and self.is_applicable(path_or_fd)
         )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
@@ -1125,7 +1137,23 @@ def torchcodec_info(
 
         path_or_fd = TarAsDirBackend().open(path_or_fd)
 
-    decoder = AudioDecoder(path_or_fd)
+    video = None
+    if isinstance(path_or_fd, str) and path_or_fd.endswith(SUPPORTED_VIDEO_EXTENSIONS):
+        video = torchcodec_video_info(path_or_fd)
+
+    try:
+        decoder = AudioDecoder(path_or_fd)
+    except ValueError:
+        # torchcodec raises ValueError when the file has no audio stream.
+        if video is None:
+            raise
+        return LibsndfileCompatibleAudioInfo(
+            channels=0,
+            frames=0,
+            samplerate=0,
+            duration=video.duration,
+            video=video,
+        )
     metadata = decoder.metadata
     sample_rate = metadata.sample_rate
     num_channels = metadata.num_channels
@@ -1137,6 +1165,28 @@ def torchcodec_info(
         frames=num_frames,
         samplerate=int(sample_rate),
         duration=duration,
+        video=video,
+    )
+
+
+def torchcodec_video_info(path: str) -> Optional[VideoInfo]:
+    """
+    Return the video stream metadata, or ``None`` if the file has no video stream
+    (e.g. an audio-only ``.m4a`` file).
+    """
+    from torchcodec.decoders import VideoDecoder
+
+    try:
+        decoder = VideoDecoder(path)
+    except ValueError:
+        # torchcodec raises ValueError when the file has no video stream.
+        return None
+    metadata = decoder.metadata
+    return VideoInfo(
+        fps=float(metadata.average_fps),
+        num_frames=len(decoder),
+        height=metadata.height,
+        width=metadata.width,
     )
 
 
@@ -1178,6 +1228,54 @@ def torchcodec_load(
 
     audio = samples.data.numpy()
     return audio, int(sample_rate)
+
+
+def torchcodec_load_video(
+    source: Union[Pathlike, bytes],
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    with_audio: bool = True,
+    width: Optional[int] = None,
+    height: Optional[int] = None,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    """
+    Read video frames with shape ``(T, C, H, W)`` and dtype ``uint8``, and optionally
+    the audio samples played alongside them with shape ``(C, T)``.
+    Audio is ``None`` when it's not requested or the file has no audio stream.
+    Frames are rescaled when ``width`` or ``height`` differ from the stored resolution.
+    """
+    from torchcodec.decoders import AudioDecoder, VideoDecoder
+
+    if isinstance(source, Path):
+        source = str(source)
+
+    decoder = VideoDecoder(source)
+    metadata = decoder.metadata
+    size = (ifnone(height, metadata.height), ifnone(width, metadata.width))
+    if size != (metadata.height, metadata.width):
+        from torchcodec.transforms import Resize
+
+        decoder = VideoDecoder(source, transforms=[Resize(size)])
+
+    fps = metadata.average_fps
+    num_frames = len(decoder)
+    start = min(compute_num_samples(offset, fps), num_frames)
+    stop = num_frames
+    if duration is not None:
+        stop = min(start + compute_num_samples(duration, fps), num_frames)
+    video = decoder.get_frames_in_range(start=start, stop=stop).data
+
+    if not with_audio:
+        return video, None
+    try:
+        AudioDecoder(source)
+    except ValueError:
+        # torchcodec raises ValueError when the file has no audio stream.
+        return video, None
+    audio, _ = torchcodec_load(
+        source, offset=start / fps, duration=(stop - start) / fps
+    )
+    return video, torch.from_numpy(audio)
 
 
 def torchaudio_2_ffmpeg_load(

@@ -50,7 +50,7 @@ and data requirements:
 * `Lhotse Shar: storage format optimized for sequential I/O and modularity <https://github.com/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb>`_ |tutorial04|
 
 * `Image and Video Support in Lhotse <https://github.com/lhotse-speech/lhotse/blob/master/examples/05-image-and-video-loading.ipynb>`_ |tutorial05|
-  (video requires matching PyTorch/TorchAudio 2.8 versions and FFmpeg).
+  (video requires TorchCodec 0.10 or later and FFmpeg).
 
 * `AIStore batch loading <https://github.com/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb>`_ |tutorial06|
   (requires an AIStore endpoint; uploads 100 training and 20 development recordings
@@ -231,7 +231,7 @@ in the source installation::
 
 * ``python -m pip install "lhotse[lilcom]"`` to enable lilcom-compressed feature and array storage backends. If storage efficiency is important, ``lilcom_chunky`` is the preferred feature-storage backend once this dependency is installed.
 
-* ``torchcodec`` (>= 0.9, requires torch >= 2.9) is supported as an audio backend when detected. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``python -m pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain.
+* ``torchcodec`` (>= 0.10) is supported as an audio and video backend when detected; older versions are ignored. It is a PyTorch-native audio decoder built on FFmpeg. Install it via ``python -m pip install torchcodec``. When installed, it takes precedence over torchaudio in the default backend chain. Without it, Lhotse can still read video with torchaudio < 2.9 and FFmpeg.
 
 * ``torchaudio`` used to be a core dependency in Lhotse, but is now optional. Refer to official PyTorch documentation for installation at `official Pytorch documentation for installation`_.
 
