@@ -284,10 +284,18 @@ class MonoCut(DataCut):
             It will be called roughly like:
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
+        from operator import attrgetter
+
+        return_first = merge_policy == "keep_first"
+        sups = sorted(self.supervisions, key=attrgetter("start"))
+
+        if len(sups) <= 1:
+            return self
+
         merge_func_ = partial(
             merge_items_with_delimiter,
             delimiter="#",
-            return_first=(merge_policy == "keep_first"),
+            return_first=return_first,
         )
 
         # "m" stands for merged in variable names below
@@ -298,11 +306,6 @@ class MonoCut(DataCut):
         else:
             # Merge the string representations of custom fields.
             merge_custom = lambda k, vs: merge_func_(map(str, vs))
-
-        sups = sorted(self.supervisions, key=lambda s: s.start)
-
-        if len(sups) <= 1:
-            return self
 
         # the sampling rate is arbitrary, ensures there are no float precision errors
         mstart = sups[0].start
@@ -324,6 +327,25 @@ class MonoCut(DataCut):
                 "The result is likely to be unusable if you are going to train speech "
                 f"recognition models (cut id: {self.id})."
             )
+
+        def merge_alignments(alignments):
+            missing = object()
+            first = next(alignments, missing)
+            if first is missing:
+                return reduce(add, alignments)
+            if type(first) is not list:
+                return reduce(add, alignments, first)
+
+            merged = first
+            for alignment in alignments:
+                if type(alignment) is not list:
+                    return reduce(add, alignments, add(merged, alignment))
+                # Copy on the second source to preserve single-source sharing.
+                if merged is first:
+                    merged = first + alignment
+                else:
+                    merged.extend(alignment)
+            return merged
 
         msup = SupervisionSegment(
             id=merge_func_(s.id for s in sups),
@@ -348,8 +370,7 @@ class MonoCut(DataCut):
             },
             alignment={
                 # Concatenate the lists of alignment units.
-                k: reduce(
-                    add,
+                k: merge_alignments(
                     (
                         s.alignment[k]
                         for s in sups

@@ -1,7 +1,8 @@
 import pytest
 
-from lhotse import CutSet
+from lhotse import CutSet, MonoCut
 from lhotse.cut import PaddingCut
+from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import (
     DummyManifest,
     dummy_cut,
@@ -49,6 +50,50 @@ def test_mono_cut_merge_supervisions(merge_policy):
         assert s.speaker == "irrelevant"
         assert s.gender == "irrelevant"
         assert s.custom["custom_field"] == "irrelevant"
+
+
+@pytest.mark.parametrize("merge_policy", ["delimiter", "keep_first"])
+@pytest.mark.parametrize("empty_alignment_index", [None, 0, 1, 2])
+def test_mono_cut_merge_supervisions_alignments(merge_policy, empty_alignment_index):
+    word_alignments = [
+        (
+            []
+            if i == empty_alignment_index
+            else [AlignmentItem(f"word-{i}", start=i + 0.1, duration=0.2, score=0.9)]
+        )
+        for i in range(3)
+    ]
+    phone_alignment = [AlignmentItem("phone", start=1.1, duration=0.2)]
+    supervisions = [
+        dummy_supervision(
+            i,
+            start=i,
+            duration=0.5,
+            alignment={"word": alignment},
+        )
+        for i, alignment in enumerate(word_alignments)
+    ]
+    supervisions[1].alignment["phone"] = phone_alignment
+    cut = dummy_cut(
+        0,
+        duration=3,
+        supervisions=[supervisions[2], supervisions[0], supervisions[1]],
+    )
+    original = cut.to_dict()
+    expected_words = [item for alignment in word_alignments for item in alignment]
+
+    merged_cut = cut.merge_supervisions(merge_policy=merge_policy)
+
+    assert len(merged_cut.supervisions) == 1
+    merged_alignment = merged_cut.supervisions[0].alignment
+    assert merged_alignment == {"word": expected_words, "phone": phone_alignment}
+    assert all(merged_alignment["word"] is not source for source in word_alignments)
+    assert merged_alignment["phone"] is phone_alignment
+    assert cut.to_dict() == original
+    assert MonoCut.from_dict(merged_cut.to_dict()) == merged_cut
+
+    merged_alignment["word"].clear()
+    assert cut.to_dict() == original
 
 
 def test_mono_cut_merge_supervisions_identity():
