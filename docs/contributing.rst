@@ -55,10 +55,16 @@ environments use CPU PyTorch wheels; downstream training applications choose
 their own accelerator packages. Python interpreters and system libraries are
 managed separately from the package lock.
 
-The ``uv_lock`` GitHub workflow checks dependency metadata changes. A stale lock
-keeps the check failing and produces a ``uv-lock-update`` artifact containing a
-refreshed lock and patch. Review and commit the update. The workflow only needs
-read access and works for pull requests from forks.
+The ``uv_lock`` GitHub workflow reports a check on every pull request to
+``master``, so it can be required by branch protection. It validates the lock
+when dependency/build metadata or the workflow itself changes; otherwise the
+job succeeds without installing uv or running validation. Failure to inspect the
+changed files fails the job. Manual runs and matching pushes to ``master``
+always validate the lock.
+
+A stale lock keeps the check failing and produces a ``uv-lock-update`` artifact
+containing a refreshed lock and patch. Review and commit the update. The workflow
+only needs read access and works for pull requests from forks.
 
 Accelerator environments
 ------------------------
