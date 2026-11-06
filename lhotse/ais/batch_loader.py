@@ -120,7 +120,7 @@ class AISBatchLoader:
         Normalise an AIStore batch request/result entry into ``(bck, provider,
         obj_name, archpath)``.
 
-        Verified empirically against ``aistore==1.23.0`` and ``1.25.0``:
+        Verified empirically against ``aistore==1.26.0``:
           * ``Batch.requests_list`` items are ``aistore.sdk.batch.types.MossIn``
             with the original short attribute names (``bck``, ``provider``,
             ``obj_name``, ``archpath``).
@@ -184,6 +184,9 @@ class AISBatchLoader:
                     "Cannot fall back to direct GET for a request that combines "
                     f"byte range and archive extraction: {obj_name}/{archpath}"
                 )
+            # Batch.add() omits start=0; a length without a start is a prefix range.
+            if length is not None and getattr(moss_in, "start", None) is None:
+                start = 0
             if start is None or length is None:
                 raise AISBatchLoaderError(
                     f"Invalid byte-range request for {obj_name}: "
@@ -339,7 +342,7 @@ class AISBatchLoader:
         # requests_list; the normal MOSS path can still stream from batch.get(),
         # but direct-GET fallback requires this metadata.
         try:
-            saved_requests_list = list(batch.requests_list)
+            saved_requests_list = list(self._batch_requests(batch))
         except (AttributeError, TypeError):
             saved_requests_list = []
 
@@ -657,36 +660,34 @@ class AISBatchLoader:
         return False
 
     @staticmethod
-    @lru_cache(maxsize=1)
-    def _aistore_byte_range_supported() -> bool:
-        """
-        Detect whether the installed aistore SDK/cluster generation supports
-        byte-range MOSS entries.
-
-        ``aistore==1.25.0`` removed the older ``BatchRequest`` class and still
-        has ``Batch.add(..., start=, length=)`` guarded by ``NotImplementedError``.
-        The supported API is the lower-level MOSS request schema:
-        ``Batch.requests_list`` exposes ``MossReq.moss_in`` and ``MossIn``
-        serializes ``start`` / ``length`` in the GetBatch JSON body. Older SDKs
-        had partial client-side fields before server support existed, so keep a
-        conservative version gate and schema check here.
-        """
+    @lru_cache(maxsize=2)
+    def _aistore_version_at_least(minimum: tuple[int, int, int]) -> bool:
+        """Check SDK capabilities lazily, without parsing its version per entry."""
         try:
             import re
 
             import aistore
-            from aistore.sdk.batch.batch import Batch
-            from aistore.sdk.batch.types import MossIn, MossReq
         except Exception:
             return False
-
         m = re.match(r"^(\d+)\.(\d+)\.(\d+)", getattr(aistore, "__version__", ""))
-        if m is None or tuple(map(int, m.groups())) < (1, 25, 0):
+        return m is not None and tuple(map(int, m.groups())) >= minimum
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _aistore_byte_range_supported() -> bool:
+        """Detect byte-range support in the public or legacy MOSS request API."""
+        if AISBatchLoader._aistore_version_at_least((1, 26, 0)):
+            return True
+        if not AISBatchLoader._aistore_version_at_least((1, 25, 0)):
             return False
 
+        # SDK 1.25 exposes ranges in MossIn but rejects them in Batch.add().
+        # Retain its schema guard while using the legacy construction path.
         try:
-            descriptor = vars(Batch).get("requests_list")
-            if not isinstance(descriptor, property):
+            from aistore.sdk.batch.batch import Batch
+            from aistore.sdk.batch.types import MossIn, MossReq
+
+            if not isinstance(vars(Batch).get("requests_list"), property):
                 return False
             if "moss_in" not in MossReq.model_fields:
                 return False
@@ -702,7 +703,6 @@ class AISBatchLoader:
             dumped = probe.model_dump(by_alias=True, exclude_defaults=True)
         except Exception:
             return False
-
         return dumped.get("start") == 0 and dumped.get("length") == 1
 
     def _add_shar_ptr_to_batch(
@@ -718,8 +718,7 @@ class AISBatchLoader:
         Schedule a Shar lazy pointer fetch.
 
         When ``shar_ptr_uses_batch`` is True the request is added to the MOSS
-        ``Batch`` via direct ``MossIn.model_construct`` append (see
-        :meth:`_append_moss_in` for why we bypass ``Batch.add``).
+        ``Batch`` using the SDK-compatible path in :meth:`_append_moss_in`.
         Otherwise the ``(manifest_idx, bck, provider, obj_name, offset, length)``
         tuple is appended to ``shar_ptr_fallback`` so :meth:`__call__` can
         drain it via per-object byte-range gets.
@@ -777,6 +776,14 @@ class AISBatchLoader:
             batch, bck=bck_name, provider=provider, obj_name=obj_name, archpath=archpath
         )
 
+    @staticmethod
+    def _batch_requests(batch: Any) -> list[Any]:
+        """Read batch entries across SDKs, including those before requests_list."""
+        try:
+            return batch.requests_list
+        except AttributeError:
+            return batch.request.moss_in
+
     def _append_moss_in(
         self,
         batch: Any,
@@ -788,81 +795,45 @@ class AISBatchLoader:
         start: Optional[int] = None,
         length: Optional[int] = None,
     ) -> None:
-        """Append one MossIn entry to the batch request, bypassing the SDK's
-        ``Batch.add(bucket.object(obj_name), ...)`` path.
+        """Use the public string API on SDK 1.26+, retaining older SDK paths."""
+        if self._aistore_version_at_least((1, 26, 0)):
+            batch.add(
+                obj_name,
+                bck=bck,
+                provider=provider,
+                archpath=archpath,
+                start=start,
+                length=length,
+            )
+            return
 
-        Why this bypass exists
-        ----------------------
-        ``Batch.add`` builds a fresh ``Bucket`` + ``BucketDetails``
-        (Pydantic v2) + ``Object`` + ``MossIn`` (Pydantic v2 with field
-        aliases) per call. With ~45 manifests per minibatch in a Granary
-        blend, profiling (nsys 2026-05-15, NVTX scope ``ais.collect_urls``)
-        showed this loop spends **~1.58 s mean / 4.31 s max per batch on
-        pure CPU**, which is ~2/3 of the AIS GetBatch wall time and the
-        single biggest hotspot in the worker.
-
-        ``MossIn.model_construct(...)`` skips validation entirely — the
-        downstream HTTP serialization only consumes the field values.
-        Construction reduces to one dict write into ``batch.request.moss_in``,
-        which empirically drops ``ais.collect_urls`` by ~20-50×.
-
-        Risks
-        -----
-        - Skipping Pydantic validation means a future ``aistore`` SDK that
-          adds a required ``MossIn`` field will silently produce invalid
-          requests. Pinned to ``aistore<2.0`` at the call site below; the
-          unit test in ``test/test_ais_batch_loader_collect_urls.py``
-          round-trips ``model_construct`` vs the validating constructor
-          and asserts ``model_dump`` equality.
-        - ``batch.request.moss_in`` is a non-public attribute. Stable
-          through 1.20.0 → 1.25.0; bumping the SDK major version requires
-          re-verifying that the field still exists with the same shape.
-        """
-        # Local imports kept local: aistore is an optional dependency and
-        # the module top-level is intentionally aistore-free so AISBatchLoader
-        # can be constructed on hosts without the SDK installed (see
-        # :pyattr:`client` doc and ``_cuts_have_ais_data`` short-circuit).
+        # The old SDK path avoids Bucket/Object construction and preserves
+        # ranges on SDK 1.25, whose public Batch.add() rejects start/length.
         from aistore.sdk.batch.types import MossIn
 
-        # Construct kwargs sparsely so optional fields that the SDK's MossIn
-        # schema may not accept (e.g. older versions without start/length)
-        # don't surface as model_construct kwargs.
-        kwargs = {"bck": bck, "provider": provider, "obj_name": obj_name}
-        if archpath is not None:
-            kwargs["archpath"] = archpath
-        if start is not None:
-            kwargs["start"] = start
-        if length is not None:
-            kwargs["length"] = length
-
-        # Fast path. ``Batch.requests_list`` is the public property accessor
-        # for ``Batch.request.moss_in`` (the underlying ``List[MossIn]``);
-        # mutating the returned list is equivalent to mutating the field
-        # in-place. If the SDK shape ever drifts (rename, restructure), fall
-        # back to ``Batch.add(bucket.object(...))`` so we degrade in
-        # performance rather than crash. The fast path is exercised by the
-        # unit test which round-trips ``model_construct`` against the
-        # validating constructor.
+        construct = getattr(MossIn, "model_construct", None)
         try:
-            requests_list = batch.requests_list
-            if isinstance(requests_list, list):
-                requests_list.append(MossIn.model_construct(**kwargs))
-                return
-            raise AttributeError
+            requests_list = self._batch_requests(batch)
         except AttributeError:
-            pass
-        # Fallback: original aistore client path. Reaches client.bucket and
-        # bucket.object, both of which validate; this is the pre-optimization
-        # behavior preserved for forward compatibility and for tests/mocks
-        # that don't provide a real Batch.requests_list list.
-        if not hasattr(self, "_client"):
-            batch.add(obj_name, start=start, length=length, archpath=archpath)
+            requests_list = None
+        if callable(construct) and isinstance(requests_list, list):
+            kwargs = {"bck": bck, "provider": provider, "obj_name": obj_name}
+            for name, value in (
+                ("archpath", archpath),
+                ("start", start),
+                ("length", length),
+            ):
+                if value is not None:
+                    kwargs[name] = value
+            requests_list.append(construct(**kwargs))
             return
-        bucket = self.client.bucket(bck, provider)
+
+        # Older SDKs use Pydantic v1; keep their public Object-based API.
+        obj = self.client.bucket(bck_name=bck, provider=provider).object(obj_name)
         if start is not None or length is not None:
-            batch.add(bucket.object(obj_name), start=start, length=length)
+            batch.add(obj, start=start, length=length)
         else:
-            batch.add(bucket.object(obj_name), archpath=archpath)
+            batch.add(obj, archpath=archpath)
 
     def _inject_data_into_manifest(self, manifest: Any, content: bytes) -> None:
         """Replace manifest storage references with in-memory content."""
