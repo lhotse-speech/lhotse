@@ -1169,6 +1169,7 @@ class LazyShuffler(IteratorNode):
         self._buffer = deque()
         self._startup = True
         self._source_exhausted = False
+        self._exhausted_source_state = None
         self._restored = False
 
     @property
@@ -1191,6 +1192,7 @@ class LazyShuffler(IteratorNode):
         self._buffer.clear()
         self._startup = True
         self._source_exhausted = False
+        self._exhausted_source_state = None
 
     def _next_source_item(self, source_iter) -> Any:
         try:
@@ -1261,7 +1263,10 @@ class LazyShuffler(IteratorNode):
             )
         from lhotse.checkpoint import _rng_state_to_json
 
-        source_state = _try_collect_child_state(self.source)
+        if self._exhausted_source_state is not None:
+            source_state = self._exhausted_source_state
+        else:
+            source_state = _try_collect_child_state(self.source)
         return {
             "buffer": [
                 require_graph_origin(item, "LazyShuffler", "buffered items")
@@ -1282,11 +1287,15 @@ class LazyShuffler(IteratorNode):
         from lhotse.checkpoint import _rng_state_from_json
 
         self._source_exhausted = sd.get("source_exhausted", False)
-        if not self._source_exhausted:
+        if self._source_exhausted:
             # An exhausted source is never read again in the restored pass, so it would
             # never consume its one-shot restore state; the next pass would then resume
             # the source at its end and yield nothing. Like LazyIteratorMultiplexer, we
-            # only restore children that are still active.
+            # only restore children that are still active. The saved source state is kept
+            # so that state_dict() round-trips until the next pass starts.
+            self._exhausted_source_state = sd.get("source")
+        else:
+            self._exhausted_source_state = None
             _try_restore_child_state(self.source, sd.get("source"))
         self._buffer = deque(
             self.source[normalize_graph_token(token)] for token in sd.get("buffer", [])
