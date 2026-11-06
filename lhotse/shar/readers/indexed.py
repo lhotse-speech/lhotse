@@ -86,7 +86,7 @@ class LazyIndexedSharIterator(IteratorNode):
         The source is looked up in the pack by the same ``in_dir`` / ``fields``
         arguments it was packed with (see :mod:`lhotse.shar.index_pack`).
         Mutually exclusive with ``index_path`` and ``indexes_root``.
-        Shards must be local files; tar shards must be uncompressed.
+        Shards may be local files or AIStore/S3 objects. Tar shards must be uncompressed.
         Iteration order, shuffling, partitioning and ``state_dict`` are
         identical to the sidecar-based reader.
     :param index_pack_max_open_files: bound on the number of shard files kept
@@ -520,7 +520,8 @@ class LazyIndexedSharIterator(IteratorNode):
             return self.shards[shard_idx]["cuts"]
         if self.streams is not None:
             return self.streams["cuts"][shard_idx]
-        return Path(self._packed.cuts_shard_path(shard_idx))
+        path = self._packed.cuts_shard_path(shard_idx)
+        return path if is_valid_url(path) else Path(path)
 
     def __iter__(self):
         for global_idx in self._iter_state.iterate(self._total_len):

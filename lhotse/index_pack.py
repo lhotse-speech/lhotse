@@ -33,7 +33,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from lhotse.indexing import _is_gzip_jsonl, gzip_index_file_path, index_file_path
+from lhotse.indexing import (
+    _is_gzip_jsonl,
+    _open_for_indexed_read,
+    gzip_index_file_path,
+    index_file_path,
+)
 from lhotse.utils import Pathlike, is_valid_url
 
 # Keep these values stable: production packs created by the original format
@@ -1934,28 +1939,29 @@ def _read_sidecar_metadata(
         )
 
     if is_gzip:
-        if _is_remote_path(path):
-            raise ValueError(f"Gzip JSONL packs require a local source: {path}")
         gzip_index_path = Path(gzip_index_file_path(path, index_path=idx))
         try:
             gzip_index_stat = gzip_index_path.stat()
-            source_stat = Path(path).stat()
+            source_stat = None if _is_remote_path(path) else Path(path).stat()
         except FileNotFoundError as ex:
             raise FileNotFoundError(
                 f"Gzip source and .gzidx must exist for {path}"
             ) from ex
         if gzip_index_stat.st_size == 0:
             raise ValueError(f"Empty gzip seek index: {gzip_index_path}")
-        if source_stat.st_mtime_ns > min(
+        if source_stat is not None and source_stat.st_mtime_ns > min(
             index_stat.st_mtime_ns, gzip_index_stat.st_mtime_ns
         ):
             raise ValueError(f"Gzip source is newer than its indexes: {path}")
         from lhotse.indexing import _require_indexed_gzip
 
-        with _require_indexed_gzip().IndexedGzipFile(filename=path) as source:
-            with gzip_index_path.open("rb") as seek_index:
-                source.import_index(fileobj=seek_index)
-            stream_size = source.seek(0, os.SEEK_END)
+        with _open_for_indexed_read(path) as raw_source:
+            physical_size = raw_source.seek(0, os.SEEK_END)
+            raw_source.seek(0)
+            with _require_indexed_gzip().IndexedGzipFile(fileobj=raw_source) as source:
+                with gzip_index_path.open("rb") as seek_index:
+                    source.import_index(fileobj=seek_index)
+                stream_size = source.seek(0, os.SEEK_END)
         digest = hashlib.sha256()
         with gzip_index_path.open("rb") as seek_index:
             while chunk := seek_index.read(1024 * 1024):
@@ -1968,7 +1974,7 @@ def _read_sidecar_metadata(
             gzip_index_path=gzip_index_path,
             gzip_index_digest=digest.digest(),
             gzip_index_size=gzip_index_stat.st_size,
-            physical_source_size=source_stat.st_size,
+            physical_source_size=physical_size,
         )
 
     source_size = source_size_override

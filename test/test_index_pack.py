@@ -1163,3 +1163,29 @@ def test_lazy_packed_manifest_warns_when_skipping_decode_error(tmp_path):
 
     with pytest.warns(UserWarning, match="Skipping malformed packed manifest"):
         assert [item["id"] for item in source] == ["good"]
+
+
+def test_packed_range_retries_short_remote_reads(monkeypatch):
+    import io
+
+    class ShortReader(io.BytesIO):
+        def read(self, size=-1):
+            return super().read(min(size, 2))
+
+    handles = []
+
+    def open_source(path):
+        reader = ShortReader(b"abcdefgh")
+        handles.append(reader)
+        return reader
+
+    monkeypatch.setattr(packed_lazy_module, "_open_for_indexed_read", open_source)
+    cache = packed_lazy_module._PackedFileCache(max_open_files=1)
+    assert cache.read("ais://bucket/first", 1, 7) == b"bcdefg"
+    assert cache.read("ais://bucket/second", 0, 2) == b"ab"
+    assert handles[0].closed
+    assert len(cache._fds) == 1
+    with pytest.raises(EOFError, match="Short indexed read"):
+        cache.read("ais://bucket/second", 0, 10)
+    cache.close()
+    assert handles[1].closed

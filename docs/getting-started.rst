@@ -175,8 +175,18 @@ To get the shard paths without opening them, use
     fields, streams = discover_shar_fields("s3://bucket/dataset")
 
 Use ``index_path`` to store indexes in a separate directory, or ``indexes_root``
-to mirror the shard layout under another location. Index packs work with local
-shard files.
+to mirror the shard layout under another location. To combine the sidecars
+into one local index pack::
+
+    from lhotse.shar import write_shar_index_pack
+
+    write_shar_index_pack("dataset.idxpack", "ais://bucket/dataset")
+    cuts = CutSet.from_shar(
+        in_dir="ais://bucket/dataset", index_pack="dataset.idxpack"
+    )
+
+The pack stores the shard paths and offsets. Reading it fetches the requested
+ranges from the object store without listing the bucket or opening sidecars.
 
 Environment variables
 *********************

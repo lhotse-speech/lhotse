@@ -347,10 +347,8 @@ def test_inconsistent_sources_are_rejected(tmp_path, shar_dir):
     swapped = dict(mapping, features=[mapping["features"][i] for i in (2, 1, 0)])
     with pytest.raises(ValueError, match="records"):
         _pack(tmp_path, swapped)
-    # Remote and pipe sources are not addressable through a pack.
-    with pytest.raises(ValueError, match="local"):
-        _pack(tmp_path, {"cuts": ["s3://bucket/cuts.000000.jsonl"]})
-    with pytest.raises(ValueError, match="local"):
+    # Pipes do not support random access.
+    with pytest.raises(ValueError, match="seekable"):
         _pack(tmp_path, {"cuts": ["pipe:cat cuts.000000.jsonl"]})
     with pytest.raises(ValueError, match="list of shards"):
         _pack(tmp_path, {"cuts": "cuts.000000.jsonl"})

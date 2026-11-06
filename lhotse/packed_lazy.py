@@ -21,7 +21,7 @@ from json import JSONDecodeError
 from typing import Any
 
 from lhotse.index_pack import IndexPack, open_index_pack
-from lhotse.indexing import _require_indexed_gzip
+from lhotse.indexing import _open_for_indexed_read, _require_indexed_gzip
 from lhotse.lazy import (
     IteratorNode,
     attach_graph_origin,
@@ -41,13 +41,11 @@ def read_packed_range(
     max_open_files: int = 32,
 ) -> bytes:
     """
-    Read an exact local byte range through a pack-shared descriptor cache.
+    Read a byte range from a local file or an AIStore/S3 object.
 
-    All readers using the same :class:`~lhotse.index_pack.IndexPack` share one
-    process-local LRU, so ``max_open_files`` is a bound per dataset pack rather
-    than per logical collection. Remote source URLs are rejected.
-    Plain sources use ``os.pread()``; gzip JSONL sources use their seek index
-    embedded in the pack. Both require a local, seekable source file.
+    Readers of the same pack share a cache bounded by ``max_open_files``.
+    Local files use ``os.pread()``; remote objects use the indexed range reader.
+    Gzip JSONL uses the seek index stored in the pack.
     """
     cache = _file_cache_for_pack(index_pack, max_open_files)
     return cache.read(
@@ -68,8 +66,7 @@ class LazyPackedManifestIterator(IteratorNode):
     file. Constructing that graph expands every path and loads or maps every
     sidecar separately. This iterator presents the same shards as one virtual
     sequence: the pack mmap resolves a logical index to ``(path, start, end)``,
-    and only that record is read with ``pread()`` through a bounded descriptor
-    cache.
+    and only that record is read through a bounded file cache.
 
     Integer lookup addresses the virtual concatenation. A
     ``(shard_index, local_index)`` tuple addresses one record in one shard and
@@ -382,11 +379,11 @@ class LazyPackedManifestIterator(IteratorNode):
 
 class _PackedFileCache:
     """
-    Process-local least-recently-used cache of read-only file descriptors.
+    Process-local least-recently-used cache of open shard files.
 
-    The cache uses ``os.pread`` so concurrent reads do not mutate a shared file
-    position. It discards inherited descriptors after ``fork()`` and is
-    pickle-safe for data-loader workers.
+    Local files use ``os.pread``. Remote and gzip readers use a lock around
+    seeking and reading. The cache drops inherited handles after ``fork()``
+    and is pickle-safe for data-loader workers.
 
     Args:
         max_open_files:
@@ -411,35 +408,37 @@ class _PackedFileCache:
             EOFError:
                 If the underlying file returns fewer bytes than requested.
         """
-        if is_valid_url(path):
-            raise ValueError(
-                "Packed lazy reads require local source files; "
-                f"cannot use os.pread() with {path!r}"
-            )
         if start < 0 or end < start:
             raise ValueError(f"Invalid packed byte range: [{start}, {end})")
         self._ensure_process()
         handle = self._fds.pop(path, None)
         if handle is None:
-            handle = (
-                self._open_gzip(path, gzip_info, index_pack)
-                if gzip_info
-                else os.open(path, os.O_RDONLY)
-            )
+            if gzip_info:
+                handle = self._open_gzip(path, gzip_info, index_pack)
+            elif is_valid_url(path):
+                source = _open_for_indexed_read(path)
+                handle = source, source, threading.Lock()
+            else:
+                handle = os.open(path, os.O_RDONLY)
         self._fds[path] = handle
         while len(self._fds) > self.max_open_files:
             _, evicted = self._fds.popitem(last=False)
             self._close_handle(evicted)
-        if gzip_info:
+        if not isinstance(handle, int):
             reader, _, lock = handle
             with lock:
                 reader.seek(start)
-                data = reader.read(end - start)
-            if len(data) != end - start:
-                raise EOFError(
-                    f"Short indexed gzip read from {path}: requested [{start}, {end})"
-                )
-            return data
+                chunks = []
+                remaining = end - start
+                while remaining:
+                    chunk = reader.read(remaining)
+                    if not chunk:
+                        raise EOFError(
+                            f"Short indexed read from {path}: requested [{start}, {end})"
+                        )
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                return b"".join(chunks)
         chunks = []
         position = start
         while position < end:
@@ -476,16 +475,18 @@ class _PackedFileCache:
         else:
             reader, source, _ = handle
             reader.close()
-            source.close()
+            if source is not reader:
+                source.close()
 
     @staticmethod
     def _open_gzip(path: str, info, index_pack: IndexPack):
         expected_size, _, _, _ = info
-        source = open(path, "rb")
+        source = _open_for_indexed_read(path)
         reader = None
         try:
-            if os.fstat(source.fileno()).st_size != expected_size:
+            if source.seek(0, os.SEEK_END) != expected_size:
                 raise ValueError(f"Packed gzip source size changed: {path}")
+            source.seek(0)
             seek_index = index_pack.gzip_index_bytes(path)
             reader = _require_indexed_gzip().IndexedGzipFile(fileobj=source)
             reader.import_index(fileobj=io.BytesIO(seek_index))
