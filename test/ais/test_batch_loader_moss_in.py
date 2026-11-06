@@ -1,6 +1,6 @@
-"""Schema-drift guard for ``AISBatchLoader._append_moss_in``'s fast path.
+"""Schema-drift guard for ``AISBatchLoader._append_moss_in``'s legacy path.
 
-The fast path bypasses Pydantic v2 validation by calling
+The legacy path bypasses Pydantic v2 validation by calling
 ``MossIn.model_construct(...)`` directly and appending to
 ``batch.request.moss_in``. If a future ``aistore`` SDK adds a required
 field, renames one of the fields we pass, or restructures
@@ -19,6 +19,11 @@ import pytest
 aistore = pytest.importorskip("aistore")
 
 from aistore.sdk.batch.types import MossIn, MossReq
+
+pytestmark = pytest.mark.skipif(
+    not hasattr(MossIn, "model_construct"),
+    reason="The legacy bypass requires the SDK Pydantic v2 schema",
+)
 
 # ---------------------------------------------------------------------------
 # Field presence: the fast path passes specific kwargs to MossIn — assert

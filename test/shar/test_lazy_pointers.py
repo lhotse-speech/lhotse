@@ -943,7 +943,7 @@ def test_non_ais_url_pointer_retains_open_best_backend(tmp_path, monkeypatch):
 
 def test_ais_byte_range_path_when_sdk_supports_it():
     """When supported, Shar pointers are added as byte-range MOSS requests."""
-    pytest.importorskip("aistore")
+    aistore = pytest.importorskip("aistore", minversion="1.25.0")
     from lhotse import AudioSource, Recording
     from lhotse.ais.batch_loader import AISBatchLoader
 
@@ -961,15 +961,11 @@ def test_ais_byte_range_path_when_sdk_supports_it():
         duration=1.0,
     )
 
-    class FakeBatch:
-        def __init__(self):
-            self.requests_list = []
-
     with patch.object(
         AISBatchLoader, "_aistore_byte_range_supported", staticmethod(lambda: True)
     ):
         loader = AISBatchLoader.__new__(AISBatchLoader)
-        batch = FakeBatch()
+        batch = aistore.Client("http://localhost:8080").batch()
         result = loader._collect_manifest_urls(
             rec,
             batch,
@@ -1019,7 +1015,7 @@ def test_ais_individual_get_preserves_mossin_byte_range():
 
     loader = AISBatchLoader.__new__(AISBatchLoader)
     loader._client = FakeClient()
-    moss_in = MossIn.model_construct(
+    moss_in = MossIn(
         obj_name="recording.000000.tar",
         bck="b",
         provider="ais",
