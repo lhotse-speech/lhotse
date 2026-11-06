@@ -10,14 +10,22 @@ __all__ = ["notsofar1"]
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
+@click.option(
+    "--mic",
+    type=click.Choice(["ihm", "sdm", "mdm"], case_sensitive=False),
+    default="sdm",
+    help="NOTSOFAR-1 microphone setting.",
+)
 def notsofar1(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
+    mic: str,
 ):
     """NOTSOFAR-1 data preparation."""
     prepare_notsofar1(
         corpus_dir,
         output_dir=output_dir,
+        mic=mic,
     )
 
 

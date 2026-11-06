@@ -58,17 +58,6 @@ def normalize(s):
     return re.sub(r"\d+\.?\d*", conv, s)
 
 
-def write_to_json(data, filename):
-    """
-    Writes data to a JSON file.
-    :param data: The data to write.
-    :param filename: The name of the file to write to.
-    """
-
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-
 def download_reazonspeech(
     target_dir: Pathlike = ".",
     dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
@@ -138,7 +127,7 @@ def download_reazonspeech(
 
 def prepare_reazonspeech(
     corpus_dir: Pathlike,
-    output_dir: Optional[Pathlike],
+    output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
@@ -155,25 +144,23 @@ def prepare_reazonspeech(
     # Split the dataset into train, dev, and test
     with open(corpus_dir / "dataset.json", "r", encoding="utf-8") as file:
         full = json.load(file)
-        dev = full[:1000]
-        test = full[1000:1100]
-        train = full[1100:]
-
-        write_to_json(train, corpus_dir / "train.json")
-        write_to_json(dev, corpus_dir / "dev.json")
-        write_to_json(test, corpus_dir / "test.json")
+    split_items = {"dev": full[:1000], "test": full[1000:1100], "train": full[1100:]}
 
     parts = ("train", "dev", "test")
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     # Maybe some manifests already exist: we can read them and save a bit of preparation time.
-    manifests = read_manifests_if_cached(
-        dataset_parts=parts,
-        output_dir=output_dir,
-        prefix="reazonspeech",
-        suffix="jsonl.gz",
-        lazy=True,
+    manifests = (
+        read_manifests_if_cached(
+            dataset_parts=parts,
+            output_dir=output_dir,
+            prefix="reazonspeech",
+            suffix="jsonl.gz",
+            lazy=True,
+        )
+        or {}
     )
 
     for part in parts:
@@ -184,21 +171,9 @@ def prepare_reazonspeech(
             logging.info(f"ReazonSpeech subset: {part} already prepared - skipping.")
             continue
 
-        filename = corpus_dir / f"{part}.json"
-        with open(filename, "r", encoding="utf-8") as file:
-            items = json.load(file)
+        items = split_items[part]
 
-        with (
-            RecordingSet.open_writer(
-                output_dir / f"reazonspeech_recordings_{part}.jsonl.gz"
-            ) as rec_writer,
-            SupervisionSet.open_writer(
-                output_dir / f"reazonspeech_supervisions_{part}.jsonl.gz"
-            ) as sup_writer,
-            CutSet.open_writer(
-                output_dir / f"reazonspeech_cuts_{part}.jsonl.gz"
-            ) as cut_writer,
-        ):
+        def utterances():
             for recording, segment in tqdm(
                 parallel_map(
                     parse_utterance,
@@ -215,15 +190,35 @@ def prepare_reazonspeech(
                 validate_recordings_and_supervisions(
                     recordings=recordings, supervisions=segments
                 )
-                # Create the cut since most users will need it anyway.
-                # There will be exactly one cut since there's exactly one recording.
-                cuts = CutSet.from_manifests(
-                    recordings=recordings, supervisions=segments
-                )
-                # Write the manifests
-                rec_writer.write(recordings[0])
-                sup_writer.write(segments[0])
-                cut_writer.write(cuts[0])
+                # There is exactly one cut since there's exactly one recording.
+                cut = recordings[0].to_cut()
+                cut.supervisions = [segments[0]]
+                yield recordings[0], segments[0], cut
+
+        if output_dir is None:
+            rec_list, sup_list, cut_list = zip(*utterances())
+            manifests[part] = {
+                "recordings": RecordingSet.from_recordings(rec_list),
+                "supervisions": SupervisionSet.from_segments(sup_list),
+                "cuts": CutSet.from_cuts(cut_list),
+            }
+            continue
+
+        with (
+            RecordingSet.open_writer(
+                output_dir / f"reazonspeech_recordings_{part}.jsonl.gz"
+            ) as rec_writer,
+            SupervisionSet.open_writer(
+                output_dir / f"reazonspeech_supervisions_{part}.jsonl.gz"
+            ) as sup_writer,
+            CutSet.open_writer(
+                output_dir / f"reazonspeech_cuts_{part}.jsonl.gz"
+            ) as cut_writer,
+        ):
+            for recording, segment, cut in utterances():
+                rec_writer.write(recording)
+                sup_writer.write(segment)
+                cut_writer.write(cut)
 
         manifests[part] = {
             "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),

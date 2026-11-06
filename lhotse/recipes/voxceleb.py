@@ -200,16 +200,18 @@ def prepare_voxceleb(
     """
     Prepare manifests for the VoxCeleb v1 and v2 corpora.
 
-    The manifests are created in a dict with three splits: train, dev and test, for each
-    of the two versions.
-    Each split contains a RecordingSet, SupervisionSet, and CutSet in a dict under keys
+    The manifests are created in a dict with two parts: ``train`` and ``test`` (see the note below).
+    Each part contains a RecordingSet, SupervisionSet, and CutSet in a dict under keys
     'recordings', 'supervisions', and 'cuts'.
 
     :param voxceleb1_root: Path to the VoxCeleb v1 dataset.
     :param voxceleb2_root: Path to the VoxCeleb v2 dataset.
-    :param output_dir: Path to the output directory.
+    :param output_dir: Path to the output directory. Can be omitted to avoid writing.
     :param num_jobs: Number of parallel jobs to run.
-    :return: A dict with standard corpus splits ("train" and "test") containing the manifests.
+    :return: A dict with standard corpus parts ("train" and "test") containing the manifests,
+        and (when VoxCeleb1 is provided) the trial lists as the cuts-only parts
+        ``"pos-trials-utt1"``, ``"pos-trials-utt2"``, ``"neg-trials-utt1"``, ``"neg-trials-utt2"``
+        (each is a dict with a single key ``"cuts"``).
 
     NOTE: We prepare the data using the Kaldi style split, i.e., the whole VoxCeleb2
     ("dev" and "test") and the training portion ("dev") of VoxCeleb1 are put into the
@@ -228,11 +230,11 @@ def prepare_voxceleb(
 
     NOTE: If VoxCeleb1 is provided, we also prepare the trials file using the list provided
     in http://www.openslr.org/resources/49/voxceleb1_test_v2.txt. This file is used in the
-    Kaldi recipes for VoxCeleb speaker verification. This is prepared as 2 tuples of the form
-    (CutSet, CutSet) with identical id's, one for each of positive pairs and negative pairs.
-    These are stored in the dict under keys 'pos_trials' and 'neg_trials', respectively.
+    Kaldi recipes for VoxCeleb speaker verification. This is prepared as 2 pairs of CutSets
+    with identical id's, one pair for positive and one for negative trials; the first and the second
+    utterance of each trial are in the parts ``{pos,neg}-trials-utt1`` and ``{pos,neg}-trials-utt2``.
     For evaluation purpose, the :class:`lhotse.dataset.sampling.CutPairsSampler`
-    can be used to sample from this tuple.
+    can be used to sample from the corresponding pair of CutSets.
     """
     voxceleb1_root = Path(voxceleb1_root) if voxceleb1_root else None
     voxceleb2_root = Path(voxceleb2_root) if voxceleb2_root else None
@@ -246,7 +248,8 @@ def prepare_voxceleb(
     if voxceleb1_root:
         logging.info("Preparing VoxCeleb1...")
         manifests.update(_prepare_voxceleb_v1(voxceleb1_root, num_jobs))
-        manifests.update(_prepare_voxceleb_trials(manifests["test"]))
+        for part, cuts in _prepare_voxceleb_trials(manifests["test"]).items():
+            manifests[part] = {"cuts": cuts}
     else:
         logging.info(
             "VoxCeleb1 not provided, no test split or trials file will be created..."
@@ -288,12 +291,9 @@ def prepare_voxceleb(
 
     # Write the trials cut sets to the output directory
     if output_dir is not None:
-        if "pos_trials" in manifests:
-            for i, cuts in enumerate(manifests["pos_trials"]):
-                cuts.to_file(output_dir / f"voxceleb_pos-trials_utt{i + 1}.jsonl.gz")
-        if "neg_trials" in manifests:
-            for i, cuts in enumerate(manifests["neg_trials"]):
-                cuts.to_file(output_dir / f"voxceleb_neg-trials_utt{i + 1}.jsonl.gz")
+        for part, trials in manifests.items():
+            if "recordings" not in trials:
+                trials["cuts"].to_file(output_dir / f"voxceleb_cuts_{part}.jsonl.gz")
 
     return manifests
 
@@ -347,76 +347,72 @@ def _prepare_voxceleb_v1(
 
 def _prepare_voxceleb_trials(
     manifests: Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]],
-) -> Dict[str, Tuple[CutSet, CutSet]]:
+) -> Dict[str, CutSet]:
     """
     Prepare the trials file for the VoxCeleb1 corpus.
     """
     recordings = manifests["recordings"]
     supervisions = manifests["supervisions"]
     cuts_utt1_pos, cuts_utt2_pos, cuts_utt1_neg, cuts_utt2_neg = [], [], [], []
-    resumable_download(VOXCELEB1_TRIALS_URL, filename="voxceleb_trials.txt")
-    with open("voxceleb_trials.txt", "r") as f:
-        for idx, line in enumerate(f):
-            target, utt1, utt2 = line.strip().split(" ")
-            # id10270/x6uYqmx31kE/00001.wav -> id10270-x6uYqmx31kE-00001
-            utt1 = "-".join(utt1.split(".")[0].split("/"))
-            utt2 = "-".join(utt2.split(".")[0].split("/"))
-            if utt1 not in recordings or utt2 not in recordings:
-                logging.warning(
-                    f"Trial {idx} contains unknown recording: {utt1} or {utt2}"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        trials_path = Path(tmp_dir) / "voxceleb_trials.txt"
+        resumable_download(VOXCELEB1_TRIALS_URL, filename=trials_path)
+        trial_lines = trials_path.read_text().splitlines()
+    for idx, line in enumerate(trial_lines):
+        target, utt1, utt2 = line.strip().split(" ")
+        # id10270/x6uYqmx31kE/00001.wav -> id10270-x6uYqmx31kE-00001
+        utt1 = "-".join(utt1.split(".")[0].split("/"))
+        utt2 = "-".join(utt2.split(".")[0].split("/"))
+        if utt1 not in recordings or utt2 not in recordings:
+            logging.warning(f"Trial {idx} contains unknown recording: {utt1} or {utt2}")
+            continue
+        if target == "1":
+            cuts_utt1_pos.append(
+                MonoCut(
+                    id=f"trial-{idx}",
+                    recording=recordings[utt1],
+                    start=0,
+                    duration=recordings[utt1].duration,
+                    supervisions=[supervisions[utt1]],
+                    channel=0,
                 )
-                continue
-            if target == "1":
-                cuts_utt1_pos.append(
-                    MonoCut(
-                        id=f"trial-{idx}",
-                        recording=recordings[utt1],
-                        start=0,
-                        duration=recordings[utt1].duration,
-                        supervisions=[supervisions[utt1]],
-                        channel=0,
-                    )
+            )
+            cuts_utt2_pos.append(
+                MonoCut(
+                    id=f"trial-{idx}",
+                    recording=recordings[utt2],
+                    start=0,
+                    duration=recordings[utt2].duration,
+                    supervisions=[supervisions[utt2]],
+                    channel=0,
                 )
-                cuts_utt2_pos.append(
-                    MonoCut(
-                        id=f"trial-{idx}",
-                        recording=recordings[utt2],
-                        start=0,
-                        duration=recordings[utt2].duration,
-                        supervisions=[supervisions[utt2]],
-                        channel=0,
-                    )
+            )
+        else:
+            cuts_utt1_neg.append(
+                MonoCut(
+                    id=f"trial-{idx}",
+                    recording=recordings[utt1],
+                    start=0,
+                    duration=recordings[utt1].duration,
+                    supervisions=[supervisions[utt1]],
+                    channel=0,
                 )
-            else:
-                cuts_utt1_neg.append(
-                    MonoCut(
-                        id=f"trial-{idx}",
-                        recording=recordings[utt1],
-                        start=0,
-                        duration=recordings[utt1].duration,
-                        supervisions=[supervisions[utt1]],
-                        channel=0,
-                    )
+            )
+            cuts_utt2_neg.append(
+                MonoCut(
+                    id=f"trial-{idx}",
+                    recording=recordings[utt2],
+                    start=0,
+                    duration=recordings[utt2].duration,
+                    supervisions=[supervisions[utt2]],
+                    channel=0,
                 )
-                cuts_utt2_neg.append(
-                    MonoCut(
-                        id=f"trial-{idx}",
-                        recording=recordings[utt2],
-                        start=0,
-                        duration=recordings[utt2].duration,
-                        supervisions=[supervisions[utt2]],
-                        channel=0,
-                    )
-                )
+            )
     return {
-        "pos_trials": (
-            CutSet.from_cuts(cuts_utt1_pos),
-            CutSet.from_cuts(cuts_utt2_pos),
-        ),
-        "neg_trials": (
-            CutSet.from_cuts(cuts_utt1_neg),
-            CutSet.from_cuts(cuts_utt2_neg),
-        ),
+        "pos-trials-utt1": CutSet.from_cuts(cuts_utt1_pos),
+        "pos-trials-utt2": CutSet.from_cuts(cuts_utt2_pos),
+        "neg-trials-utt1": CutSet.from_cuts(cuts_utt1_neg),
+        "neg-trials-utt2": CutSet.from_cuts(cuts_utt2_neg),
     }
 
 

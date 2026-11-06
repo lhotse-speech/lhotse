@@ -176,7 +176,7 @@ def prepare_bengaliai_speech(
         if manifests_exist(
             part=part,
             output_dir=output_dir,
-            prefix="bengaliai_speech",
+            prefix="bengaliai-speech",
             suffix="jsonl.gz",
         ):
             logging.info(
@@ -186,7 +186,7 @@ def prepare_bengaliai_speech(
                 read_manifests_if_cached(
                     dataset_parts=[part],
                     output_dir=output_dir,
-                    prefix="bengaliai_speech",
+                    prefix="bengaliai-speech",
                 )
             )
             continue
@@ -209,12 +209,12 @@ def prepare_bengaliai_speech(
         cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"bengaliai_speech_supervisions_{part}.jsonl.gz"
+                output_dir / f"bengaliai-speech_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"bengaliai_speech_recordings_{part}.jsonl.gz"
+                output_dir / f"bengaliai-speech_recordings_{part}.jsonl.gz"
             )
-            cuts_path = output_dir / f"bengaliai_speech_cuts_{part}.jsonl.gz"
+            cuts_path = output_dir / f"bengaliai-speech_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,

@@ -50,7 +50,7 @@ def prepare_cslu_kids(
     output_dir: Optional[Pathlike] = None,
     absolute_paths: Optional[bool] = True,
     normalize_text: Optional[bool] = True,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for CSLU Kids corpus. The supervision contains either the
     prompted text, or a transcription of the spontaneous speech, depending on
@@ -65,7 +65,8 @@ def prepare_cslu_kids(
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param absolute_paths: Wheter to write absolute paths to audio sources (default = False)
     :param normalize_text: remove noise tags (<bn>, <bs>) from spontaneous speech transcripts (default = True)
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict with the single part ``'all'``, whose value is a dict with the keys
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
     corpus_dir = Path(corpus_dir) if isinstance(corpus_dir, str) else corpus_dir
 
@@ -134,26 +135,21 @@ def prepare_cslu_kids(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
-    manifests = {
-        "recordings": recordings,
-        "supervisions": supervisions,
-    }
-
     cuts_path = None
     if output_dir is not None:
         logging.info("Writing manifests to JSON files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        manifests["recordings"].to_file(
-            output_dir / "cslu-kids_recordings_all.jsonl.gz"
-        )
-        manifests["supervisions"].to_file(
-            output_dir / "cslu_kids_supervisions_all.jsonl.gz"
-        )
+        recordings.to_file(output_dir / "cslu-kids_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "cslu-kids_supervisions_all.jsonl.gz")
         cuts_path = output_dir / "cslu-kids_cuts_all.jsonl.gz"
 
-    manifests["cuts"] = create_cuts_per_recording(
-        recordings, supervisions, output_path=cuts_path
-    )
-
-    return manifests
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }

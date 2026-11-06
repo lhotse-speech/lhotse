@@ -35,17 +35,18 @@ def prepare_broadcast_news(
     transcripts_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for 1997 English Broadcast News corpus.
-    We create four manifests: one with recordings, one with segments supervisions,
-    one with section supervisions, and one with cuts (one per recording, holding the
-    segment supervisions). The section supervisions can be used e.g. for topic segmentation.
+    We create four manifests: one with recordings, one with supervisions (the transcribed segments),
+    one with sections (program/topic supervisions without text), and one with cuts (one per recording,
+    holding the transcribed supervisions). The sections can be used e.g. for topic segmentation.
 
     :param audio_dir: Path to ``LDC98S71`` package.
     :param transcripts_dir: Path to ``LDC98T28`` package.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'sections', 'segments', 'cuts'}``.
+    :return: A dict with a single part ``'all'``, whose value is a dict with the keys
+        ``{'recordings', 'supervisions', 'sections', 'cuts'}``.
     """
     audio_paths = check_and_rglob(audio_dir, "*.sph")
     sgml_paths = check_and_rglob(transcripts_dir, "*.sgml")
@@ -80,17 +81,19 @@ def prepare_broadcast_news(
             output_dir / "broadcast-news_sections_all.jsonl.gz"
         )
         segment_supervisions.to_file(
-            output_dir / "broadcast-news_segments_all.jsonl.gz"
+            output_dir / "broadcast-news_supervisions_all.jsonl.gz"
         )
         cuts_path = output_dir / "broadcast-news_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recordings,
-        "sections": section_supervisions,
-        "segments": segment_supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, segment_supervisions, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recordings,
+            "supervisions": segment_supervisions,
+            "sections": section_supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, segment_supervisions, output_path=cuts_path
+            ),
+        }
     }
 
 

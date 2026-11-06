@@ -85,13 +85,16 @@ def prepare_librispeechmix(
     Prepare LibriSpeechMix manifests for multi-speaker mixtures.
 
     Args:
-        librispeech_root_path: Path to LibriSpeech manifests
+        librispeech_root_path: Path to the LibriSpeech manifests written by
+            :func:`~lhotse.recipes.librispeech.prepare_librispeech`
+            (``librispeech_cuts_<part>.jsonl.gz``).
         librispeechmix_metadata_path: Path to LibriSpeechMix metadata JSONL files
-        output_dir: Directory to save manifests
+        output_dir: Directory to save manifests (nothing is written when ``None``)
         num_jobs: Number of parallel threads used for processing (default: 1)
 
     Returns:
-        Dict with keys for each split containing CutSets
+        A dict whose key is the dataset part (e.g. ``"test-clean-2mix"``) and the value is a dict
+        with the key ``"cuts"`` holding the mixture CutSet.
     """
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -100,7 +103,7 @@ def prepare_librispeechmix(
     manifests = {}
 
     # Find all JSONL metadata files
-    metadata_files = glob.glob(f"{librispeechmix_metadata_path}/*.jsonl")
+    metadata_files = sorted(glob.glob(f"{librispeechmix_metadata_path}/*.jsonl"))
 
     # Collect all dataset parts
     dataset_parts = [Path(f).stem for f in metadata_files]
@@ -111,7 +114,7 @@ def prepare_librispeechmix(
             dataset_parts=dataset_parts,
             output_dir=output_dir,
             prefix="librispeechmix",
-            types=("cutset",),
+            types=("cuts",),
         )
 
     for metadata_file in metadata_files:
@@ -122,7 +125,7 @@ def prepare_librispeechmix(
             part=part_name,
             output_dir=output_dir,
             prefix="librispeechmix",
-            types=("cutset",),
+            types=("cuts",),
         ):
             logging.info(
                 f"LibriSpeechMix subset: {part_name} already prepared - skipping."
@@ -133,16 +136,11 @@ def prepare_librispeechmix(
 
         librispeech_cutset_path = (
             Path(librispeech_root_path)
-            / f"librispeech_cutset_{'-'.join(part_name.split('-')[:-1])}.jsonl.gz"
+            / f"librispeech_cuts_{'-'.join(part_name.split('-')[:-1])}.jsonl.gz"
         )
 
-        librispeech_cutset = CutSet.from_file(librispeech_cutset_path)
-
-        def use_recording_id(cut):
-            cut.id = cut.recording_id
-            return cut
-
-        librispeech_cutset = librispeech_cutset.map(use_recording_id).to_eager()
+        # LibriSpeech cut ID == recording ID == utterance ID.
+        librispeech_cutset = CutSet.from_file(librispeech_cutset_path).to_eager()
         # Process metadata file
         cuts = _process_librispeechmix_metadata(
             metadata_file, librispeech_cutset, num_jobs
@@ -151,11 +149,9 @@ def prepare_librispeechmix(
         cutset = CutSet.from_cuts(cuts)
 
         if output_dir is not None:
-            cutset.to_file(output_dir / f"librispeechmix_cutset_{part_name}.jsonl.gz")
+            cutset.to_file(output_dir / f"librispeechmix_cuts_{part_name}.jsonl.gz")
 
-        manifests[part_name] = {
-            "cutset": cutset,
-        }
+        manifests[part_name] = {"cuts": cutset}
 
     return manifests
 

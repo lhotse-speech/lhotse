@@ -61,7 +61,7 @@ import json
 import logging
 import os
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -139,17 +139,19 @@ def prepare_librimix(
     """
     Prepare LibriMix manifests for multi-speaker mixtures.
 
-    Args:
-        librispeech_root_path: Path to LibriSpeech manifests
-        wham_recset_root_path: Path to WHAM noise manifests
-        librimix_metadata_path: Path to LibriMix metadata
-        output_dir: Directory to save manifests
-        workdir: Working directory for temporary files
-        n_src: Number of sources to for mixing
-        num_jobs: Number of parallel threads used for processing (default: 1)
-
-    Returns:
-        Dict with keys for each split containing 'cuts' for both clean and noisy versions
+    :param librispeech_root_path: Path to the LibriSpeech manifests
+        (``librispeech_cuts_<part>.jsonl.gz``, written by :func:`lhotse.recipes.librispeech.prepare_librispeech`).
+    :param wham_recset_root_path: Path to the WHAM noise manifests (``wham_recordings_<tr|cv|tt>.jsonl.gz``).
+    :param librimix_metadata_path: Path to the LibriMix metadata.
+    :param output_dir: Optional directory to save the manifests in.
+    :param workdir: Working directory for temporary files.
+    :param n_src: Number of sources to mix.
+    :param num_jobs: Number of parallel threads used for processing.
+    :return: a dict whose keys are the parts ``train-100``, ``train-360``, ``dev``, ``test`` (mixtures of
+        utterances only) and the same names with a ``-noisy`` suffix (utterances and noise).
+        Each value is ``{"cuts": CutSet}``, since the mixtures cannot be decomposed into
+        recordings and supervisions. With ``output_dir`` set, the cuts are written to
+        ``librimix-<n_src>src_cuts_<part>.jsonl.gz`` and returned lazily.
     """
     logging.warning(
         "The original LibriMix recipe introduces a quantization error when saving audio files via soundfile, which by default uses PCM_16 format. If you need to replicate the exact quantization behavior from the original recipe, you can save and load the audio using a temporary file as shown in the docstring of this function."
@@ -162,53 +164,43 @@ def prepare_librimix(
         workdir = Path(workdir)
         workdir.mkdir(parents=True, exist_ok=True)
 
-    manifests = {}
-
-    # Collect all dataset parts
-    dataset_parts = []
+    prefix = f"librimix-{n_src}src"
 
     n_src_meta_root = Path(librimix_metadata_path) / f"Libri{n_src}Mix"
-    md_filename_list = [
+    md_filename_list = sorted(
         file
         for file in os.listdir(n_src_meta_root)
         if "info" not in file and file != ".completed"
+    )
+    # md_filename: libri2mix_train-100.csv -> part: train-100
+    parts = {md: _part_name(md) for md in md_filename_list}
+    dataset_parts = [
+        name for part in parts.values() for name in (part, f"{part}-noisy")
     ]
-    for md_filename in md_filename_list:
-        part_name = f"{md_filename.replace('.csv', '')}"
-        part_name_noisy = f"{md_filename.replace('.csv', '')}_noisy"
-        dataset_parts.extend([part_name, part_name_noisy])
 
     # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-    if output_dir is not None:
-        manifests = read_manifests_if_cached(
+    manifests = (
+        read_manifests_if_cached(
             dataset_parts=dataset_parts,
             output_dir=output_dir,
-            prefix="librimix",
-            types=("cutset",),
+            prefix=prefix,
+            types=("cuts",),
         )
+        or {}
+    )
 
     # Load WHAM recordings with speed augmentation
     wham_recsets = _load_wham_recordings(wham_recset_root_path)
 
-    n_src_meta_root = Path(librimix_metadata_path) / f"Libri{n_src}Mix"
-    md_filename_list = [
-        file
-        for file in os.listdir(n_src_meta_root)
-        if "info" not in file and file != ".completed"
-    ]
-
-    for md_filename in md_filename_list:
-        part_name = f"{md_filename.replace('.csv', '')}"
-        part_name_noisy = f"{md_filename.replace('.csv', '')}_noisy"
+    for md_filename, part_name in parts.items():
+        part_name_noisy = f"{part_name}-noisy"
 
         # Check if manifests already exist and are cached
-        if manifests_exist(
-            part=part_name, output_dir=output_dir, prefix="librimix", types=("cutset",)
-        ) and manifests_exist(
-            part=part_name_noisy,
-            output_dir=output_dir,
-            prefix="librimix",
-            types=("cutset",),
+        if all(
+            manifests_exist(
+                part=name, output_dir=output_dir, prefix=prefix, types=("cuts",)
+            )
+            for name in (part_name, part_name_noisy)
         ):
             logging.info(
                 f"LibriMix subset: {part_name} and {part_name_noisy} already prepared - skipping."
@@ -226,28 +218,29 @@ def prepare_librimix(
         )
 
         # As we need to keep MixedCuts together we cannot decompose to rec- and supsets.
-        # Process clean version
-        clean_cutset = CutSet.from_cuts(clean_cuts)
-
-        if output_dir is not None:
-            clean_cutset.to_file(output_dir / f"librimix_cutset_{part_name}.jsonl.gz")
-
-        manifests[part_name] = {
-            "cutset": clean_cutset,
-        }
-
-        noisy_cutset = CutSet.from_cuts(noisy_cuts)
-
-        if output_dir is not None:
-            noisy_cutset.to_file(
-                output_dir / f"librimix_cutset_{part_name_noisy}.jsonl.gz"
-            )
-
-        manifests[part_name_noisy] = {
-            "cutset": noisy_cutset,
-        }
+        for name, cuts in ((part_name, clean_cuts), (part_name_noisy, noisy_cuts)):
+            cutset = CutSet.from_cuts(cuts)
+            if output_dir is not None:
+                path = output_dir / f"{prefix}_cuts_{name}.jsonl.gz"
+                cutset.to_file(path)
+                cutset = CutSet.from_jsonl_lazy(path)
+            manifests[name] = {"cuts": cutset}
 
     return manifests
+
+
+def _part_name(md_filename: str) -> str:
+    """``libri2mix_train-100.csv`` -> ``train-100``"""
+    return Path(md_filename).stem.split("_", maxsplit=1)[1]
+
+
+# LibriMix split -> LibriSpeech part (as named in ``librispeech_cuts_<part>.jsonl.gz``).
+LIBRISPEECH_PARTS = {
+    "train-100": "train-clean-100",
+    "train-360": "train-clean-360",
+    "dev": "dev-clean",
+    "test": "test-clean",
+}
 
 
 def _load_wham_recordings(wham_recset_root_path: Pathlike) -> Dict[str, RecordingSet]:
@@ -416,12 +409,7 @@ def _process_metadata_file(
 
     librispeech_cutset = lhotse.load_manifest(
         Path(librispeech_root_path)
-        / md_filename.replace(f"libri{n_src}mix", "librispeech_cutset").replace(
-            ".csv", ".jsonl.gz"
-        )
-    )
-    librispeech_cutset = librispeech_cutset.modify_ids(
-        lambda c: "-".join(c.split("-")[:-1])
+        / f"librispeech_cuts_{LIBRISPEECH_PARTS[_part_name(md_filename)]}.jsonl.gz"
     )
 
     split_name = "".join(Path(md_filename).stem.split("_")[1:]).split("-")[0]
@@ -438,7 +426,7 @@ def _process_metadata_file(
             )
             for row in rows
         ]
-        for f in tqdm.tqdm(as_completed(futures), total=len(futures)):
+        for f in tqdm.tqdm(futures):
             clean_mix, noisy_mix = f.result()
             clean_cuts.append(clean_mix)
             noisy_cuts.append(noisy_mix)

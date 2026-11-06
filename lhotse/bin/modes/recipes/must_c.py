@@ -10,7 +10,9 @@ from lhotse.utils import Pathlike
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
-@click.option("--tgt-lang", type=str, help="The target language, e.g., zh, de, fr.")
+@click.option(
+    "--tgt-lang", type=str, required=True, help="The target language, e.g., zh, de, fr."
+)
 @click.option(
     "-j",
     "--num-jobs",

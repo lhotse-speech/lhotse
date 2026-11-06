@@ -494,9 +494,9 @@ def prepare_uwb_atcc(
     partial_sym: Optional[str] = "<unk>",
     unintelligble_sym: Optional[str] = "<unk>",
     unknown_sym: Optional[str] = "<unk>",
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
@@ -507,7 +507,7 @@ def prepare_uwb_atcc(
     :param partial_sym: str, partial symbol. When set to None, will output partial words
     :param unintelligble_sym: str, unintellible symbol. When set to None, will output unintelligble words
     :param unknown_sym: str, unknown symbol
-    :return: The RecordingSet, SupervisionSet, and CutSet with the keys 'recordings', 'supervisions', and 'cuts'.
+    :return: A dict with the single part 'all' mapping to a dict with the keys 'recordings', 'supervisions' and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -638,14 +638,16 @@ def prepare_uwb_atcc(
 
     cuts_path = None
     if output_dir is not None:
-        supervision_set.to_file(output_dir / "uwb_atcc_supervisions_all.jsonl.gz")
-        recording_set.to_file(output_dir / "uwb_atcc_recordings_all.jsonl.gz")
-        cuts_path = output_dir / "uwb_atcc_cuts_all.jsonl.gz"
+        supervision_set.to_file(output_dir / "uwb-atcc_supervisions_all.jsonl.gz")
+        recording_set.to_file(output_dir / "uwb-atcc_recordings_all.jsonl.gz")
+        cuts_path = output_dir / "uwb-atcc_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recording_set,
-        "supervisions": supervision_set,
-        "cuts": create_cuts_per_recording(
-            recording_set, supervision_set, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
     }

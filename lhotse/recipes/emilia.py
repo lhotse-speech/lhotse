@@ -25,14 +25,17 @@ Note that you need to apply for downloading.
 
 """
 
+import logging
 from concurrent.futures.thread import ThreadPoolExecutor
+from itertools import islice
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Iterator, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import CutSet, MonoCut
+from lhotse import CutSet, RecordingSet, SupervisionSet
 from lhotse.audio import Recording
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Pathlike
@@ -82,14 +85,39 @@ def _parse_utterance(
     return recording, segment
 
 
+def _iter_utterances(
+    data_dir: Path, num_jobs: int, chunk_size: int = 1000
+) -> Iterator[Tuple[Recording, SupervisionSegment]]:
+    """Yields (Recording, SupervisionSegment) for every utterance listed in the JSONL files of ``data_dir``."""
+
+    def lines():
+        for jsonl_file in sorted(data_dir.glob("*.jsonl")):
+            logging.info(f"Processing {jsonl_file} with {num_jobs} jobs")
+            yield from load_jsonl(jsonl_file)
+
+    items = lines()
+    with ThreadPoolExecutor(num_jobs) as ex:
+        while True:
+            chunk = list(islice(items, chunk_size))
+            if not chunk:
+                break
+            futures = [ex.submit(_parse_utterance, data_dir, item) for item in chunk]
+            for future in futures:
+                result = future.result()
+                if result is not None:
+                    yield result
+
+
 def prepare_emilia(
     corpus_dir: Pathlike,
     lang: str,
     num_jobs: int,
     output_dir: Optional[Pathlike] = None,
-) -> CutSet:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts.
+    When ``output_dir`` is given, the manifests are streamed to disk in a single pass
+    and returned lazily; otherwise, eager manifests are returned.
 
     :param corpus_dir: Pathlike, the path of the data dir.
                        We assume the directory has the following structure:
@@ -100,8 +128,10 @@ def prepare_emilia(
                        corpus_dir/raw/EN, etc.
     :param lang: str, one of en, zh, de, ko, ja, fr
     :param num_jobs: int, number of threads for processing jsonl files
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: The CutSet containing the data for the given language.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+        The files are named ``emilia-<lang>_<manifest>_all.jsonl.gz`` (e.g. ``emilia-de_cuts_all.jsonl.gz``).
+    :return: A Dict with the single part ``'all'``, whose value is a Dict with the keys
+        'recordings', 'supervisions', and 'cuts' for the given language.
     """
     if lang is None:
         raise ValueError("Please provide --lang")
@@ -118,49 +148,48 @@ def prepare_emilia(
     data_dir = corpus_dir / "raw" / lang_uppercase
     assert data_dir.is_dir(), f"No such directory: {data_dir}"
 
-    jsonl_files = data_dir.glob("*.jsonl")
+    utterances = tqdm(
+        _iter_utterances(data_dir, num_jobs), desc=f"Processing Emilia {lang_uppercase}"
+    )
 
-    cuts = []
-    futures = []
+    if output_dir is None:
+        recordings, supervisions = [], []
+        for recording, segment in utterances:
+            recordings.append(recording)
+            supervisions.append(segment)
+        recordings = RecordingSet.from_recordings(recordings)
+        supervisions = SupervisionSet.from_segments(supervisions)
+        return {
+            "all": {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(recordings, supervisions),
+            }
+        }
 
-    with ThreadPoolExecutor(num_jobs) as ex:
-        for jsonl_file in jsonl_files:
-            for item in tqdm(
-                # Note: People's Speech manifest.json is really a JSONL.
-                load_jsonl(jsonl_file),
-                desc=f"Processing {jsonl_file} with {num_jobs} jobs",
-            ):
-                futures.append(
-                    ex.submit(
-                        _parse_utterance,
-                        data_dir,
-                        item,
-                    )
-                )
-
-        for future in tqdm(futures, desc="Collecting futures"):
-            result = future.result()
-            if result is None:
-                continue
-
-            recording, segment = result
-
-            cuts.append(
-                MonoCut(
-                    id=recording.id,
-                    recording=recording,
-                    start=0,
-                    duration=recording.duration,
-                    supervisions=[segment],
-                    channel=0,
-                )
-            )
-
-    cut_set = CutSet.from_cuts(cuts)
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        cut_set.to_file(output_dir / f"emilia_cuts_{lang_uppercase}.jsonl.gz")
-
-    return cut_set
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = {
+        name: output_dir / f"emilia-{lang.lower()}_{name}_all.jsonl.gz"
+        for name in ("recordings", "supervisions", "cuts")
+    }
+    with (
+        RecordingSet.open_writer(paths["recordings"], overwrite=True) as recs_writer,
+        SupervisionSet.open_writer(
+            paths["supervisions"], overwrite=True
+        ) as sups_writer,
+        CutSet.open_writer(paths["cuts"], overwrite=True) as cuts_writer,
+    ):
+        for recording, segment in utterances:
+            recs_writer.write(recording)
+            sups_writer.write(segment)
+            cut = recording.to_cut()
+            cut.supervisions = [segment]
+            cuts_writer.write(cut)
+    return {
+        "all": {
+            "recordings": RecordingSet.from_jsonl_lazy(paths["recordings"]),
+            "supervisions": SupervisionSet.from_jsonl_lazy(paths["supervisions"]),
+            "cuts": CutSet.from_jsonl_lazy(paths["cuts"]),
+        }
+    }

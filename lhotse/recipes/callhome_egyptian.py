@@ -32,6 +32,9 @@ from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, check_and_rglob
 
+# The audio has two channels: speaker A is on channel 0 and speaker B on channel 1.
+CHANNEL_OF_SPEAKER = {"A": 0, "B": 1}
+
 
 def prepare_callhome_egyptian(
     audio_dir: Pathlike,
@@ -50,8 +53,9 @@ def prepare_callhome_egyptian(
         to avoid writing.
     :param absolute_paths: Whether to return absolute or relative (to the corpus dir)
         paths for recordings.
-    :return: A dict whose key is the dataset split, and the value is a dict with
-        the keys: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict whose key is the dataset split (``train``, ``devtest``, ``evaltest``),
+        and the value is a dict with the keys: ``{'recordings', 'supervisions', 'cuts'}``.
+        Supervisions of speaker A are assigned to channel 0 and of speaker B to channel 1.
     """
     audio_dir = Path(audio_dir)
     transcript_dir = Path(transcript_dir)
@@ -98,6 +102,7 @@ def prepare_callhome_egyptian(
                         recording_id=recording_id,
                         start=start,
                         duration=duration,
+                        channel=CHANNEL_OF_SPEAKER[spk],
                         speaker=f"{recording_id}_{spk}",
                         text=text,
                     )

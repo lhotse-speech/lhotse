@@ -369,7 +369,7 @@ def prepare_speechcommands(
         if manifests_exist(
             part=part,
             output_dir=output_dir,
-            prefix=f"speechcommands{speechcommands_version}",
+            prefix=f"speechcommands-{speechcommands_version}",
             suffix="jsonl.gz",
         ):
             logging.info(
@@ -379,7 +379,7 @@ def prepare_speechcommands(
                 read_manifests_if_cached(
                     dataset_parts=[part],
                     output_dir=output_dir,
-                    prefix=f"speechcommands{speechcommands_version}",
+                    prefix=f"speechcommands-{speechcommands_version}",
                 )
             )
             continue
@@ -405,15 +405,15 @@ def prepare_speechcommands(
         if output_dir is not None:
             supervision_set.to_file(
                 output_dir
-                / f"speechcommands{speechcommands_version}_supervisions_{part}.jsonl.gz"
+                / f"speechcommands-{speechcommands_version}_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
                 output_dir
-                / f"speechcommands{speechcommands_version}_recordings_{part}.jsonl.gz"
+                / f"speechcommands-{speechcommands_version}_recordings_{part}.jsonl.gz"
             )
             cuts_path = (
                 output_dir
-                / f"speechcommands{speechcommands_version}_cuts_{part}.jsonl.gz"
+                / f"speechcommands-{speechcommands_version}_cuts_{part}.jsonl.gz"
             )
 
         manifests[part] = {

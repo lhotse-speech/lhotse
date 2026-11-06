@@ -30,6 +30,18 @@ def prepare_bvcc(
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the BVCC (VoiceMOS 2022) manifests.
+
+    :param corpus_dir: Path to the directory with ``phase1-main`` and ``phase1-ood``.
+    :param output_dir: Optional directory where the manifests are written as
+        ``bvcc_<manifest>_<part>.jsonl.gz``.
+    :param num_jobs: Number of parallel jobs used to scan audio.
+    :return: A dict keyed by part (``main1_train``, ``main1_dev``, ``main1_test``,
+        ``ood1_train``, ``ood1_dev``, ``ood1_test``, ``ood1_unlabeled``) with the keys
+        ``recordings``, ``supervisions`` (MOS ratings, absent for the unrated
+        ``main1_test``, ``ood1_test`` and ``ood1_unlabeled``) and ``cuts``.
+    """
     corpus_dir = Path(corpus_dir)
 
     phase1_main = (corpus_dir / "phase1-main").resolve()

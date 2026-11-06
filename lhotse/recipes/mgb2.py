@@ -25,7 +25,8 @@ from pathlib import Path
 from re import match, sub
 from shutil import copy
 from string import punctuation
-from typing import Dict, Union
+from tempfile import TemporaryDirectory
+from typing import Dict, Optional, Union
 
 from lhotse import (
     CutSet,
@@ -63,7 +64,7 @@ def download_mgb2(
 
 def prepare_mgb2(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
     text_cleaning: bool = True,
     buck_walter: bool = False,
     num_jobs: int = 1,
@@ -74,16 +75,12 @@ def prepare_mgb2(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests (nothing is written when ``None``).
     :param text_cleaning: Bool, if True, basic text cleaning is performed (similar to ESPNet recipe).
     :param buck_walter: Bool, use BuckWalter transliteration
     :param num_jobs: int, the number of jobs to use for parallel processing.
     :param mer_thresh: int, filter out segments based on mer (Match Error Rate)
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
-
-    .. note::
-        Unlike other recipes, output_dir is not Optional here because we write the manifests
-        to the output directory while processing to avoid OOM issues, since it is a large dataset.
 
     .. caution::
         The `text_cleaning` option removes all punctuation and diacritics.
@@ -119,28 +116,26 @@ def prepare_mgb2(
         # duration of the recordings in a dict which will be used later to create the
         # supervisions.
 
-        output_dir = Path(output_dir)
-        corpus_dir = Path(corpus_dir)
         if part == "test" or part == "dev":
-            (output_dir / part).mkdir(parents=True, exist_ok=True)
-            copy(
-                corpus_dir / part / "text.non_overlap_speech",
-                output_dir / part / "text",
-            )
-            copy(
-                corpus_dir / part / "segments.non_overlap_speech",
-                output_dir / part / "segments",
-            )
-            with (
-                open(corpus_dir / part / "wav.scp", "r") as f_in,
-                open(output_dir / part / "wav.scp", "w") as f_out,
-            ):
-                for line in f_in:
-                    f_out.write(line.replace("wav/", f"{corpus_dir}/{part}/wav/"))
+            # Stage a Kaldi data dir with absolute audio paths in a temporary directory.
+            with TemporaryDirectory() as kaldi_dir:
+                kaldi_dir = Path(kaldi_dir)
+                copy(
+                    corpus_dir / part / "text.non_overlap_speech",
+                    kaldi_dir / "text",
+                )
+                copy(
+                    corpus_dir / part / "segments.non_overlap_speech",
+                    kaldi_dir / "segments",
+                )
+                with (
+                    open(corpus_dir / part / "wav.scp", "r") as f_in,
+                    open(kaldi_dir / "wav.scp", "w") as f_out,
+                ):
+                    for line in f_in:
+                        f_out.write(line.replace("wav/", f"{corpus_dir}/{part}/wav/"))
 
-            recordings, supervisions, _ = load_kaldi_data_dir(
-                (output_dir / part), 16000
-            )
+                recordings, supervisions, _ = load_kaldi_data_dir(kaldi_dir, 16000)
             if buck_walter is False:
                 supervisions = supervisions.transform_text(from_buck_walter)
             if part == "test":
@@ -179,17 +174,17 @@ def prepare_mgb2(
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
-        # saving recordings and supervisions
-        recordings.to_file((output_dir / f"mgb2_recordings_{part}.jsonl.gz"))
-        supervisions.to_file((output_dir / f"mgb2_supervisions_{part}.jsonl.gz"))
+        cuts_path = None
+        if output_dir is not None:
+            recordings.to_file(output_dir / f"mgb2_recordings_{part}.jsonl.gz")
+            supervisions.to_file(output_dir / f"mgb2_supervisions_{part}.jsonl.gz")
+            cuts_path = output_dir / f"mgb2_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recordings,
             "supervisions": supervisions,
             "cuts": create_cuts_per_recording(
-                recordings,
-                supervisions,
-                output_path=output_dir / f"mgb2_cuts_{part}.jsonl.gz",
+                recordings, supervisions, output_path=cuts_path
             ),
         }
     return manifests

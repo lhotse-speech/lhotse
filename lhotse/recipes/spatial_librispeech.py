@@ -172,12 +172,11 @@ def prepare_spatial_librispeech(
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Optional Pathlike, the path where to write the manifests as
+        ``spatial-librispeech_<manifest>_<part>.jsonl.gz``. When ``None``, nothing is written.
     :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train', 'test'.
-        By default we will infer which parts are available in ``corpus_dir``.
     :param normalize_text: str, "none" or "lower",
         for "lower" the transcripts are converted to lower-case.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
@@ -192,8 +191,9 @@ def prepare_spatial_librispeech(
         )
 
     corpus_dir = Path(corpus_dir)
-    output_dir = Path(output_dir) if output_dir is not None else corpus_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     if dataset_parts == "all":

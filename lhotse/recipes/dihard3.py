@@ -42,8 +42,8 @@ def prepare_dihard3(
     :param eval_audio_dir: Path to downloaded DIHARD III eval corpus (LDC2021E02), e.g.
         /data/corpora/LDC/LDC2021E02`
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :param uem_manifest: If True, also return a SupervisionSet describing the UEM segments (see use in
-        dataset.DiarizationDataset)
+    :param uem_manifest: If True, also return (and write as ``dihard3_uem_{part}.jsonl.gz``) a SupervisionSet describing
+        the UEM segments (see use in dataset.DiarizationDataset)
     :param num_jobs: int (default = 1), number of jobs to scan corpus directory for recordings
     :return: A dict whose keys are the parts ``{'dev', 'eval'}`` and the values are dicts with manifests.
         The keys are: ``{'recordings', 'supervisions', 'cuts'}`` (and ``'uem'`` if ``uem_manifest`` is True).
@@ -93,7 +93,7 @@ def prepare_dihard3(
             recordings.to_file(output_dir / f"dihard3_recordings_{part}.jsonl.gz")
             supervisions.to_file(output_dir / f"dihard3_supervisions_{part}.jsonl.gz")
             if uem_manifest:
-                uem.to_json(output_dir / f"dihard3_uem_{part}.jsonl.gz")
+                uem.to_file(output_dir / f"dihard3_uem_{part}.jsonl.gz")
             cuts_path = output_dir / f"dihard3_cuts_{part}.jsonl.gz"
         manifests[part] = {
             "recordings": recordings,
@@ -104,7 +104,7 @@ def prepare_dihard3(
         }
         if uem_manifest:
             manifests[part].update({"uem": uem})
-    return manifests
+    return dict(manifests)
 
 
 def parse_metadata(metadata_path: Pathlike) -> Dict[str, Dict[str, Union[str, bool]]]:

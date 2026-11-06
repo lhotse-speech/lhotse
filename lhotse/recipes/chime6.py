@@ -410,15 +410,16 @@ def prepare_chime6(
 
         cuts_path = None
         if output_dir is not None:
-            mic_affix = f"{mic}-ref" if use_reference_array else mic
+            corpus_name = (
+                f"chime6-{mic}-ref" if use_reference_array else f"chime6-{mic}"
+            )
             supervision_set.to_file(
-                output_dir / f"chime6-{mic_affix}_supervisions_{part}.jsonl.gz"
+                output_dir / f"{corpus_name}_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"chime6-{mic}_recordings_{part}.jsonl.gz"
+                output_dir / f"{corpus_name}_recordings_{part}.jsonl.gz"
             )
-            # Cuts hold the supervisions, so they follow the supervisions' naming.
-            cuts_path = output_dir / f"chime6-{mic_affix}_cuts_{part}.jsonl.gz"
+            cuts_path = output_dir / f"{corpus_name}_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,

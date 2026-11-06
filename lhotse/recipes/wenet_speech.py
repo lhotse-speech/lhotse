@@ -60,7 +60,7 @@ def prepare_wenet_speech(
 
     subsets = WETNET_SPEECH_PARTS if "all" in dataset_parts else dataset_parts
 
-    manifests = defaultdict(dict)
+    manifests = {}
     for sub in subsets:
         if sub not in WETNET_SPEECH_PARTS:
             raise ValueError(f"No such part of dataset in WenetSpeech : {sub}")
@@ -82,6 +82,8 @@ def prepare_wenet_speech(
             desc="Processing WenetSpeech JSON entries",
         ):
             for part in segments:
+                if not segments[part]:
+                    continue
                 manifests[part]["recordings"].append(recording)
                 manifests[part]["supervisions"].extend(segments[part])
 

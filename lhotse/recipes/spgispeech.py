@@ -25,7 +25,7 @@ ArXiv link: https://arxiv.org/abs/2104.02014
 import logging
 import string
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Iterator, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
@@ -66,9 +66,43 @@ def normalize(text: str) -> str:
     return text
 
 
+def _read_utterance(
+    utterance: Tuple[Path, str, str],
+) -> Tuple[Recording, SupervisionSegment]:
+    audio_path, recording_id, text = utterance
+    recording = Recording.from_file(audio_path, recording_id=recording_id)
+    segment = SupervisionSegment(
+        id=recording_id,
+        recording_id=recording_id,
+        text=text,
+        speaker=recording_id.split("_")[0],
+        start=0,
+        duration=recording.duration,
+        language="English",
+    )
+    return recording, segment
+
+
+def _iter_transcripts(
+    csv_path: Path, audio_dir: Path, normalize_text: bool
+) -> Iterator[Tuple[Path, str, str]]:
+    """Yields (audio path, recording ID, text) for every row of the transcripts CSV."""
+    with open(csv_path, "r") as f:
+        # Skip the header
+        next(f)
+        for line in f:
+            parts = line.strip().split("|")
+            # 07a785e9237c389c1354bb60abca42d5/1.wav -> 07a785e9237c389c1354bb60abca42d5_1
+            recording_id = parts[0].replace("/", "_").replace(".wav", "")
+            text = parts[2]
+            if normalize_text:
+                text = normalize(text)
+            yield audio_dir / parts[0], recording_id, text
+
+
 def prepare_spgispeech(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
     normalize_text: bool = True,
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
@@ -76,15 +110,15 @@ def prepare_spgispeech(
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
+    The transcripts CSV drives the preparation: every row is turned into a recording, a supervision and a cut
+    in a single pass. When ``output_dir`` is given, the manifests are streamed to disk to avoid OOM issues,
+    since it is a large dataset, and returned lazily. Otherwise, eager manifests are returned.
+
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
     :param normalize_text: Bool, if True, normalize the text (similar to ESPNet recipe).
     :param num_jobs: int, the number of jobs to use for parallel processing.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
-
-    .. note::
-        Unlike other recipes, output_dir is not Optional here because we write the manifests
-        to the output directory while processing to avoid OOM issues, since it is a large dataset.
 
     .. caution::
         The `normalize_text` option removes all punctuation and converts all upper case to lower case.
@@ -100,91 +134,72 @@ def prepare_spgispeech(
     dataset_parts = ["train", "val"]
     manifests = {}
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-    manifests = read_manifests_if_cached(
-        dataset_parts=dataset_parts,
-        output_dir=output_dir,
-        prefix="spgispeech",
-        suffix="jsonl.gz",
-        lazy=True,
-    )
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     for part in dataset_parts:
         logging.info(f"Processing SPGISpeech subset: {part}")
-        if manifests_exist(
-            part=part, output_dir=output_dir, prefix="spgispeech", suffix="jsonl.gz"
-        ):
+        if manifests_exist(part=part, output_dir=output_dir, prefix="spgispeech"):
             logging.info(f"SPGISpeech subset: {part} already prepared - skipping.")
+            manifests.update(
+                read_manifests_if_cached(
+                    dataset_parts=[part],
+                    output_dir=output_dir,
+                    prefix="spgispeech",
+                    lazy=True,
+                )
+            )
             continue
 
-        # Read the recordings and write them into manifest. We additionally store the
-        # duration of the recordings in a dict which will be used later to create the
-        # supervisions.
-        global audio_read_worker
-        durations = {}
-
-        def audio_read_worker(p: Path) -> Recording:
-            r = Recording.from_file(p, recording_id=f"{p.parent.stem}_{p.stem}")
-            return r
-
-        with RecordingSet.open_writer(
-            output_dir / f"spgispeech_recordings_{part}.jsonl.gz"
-        ) as rec_writer:
-            for recording in tqdm(
-                parallel_map(
-                    audio_read_worker,
-                    (audio_dir / part).rglob("*.wav"),
-                    num_jobs=num_jobs,
+        utterances = tqdm(
+            parallel_map(
+                _read_utterance,
+                _iter_transcripts(
+                    corpus_dir / f"{part}.csv", audio_dir / part, normalize_text
                 ),
-                desc="Processing SPGISpeech recordings",
-            ):
-                durations[recording.id] = recording.duration
-                rec_writer.write(recording)
-
-        # Read supervisions and write them to manifest
-        with (
-            SupervisionSet.open_writer(
-                output_dir / f"spgispeech_supervisions_{part}.jsonl.gz"
-            ) as sup_writer,
-            open(corpus_dir / f"{part}.csv", "r") as f,
-        ):
-            # Skip the header
-            next(f)
-            for line in tqdm(f, desc="Processing utterances"):
-                parts = line.strip().split("|")
-                # 07a785e9237c389c1354bb60abca42d5/1.wav -> 07a785e9237c389c1354bb60abca42d5_1
-                recording_id = parts[0].replace("/", "_").replace(".wav", "")
-                text = parts[2]
-                if normalize_text:
-                    text = normalize(text)
-                spkid = recording_id.split("_")[0]
-                segment = SupervisionSegment(
-                    id=recording_id,
-                    recording_id=recording_id,
-                    text=text,
-                    speaker=spkid,
-                    start=0,
-                    duration=durations[recording_id],
-                    language="English",
-                )
-                sup_writer.write(segment)
-
-        recordings = RecordingSet.from_jsonl_lazy(rec_writer.path)
-        supervisions = SupervisionSet.from_jsonl_lazy(sup_writer.path)
-        manifests[part] = {
-            "recordings": recordings,
-            "supervisions": supervisions,
-            "cuts": create_cuts_per_recording(
-                recordings,
-                supervisions,
-                output_path=output_dir / f"spgispeech_cuts_{part}.jsonl.gz",
+                num_jobs=num_jobs,
             ),
+            desc="Processing SPGISpeech utterances",
+        )
+
+        if output_dir is None:
+            recordings, supervisions = zip(*utterances)
+            manifests[part] = {
+                "recordings": RecordingSet.from_recordings(recordings),
+                "supervisions": SupervisionSet.from_segments(supervisions),
+            }
+            manifests[part]["cuts"] = create_cuts_per_recording(
+                manifests[part]["recordings"], manifests[part]["supervisions"]
+            )
+            continue
+
+        paths = {
+            name: output_dir / f"spgispeech_{name}_{part}.jsonl.gz"
+            for name in ("recordings", "supervisions", "cuts")
+        }
+        with (
+            RecordingSet.open_writer(paths["recordings"], overwrite=True) as rec_writer,
+            SupervisionSet.open_writer(
+                paths["supervisions"], overwrite=True
+            ) as sup_writer,
+            CutSet.open_writer(paths["cuts"], overwrite=True) as cut_writer,
+        ):
+            for recording, segment in utterances:
+                rec_writer.write(recording)
+                sup_writer.write(segment)
+                cut = recording.to_cut()
+                cut.supervisions = [segment]
+                cut_writer.write(cut)
+        manifests[part] = {
+            "recordings": RecordingSet.from_jsonl_lazy(paths["recordings"]),
+            "supervisions": SupervisionSet.from_jsonl_lazy(paths["supervisions"]),
+            "cuts": CutSet.from_jsonl_lazy(paths["cuts"]),
         }
 
-    logging.warning(
-        "Manifests are lazily materialized. You may want to call `lhotse.qa.fix_manifests()`"
-        " to ensure that all supervisions fall within the corresponding recordings."
-    )
+    if output_dir is not None:
+        logging.warning(
+            "Manifests are lazily materialized. You may want to call `lhotse.qa.fix_manifests()`"
+            " to ensure that all supervisions fall within the corresponding recordings."
+        )
     return manifests

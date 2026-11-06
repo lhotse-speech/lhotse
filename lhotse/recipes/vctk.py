@@ -152,15 +152,17 @@ def prepare_vctk(
     output_dir: Optional[Pathlike] = None,
     use_edinburgh_vctk_url: Optional[bool] = False,
     mic_id: Optional[str] = "mic2",
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
+    Prepares and returns the VCTK manifests which consist of Recordings, Supervisions and Cuts.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param use_edinburgh_vctk_url: Bool, if use edinburgh_vctk_url to download the dataset, please set it as True.
-    :param mic_id: str, the default of mic_id is mic2.
-    :return: a dict with the keys "recordings", "supervisions", and "cuts".
+    :param mic_id: str, the default of mic_id is mic2. With ``use_edinburgh_vctk_url``
+        it is appended to the corpus name of the written manifests (e.g. ``vctk-mic2``).
+    :return: a dict with the single part "all", mapping to a dict with the keys
+        "recordings", "supervisions", and "cuts".
 
     Note: when download the vctk dataset with the edinburgh url, there are some points should know:
         * All the speeches from speaker ``p315`` will be skipped due to the lack of the corresponding text files.
@@ -239,16 +241,19 @@ def prepare_vctk(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "vctk_recordings_all.jsonl.gz")
-        supervisions.to_file(output_dir / "vctk_supervisions_all.jsonl.gz")
-        cuts_path = output_dir / "vctk_cuts_all.jsonl.gz"
+        corpus_name = f"vctk-{mic_id}" if use_edinburgh_vctk_url else "vctk"
+        recordings.to_file(output_dir / f"{corpus_name}_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / f"{corpus_name}_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / f"{corpus_name}_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }
 
 

@@ -26,7 +26,6 @@ The dataset can be downloaded from the following address:
 import logging
 import shutil
 import tarfile
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -146,7 +145,7 @@ def prepare_yesno(
     assert len(train_set) == 30
     assert len(test_set) == 30
 
-    manifests = defaultdict(dict)
+    manifests = {}
     for name, dataset in zip(["train", "test"], [train_set, test_set]):
         recordings, supervisions = _prepare_dataset(dataset)
 

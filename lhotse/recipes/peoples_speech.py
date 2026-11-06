@@ -12,17 +12,21 @@ Full paper: https://openreview.net/pdf?id=R8CwidgJ0yT
 """
 
 import logging
-from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
+from itertools import islice
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterator, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.cut import CutSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import create_cuts_per_recording, manifests_exist
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, compute_num_samples
@@ -63,71 +67,57 @@ def _parse_utterance(
     return recording, segment
 
 
-def _prepare_subset(
+def _iter_subset(
     subset: str,
     corpus_dir: Pathlike,
     num_jobs: int = 1,
-) -> Tuple[RecordingSet, SupervisionSet]:
+    chunk_size: int = 1000,
+) -> Iterator[Tuple[Recording, SupervisionSegment]]:
     """
-    Returns the RecodingSet and SupervisionSet given a dataset part.
-    :param subset: str, the name of the subset.
+    Yields the (Recording, SupervisionSegment) pairs of a dataset part,
+    reading the audio headers in chunks to keep the memory usage bounded.
+    :param subset: str, the name of the subset, e.g. ``"train/clean"``.
     :param corpus_dir: Pathlike, the path of the data dir.
-    :return: the RecodingSet and SupervisionSet for train and valid.
     """
     corpus_dir = Path(corpus_dir)
     part_dir = corpus_dir / subset.split("/")[0]
     part_name = subset.split("/")[1]
     audio_dir = corpus_dir / subset
 
-    with ThreadPoolExecutor(num_jobs) as ex:
-        futures = []
-        recordings = []
-        supervisions = []
-        for item in tqdm(
-            # Note: People's Speech manifest.json is really a JSONL.
-            load_jsonl(part_dir / f"{part_name}.json"),
-            desc="Distributing tasks",
-        ):
+    def utterances():
+        # Note: People's Speech manifest.json is really a JSONL.
+        for item in load_jsonl(part_dir / f"{part_name}.json"):
             for _, text, audio_path in zip(*item["training_data"].values()):
-                futures.append(
-                    ex.submit(
-                        _parse_utterance,
-                        audio_dir,
-                        text,
-                        audio_path,
-                        item["identifier"],
-                    )
-                )
+                yield audio_dir, text, audio_path, item["identifier"]
 
-        for future in tqdm(futures, desc="Processing"):
-            result = future.result()
-            recording, segment = result
-            recordings.append(recording)
-            supervisions.append(segment)
-
-        recording_set = RecordingSet.from_recordings(recordings)
-        supervision_set = SupervisionSet.from_segments(supervisions)
-
-        recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
-        validate_recordings_and_supervisions(
-            recordings=recording_set, supervisions=supervision_set
-        )
-
-    return recording_set, supervision_set
+    utts = utterances()
+    with ThreadPoolExecutor(num_jobs) as ex:
+        while True:
+            chunk = list(islice(utts, chunk_size))
+            if not chunk:
+                break
+            futures = [ex.submit(_parse_utterance, *args) for args in chunk]
+            for future in futures:
+                yield future.result()
 
 
 def prepare_peoples_speech(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare :class:`~lhotse.RecordingSet`, :class:`~lhotse.SupervisionSet`,
     and :class:`~lhotse.CutSet` manifests for The People's Speech.
 
+    When ``output_dir`` is given, the manifests are streamed to disk in a single pass
+    (which skips :func:`~lhotse.qa.fix_manifests`) and returned lazily.
+    Parts that are already present in ``output_dir`` are read instead of being prepared again.
+
     :param corpus_dir: Pathlike, the path of the main data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a dict with keys "recordings", "supervisions", and "cuts" with lazily opened manifests.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+    :return: a Dict whose key is the dataset part (``clean``, ``clean_sa``, ``dirty``, ``dirty_sa``,
+        ``validation``, ``test``), and the value is a Dict with the keys "recordings", "supervisions", and "cuts".
     """
     corpus_dir = Path(corpus_dir)
 
@@ -135,48 +125,65 @@ def prepare_peoples_speech(
 
     logging.info("Preparing People's Speech...")
 
-    subsets = PEOPLES_SPEECH
-
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    manifests = defaultdict(dict)
+    manifests = {}
 
-    for part in tqdm(subsets, desc="Dataset parts"):
-        logging.info(f"Processing People's Speech subset: {part.split('/')[1]}")
-        if manifests_exist(
-            part=part.split("/")[1],
-            output_dir=output_dir,
-            prefix="peoples_speech",
-            suffix="jsonl.gz",
-        ):
-            logging.info(
-                f"People's Speech subset: {part.split('/')[1]} already prepared - skipping."
+    for subset in tqdm(PEOPLES_SPEECH, desc="Dataset parts"):
+        part = subset.split("/")[1]
+        logging.info(f"Processing People's Speech subset: {part}")
+        if manifests_exist(part=part, output_dir=output_dir, prefix="peoples-speech"):
+            logging.info(f"People's Speech subset: {part} already prepared - skipping.")
+            manifests.update(
+                read_manifests_if_cached(
+                    dataset_parts=[part], output_dir=output_dir, prefix="peoples-speech"
+                )
             )
             continue
 
-        recording_set, supervision_set = _prepare_subset(part, corpus_dir, num_jobs)
+        if output_dir is None:
+            recordings, supervisions = zip(
+                *_iter_subset(subset, corpus_dir, num_jobs=num_jobs)
+            )
+            recordings, supervisions = fix_manifests(
+                RecordingSet.from_recordings(recordings),
+                SupervisionSet.from_segments(supervisions),
+            )
+            validate_recordings_and_supervisions(recordings, supervisions)
+            manifests[part] = {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(recordings, supervisions),
+            }
+            continue
 
-        cuts_path = None
-        if output_dir is not None:
-            supervision_set.to_file(
-                output_dir
-                / f"peoples_speech_supervisions_{part.split('/')[1]}.jsonl.gz"
-            )
-            recording_set.to_file(
-                output_dir / f"peoples_speech_recordings_{part.split('/')[1]}.jsonl.gz"
-            )
-            cuts_path = (
-                output_dir / f"peoples_speech_cuts_{part.split('/')[1]}.jsonl.gz"
-            )
-
+        paths = {
+            name: output_dir / f"peoples-speech_{name}_{part}.jsonl.gz"
+            for name in ("recordings", "supervisions", "cuts")
+        }
+        with (
+            RecordingSet.open_writer(
+                paths["recordings"], overwrite=True
+            ) as recs_writer,
+            SupervisionSet.open_writer(
+                paths["supervisions"], overwrite=True
+            ) as sups_writer,
+            CutSet.open_writer(paths["cuts"], overwrite=True) as cuts_writer,
+        ):
+            for recording, segment in _iter_subset(
+                subset, corpus_dir, num_jobs=num_jobs
+            ):
+                recs_writer.write(recording)
+                sups_writer.write(segment)
+                cut = recording.to_cut()
+                cut.supervisions = [segment]
+                cuts_writer.write(cut)
         manifests[part] = {
-            "recordings": recording_set,
-            "supervisions": supervision_set,
-            "cuts": create_cuts_per_recording(
-                recording_set, supervision_set, output_path=cuts_path
-            ),
+            "recordings": RecordingSet.from_jsonl_lazy(paths["recordings"]),
+            "supervisions": SupervisionSet.from_jsonl_lazy(paths["supervisions"]),
+            "cuts": CutSet.from_jsonl_lazy(paths["cuts"]),
         }
 
     return manifests

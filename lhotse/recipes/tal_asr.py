@@ -100,10 +100,10 @@ def prepare_tal_asr(
         cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"tal_asr_supervisions_{part}.jsonl.gz"
+                output_dir / f"tal-asr_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"tal_asr_recordings_{part}.jsonl.gz")
-            cuts_path = output_dir / f"tal_asr_cuts_{part}.jsonl.gz"
+            recording_set.to_file(output_dir / f"tal-asr_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"tal-asr_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,

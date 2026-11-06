@@ -90,7 +90,9 @@ def prepare_iwslt22_ta(
         to avoid writing.
     :param langs: str, list of language abbreviations for source and target languages.
     :param num_jobs: int, the number of jobs to use for parallel processing.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with parts
+        ``train``, ``dev`` and ``test1``. Files are written as
+        ``iwslt22-ta_{manifest}_{part}.jsonl.gz``.
 
     """
     import soundfile as sf

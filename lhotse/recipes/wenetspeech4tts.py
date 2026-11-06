@@ -138,9 +138,6 @@ def prepare_wenetspeech4tts(
             if not wav_path.is_file():
                 logging.warning(f"No such file: {wav_path}")
                 continue
-            recording = Recording.from_file(wav_path)
-            recordings.append(recording)
-
             # get the text path
             # e.g. ../Premium/WenetSpeech4TTS_Premium_9/txts/X0000015306_83500032_S00110-S00112.txt
             txt_path = (
@@ -151,6 +148,8 @@ def prepare_wenetspeech4tts(
             if not txt_path.is_file():
                 logging.warning(f"No such file: {txt_path}")
                 continue
+            recording = Recording.from_file(wav_path)
+            recordings.append(recording)
             with open(txt_path, "r") as f:
                 lines = f.readlines()
                 text = lines[0].strip().split("\t")[1]

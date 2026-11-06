@@ -139,8 +139,10 @@ def prepare_aishell3(
                 id = id.split(".")[0]
                 tones = tone_labels.get(id, (None, None))
                 speaker = id[:7]
-                text = "".join([x for i, x in enumerate(text.split()) if i % 2 == 0])
-                pinyin = " ".join([x for i, x in enumerate(text.split()) if i % 2 == 1])
+                # The transcript alternates characters and their pinyin.
+                tokens = text.split()
+                text = "".join(tokens[0::2])
+                pinyin = " ".join(tokens[1::2])
                 if not audio_path.is_file():
                     logging.warning(f"No such file: {audio_path}")
                     continue

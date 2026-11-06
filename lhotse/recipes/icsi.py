@@ -599,7 +599,7 @@ def prepare_icsi(
     :param output_dir: Pathlike, the path where to write the manifests - `None` means manifests aren't stored on disk.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
-    :param save_to_wav: bool, whether to save the sph audio to wav format
+    :param save_to_wav: bool, whether to save the sph audio to wav format (into ``output_dir/wavs``; requires ``output_dir``)
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings', 'supervisions', and 'cuts'.
     """
@@ -614,8 +614,8 @@ def prepare_icsi(
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
 
-    if save_to_wav:
-        assert output_dir is not None, "output_dir must be specified when saving to wav"
+    if save_to_wav and output_dir is None:
+        raise ValueError("output_dir must be specified when saving to wav.")
 
     if output_dir is not None:
         output_dir = Path(output_dir)

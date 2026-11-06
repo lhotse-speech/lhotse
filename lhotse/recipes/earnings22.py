@@ -91,19 +91,19 @@ def prepare_earnings22(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     normalize_text: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply
-    read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir. The structure is
         expected to mimic the structure in the github repository, notably
         the mp3 files will be searched for in [corpus_dir]/media and transcriptions
         in the directory [corpus_dir]/transcripts/nlp_references
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Optional Pathlike, the path where to write the manifests as
+        ``earnings22_<manifest>_all.jsonl.gz``.
     :param normalize_text: Bool, if True, normalize the text.
-    :return: a Dict with the keys 'recordings', 'supervisions', and 'cuts'.
+    :return: a Dict with the single part ``'all'``, holding a Dict with the keys
+        'recordings', 'supervisions', and 'cuts'.
 
     .. caution::
         The `normalize_text` option removes all punctuation and converts all upper case
@@ -162,9 +162,11 @@ def prepare_earnings22(
         cuts_path = output_dir / "earnings22_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recording_set,
-        "supervisions": supervision_set,
-        "cuts": create_cuts_per_recording(
-            recording_set, supervision_set, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
     }

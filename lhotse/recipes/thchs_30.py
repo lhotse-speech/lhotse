@@ -77,10 +77,13 @@ def prepare_thchs_30(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings, Supervisions, and Cuts
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts.
+
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``thchs-30_{manifest}_{part}.jsonl.gz``). Optional.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with the
+        parts "train", "dev" and "test".
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -145,10 +148,10 @@ def prepare_thchs_30(
         cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"thchs_30_supervisions_{part}.jsonl.gz"
+                output_dir / f"thchs-30_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"thchs_30_recordings_{part}.jsonl.gz")
-            cuts_path = output_dir / f"thchs_30_cuts_{part}.jsonl.gz"
+            recording_set.to_file(output_dir / f"thchs-30_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"thchs-30_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
@@ -158,4 +161,4 @@ def prepare_thchs_30(
             ),
         }
 
-    return manifests
+    return dict(manifests)

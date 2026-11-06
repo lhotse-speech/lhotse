@@ -120,8 +120,7 @@ def prepare_xbmu_amdo31(
         recordings = []
         supervisions = []
         wav_path = corpus_dir / "data" / "wav" / f"{part}"
-        count = 0
-        for audio_path in wav_path.rglob("**/*.wav"):
+        for audio_path in sorted(wav_path.rglob("**/*.wav")):
             idx = audio_path.stem.split("-")[1]
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
@@ -134,10 +133,9 @@ def prepare_xbmu_amdo31(
                 continue
             recording = Recording.from_file(audio_path)
             recordings.append(recording)
-            count += 1
             segment = SupervisionSegment(
-                id=str(count) + "_" + idx,
-                recording_id=speaker + "-" + idx,
+                id=recording.id,
+                recording_id=recording.id,
                 start=0.0,
                 duration=recording.duration,
                 channel=0,
@@ -157,12 +155,12 @@ def prepare_xbmu_amdo31(
         cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"xbmu_amdo31_supervisions_{part}.jsonl.gz"
+                output_dir / f"xbmu-amdo31_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"xbmu_amdo31_recordings_{part}.jsonl.gz"
+                output_dir / f"xbmu-amdo31_recordings_{part}.jsonl.gz"
             )
-            cuts_path = output_dir / f"xbmu_amdo31_cuts_{part}.jsonl.gz"
+            cuts_path = output_dir / f"xbmu-amdo31_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
@@ -172,4 +170,4 @@ def prepare_xbmu_amdo31(
             ),
         }
 
-    return manifests
+    return dict(manifests)

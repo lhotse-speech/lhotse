@@ -54,11 +54,14 @@ def prepare_aspire(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, mic: str = "single"
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings, Supervisions, and Cuts
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts.
+
     :param corpus_dir: Pathlike, the path of the corpus dir (LDC2017S21).
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``aspire-{mic}_{manifest}_{part}.jsonl.gz``). Optional.
     :param mic: str, the microphone type, either "single" or "multi".
-    :return: a Dict whose key is the dataset part ('dev' and 'dev_test'), and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with the
+        parts "dev" and "dev_test".
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -173,9 +176,13 @@ def prepare_aspire(
 
         cuts_path = None
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"aspire_supervisions_{part}.jsonl.gz")
-            recording_set.to_file(output_dir / f"aspire_recordings_{part}.jsonl.gz")
-            cuts_path = output_dir / f"aspire_cuts_{part}.jsonl.gz"
+            supervision_set.to_file(
+                output_dir / f"aspire-{mic}_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"aspire-{mic}_recordings_{part}.jsonl.gz"
+            )
+            cuts_path = output_dir / f"aspire-{mic}_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
@@ -185,4 +192,4 @@ def prepare_aspire(
             ),
         }
 
-    return manifests
+    return dict(manifests)

@@ -12,7 +12,7 @@ from lhotse.utils import Pathlike
 def broadcast_news(audio_dir: Pathlike, transcript_dir: Pathlike, output_dir: Pathlike):
     """
     English Broadcast News 1997 data preparation.
-    It will output three manifests: for recordings, topic sections, and speech segments.
+    It will output three manifests: for recordings, supervisions (speech segments), topic sections, and cuts.
     It supports the following LDC distributions:
 
     \b

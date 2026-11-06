@@ -136,15 +136,15 @@ def prepare_nsc(
     dataset_part: str = "PART3_SameCloseMic",
     output_dir: Optional[Pathlike] = None,
     num_jobs=1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings, Supervisions, and Cuts.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path to the raw corpus distribution.
     :param dataset_part: str, name of the dataset part to be prepared.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict with the keys "recordings", "supervisions", and "cuts".
+    :return: a dict ``{dataset_part: {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
+        Files are written as ``nsc_{manifest}_{dataset_part}.jsonl.gz``.
     """
     check_dependencies()
     corpus_dir = Path(corpus_dir)
@@ -173,11 +173,13 @@ def prepare_nsc(
         cuts_path = output_dir / f"nsc_cuts_{dataset_part}.jsonl.gz"
 
     return {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+        dataset_part: {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }
 
 

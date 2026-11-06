@@ -199,7 +199,9 @@ def prepare_icmcasr(
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Path to the ICMC-ASR dataset.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests (nothing is written when ``None``).
+    :param mic: one of ``ihm``, ``sdm``, ``mdm``; it is a part of the corpus name of the manifest files (``icmcasr-<mic>``).
+    :param num_jobs: the number of threads used to parse the sessions.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)

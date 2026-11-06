@@ -32,7 +32,7 @@ def prepare_switchboard(
     output_dir: Optional[Pathlike] = None,
     omit_silence: bool = True,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the Switchboard corpus.
     We create two manifests: one with recordings, and the other one with text supervisions.
@@ -43,10 +43,12 @@ def prepare_switchboard(
         If not provided, the transcripts will be downloaded.
     :param sentiment_dir: Optional path to ``LDC2020T14`` package which contains sentiment annotations
         for SWBD segments.
-    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param output_dir: Directory where the manifests should be written as
+        ``swbd_<manifest>_all.jsonl.gz``. Can be omitted to avoid writing.
     :param omit_silence: Whether supervision segments with ``[silence]`` token should be removed or kept.
     :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict with the single part ``'all'``, which holds a dict of manifests with the keys:
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
     if transcripts_dir is None:
         transcripts_dir = download_and_untar()
@@ -98,11 +100,13 @@ def prepare_switchboard(
         supervisions.to_file(output_dir / "swbd_supervisions_all.jsonl.gz")
         cuts_path = output_dir / "swbd_cuts_all.jsonl.gz"
     return {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }
 
 
@@ -119,7 +123,7 @@ def make_segments(
             channel=channel,
             text=" ".join(words),
             language="English",
-            speaker=f"{recording.id}A",
+            speaker=f"{recording.id}{'AB'[channel]}",
         )
         for segment_id, start, end, *words in map(str.split, lines)
         if words[0] != "[silence]" or not omit_silence

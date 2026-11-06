@@ -82,7 +82,8 @@ def prepare_dipco(
     """
     Returns the manifests which consist of the Recordings, Supervisions, and Cuts
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``dipco-{mic}_{manifest}_{part}.jsonl.gz``). Optional.
     :param mic: str, the microphone type to use, choose from "ihm" (close-talk) or "mdm"
         (multi-microphone array) settings. For MDM, there are 5 array devices with 7
         channels each, so the resulting recordings will have 35 channels.
@@ -115,9 +116,9 @@ def prepare_dipco(
         if mic == "ihm":
             global_spk_channel_map = {}
             for session in DATASET_PARTS[part]:
-                audio_paths = [
-                    p for p in (corpus_dir / "audio" / part).rglob(f"{session}_P*.wav")
-                ]
+                audio_paths = sorted(
+                    (corpus_dir / "audio" / part).rglob(f"{session}_P*.wav")
+                )
 
                 sources = []
                 for idx, audio_path in enumerate(audio_paths):
@@ -226,4 +227,4 @@ def prepare_dipco(
             ),
         }
 
-    return manifests
+    return dict(manifests)

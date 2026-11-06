@@ -14,7 +14,7 @@ import subprocess
 import zipfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 from tqdm import tqdm
 
@@ -134,13 +134,14 @@ def download_libricss(target_dir: Pathlike, force_download: bool = False) -> Pat
 
 def prepare_libricss(
     corpus_dir: Pathlike,
-    output_dir: Pathlike = None,
+    output_dir: Optional[Pathlike] = None,
     type: str = "mdm",
     segmented_cuts: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts.
+    LibriCSS has no official splits, so everything is returned under the single part ``"all"``
+    (files: ``libricss-<type>_<manifest>_all.jsonl.gz``).
 
     NOTE: The recordings contain all 7 channels. If you want to use only one channel, you can
     use either ``recording.load_audio(channel=0)`` or ``MonoCut(id=...,recording=recording,channel=0)``
@@ -151,10 +152,10 @@ def prepare_libricss(
     :param type: str, the type of data to prepare ('mdm', 'sdm', 'ihm-mix', or 'ihm'). These settings
         are similar to the ones in AMI and ICSI recipes.
     :param segmented_cuts: bool, if True, it will return 1-minute (as described in the original paper)
-        in the form of a CutSet. These are saved under the index ``segments`` in the returned Dict.
+        in the form of a CutSet. These are saved under the key ``segments`` of the ``all`` part.
         May be useful for evaluating multi-talker ASR systems, e.g., in this paper: https://arxiv.org/abs/2109.08555.
-    :return: a Dict with the keys 'recordings', 'supervisions', 'cuts' (one cut per session),
-        and 'segments' (only when ``segmented_cuts=True``).
+    :return: a Dict ``{"all": {...}}`` whose value has the keys 'recordings', 'supervisions',
+        'cuts' (one cut per session), and 'segments' (only when ``segmented_cuts=True``).
 
     """
     assert type in ["mdm", "sdm", "ihm-mix", "ihm"]
@@ -275,7 +276,7 @@ def prepare_libricss(
         recordings, supervisions, output_path=cuts_path
     )
 
-    return result_dict
+    return {"all": result_dict}
 
 
 def parse_transcript(file_name):

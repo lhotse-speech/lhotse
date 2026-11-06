@@ -31,6 +31,8 @@ from lhotse.supervision import AlignmentItem, SupervisionSegment
 from lhotse.utils import Pathlike, is_module_available
 
 GRID_ZENODO_ID = "10.5281/zenodo.3625687"
+# GRID .align files express times in samples of the 25 kHz audio.
+GRID_ALIGNMENT_RATE = 25000
 
 
 def download_grid(
@@ -128,18 +130,18 @@ def prepare_grid(
     output_dir: Optional[Pathlike] = None,
     with_supervisions: bool = True,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
     :param with_supervisions: bool, when False, we'll only return recordings; when True, we'll also
         return supervisions created from alignments, but might remove some recordings for which
         they are missing.
     :param num_jobs: int, number of parallel jobs.
-    :return: a Dict with the keys "recordings", "supervisions" (only when ``with_supervisions`` is True), and "cuts".
+    :return: a Dict with the single part ``"all"``, whose value is a Dict with the keys
+        "recordings", "supervisions" (only when ``with_supervisions`` is True), and "cuts".
     """
     corpus_dir = Path(corpus_dir)
 
@@ -191,10 +193,10 @@ def prepare_grid(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "grid_recordings.jsonl.gz")
+        recordings.to_file(output_dir / "grid_recordings_all.jsonl.gz")
         if with_supervisions:
-            supervisions.to_file(output_dir / "grid_supervisions.jsonl.gz")
-        cuts_path = output_dir / "grid_cuts.jsonl.gz"
+            supervisions.to_file(output_dir / "grid_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "grid_cuts_all.jsonl.gz"
 
     ans = {"recordings": recordings}
     if with_supervisions:
@@ -207,7 +209,7 @@ def prepare_grid(
         )
     )
 
-    return ans
+    return {"all": ans}
 
 
 def process_single(
@@ -228,8 +230,8 @@ def process_single(
         ali = [
             AlignmentItem(
                 symbol=w,
-                start=float(b) / 1000,
-                duration=float(int(e) - int(b)) / 1000,
+                start=float(b) / GRID_ALIGNMENT_RATE,
+                duration=float(int(e) - int(b)) / GRID_ALIGNMENT_RATE,
             )
             for b, e, w in (line.split() for line in ali_path.read_text().splitlines())
         ]

@@ -66,16 +66,18 @@ def prepare_fisher_spanish(
     transcript_dir_path: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests for Fisher Spanish.
     We create two manifests: one with recordings, and the other one with text supervisions.
 
     :param audio_dir_path: Path to audio directory (usually LDC2010S01).
     :param transcript_dir_path: Path to transcript directory (usually LDC2010T04).
-    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param output_dir: Directory where the manifests should be written as
+        ``fisher-spanish_<manifest>_all.jsonl.gz``. Can be omitted to avoid writing.
     :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict with the single part ``'all'``, holding a dict of manifests with the keys:
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
 
     audio_dir_path, transcript_dir_path = (
@@ -129,14 +131,16 @@ def prepare_fisher_spanish(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "fisher-spanish_recordings_all.jsonl")
-        supervisions.to_file(output_dir / "fisher-spanish_supervisions_all.jsonl")
-        cuts_path = output_dir / "fisher-spanish_cuts_all.jsonl"
+        recordings.to_file(output_dir / "fisher-spanish_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "fisher-spanish_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "fisher-spanish_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }

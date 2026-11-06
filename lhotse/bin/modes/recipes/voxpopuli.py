@@ -69,6 +69,7 @@ def voxpopuli(
         lang=lang,
         source_lang=src_lang,
         target_lang=tgt_lang,
+        num_jobs=num_jobs,
     )
 
 

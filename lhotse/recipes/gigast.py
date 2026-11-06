@@ -97,17 +97,25 @@ def download_gigast(
 def prepare_gigast(
     corpus_dir: Pathlike,
     manifests_dir: Pathlike,
-    output_dir: Optional[Pathlike],
+    output_dir: Optional[Pathlike] = None,
     languages: Union[str, Sequence[str]] = "auto",
     dataset_parts: Union[str, Sequence[str]] = "auto",
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts.
+    GigaST has no audio of its own: the recordings are those of GigaSpeech and
+    the supervisions are the GigaSpeech supervisions extended with the translations
+    (in ``custom``).
+
     :param corpus_dir: Path to the GigaST dataset
     :param manifests_dir: Path to the GigaSpeech manifests
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Optional path where to write the manifests as
+        ``gigast-<lang>_<manifest>_<part>.jsonl.gz``. When provided, parts that were
+        already prepared in it are loaded instead of being prepared again.
     :param languages: 'auto' (prepare all languages) or a list of language codes.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
+    :param dataset_parts: 'auto' (XL and TEST) or a list of GigaSpeech parts.
+    :return: a Dict whose key is the language, then the dataset part, and the value is
+        Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     manifests_dir = Path(manifests_dir)
@@ -129,13 +137,13 @@ def prepare_gigast(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info("Loading manifest")
-    prefix = "gigaspeech"
-    suffix = "jsonl.gz"
     manifests = read_manifests_if_cached(
         dataset_parts=dataset_parts,
         output_dir=manifests_dir,
-        prefix=prefix,
-        suffix=suffix,
+        prefix="gigaspeech",
+        suffix="jsonl.gz",
+        types=("recordings", "supervisions"),
+        lazy=True,
     )
     assert manifests is not None
 
@@ -146,52 +154,92 @@ def prepare_gigast(
         dataset_parts,
     )
 
+    def next_line(gigast: GigaST) -> Optional[dict]:
+        try:
+            return gigast.get_next_line()
+        except StopIteration:
+            return None
+
+    result = {}
     for lang in tqdm(languages, desc="Processing GigaST"):
         assert lang in GIGAST_LANGS, (lang, GIGAST_LANGS)
         logging.info(f"Loading GigaST.{lang}.json")
         gigast = GigaST(corpus_dir, lang)
+        # The GigaST lines are consumed in order across all the parts.
+        cur_line = next_line(gigast)
+        corpus_name = f"gigast-{lang}"
+        result[lang] = {}
 
         for partition, m in manifests.items():
-            supervisions = []
             logging.info(f"Processing {partition}")
             if manifests_exist(
                 part=partition,
                 output_dir=output_dir,
-                types=("supervisions", "cuts"),
-                prefix=f"gigast-{lang}",
+                types=("recordings", "supervisions", "cuts"),
+                prefix=corpus_name,
                 suffix="jsonl.gz",
             ):
                 logging.info(
                     f"GigaST {lang} subset: {partition} already prepared - skipping."
                 )
+                result[lang][partition] = read_manifests_if_cached(
+                    dataset_parts=[partition],
+                    output_dir=output_dir,
+                    prefix=corpus_name,
+                    types=("recordings", "supervisions", "cuts"),
+                    lazy=True,
+                )[partition]
+                # Skip the lines that were consumed by this part.
+                for _ in result[lang][partition]["supervisions"]:
+                    cur_line = next_line(gigast)
                 continue
 
-            cur_line = gigast.get_next_line()
-            for sup in tqdm(
-                m["supervisions"], desc="Generate the extented supervisions"
-            ):
-                if cur_line["sid"] == sup.id:
-                    new_sup = sup
-                    if partition != "TEST":
-                        new_sup.custom = {
-                            "text_raw": cur_line["text_raw"],
-                            "extra": cur_line["extra"],
-                        }
-                    else:
-                        new_sup.custom = {"text_raw": cur_line["text_raw"]}
-                    supervisions.append(new_sup)
-                    try:
-                        cur_line = gigast.get_next_line()
-                    except StopIteration:
+            def extended_supervisions():
+                nonlocal cur_line
+                for sup in tqdm(
+                    m["supervisions"], desc="Generate the extented supervisions"
+                ):
+                    if cur_line is None:
                         break
+                    if cur_line["sid"] == sup.id:
+                        if partition != "TEST":
+                            sup.custom = {
+                                "text_raw": cur_line["text_raw"],
+                                "extra": cur_line["extra"],
+                            }
+                        else:
+                            sup.custom = {"text_raw": cur_line["text_raw"]}
+                        yield sup
+                        cur_line = next_line(gigast)
 
             logging.info(f"Saving GigaST {lang} subset: {partition}")
-            supervisionset = SupervisionSet.from_segments(supervisions)
-            supervisionset.to_file(
-                output_dir / f"gigast-{lang}_supervisions_{partition}.jsonl.gz"
-            )
-            create_cuts_per_recording(
-                m["recordings"],
-                supervisionset,
-                output_path=output_dir / f"gigast-{lang}_cuts_{partition}.jsonl.gz",
-            )
+            if output_dir is None:
+                supervisions = SupervisionSet.from_segments(extended_supervisions())
+                recordings = m["recordings"].to_eager()
+                cuts = create_cuts_per_recording(recordings, supervisions)
+            else:
+                recordings = m["recordings"]
+                recordings_path = (
+                    output_dir / f"{corpus_name}_recordings_{partition}.jsonl.gz"
+                )
+                supervisions_path = (
+                    output_dir / f"{corpus_name}_supervisions_{partition}.jsonl.gz"
+                )
+                with SupervisionSet.open_writer(supervisions_path) as writer:
+                    for sup in extended_supervisions():
+                        writer.write(sup)
+                recordings.to_file(recordings_path)
+                recordings = RecordingSet.from_jsonl_lazy(recordings_path)
+                supervisions = SupervisionSet.from_jsonl_lazy(supervisions_path)
+                cuts = create_cuts_per_recording(
+                    recordings,
+                    supervisions,
+                    output_path=output_dir / f"{corpus_name}_cuts_{partition}.jsonl.gz",
+                )
+            result[lang][partition] = {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": cuts,
+            }
+
+    return result

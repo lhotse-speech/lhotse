@@ -1,6 +1,5 @@
 import json
 import os
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -11,6 +10,8 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
+
+MICS = ("sdm", "mdm", "ihm")
 
 
 def download_notsofar1(
@@ -84,85 +85,56 @@ def download_notsofar1(
 def prepare_notsofar1(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[
-    str, Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]
-]:
+    mic: str = "sdm",
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    :return: a Dict whose keys are the dataset part, version and mic setting
-        ("single_channel", "multi_channel", "close_talk"), and the values are Dicts
+    Prepare one microphone setting of the NOTSOFAR-1 corpus (the files are named
+    ``notsofar1-<mic>_<manifest>_<part>.jsonl.gz``).
+
+    :param corpus_dir: the directory that contains ``benchmark-datasets``.
+    :param output_dir: optional directory where the manifests are written.
+    :param mic: ``"sdm"`` (single-channel recordings, ``sc_*`` devices),
+        ``"mdm"`` (multi-channel recordings, ``mc_*`` devices) or ``"ihm"``
+        (close-talk recordings, one per participant).
+    :return: a Dict whose keys are the dataset parts, named ``<set>-<version>``
+        (e.g. ``train_set-240825.1_train``, ``dev_set-240825.1_dev1``,
+        ``eval_set-240629.1_eval_small_with_GT``), and the values are Dicts
         with the keys "recordings", "supervisions", and "cuts".
     """
+    if mic not in MICS:
+        raise ValueError(f"mic must be one of {MICS}, got: {mic!r}")
     corpus_dir = Path(corpus_dir) / "benchmark-datasets"
-    if output_dir is None:
-        raise ValueError("output_dir must be provided")
-    output_dir = Path(output_dir)
-
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    os.makedirs(output_dir, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    corpus_name = f"notsofar1-{mic}"
 
-    manifests = defaultdict(dict)
-
-    for part in _listdir_safe(corpus_dir):
-        part_dir = corpus_dir / part
-        manifests[part] = defaultdict(dict)
-
-        for version in _listdir_safe(part_dir):
-            version_dir = part_dir / version / "MTG"
-            sc_cuts, mc_cuts, ihm_cuts = process_data(
-                version_dir, word_level=False, create_word_alignment=True
+    manifests = {}
+    for subset in sorted(_listdir_safe(corpus_dir)):
+        for version in sorted(_listdir_safe(corpus_dir / subset)):
+            part = f"{subset}-{version}"
+            cuts = process_data(
+                corpus_dir / subset / version / "MTG",
+                mic=mic,
+                word_level=False,
+                create_word_alignment=True,
             )
-            manifests[part][version] = defaultdict(dict)
-
-            if sc_cuts:
-                sc_recs, sc_sups = fix_manifests(
-                    *CutSet.from_cuts(sc_cuts).decompose()[:2]
-                )
-                tag = f"notsofar1_sdm_{part}_{version}"
-                sc_recs.to_file(output_dir / f"{tag}_recordings.jsonl.gz")
-                sc_sups.to_file(output_dir / f"{tag}_supervisions.jsonl.gz")
-                manifests[part][version]["single_channel"] = {
-                    "recordings": sc_recs,
-                    "supervisions": sc_sups,
-                    "cuts": create_cuts_per_recording(
-                        sc_recs,
-                        sc_sups,
-                        output_path=output_dir / f"{tag}_cuts.jsonl.gz",
-                    ),
-                }
-
-            if mc_cuts:
-                mc_recs, mc_sups = fix_manifests(
-                    *CutSet.from_cuts(mc_cuts).decompose()[:2]
-                )
-                tag = f"notsofar1_mdm_{part}_{version}"
-                mc_recs.to_file(output_dir / f"{tag}_recordings.jsonl.gz")
-                mc_sups.to_file(output_dir / f"{tag}_supervisions.jsonl.gz")
-                manifests[part][version]["multi_channel"] = {
-                    "recordings": mc_recs,
-                    "supervisions": mc_sups,
-                    "cuts": create_cuts_per_recording(
-                        mc_recs,
-                        mc_sups,
-                        output_path=output_dir / f"{tag}_cuts.jsonl.gz",
-                    ),
-                }
-
-            if ihm_cuts:
-                ihm_recs, ihm_sups = fix_manifests(
-                    *CutSet.from_cuts(ihm_cuts).decompose()[:2]
-                )
-                tag = f"notsofar1_ihm_{part}_{version}"
-                ihm_recs.to_file(output_dir / f"{tag}_recordings.jsonl.gz")
-                ihm_sups.to_file(output_dir / f"{tag}_supervisions.jsonl.gz")
-                manifests[part][version]["close_talk"] = {
-                    "recordings": ihm_recs,
-                    "supervisions": ihm_sups,
-                    "cuts": create_cuts_per_recording(
-                        ihm_recs,
-                        ihm_sups,
-                        output_path=output_dir / f"{tag}_cuts.jsonl.gz",
-                    ),
-                }
+            if not cuts:
+                continue
+            recs, sups = fix_manifests(*CutSet.from_cuts(cuts).decompose()[:2])
+            cuts_path = None
+            if output_dir is not None:
+                recs.to_file(output_dir / f"{corpus_name}_recordings_{part}.jsonl.gz")
+                sups.to_file(output_dir / f"{corpus_name}_supervisions_{part}.jsonl.gz")
+                cuts_path = output_dir / f"{corpus_name}_cuts_{part}.jsonl.gz"
+            manifests[part] = {
+                "recordings": recs,
+                "supervisions": sups,
+                "cuts": create_cuts_per_recording(recs, sups, output_path=cuts_path),
+            }
+    if not manifests:
+        raise ValueError(f"No NOTSOFAR-1 data for mic={mic!r} found in {corpus_dir}")
     return manifests
 
 
@@ -171,12 +143,10 @@ def _listdir_safe(path: Pathlike) -> List[str]:
 
 
 def process_data(
-    dataset_path, word_level=False, create_word_alignment=True
-) -> Tuple[List[MonoCut], List[MonoCut]]:
+    dataset_path, mic="sdm", word_level=False, create_word_alignment=True
+) -> List[MonoCut]:
     meetings = sorted(_listdir_safe(dataset_path))
-    sc_cuts = []
-    mc_cuts = []
-    ihm_cuts = []
+    cuts = []
 
     for meeting in tqdm(meetings):
         meeting_root = dataset_path / meeting
@@ -206,6 +176,11 @@ def process_data(
             device_id = f"{meeting}_{device}"
             is_multi_channel = "mc" in device
             is_close_talk = "close_talk" in device
+            device_mic = (
+                "ihm" if is_close_talk else "mdm" if is_multi_channel else "sdm"
+            )
+            if device_mic != mic:
+                continue
 
             if is_close_talk:
                 ct_wav_files = sorted(
@@ -255,7 +230,7 @@ def process_data(
                             )
                         )
 
-                    ihm_cuts.append(
+                    cuts.append(
                         MonoCut(
                             id=ct_recording_id,
                             start=0,
@@ -327,7 +302,7 @@ def process_data(
                 )
 
             if is_multi_channel:
-                mc_cuts.append(
+                cuts.append(
                     MonoCut(
                         id=recording.id,
                         start=0,
@@ -338,7 +313,7 @@ def process_data(
                     )
                 )
             else:
-                sc_cuts.append(
+                cuts.append(
                     MonoCut(
                         id=recording.id,
                         start=0,
@@ -349,4 +324,4 @@ def process_data(
                     )
                 )
 
-    return sc_cuts, mc_cuts, ihm_cuts
+    return cuts

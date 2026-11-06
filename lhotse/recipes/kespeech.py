@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
+from lhotse import CutSet
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import (
@@ -38,10 +39,20 @@ def text_normalize(line: str) -> str:
 
 def prepare_kespeech(
     corpus_dir: Pathlike,
-    output_dir: Optional[Pathlike],
+    output_dir: Optional[Pathlike] = None,
     dataset_parts: Union[str, Sequence[str]] = "all",
     num_jobs: int = 1,
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare manifests for the KeSpeech ASR task.
+
+    :param corpus_dir: Path to the KeSpeech corpus root.
+    :param output_dir: Optional directory where the manifests are written.
+    :param dataset_parts: Parts to prepare, or ``"all"``.
+    :param num_jobs: Number of threads for reading audio metadata.
+    :return: A dict whose key is the dataset part, and the value is a dict with the keys
+        ``'recordings'``, ``'supervisions'``, and ``'cuts'``.
+    """
     corpus_dir = Path(corpus_dir)
     tasks_dir = corpus_dir / "Tasks" / "ASR"
 

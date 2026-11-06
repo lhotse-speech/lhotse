@@ -65,9 +65,6 @@ def normalize(
     :param normalize_text: str, the text normalization type, "default" or "none".
     :return: a tuple with file name and normalized text labeling.
     """
-    if len(raw_content) == 0:
-        return ""
-
     original_content_id, content = raw_content.split(" :: ")
 
     if normalize_text == "none":
@@ -98,10 +95,12 @@ def prepare_ksponspeech(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train', 'dev'.
         By default, we will infer all parts.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``ksponspeech_{manifest}_{part}.jsonl.gz``). Optional.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
     :param normalize_text: str, the text normalization type, "default" or "none".
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
+        Note that the PCM audio is converted to FLAC files stored next to the original ones.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -218,6 +217,8 @@ def parse_utterance(
     normalize_text: str = "default",
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     corpus_dir = Path(corpus_dir)
+    if not line.strip():
+        return None
     audio_path, normalized_line = normalize(line, normalize_text)
     if "eval" in part:
         audio_path = audio_path.split("/", maxsplit=1)[1]

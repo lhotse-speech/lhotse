@@ -69,6 +69,18 @@ def prepare_musan(
     parts: Sequence[str] = ("music", "speech", "noise"),
     use_vocals: bool = True,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the MUSAN corpus.
+
+    :param corpus_dir: Path to the extracted MUSAN corpus.
+    :param output_dir: Optional directory where the manifests are written
+        (``musan_<manifest>_<part>.jsonl.gz``).
+    :param parts: Which parts to prepare: ``music``, ``speech``, ``noise``.
+    :param use_vocals: When ``False``, the music recordings with vocals are excluded
+        from both the recordings, supervisions and cuts.
+    :return: A dict keyed by part. ``music`` has ``recordings``, ``supervisions`` and ``cuts``;
+        ``speech`` and ``noise`` have ``recordings`` and ``cuts`` only.
+    """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     if not parts:
@@ -126,7 +138,9 @@ def prepare_music(
         for utt, genres, vocals, musician in read_annotations(file, max_fields=4)
     )
     if not use_vocals:
-        supervisions = supervisions.filter(lambda s: s.custom["vocals"] is False)
+        vocal_ids = {s.id for s in supervisions if s.custom["vocals"]}
+        supervisions = supervisions.filter(lambda s: s.id not in vocal_ids)
+        recordings = recordings.filter(lambda r: r.id not in vocal_ids)
     return {"recordings": recordings, "supervisions": supervisions}
 
 

@@ -18,9 +18,8 @@ import logging
 import re
 import shutil
 import zipfile
-from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence, Union
+from typing import Dict, Optional, Sequence, Union
 
 from tqdm import tqdm
 
@@ -33,55 +32,11 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.recipes.utils import (
-    DEFAULT_DETECTED_MANIFEST_TYPES,
-    TYPES_TO_CLASSES,
     create_cuts_per_recording,
-    load_manifest,
     manifests_exist,
+    read_manifests_if_cached,
 )
 from lhotse.utils import Pathlike, resumable_download
-
-
-def _read_manifests_if_cached_no_parts(
-    output_dir: Optional[Pathlike],
-    prefix: str = "",
-    suffix: str = "jsonl.gz",
-    types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
-    lazy: bool = False,
-) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
-    """
-    Loads manifests from the disk, or a subset of them if only some exist.
-    The manifests are searched for using the pattern ``output_dir / f'{prefix}_{manifest}_{part}.json'``,
-    where `manifest` is one of ``["recordings", "supervisions"]`` and ``part`` is specified in ``dataset_parts``.
-    This function is intended to speedup data preparation if it has already been done before.
-
-    :param output_dir: Where to look for the files.
-    :param prefix: Optional common prefix for the manifest files (underscore is automatically added).
-    :param suffix: Optional common suffix for the manifest files ("json" by default).
-    :param types: Which types of manifests are searched for (default: 'recordings' and 'supervisions').
-    :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
-    """
-    if output_dir is None:
-        return None
-    if prefix and not prefix.endswith("_"):
-        prefix = f"{prefix}_"
-    if suffix.startswith("."):
-        suffix = suffix[1:]
-    if lazy and not suffix.startswith("jsonl"):
-        raise ValueError(
-            f"Only JSONL manifests can be opened lazily (got suffix: '{suffix}')"
-        )
-    manifests = defaultdict(dict)
-    output_dir = Path(output_dir)
-    for manifest in types:
-        path = output_dir / f"{prefix}{manifest}.{suffix}"
-        if not path.is_file():
-            continue
-        if lazy:
-            manifests[manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(path)
-        else:
-            manifests[manifest] = load_manifest(path)
-    return dict(manifests)
 
 
 def download_ears(
@@ -134,27 +89,30 @@ def prepare_ears(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions.
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: the number of parallel workers parsing the data.
-    :return: a Dict whose keys are 'recordings', 'supervisions', and 'cuts'.
+    :return: a Dict with the single part 'all' (the corpus has no splits), mapping to a Dict whose keys
+        are 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    dataset_parts = [f"p{spk:03d}" for spk in range(1, 108)]
+    speakers = [f"p{spk:03d}" for spk in range(1, 108)]
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        manifests = _read_manifests_if_cached_no_parts(
-            output_dir=output_dir, prefix="ears"
-        )
+        if manifests_exist(part="all", output_dir=output_dir, prefix="ears"):
+            logging.info("EARS already prepared - skipping.")
+            return read_manifests_if_cached(
+                dataset_parts=["all"], output_dir=output_dir, prefix="ears"
+            )
 
     # Contents of the file
     # {
@@ -179,12 +137,8 @@ def prepare_ears(
     utt2transcript = json.loads((corpus_dir / "transcripts.json").read_text())
     supervisions = []
     recordings_list = []
-    for part in tqdm(dataset_parts, desc="Preparing EARS speakers"):
-        if manifests_exist(part=part, output_dir=output_dir, prefix="ears"):
-            logging.info(f"EARS subset: {part} already prepared - skipping.")
-            continue
-        spk_id = part
-        part_path = corpus_dir / part
+    for spk_id in tqdm(speakers, desc="Preparing EARS speakers"):
+        part_path = corpus_dir / spk_id
         recordings = RecordingSet.from_dir(
             part_path,
             "*.wav",
@@ -220,16 +174,16 @@ def prepare_ears(
 
     cuts_path = None
     if output_dir is not None:
-        supervisions.to_file(output_dir / f"ears_supervisions.jsonl.gz")
-        recordings.to_file(output_dir / f"ears_recordings.jsonl.gz")
-        cuts_path = output_dir / "ears_cuts.jsonl.gz"
+        supervisions.to_file(output_dir / f"ears_supervisions_all.jsonl.gz")
+        recordings.to_file(output_dir / f"ears_recordings_all.jsonl.gz")
+        cuts_path = output_dir / "ears_cuts_all.jsonl.gz"
 
-    manifests = {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }
-
-    return manifests

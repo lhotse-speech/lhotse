@@ -156,7 +156,7 @@ def prepare_gale_mandarin(
             output_path=cuts_path,
         )
 
-    return manifests
+    return dict(manifests)
 
 
 def parse_transcripts(

@@ -99,7 +99,8 @@ def prepare_but_reverb_db(
     Prepare the BUT Speech@FIT Reverb Database corpus.
 
     :param corpus_dir: Pathlike, the path of the dir to store the dataset.
-    :param output_dir: Pathlike, the path of the dir to write the manifests.
+    :param output_dir: Pathlike, the path of the dir to write the manifests (nothing is written when ``None``).
+    :param parts: the dataset parts to prepare (``"silence"`` and/or ``"rir"``).
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
@@ -137,9 +138,9 @@ def prepare_but_reverb_db(
         cuts_path = None
         if output_dir is not None:
             recording_set.to_file(
-                output_dir / f"but-reverb-db_{part}_recordings.jsonl.gz"
+                output_dir / f"but-reverb-db_recordings_{part}.jsonl.gz"
             )
-            cuts_path = output_dir / f"but-reverb-db_{part}_cuts.jsonl.gz"
+            cuts_path = output_dir / f"but-reverb-db_cuts_{part}.jsonl.gz"
         manifests[part] = {
             "recordings": recording_set,
             "cuts": create_cuts_per_recording(recording_set, output_path=cuts_path),

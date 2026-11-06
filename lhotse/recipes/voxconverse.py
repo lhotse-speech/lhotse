@@ -16,7 +16,7 @@ from urllib.error import HTTPError
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
@@ -85,7 +85,18 @@ def prepare_voxconverse(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     split_test: bool = False,  # test part is larger than dev part - split it into dev and test by default
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the VoxConverse manifests (diarization annotations as supervisions without text).
+
+    :param corpus_dir: Path to the corpus with the ``dev`` and ``test`` directories.
+    :param output_dir: Optional directory where the manifests are written as
+        ``voxconverse_<manifest>_<part>.jsonl.gz``.
+    :param split_test: When ``True``, the original dev set becomes ``train`` and
+        the original test set is split in half into ``dev`` and ``test``.
+    :return: A dict keyed by part (``dev`` and ``test``, or ``train``, ``dev`` and ``test``)
+        with the keys ``recordings``, ``supervisions`` and ``cuts``.
+    """
     corpus_dir = Path(corpus_dir).absolute()
 
     splits = {}

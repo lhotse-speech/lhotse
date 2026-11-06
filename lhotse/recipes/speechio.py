@@ -47,20 +47,19 @@ def _parse_one_subset(
         if not os.path.exists(audio_path):
             logging.warning(f"Audio file {audio_path} does not exist - skipping.")
             continue
-        recording = Recording.from_file(audio_path)
-        recordings.append(recording)
         recording_id = recording_ids[idx]
+        recording = Recording.from_file(audio_path, recording_id=recording_id)
+        recordings.append(recording)
         text = texts[idx]
-        speaker = recording_id.split("_")[0]
 
+        # metadata.tsv has no speaker information (only ID, AUDIO, DURATION and TEXT).
         segment = SupervisionSegment(
-            id=f"{corpus_dir}-{recording_id}",
+            id=recording_id,
             recording_id=recording_id,
             start=0,
             duration=recording.duration,
             channel=0,
             language="Chinese",
-            speaker=speaker,
             text=text,
         )
         segments.append(segment)
@@ -100,7 +99,8 @@ def prepare_speechio(
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Path to the SpeechIO dataset.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
+        When all manifests of a part are already there, they are read instead of being recomputed.
+    :return: a Dict whose key is the dataset part (``SPEECHIO_ASR_ZH000xx``), and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
 
@@ -153,4 +153,4 @@ def prepare_speechio(
             ),
         }
 
-    return manifests
+    return dict(manifests)

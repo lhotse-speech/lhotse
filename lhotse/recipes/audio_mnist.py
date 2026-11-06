@@ -23,7 +23,7 @@ import logging
 import os
 import tarfile
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
@@ -73,14 +73,15 @@ def download_audio_mnist(
 
 def prepare_audio_mnist(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+    output_dir: Optional[Pathlike] = None,
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """Prepare manifests for the AudioMNIST corpus.
 
     :param: corpus_dir: We assume it is the github repo directory and it
       contains the following directories: data/{01,02,03,...,60}
-    :param: output_dir: Directory where the manifests should be written.
-    :return: a Dict with the keys "recordings", "supervisions", and "cuts".
+    :param: output_dir: Directory where the manifests should be written
+      (``audio-mnist_{manifest}_all.jsonl.gz``). Optional.
+    :return: a dict ``{"all": {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
     """
     in_data_dir = Path(corpus_dir) / "data"
     assert (Path(in_data_dir) / "audioMNIST_meta.txt").is_file()
@@ -143,14 +144,16 @@ def prepare_audio_mnist(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        supervisions.to_file(output_dir / "audio_mnist_supervisions.jsonl.gz")
-        recordings.to_file(output_dir / "audio_mnist_recordings.jsonl.gz")
-        cuts_path = output_dir / "audio_mnist_cuts.jsonl.gz"
+        supervisions.to_file(output_dir / "audio-mnist_supervisions_all.jsonl.gz")
+        recordings.to_file(output_dir / "audio-mnist_recordings_all.jsonl.gz")
+        cuts_path = output_dir / "audio-mnist_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }

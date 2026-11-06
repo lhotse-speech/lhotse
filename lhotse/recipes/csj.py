@@ -110,7 +110,7 @@ import re
 from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Dict, List, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
@@ -712,8 +712,16 @@ class _CSJSDBTagSegment:
         return bool(self.segments and self.segments[0])
 
 
-def _read_one_sdb(sdb: Path) -> List[_CSJSDBSegment]:
+def _read_one_sdb(sdb: Path, channel: Optional[str] = None) -> List[_CSJSDBSegment]:
+    """
+    Read one SDB file. For dialogue talks, the SDB covers both channels;
+    ``channel`` ("L" or "R") selects the words spoken in that channel only.
+    """
     lines = sdb.read_text(encoding="shift_jis").split("\n")
+    if channel is not None:
+        lines = [
+            line for line in lines if not line or (f"{channel}:" in line.split("\t")[3])
+        ]
     sgid = lines[0].split("\t")[3].split(" ")[0]
 
     words_until_now = _CSJSDBTagSegment()
@@ -815,19 +823,35 @@ def _process_one_recording(
     return recording, supervision_segments
 
 
-def _process_one(sdb: Path, parser: CSJSDBParser):
-    segments = _read_one_sdb(sdb)
+def _process_one(
+    sdb: Path, parser: CSJSDBParser
+) -> List[Tuple[Recording, List[SupervisionSegment]]]:
     spk = sdb.stem
-    try:
-        wavfile = Path((sdb.parent / (spk + "-wav.list")).read_text())
+    wav_list = sdb.parent / (spk + "-wav.list")
+    if wav_list.is_file():
+        # Layout created by _create_trans_dir: dialogues are already split into L and R.
+        segments = _read_one_sdb(sdb)
+        wavfile = Path(wav_list.read_text())
         (sdb.parent / f"{sdb.stem}-trans.txt").write_text(
             "\n".join(s.to_line() for s in segments)
         )
-    except FileNotFoundError:
-        part = sdb.parent.name
-        wavfile = sdb.parents[3] / (f"WAV/{part}/{spk}.wav")
-        assert wavfile.exists()
-    return _process_one_recording(segments, wavfile, spk, parser)
+        return [_process_one_recording(segments, wavfile, spk, parser)]
+    # Original corpus layout: MORPH/SDB/<part>/<talk>.sdb and WAV/<part>/<talk>.wav
+    wav_dir = sdb.parents[3] / "WAV" / sdb.parent.name
+    if spk[0] != "D":
+        wavfile = wav_dir / f"{spk}.wav"
+        assert wavfile.exists(), f"{wavfile} cannot be found"
+        return [_process_one_recording(_read_one_sdb(sdb), wavfile, spk, parser)]
+    # Dialogue talks have one SDB, and separate L/R wav files: treat each channel as a recording.
+    results = []
+    for channel in "LR":
+        wavfile = wav_dir / f"{spk}-{channel}.wav"
+        assert wavfile.exists(), f"{wavfile} cannot be found"
+        segments = _read_one_sdb(sdb, channel=channel)
+        results.append(
+            _process_one_recording(segments, wavfile, f"{spk}-{channel}", parser)
+        )
+    return results
 
 
 def prepare_manifests(
@@ -886,11 +910,9 @@ def prepare_manifests(
             recordings = []
             supervisions = []
             for future in tqdm(futures, desc="Processing", leave=False):
-                result: Tuple[Recording, List[SupervisionSegment]] = future.result()
-                assert result
-                recording, segments = result
-                recordings.append(recording)
-                supervisions.extend(segments)
+                for recording, segments in future.result():
+                    recordings.append(recording)
+                    supervisions.extend(segments)
 
             recording_set = RecordingSet.from_recordings(recordings)
             supervision_set = SupervisionSet.from_segments(supervisions)
@@ -924,7 +946,13 @@ def prepare_csj(
     manifest_dir: Pathlike = None,
     dataset_parts: Union[str, Sequence[str]] = None,
     nj: int = 16,
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare CSJ manifests, see the module docstring. Returns a dict whose key is the dataset part,
+    and the value is a dict with the keys 'recordings', 'supervisions', and 'cuts'.
+    Dialogue talks are split into one recording per channel (``<talk>-L``, ``<talk>-R``),
+    both with and without ``transcript_dir``.
+    """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir()
     if transcript_dir:

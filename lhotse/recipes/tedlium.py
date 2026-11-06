@@ -101,14 +101,17 @@ def prepare_tedlium(
     Each split contains a RecordingSet, SupervisionSet, and CutSet in a dict under keys 'recordings', 'supervisions', and 'cuts'.
 
     :param tedlium_root: Path to the unpacked TED-LIUM data.
-    :param output_dir: Path where the manifests should be written.
+    :param output_dir: Path where the manifests should be written. Can be omitted to avoid writing.
     :param dataset_parts: Which parts of the dataset to prepare.
         By default, all parts are prepared.
     :param num_jobs: Number of parallel jobs to use.
-    :return: A dict with standard corpus splits containing the manifests.
+    :return: A dict whose keys are the parts (``train``, ``dev``, ``test``) and the values are dicts
+        with the keys ``recordings``, ``supervisions``, and ``cuts``.
     """
     tedlium_root = Path(tedlium_root)
     output_dir = Path(output_dir) if output_dir is not None else None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
     corpus = {}
 
     dataset_parts = [dataset_parts] if isinstance(dataset_parts, str) else dataset_parts

@@ -37,6 +37,80 @@ Standard data preparation recipes
 We provide a number of standard data preparation recipes. By that, we mean a collection of a Python function +
 a CLI tool that create the manifests given a corpus directory.
 
+Every recipe follows the same rules, so once you have used one, you know how to use all of them.
+
+Running a recipe
+****************
+
+From Python, call ``prepare_<corpus>`` with the directory where the corpus is stored.
+If you also pass ``output_dir``, the manifests are saved there::
+
+    >>> from lhotse.recipes import prepare_librispeech
+    >>> manifests = prepare_librispeech("/data/LibriSpeech", output_dir="data/manifests")
+
+From the command line, the same recipe is::
+
+    lhotse prepare librispeech /data/LibriSpeech data/manifests
+
+Many public corpora can also be downloaded first with ``download_<corpus>`` (or ``lhotse download <corpus>``).
+
+What you get back
+*****************
+
+The result is a dictionary with one entry per **part** of the corpus (its train, dev and test splits).
+Each part holds three manifests:
+
+.. code-block:: python
+
+    {
+        "train-clean-100": {
+            "recordings": RecordingSet,      # the audio files
+            "supervisions": SupervisionSet,  # what is said, by whom, and when
+            "cuts": CutSet,                  # recordings and supervisions together, ready for training
+        },
+        "dev-clean": {...},
+        ...
+    }
+
+A few details:
+
+* Parts use the corpus's own split names. If a corpus has no splits, the only part is called ``"all"``.
+* Recipes that prepare several languages in one call add one more level on top: ``manifests[language][part]``.
+* Noise, music and room impulse response corpora have no transcripts, so they have no ``"supervisions"``.
+* A few corpora add an extra manifest next to these three, for example ``"uem"`` in DIHARD III.
+
+The cuts are usually what you want. There is **one cut per recording**, covering the whole recording,
+with all of that recording's supervisions attached. For corpora of short utterances (like LibriSpeech),
+that means one cut per utterance. For long recordings (meetings, phone calls, lectures, podcasts),
+each cut is a full session; split it into smaller pieces when you need to:
+
+.. code-block:: python
+
+    cuts = manifests["train"]["cuts"]
+    utterances = cuts.trim_to_supervisions()   # one cut per supervision segment
+    windows = cuts.cut_into_windows(duration=30.0)  # or fixed-length chunks
+
+Files on disk
+*************
+
+With ``output_dir``, each manifest is saved as a compressed JSONL file named::
+
+    <corpus>_<manifest>_<part>.jsonl.gz
+
+* ``<corpus>`` is the corpus name in lowercase, with words joined by ``-``. Variants chosen when running
+  the recipe, such as the microphone type or the language, are added with more ``-``:
+  ``ami-ihm``, ``mls-polish``, ``cv-en``.
+* ``<manifest>`` is ``recordings``, ``supervisions`` or ``cuts`` (or the name of an extra manifest).
+* ``<part>`` is the same part name you see in the returned dictionary.
+
+For example, ``librispeech_cuts_train-clean-100.jsonl.gz`` or ``ami-ihm_supervisions_dev.jsonl.gz``.
+All files go directly into ``output_dir``. Load them later with
+:func:`lhotse.load_manifest` or ``CutSet.from_file(...)``. The cuts are read lazily from disk,
+so even very large corpora don't have to fit in memory.
+
+If you run a recipe again with the same ``output_dir``, parts that are already saved are usually loaded
+from disk instead of being prepared again. To start over, delete the files.
+
 .. list-table:: Currently supported audio corpora
   :widths: 30 50
   :header-rows: 1
@@ -249,43 +323,40 @@ a CLI tool that create the manifests given a corpus directory.
 Adding new corpora
 ------------------
 
-.. hint::
-    **Python data preparation recipes.** Each corpus has a dedicated Python file in ``lhotse/recipes``,
-    which you can use as the basis for your own recipe.
+A new recipe should behave exactly like the existing ones. Pick a similar corpus in ``lhotse/recipes``
+and use it as a starting point. Then check your recipe against this list:
 
-.. hint::
-    **(optional) Downloading utility.** For publicly available corpora that can be freely downloaded,
-    we usually define a function called ``download_<corpus-name>()``.
+1. **One file, two functions.** Add ``lhotse/recipes/<corpus>.py`` with ``prepare_<corpus>(corpus_dir, output_dir=None, ...)``.
+   If the corpus can be downloaded freely, also add ``download_<corpus>(target_dir, ...)``.
+   Export both in ``lhotse/recipes/__init__.py`` and list the corpus in the table above.
 
-.. hint::
-    **Data preparation Python entry-point.** Each data preparation recipe should expose a single function
-    called ``prepare_<corpus-name>``,
-    that produces dicts like: ``{'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>, 'cuts': <CutSet>}``.
+2. **Return the standard dictionary.** Return ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}``
+   as described in `What you get back`_. Use the corpus's own split names, or ``"all"`` if it has none.
+   Always return every part, including parts that were loaded from disk instead of prepared again.
 
-.. hint::
-    **Cuts.** Recipes also return a :class:`~lhotse.cut.CutSet` with one cut per recording, spanning the whole
-    recording, with all of its supervisions attached. Long or multi-speaker recordings are not split, so users can
-    segment them as they see fit, e.g. with :meth:`~lhotse.cut.CutSet.trim_to_supervisions`.
-    Use :func:`lhotse.recipes.utils.create_cuts_per_recording` to create them; it writes the cuts incrementally
-    and returns a lazily opened :class:`~lhotse.cut.CutSet` when given an ``output_path``.
+3. **Make the cuts with the helper.** Build the cuts with
+   :func:`lhotse.recipes.utils.create_cuts_per_recording`. It makes one cut per recording with all of its
+   supervisions, and when given an ``output_path`` it writes the cuts one by one and reads them back lazily.
+   Don't split recordings into segments; leave that to the user.
 
+4. **Name the files by the rule.** Save each manifest as ``output_dir / f"{corpus}_{manifest}_{part}.jsonl.gz"``.
+   Use ``-`` inside the corpus name, never ``_``, because ``_`` separates the three fields.
+   Put the files directly in ``output_dir``, not in subdirectories.
 
-.. hint::
-    **CLI recipe wrappers.** We provide a command-line interface that wraps the ``download`` and ``prepare``
-    functions -- see ``lhotse/bin/modes/recipes`` for examples of how to do it.
+5. **Make output_dir optional.** With ``output_dir=None``, write nothing and return the manifests in memory.
+   The only exception is a recipe that has to create new audio files; it should say so and raise a clear error.
 
-.. hint::
-    **Pre-defined train/dev/test splits.** When a corpus defines standard split (e.g. train/dev/test),
-    we return a dict with the following structure:
-    ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>, 'cuts': <CutSet>}, 'dev': ...}``
+6. **Keep memory use low for big corpora.** For corpora with millions of recordings, write the recordings,
+   supervisions and cuts to disk as you create them, using ``RecordingSet.open_writer``,
+   ``SupervisionSet.open_writer`` and ``CutSet.open_writer``, and return lazily opened manifests.
 
-.. hint::
-    **Manifest naming convention.** The default naming convention is ``<corpus-name>_<manifest-type>_<split>.jsonl.gz``,
-    i.e., we save the manifests in a compressed JSONL file. Here, ``<manifest-type>`` can be ``recordings``,
-    ``supervisions``, ``cuts``, etc., and ``<split>`` can be ``train``, ``dev``, ``test``, etc. In case the corpus
-    has no such split defined, we can use ``all`` as default. Other information, e.g., mic type, language, etc. may
-    be included in the ``<corpus-name>``. Some examples are: ``cmu-indic_recordings_all.jsonl.gz``,
-    ``ami-ihm_supervisions_dev.jsonl.gz``, ``mtedx-english_recordings_train.jsonl.gz``.
+7. **Add a command.** Add a CLI wrapper in ``lhotse/bin/modes/recipes`` so users can run
+   ``lhotse prepare <corpus>`` (and ``lhotse download <corpus>``). Copy the pattern of an existing wrapper.
+
+8. **Check imports.** Import optional packages inside the functions that need them, and tell the user how
+   to install them if they are missing.
+
+When modelling the data itself, follow these guidelines:
 
 .. hint::
     **Isolated utterance corpora.** Some corpora (like LibriSpeech) come with pre-segmented recordings.

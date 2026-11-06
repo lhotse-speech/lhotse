@@ -112,6 +112,8 @@ def prepare_rir_noise(
     real RIRs (real_rir), and simulated RIRs (sim_rir). We will prepare these parts
     in the corresponding dict keys.
 
+    The manifests are named ``rir-noise_<manifest>_<part>.jsonl.gz``, e.g. ``rir-noise_cuts_sim_rir.jsonl.gz``.
+
     :return: a Dict whose key is the part, and the value is Dicts with the keys
         "recordings" and "cuts" (one cut without supervisions per recording).
     """
@@ -123,6 +125,11 @@ def prepare_rir_noise(
         parts = [parts]
 
     manifests = defaultdict(dict)
+    unknown = [part for part in parts if part not in PARTS]
+    if unknown:
+        raise ValueError(
+            f"Unknown parts: {unknown}. Expected a subset of {list(PARTS)}."
+        )
     for part in parts:
         logging.info(f"Preparing {part}...")
         audio_dir = corpus_dir / PARTS[part]
@@ -158,20 +165,16 @@ def prepare_rir_noise(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        for part in manifests:
-            for key, manifest in manifests[part].items():
-                manifest.to_file(
-                    output_dir / f"{part.replace('_','-')}_{key}_all.jsonl.gz"
-                )
 
     for part in manifests:
+        cuts_path = None
+        if output_dir is not None:
+            manifests[part]["recordings"].to_file(
+                output_dir / f"rir-noise_recordings_{part}.jsonl.gz"
+            )
+            cuts_path = output_dir / f"rir-noise_cuts_{part}.jsonl.gz"
         manifests[part]["cuts"] = create_cuts_per_recording(
-            manifests[part]["recordings"],
-            output_path=(
-                output_dir / f"{part.replace('_','-')}_cuts_all.jsonl.gz"
-                if output_dir is not None
-                else None
-            ),
+            manifests[part]["recordings"], output_path=cuts_path
         )
 
-    return manifests
+    return dict(manifests)

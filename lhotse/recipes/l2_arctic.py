@@ -118,7 +118,8 @@ def prepare_l2_arctic(
     Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Optional Pathlike, the path where to write the manifests as
+        ``l2-arctic_<manifest>_<part>.jsonl.gz``.
     :return: a dict with keys "read" and "suitcase".
         Each hold another dict of {'recordings': ..., 'supervisions': ..., 'cuts': ...}
     """

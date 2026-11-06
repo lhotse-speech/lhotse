@@ -47,7 +47,7 @@ def prepare_callhome_english(
     transcript_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the CallHome American English corpus.
     We create three manifests: one with recordings, one with text
@@ -63,8 +63,10 @@ def prepare_callhome_english(
         the transcripts will be downloaded.
     :param absolute_paths: Whether to return absolute or relative
         (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are:
-        ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
+        The ASR task has the parts ``evaltest``, ``train`` and ``devtest`` (files
+        ``callhome-english_{manifest}_{part}.jsonl.gz``); the SRE task has the single part
+        ``all`` (files ``callhome-english-sre_{manifest}_all.jsonl.gz``).
     """
     # not sure if there is possible deeper level of integration,
     # as SRE does not contain/respect the train/eval/test splits?
@@ -84,7 +86,7 @@ def prepare_callhome_english_sre(
     rttm_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the Callhome American English portion prepartion.
     We create three manifests: one with recordings, one with text
@@ -97,12 +99,12 @@ def prepare_callhome_english_sre(
         Can be omitted to avoid writing.
     :param absolute_paths: Whether to return absolute or relative
         (to the corpus dir) paths for recordings.
-    :return: A dict with manifests.
-        The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict ``{"all": {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
+        Files are written as ``callhome-english-sre_{manifest}_all.jsonl.gz``.
     """
     if rttm_dir is None:
         rttm_dir = download_callhome_metadata()
-    rttm_path = rttm_dir / "fullref.rttm"
+    rttm_path = Path(rttm_dir) / "fullref.rttm"
     supervisions = read_rttm(rttm_path)
 
     audio_paths = check_and_rglob(audio_dir, "*.sph")
@@ -114,15 +116,19 @@ def prepare_callhome_english_sre(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
-    cuts = create_cuts_per_recording(recordings, supervisions)
-
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / "recordings.json")
-        supervisions.to_json(output_dir / "supervisions.json")
-        cuts.to_json(output_dir / "cuts.json")
-    return {"recordings": recordings, "supervisions": supervisions, "cuts": cuts}
+        recordings.to_file(output_dir / "callhome-english-sre_recordings_all.jsonl.gz")
+        supervisions.to_file(
+            output_dir / "callhome-english-sre_supervisions_all.jsonl.gz"
+        )
+        cuts_path = output_dir / "callhome-english-sre_cuts_all.jsonl.gz"
+    cuts = create_cuts_per_recording(recordings, supervisions, output_path=cuts_path)
+    return {
+        "all": {"recordings": recordings, "supervisions": supervisions, "cuts": cuts}
+    }
 
 
 def prepare_callhome_english_asr(
@@ -130,7 +136,7 @@ def prepare_callhome_english_asr(
     transcript_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the CallHome American English corpus.
     We create three manifests: one with recordings, one with text
@@ -142,8 +148,9 @@ def prepare_callhome_english_asr(
         Can be omitted to avoid writing.
     :param absolute_paths: Whether to return absolute or relative
         (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are:
-        ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with the
+        parts ``evaltest``, ``train`` and ``devtest``. Files are written as
+        ``callhome-english_{manifest}_{part}.jsonl.gz``.
     """
     audio_dir = Path(audio_dir)
     transcript_dir = Path(transcript_dir)

@@ -26,6 +26,7 @@ import logging
 import re
 import urllib.request
 from collections import defaultdict
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 from urllib.error import HTTPError
@@ -136,10 +137,10 @@ def _download_metadata(url: str, file_id: str) -> dict:
 
 def prepare_seamless_interaction(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
-    labels: Sequence[str] = LABELS,
+    output_dir: Optional[Pathlike] = None,
+    label: str = "improvised",
     splits: Sequence[str] = SPLITS,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for Seamless Interaction, with one two-channel recording per interaction.
 
@@ -150,90 +151,119 @@ def prepare_seamless_interaction(
     archives of the same batch; when only one of them is available, the interaction becomes
     a single-channel recording. Interactions without any transcript are skipped.
 
-    The manifests are written while they are created, because the train splits have
-    millions of supervisions with word alignments.
+    When ``output_dir`` is given, the manifests are written while they are created, because
+    the train splits have millions of supervisions with word alignments, and are named
+    ``seamless-interaction-{label}_{recordings,supervisions,cuts}_{split}.jsonl.gz``.
 
     :param corpus_dir: Pathlike, the path to the corpus.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param labels: which conversation types to prepare, "improvised" and/or "naturalistic".
+        When ``None``, nothing is written and eager manifests are returned.
+    :param label: the conversation type to prepare, "improvised" or "naturalistic".
+        It is part of the manifests' corpus name; call the function once per label.
     :param splits: which splits to prepare, among "train", "dev" and "test".
-    :return: a Dict whose keys are the labels and the values are Dicts whose keys are the splits
-        and the values are Dicts with the keys 'recordings', 'supervisions', and 'cuts' (opened lazily).
+    :return: a Dict whose keys are the splits and the values are Dicts with the keys
+        'recordings', 'supervisions', and 'cuts' (opened lazily when ``output_dir`` is given).
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    assert label in LABELS, f"Unknown label {label!r}, expected one of {LABELS}"
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    manifests = defaultdict(dict)
-    for label in labels:
-        for split in splits:
-            interactions = defaultdict(list)
-            # Sorting by file name orders the participants (channels) by participant ID.
-            audio_paths = (corpus_dir / label / split).rglob("*.wav")
-            for audio_path in sorted(audio_paths, key=lambda p: p.name):
-                match = FILE_ID.fullmatch(audio_path.stem)
-                if match is not None:
-                    interactions[match["interaction"]].append(audio_path)
-            if not interactions:
-                logging.warning(f"No audio found in {corpus_dir / label / split}")
-                continue
-            num_single = sum(len(paths) == 1 for paths in interactions.values())
-            if num_single:
-                logging.warning(
-                    f"{num_single} of {len(interactions)} interactions in {label}/{split} "
-                    f"have the audio of only one participant."
-                )
+    manifests = {}
+    for split in splits:
+        interactions = defaultdict(list)
+        # Sorting by file name orders the participants (channels) by participant ID.
+        audio_paths = (corpus_dir / label / split).rglob("*.wav")
+        for audio_path in sorted(audio_paths, key=lambda p: p.name):
+            match = FILE_ID.fullmatch(audio_path.stem)
+            if match is not None:
+                interactions[match["interaction"]].append(audio_path)
+        if not interactions:
+            logging.warning(f"No audio found in {corpus_dir / label / split}")
+            continue
+        num_single = sum(len(paths) == 1 for paths in interactions.values())
+        if num_single:
+            logging.warning(
+                f"{num_single} of {len(interactions)} interactions in {label}/{split} "
+                f"have the audio of only one participant."
+            )
 
-            prefix = f"seamless-interaction-{label}"
-            num_untranscribed = 0
-            with (
-                RecordingSet.open_writer(
-                    output_dir / f"{prefix}_recordings_{split}.jsonl.gz"
-                ) as rec_writer,
-                SupervisionSet.open_writer(
-                    output_dir / f"{prefix}_supervisions_{split}.jsonl.gz"
-                ) as sup_writer,
-                CutSet.open_writer(
-                    output_dir / f"{prefix}_cuts_{split}.jsonl.gz"
-                ) as cut_writer,
-            ):
-                for paths in tqdm(
-                    interactions.values(),
-                    desc=f"Preparing Seamless Interaction {label}/{split}",
-                ):
-                    recording, segments = _prepare_interaction(paths)
-                    if recording is None:
-                        continue
-                    if not segments:
-                        num_untranscribed += 1
-                        continue
-                    recordings, supervisions = fix_manifests(
-                        RecordingSet.from_recordings([recording]),
-                        SupervisionSet.from_segments(segments),
+        prefix = f"seamless-interaction-{label}"
+        num_untranscribed = 0
+        with ExitStack() as stack:
+            if output_dir is not None:
+                rec_writer, sup_writer, cut_writer = (
+                    stack.enter_context(
+                        manifest_type.open_writer(
+                            output_dir / f"{prefix}_{name}_{split}.jsonl.gz"
+                        )
                     )
-                    validate_recordings_and_supervisions(recordings, supervisions)
-                    for recording in recordings:
-                        rec_writer.write(recording)
-                        cut = recording.to_cut()
-                        cut.supervisions = list(supervisions)
-                        cut_writer.write(cut)
-                    for segment in supervisions:
-                        sup_writer.write(segment)
-            if num_untranscribed:
-                logging.warning(
-                    f"Skipped {num_untranscribed} interactions in {label}/{split} "
-                    f"without any transcript."
+                    for name, manifest_type in (
+                        ("recordings", RecordingSet),
+                        ("supervisions", SupervisionSet),
+                        ("cuts", CutSet),
+                    )
                 )
-            recordings = rec_writer.open_manifest()
-            if recordings is not None:
-                manifests[label][split] = {
-                    "recordings": recordings,
-                    "supervisions": sup_writer.open_manifest(),
-                    "cuts": cut_writer.open_manifest(),
-                }
+            else:
+                rec_writer, sup_writer, cut_writer = (
+                    _ListWriter(RecordingSet),
+                    _ListWriter(SupervisionSet),
+                    _ListWriter(CutSet),
+                )
+            for paths in tqdm(
+                interactions.values(),
+                desc=f"Preparing Seamless Interaction {label}/{split}",
+            ):
+                recording, segments = _prepare_interaction(paths)
+                if recording is None:
+                    continue
+                if not segments:
+                    num_untranscribed += 1
+                    continue
+                recordings, supervisions = fix_manifests(
+                    RecordingSet.from_recordings([recording]),
+                    SupervisionSet.from_segments(segments),
+                )
+                validate_recordings_and_supervisions(recordings, supervisions)
+                for recording in recordings:
+                    rec_writer.write(recording)
+                    cut = recording.to_cut()
+                    cut.supervisions = list(supervisions)
+                    cut_writer.write(cut)
+                for segment in supervisions:
+                    sup_writer.write(segment)
+        if num_untranscribed:
+            logging.warning(
+                f"Skipped {num_untranscribed} interactions in {label}/{split} "
+                f"without any transcript."
+            )
+        recordings = rec_writer.open_manifest()
+        if recordings is not None:
+            manifests[split] = {
+                "recordings": recordings,
+                "supervisions": sup_writer.open_manifest(),
+                "cuts": cut_writer.open_manifest(),
+            }
 
-    return dict(manifests)
+    return manifests
+
+
+class _ListWriter:
+    """In-memory stand-in for ``open_writer`` used when no output directory is given."""
+
+    def __init__(self, manifest_type):
+        self.manifest_type = manifest_type
+        self.items = []
+
+    def write(self, item) -> None:
+        self.items.append(item)
+
+    def open_manifest(self):
+        if not self.items:
+            return None
+        return self.manifest_type.from_items(self.items)
 
 
 def _prepare_interaction(

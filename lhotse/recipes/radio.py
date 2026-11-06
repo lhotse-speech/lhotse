@@ -101,45 +101,65 @@ def prepare_radio(
     output_dir: Optional[Pathlike] = None,
     min_segment_duration: float = 0.5,
     num_jobs: int = 4,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Return the manifests which consist of recordings and supervisions
+    Return the manifests which consist of recordings, supervisions and cuts.
+
     :param corpus_dir: Path to the collected radio samples
-    :param output_dir: Pathlike, the path where manifests are written
-    :return: A Dict with keys 'recordings', 'supervisions', and 'cuts'.
+    :param output_dir: Optional path where manifests are written (streamed) as
+        ``radio_<manifest>_all.jsonl.gz``. When ``None``, nothing is written.
+    :param min_segment_duration: Speech segments shorter than this are dropped.
+    :param num_jobs: Number of parallel jobs.
+    :return: A Dict with the single part ``'all'``, holding a Dict with keys
+        'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     segment_files = corpus_dir.rglob("segs/*/*.json")
-    supervisions, recordings = [], []
     fun = partial(_make_reco_and_sups_from_file, msd=min_segment_duration)
-    output_dir = Path(output_dir) if output_dir is not None else None
+    results = tqdm(
+        parallel_map(fun, segment_files, num_jobs=num_jobs),
+        desc="Making recordings and supervisions",
+    )
+
+    if output_dir is None:
+        recordings, supervisions, cuts = [], [], []
+        for sups, reco in results:
+            recordings.append(reco)
+            supervisions.extend(sups)
+            cut = reco.to_cut()
+            cut.supervisions = sups
+            cuts.append(cut)
+        return {
+            "all": {
+                "recordings": RecordingSet.from_recordings(recordings),
+                "supervisions": SupervisionSet.from_segments(supervisions),
+                "cuts": CutSet.from_cuts(cuts),
+            }
+        }
+
+    output_dir = Path(output_dir)
     output_dir.mkdir(mode=511, parents=True, exist_ok=True)
-    with RecordingSet.open_writer(
-        output_dir / "radio_recordings.jsonl.gz"
-    ) as rec_writer:
-        with SupervisionSet.open_writer(
-            output_dir / "radio_supervisions.jsonl.gz"
-        ) as sup_writer:
-            with CutSet.open_writer(output_dir / "radio_cuts.jsonl.gz") as cut_writer:
-                for sups, reco in tqdm(
-                    parallel_map(
-                        fun,
-                        segment_files,
-                        num_jobs=num_jobs,
-                    ),
-                    desc=f"Making recordings and supervisions",
-                ):
-                    rec_writer.write(reco)
-                    for sup in sups:
-                        sup_writer.write(sup)
-                    cut = reco.to_cut()
-                    cut.supervisions = sups
-                    cut_writer.write(cut)
+    with (
+        RecordingSet.open_writer(
+            output_dir / "radio_recordings_all.jsonl.gz"
+        ) as rec_writer,
+        SupervisionSet.open_writer(
+            output_dir / "radio_supervisions_all.jsonl.gz"
+        ) as sup_writer,
+        CutSet.open_writer(output_dir / "radio_cuts_all.jsonl.gz") as cut_writer,
+    ):
+        for sups, reco in results:
+            rec_writer.write(reco)
+            for sup in sups:
+                sup_writer.write(sup)
+            cut = reco.to_cut()
+            cut.supervisions = sups
+            cut_writer.write(cut)
 
-    manifests = {
-        "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
-        "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
-        "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
+    return {
+        "all": {
+            "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
+            "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+            "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
+        }
     }
-
-    return manifests

@@ -136,15 +136,17 @@ def prepare_voxpopuli(
     Prepares and returns the VoxPopuli manifests which consist of Recordings, Supervisions, and Cuts.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests (optional).
+        Files are written as ``voxpopuli-{task}-{lang}_{manifest}_{part}.jsonl.gz``.
     :param task: str, the task to prepare the manifests for, can be one of "asr", "s2s", "lm".
     :param lang: str, the language to prepare the manifests for, can be one of LANGUAGES
         or LANGUAGES_V2. This is used for "asr" and "lm" tasks.
     :param source_lang: str, the source language for the s2s task, can be one of S2S_SRC_LANGUAGES.
     :param target_lang: str, the target language for the s2s task, can be one of S2S_TGT_LANGUAGES.
     :param num_jobs: int, the number of parallel jobs to use for preparing the manifests.
-    :return: Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]], the manifests,
-        with the keys "recordings", "supervisions", and "cuts" for each split.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with
+        parts "train", "dev", and "test". The annotations TSV is downloaded to (or read from)
+        ``corpus_dir / "annotations"``.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -155,9 +157,7 @@ def prepare_voxpopuli(
 
     if task == "asr":
         assert lang in ASR_LANGUAGES, f"Unsupported language: {lang}"
-        manifests = _prepare_voxpopuli_asr(
-            corpus_dir, output_dir, lang, num_jobs=num_jobs
-        )
+        manifests = _prepare_voxpopuli_asr(corpus_dir, lang, num_jobs=num_jobs)
     elif task == "s2s":
         assert (
             source_lang in S2S_SRC_LANGUAGES
@@ -169,6 +169,8 @@ def prepare_voxpopuli(
     elif task == "lm":
         assert lang in ASR_LANGUAGES, f"Unsupported language: {lang}"
         manifests = _prepare_voxpopuli_lm(corpus_dir, lang)
+    else:
+        raise ValueError(f"Unsupported task: {task}")
 
     for k, v in manifests.items():
         recordings, supervisions = fix_manifests(**v)
@@ -192,7 +194,7 @@ def prepare_voxpopuli(
             recordings, supervisions, output_path=cuts_path
         )
 
-    return manifests
+    return dict(manifests)
 
 
 class RecordingIdFn:
@@ -211,7 +213,7 @@ class RecordingIdFn:
 
 
 def _prepare_voxpopuli_asr(
-    corpus_dir: Path, output_dir: Path, lang: str, num_jobs: int = 1
+    corpus_dir: Path, lang: str, num_jobs: int = 1
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Download metadata TSV and prepare manifests for the ASR task.
@@ -231,7 +233,8 @@ def _prepare_voxpopuli_asr(
     # Get metadata TSV
     url = f"{DOWNLOAD_BASE_URL}/annotations/asr/asr_{lang}.tsv.gz"
 
-    tsv_path = output_dir / Path(url).name
+    tsv_path = corpus_dir / "annotations" / Path(url).name
+    tsv_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not tsv_path.exists():
         logging.info(f"Downloading : {url} -> {tsv_path}")

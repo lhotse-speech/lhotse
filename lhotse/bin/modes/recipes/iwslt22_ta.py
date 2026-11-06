@@ -25,7 +25,7 @@ from lhotse.utils import Pathlike
 )
 @click.option(
     "--langs",
-    default="",
+    default="ta,eng",
     help="Comma-separated list of language abbreviations for source and target languages",
 )
 def iwslt22_ta(

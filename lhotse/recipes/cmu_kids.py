@@ -46,7 +46,7 @@ def prepare_cmu_kids(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: Optional[bool] = True,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for CMU Kids corpus. The prepared supervisions contain the
     prompt text as the `text`. Additionally, in the `custom` tag, we provide the
@@ -63,7 +63,7 @@ def prepare_cmu_kids(
     :param corpus_dir: Path to downloaded LDC corpus.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param absolute_paths: Wheter to write absolute paths to audio sources (default = False)
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
+    :return: A dict with a single part ``'all'``, whose value is a dict with the keys ``{'recordings', 'supervisions', 'cuts'}``.
     """
     corpus_dir = Path(corpus_dir) if isinstance(corpus_dir, str) else corpus_dir
     corpus_dir = corpus_dir.parent if corpus_dir.stem == "cmu_kids" else corpus_dir
@@ -154,4 +154,4 @@ def prepare_cmu_kids(
         recordings, supervisions, output_path=cuts_path
     )
 
-    return manifests
+    return {"all": manifests}

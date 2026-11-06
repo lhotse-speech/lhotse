@@ -10,7 +10,7 @@ GitHub: https://github.com/keonlee9420/DailyTalk
 import logging
 import zipfile
 from pathlib import Path
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 from lhotse import (
     CutSet,
@@ -63,15 +63,16 @@ def download_daily_talk(target_dir: Pathlike, force_download: bool = False) -> P
 
 def prepare_daily_talk(
     corpus_dir: Pathlike,
-    output_dir: Pathlike = None,
+    output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Create RecordingSet and SupervisionSet manifests for DailyTalk from a raw corpus distribution.
 
     :param corpus_dir: Pathlike, the path to the extracted corpus.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict with the keys 'recordings', 'supervisions', and 'cuts'.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+    :return: a Dict with the single part ``'all'``, whose value is a Dict with the keys
+        'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     meta = corpus_dir / "metadata.json"
@@ -122,11 +123,13 @@ def prepare_daily_talk(
         cuts_path = output_dir / "dailytalk_cuts_all.jsonl.gz"
 
     return {
-        "recordings": recordings,
-        "supervisions": supervisions,
-        "cuts": create_cuts_per_recording(
-            recordings, supervisions, output_path=cuts_path
-        ),
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
     }
 
 

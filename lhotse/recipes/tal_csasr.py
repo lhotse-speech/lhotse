@@ -127,10 +127,10 @@ def prepare_tal_csasr(
         cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"tal_csasr_supervisions_{part}.jsonl.gz"
+                output_dir / f"tal-csasr_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"tal_csasr_recordings_{part}.jsonl.gz")
-            cuts_path = output_dir / f"tal_csasr_cuts_{part}.jsonl.gz"
+            recording_set.to_file(output_dir / f"tal-csasr_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"tal-csasr_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,

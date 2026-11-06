@@ -61,6 +61,14 @@ def prepare_wham(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare manifests of the WHAM noise recordings.
+
+    :param corpus_dir: Pathlike, the path of the ``wham_noise`` dir.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+    :return: a Dict whose keys are the parts ``tr``, ``cv`` and ``tt``, and the values are Dicts
+        with the keys 'recordings' and 'cuts' (this corpus has no supervisions).
+    """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 

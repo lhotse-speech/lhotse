@@ -11,11 +11,11 @@ RES stands for respiratory, GAS represents gastrointestinal, CAR is cardiovascul
 It is covered in more detail at https://www.nature.com/articles/s41597-022-01423-1.pdf
 """
 
+import hashlib
 import logging
 import os
 import shutil
 import tarfile
-from collections import defaultdict
 from concurrent.futures.process import ProcessPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -96,7 +96,7 @@ def _parse_utterance(
 
     recording = Recording.from_file(path=audio_path, recording_id=file_name)
     segment = SupervisionSegment(
-        id=file_name + "_" + str(hash(audio_info)),
+        id=file_name + "_" + hashlib.md5(audio_info.encode("utf-8")).hexdigest()[:16],
         recording_id=file_name,
         start=float(start),
         duration=float(end) - float(start),
@@ -174,7 +174,7 @@ def prepare_medical(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    manifests = defaultdict(dict)
+    manifests = {}
 
     for part in tqdm(subsets, desc="Dataset parts"):
         logging.info(f"Processing Medical subset: {part}")

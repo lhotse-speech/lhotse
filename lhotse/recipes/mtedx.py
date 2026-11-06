@@ -132,10 +132,12 @@ def prepare_mtedx(
 
     :param corpus_dir: Path to the root where MTEDx data was downloaded.
                        It should be called mtedx_corpus.
-    :param output_dir: Root directory where .json manifests are stored.
+    :param output_dir: Directory where the manifests are stored, named
+        ``mtedx-{lang}_{recordings,supervisions,cuts}_{part}.jsonl.gz``.
     :param languages: str or str sequence specifying the languages to prepare.
         The str 'all' prepares all languages.
-    :return:
+    :return: a Dict whose key is the language, then the part ("train", "valid", "test"),
+        and the value is a Dict with the keys "recordings", "supervisions", and "cuts".
     """
     # Resolve corpus_dir type
     if isinstance(corpus_dir, str):
@@ -156,11 +158,10 @@ def prepare_mtedx(
     manifests = defaultdict(dict)
     for lang in langs_list:
         corpus_dir_lang = corpus_dir / f"{lang}-{lang}"
-        output_dir_lang = output_dir / f"{lang}" if output_dir is not None else None
         if corpus_dir_lang.is_dir():
             manifests[lang] = prepare_single_mtedx_language(
                 corpus_dir_lang,
-                output_dir_lang,
+                output_dir,
                 language=lang,
                 num_jobs=num_jobs,
             )
@@ -193,10 +194,10 @@ def prepare_single_mtedx_language(
         - The transcripts undergo some basic text normalization
 
     :param corpus_dir: Path to the root of the MTEDx download
-    :param output_dir: Path where the manifests are stored as .json files
+    :param output_dir: Path where the manifests are stored as .jsonl.gz files
     :param language: The two-letter language code.
     :param num_jobs: Number of threads to use when preparing data.
-    :return: a Dict whose key is the split, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
+    :return: a Dict whose key is the part ("train", "valid", "test"), and the value is a Dict with the keys "recordings", "supervisions", and "cuts".
     """
     if isinstance(corpus_dir, str):
         corpus_dir = Path(corpus_dir)
@@ -236,7 +237,6 @@ def prepare_single_mtedx_language(
                 if isinstance(output_dir, str):
                     output_dir = Path(output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
-                save_split = "dev" if split == "valid" else split
                 recordings.to_file(
                     output_dir / f"mtedx-{language}_recordings_{split}.jsonl.gz"
                 )
