@@ -35,6 +35,7 @@ def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manife
             array=to_shar_placeholder(manifest.array),
         )
         if isinstance(manifest, Features) and cut is not None:
+            # The placeholder describes only the cut's span of the source audio.
             placeholder.duration = cut.duration
         return placeholder
     else:

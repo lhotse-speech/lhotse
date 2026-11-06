@@ -251,18 +251,8 @@ def test_mono_cut_from_dict_accepts_both_feature_layouts():
     new = MonoCut.from_dict(cut.to_dict())
     legacy_dict = cut.to_dict()
     legacy_dict["features"] = {
-        "type": cut.features.type,
-        "num_frames": cut.features.num_frames,
-        "num_features": cut.features.num_features,
-        "frame_shift": cut.features.frame_shift,
-        "sampling_rate": cut.features.sampling_rate,
-        "start": cut.features.start,
-        "duration": cut.features.duration,
-        "storage_type": cut.features.storage_type,
-        "storage_path": cut.features.storage_path,
-        "storage_key": cut.features.storage_key,
-        "recording_id": cut.features.recording_id,
-        "channels": cut.features.channels,
+        key: getattr(cut.features, key)
+        for key in [*LEGACY_FEATURES_DICT, "recording_id"]
     }
     assert MonoCut.from_dict(legacy_dict) == new == cut
 

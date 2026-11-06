@@ -905,7 +905,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 else nullcontext()
             ) as fw,
         ):
-            features = []  # Only used when not writing to output_dir.
+            # Features are kept in memory only when they are not written to output_dir.
+            features = []
             num_features = 0
 
             def save(cut: DataCut):
@@ -3654,12 +3655,8 @@ def create_cut_set_lazy(
         features is not None,
         recordings is not None,
     )
-    for mtype, m in [
-        ("recordings", recordings),
-        ("supervisions", supervisions),
-        ("features", features),
-    ]:
-        if m is not None and not getattr(m, "is_lazy", True):
+    for mtype, m in [("recordings", recordings), ("supervisions", supervisions)]:
+        if m is not None and not m.is_lazy:
             logging.info(
                 f"Manifest passed in argument '{mtype}' is not opened lazily; "
                 f"open it with {type(m).__name__}.from_jsonl_lazy() to reduce the memory usage of this method."

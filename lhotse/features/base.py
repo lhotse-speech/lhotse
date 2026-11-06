@@ -459,6 +459,7 @@ class Features(TemporalArray):
     recording_id: Optional[str] = None
     channels: Optional[Union[int, List[int]]] = None
 
+    # Feature reads have always tolerated starting up to 1ms before ``start``.
     _start_tolerance = 1e-3
 
     def __init__(
@@ -480,15 +481,24 @@ class Features(TemporalArray):
         storage_path: Optional[str] = None,
         storage_key: Optional[Union[str, bytes]] = None,
     ) -> None:
-        legacy = {
-            "storage_type": storage_type,
-            "storage_path": storage_path,
-            "storage_key": storage_key,
-        }
         if array is None:
-            array = Array(shape=[num_frames, num_features], **legacy)
+            array = Array(
+                storage_type=storage_type,
+                storage_path=storage_path,
+                storage_key=storage_key,
+                shape=[num_frames, num_features],
+            )
         else:
-            overrides = {k: v for k, v in legacy.items() if v is not None}
+            # E.g. ``fastcopy(features, storage_path=...)`` passes both ``array`` and a legacy field.
+            overrides = {
+                k: v
+                for k, v in [
+                    ("storage_type", storage_type),
+                    ("storage_path", storage_path),
+                    ("storage_key", storage_key),
+                ]
+                if v is not None
+            }
             if num_frames is not None or num_features is not None:
                 overrides["shape"] = [
                     ifnone(num_frames, array.shape[0]),
@@ -510,6 +520,9 @@ class Features(TemporalArray):
     @property
     def num_features(self) -> int:
         return self.shape[1]
+
+    # The setters replace ``array`` rather than mutate it, because copies of
+    # this manifest may share the same ``Array`` object.
 
     @property
     def storage_type(self) -> str:
@@ -559,12 +572,17 @@ class Features(TemporalArray):
         duration: Optional[Seconds] = None,
         lilcom: bool = False,
     ) -> "Features":
+        """
+        Like :meth:`~lhotse.array.TemporalArray.move_to_memory`; when ``duration`` is given,
+        it also becomes the duration of the in-memory copy.
+        """
         out = super().move_to_memory(start=start, duration=duration, lilcom=lilcom)
         if out is not self and duration is not None:
             out.duration = duration
         return out
 
     def to_dict(self) -> dict:
+        # Omit unset ``recording_id`` and ``channels``, as older versions did.
         return asdict_nonull(self)
 
     def copy_feats(self, writer: FeaturesWriter) -> "Features":

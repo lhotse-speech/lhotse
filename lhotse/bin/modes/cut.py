@@ -69,11 +69,10 @@ def simple(
         else None
     )
 
+    # Features are read eagerly, so a lazy CutSet is created only without them.
     if (
-        all(
-            m is None or getattr(m, "is_lazy", False)
-            for m in (supervision_set, features, recording_set)
-        )
+        features is None
+        and all(m is None or m.is_lazy for m in (supervision_set, recording_set))
         and not force_eager
     ):
         # Create the CutSet lazily; requires sorting by recording_id

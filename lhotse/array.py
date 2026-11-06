@@ -367,6 +367,7 @@ def deserialize_array(raw_data: dict) -> Union[Array, TemporalArray]:
         :class:`~lhotse.features.base.Features` instance.
     """
     if "array" in raw_data:
+        # Features add feature metadata such as the sampling rate on top of a TemporalArray.
         if "sampling_rate" in raw_data:
             from lhotse.features import Features
 
