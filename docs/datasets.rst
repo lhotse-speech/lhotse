@@ -419,8 +419,8 @@ rather than the batch size times the longest example.
 :class:`~lhotse.dataset.sampling.packed.PackedTokenConstraint` caps that sum exactly with ``batch_tokens``
 (optionally also the number of examples, a quadratic length penalty, and the total number of output tokens),
 and the packed samplers select examples that fill it as closely as possible.
-Each mini-batch is the best-fitting subset of the next ``packing_buffer_size`` examples that includes the oldest one,
-so that no example is starved::
+Each mini-batch is the best-fitting subset of the next ``packing_buffer_size`` examples (within a bucket, for the bucketing sampler)
+that includes the oldest one, so that no example is starved::
 
     from lhotse.dataset import PackedSequenceDynamicBucketingSampler, PackedTokenConstraint
 

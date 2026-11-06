@@ -25,7 +25,7 @@ from lhotse.dataset.sampling.dynamic_bucketing import (
 )
 from lhotse.lazy import require_graph_origin, resolve_iterator_source
 
-Example = Union[Cut, Tuple[Cut, ...]]
+_Example = Union[Cut, Tuple[Cut, ...]]
 
 
 @dataclass
@@ -71,6 +71,8 @@ class PackedTokenConstraint(SamplingConstraint):
     _batch_max_examples: Optional[int] = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if self.batch_tokens is None:
+            raise ValueError("PackedTokenConstraint requires batch_tokens.")
         for name in (
             "batch_tokens",
             "max_examples",
@@ -80,8 +82,6 @@ class PackedTokenConstraint(SamplingConstraint):
             value = getattr(self, name)
             if value is not None and value <= 0:
                 raise ValueError(f"{name} must be positive (got {value})")
-        if self.batch_tokens is None:
-            raise ValueError("PackedTokenConstraint requires batch_tokens.")
         if (self.bucket_bins is None) != (self.max_examples_per_bucket is None):
             raise ValueError(
                 "bucket_bins and max_examples_per_bucket must be set together."
@@ -191,6 +191,9 @@ class PackedSequenceDynamicCutSampler(DynamicCutSampler):
 
     With graph-restorable (indexed) sources, the pool is checkpointed as graph tokens
     and restored in constant time; otherwise it is rebuilt by replay.
+
+    With ``drop_last=True``, only the incomplete mini-batches at the end of the data are dropped;
+    earlier mini-batches may be incomplete when no other examples fit next to the anchor.
     """
 
     def __init__(self, *cuts: Iterable, packing_buffer_size: int = 128, **kwargs):
@@ -277,6 +280,9 @@ class PackedSequenceDynamicBucketingSampler(DynamicBucketingSampler):
         ...     constraint=PackedTokenConstraint(batch_tokens=8192),
         ...     duration_bins=[256, 512, 1024],
         ... )
+
+    With ``drop_last=True``, only the incomplete mini-batches at the end of the data are dropped;
+    earlier mini-batches may be incomplete when no other examples fit next to the anchor.
     """
 
     def __init__(self, *cuts: Iterable, packing_buffer_size: int = 128, **kwargs):
@@ -348,7 +354,7 @@ class PackedSequenceBucketer(DynamicBucketer):
 
     def _plan_batch(
         self, bucket: Queue, randomize_tail: bool
-    ) -> Tuple[List[int], List[Example]]:
+    ) -> Tuple[List[int], List[_Example]]:
         with bucket.mutex:
             if randomize_tail:
                 # The anchor stays first; the rest of the candidates is a random sample of the bucket.
@@ -369,6 +375,10 @@ class PackedSequenceBucketer(DynamicBucketer):
     def _is_ready(self, bucket: Queue) -> bool:
         if bucket.qsize() == 0:
             return False
+        # Examples queued behind the first packing_buffer_size ones can't improve the next batch,
+        # so a bucket with that many examples is ready even if its batch is incomplete.
+        if bucket.qsize() >= self.packing_buffer_size:
+            return True
         _, examples = self._plan_batch(bucket, randomize_tail=False)
         return _is_full_batch(self.constraint, examples)
 
@@ -401,12 +411,12 @@ def _validate_packing_setup(
         )
 
 
-def _first(example: Example) -> Cut:
+def _first(example: _Example) -> Cut:
     """With multiple input CutSets, the constraint measures only the cut from the first one."""
     return example[0] if isinstance(example, tuple) else example
 
 
-def _is_full_batch(constraint: SamplingConstraint, examples: List[Example]) -> bool:
+def _is_full_batch(constraint: SamplingConstraint, examples: List[_Example]) -> bool:
     constraint = constraint.copy()
     constraint.reset()
     for example in examples:
@@ -416,33 +426,28 @@ def _is_full_batch(constraint: SamplingConstraint, examples: List[Example]) -> b
 
 
 def _select_packed_batch(
-    constraint: SamplingConstraint, candidates: List[Example]
+    constraint: SamplingConstraint, candidates: List[_Example]
 ) -> List[int]:
     """
     Return the sorted positions of ``candidates`` that form the next packed mini-batch.
     The first candidate (the anchor) is always selected.
     """
     examples = [_first(example) for example in candidates]
-    for example in examples:
-        length = constraint.measure_length(example)
+    lengths = [constraint.measure_length(example) for example in examples]
+    for length in lengths:
         if length != int(length) or length <= 0:
             raise ValueError(
                 f"Packed sequence sampling requires positive integer token lengths, but measured {length!r}."
             )
     batch_tokens = constraint.batch_tokens
-    anchor_length = int(constraint.measure_length(examples[0]))
-    if anchor_length > batch_tokens:
-        raise ValueError(
-            f"An individual example ({anchor_length} tokens) exceeds batch_tokens={batch_tokens}. "
-            f"Filter out examples longer than batch_tokens before sampling."
-        )
     budgets = [constraint.measure_packing_length(example) for example in examples]
     if budgets[0] > batch_tokens:
         raise ValueError(
-            f"An individual example's effective packed budget ({budgets[0]} tokens) exceeds "
-            f"batch_tokens={batch_tokens}; increase batch_tokens or quadratic_length."
+            f"An individual example ({lengths[0]} tokens, taking {budgets[0]} tokens of the budget) "
+            f"exceeds batch_tokens={batch_tokens}; filter out such examples before sampling, "
+            f"or increase batch_tokens or quadratic_length."
         )
-    max_examples = constraint.max_examples_for_length(anchor_length)
+    max_examples = constraint.max_examples_for_length(lengths[0])
     max_items = None if max_examples is None else max_examples - 1
     tail = _select_best_fit_indices(
         budgets[1:], batch_tokens - budgets[0], max_items=max_items
@@ -464,7 +469,8 @@ def _select_best_fit_indices(
 ) -> List[int]:
     """
     Select the subset of ``lengths`` with the largest sum not exceeding ``capacity``
-    and at most ``max_items`` items, preferring fewer and then earlier items on ties.
+    and at most ``max_items`` items, preferring earlier items on ties
+    (and, when ``max_items`` limits the selection, fewer items first).
     """
     if not lengths or capacity == 0 or max_items == 0:
         return []

@@ -965,7 +965,7 @@ class DynamicBucketer:
             ready_buckets = [b for b in self.buckets if self._is_ready(b)]
             if not ready_buckets:
                 # No bucket has enough data to yield for the last full batch.
-                non_empty_buckets = [b for b in self.buckets if b]
+                non_empty_buckets = [b for b in self.buckets if b.qsize() > 0]
                 if self.drop_last or len(non_empty_buckets) == 0:
                     # Either the user requested only full batches, or we have nothing left.
                     raise StopIteration()

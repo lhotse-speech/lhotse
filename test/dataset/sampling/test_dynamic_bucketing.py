@@ -901,3 +901,22 @@ def test_select_bucket_includes_upper_bound_in_bin():
     )
     with pytest.raises(AssertionError):
         constraint.add(dummy_cut(0, duration=5.0))
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_dynamic_bucketing_sampler_without_sync_buckets_samples_every_cut(seed):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=40)
+    for idx, cut in enumerate(cuts):
+        cut.duration = 1.0 + (idx % 7) * 3
+    sampler = DynamicBucketingSampler(
+        cuts,
+        max_duration=50,
+        duration_bins=[5, 10, 15, 20],
+        sync_buckets=False,
+        buffer_size=40,
+        seed=seed,
+    )
+
+    assert sorted(cut.id for batch in sampler for cut in batch) == sorted(
+        cut.id for cut in cuts
+    )

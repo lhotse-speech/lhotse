@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from lhotse import CutSet
+from lhotse import CutSet, load_manifest_lazy
 from lhotse.dataset import (
     PackedSequenceDynamicBucketingSampler,
     PackedSequenceDynamicCutSampler,
@@ -11,92 +11,54 @@ from lhotse.dataset import (
 )
 from lhotse.dataset.iterable_dataset import IdentityDataset, IterableDatasetWrapper
 from lhotse.dataset.sampling.packed import _fit_output_cap, _select_best_fit_indices
-from lhotse.indexing import create_jsonl_index
-from lhotse.lazy import LazyIndexedManifestIterator
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 
-
-def make_cuts(num_tokens=(7, 4, 6, 3), num_output_tokens=None):
-    cuts = []
-    for idx, length in enumerate(num_tokens):
-        cut = dummy_cut(idx, duration=float(length))
-        cut.custom = {"num_tokens": length}
-        if num_output_tokens is not None:
-            cut.custom["num_output_tokens"] = num_output_tokens[idx]
-        cuts.append(cut)
-    return CutSet.from_cuts(cuts)
+both_samplers = pytest.mark.parametrize("kind", ["cut", "bucketing"])
 
 
 @pytest.fixture
 def cuts_path(tmp_path):
-    def write(*args, indexed=False, name="cuts.jsonl"):
+    def write(num_tokens=(7, 4, 6, 3), num_output_tokens=None, name="cuts.jsonl"):
+        cuts = []
+        for idx, length in enumerate(num_tokens):
+            cut = dummy_cut(idx, duration=float(length))
+            cut.custom = {"num_tokens": length}
+            if num_output_tokens is not None:
+                cut.custom["num_output_tokens"] = num_output_tokens[idx]
+            cuts.append(cut)
         path = tmp_path / name
-        make_cuts(*args).to_file(path)
-        if indexed:
-            create_jsonl_index(path)
+        CutSet.from_cuts(cuts).to_file(path)
         return path
 
     return write
 
 
-def open_cuts(path, indexed=False):
-    if indexed:
-        return CutSet(LazyIndexedManifestIterator(path))
-    return CutSet.from_jsonl_lazy(path)
-
-
 def make_sampler(
-    *cuts,
-    batch_tokens=10,
-    max_examples=None,
-    quadratic_length=None,
-    batch_output_tokens=None,
+    kind,
+    *paths,
+    indexed=False,
     packing_buffer_size=4,
     drop_last=False,
-):
-    return PackedSequenceDynamicCutSampler(
-        *cuts,
-        constraint=PackedTokenConstraint(
-            batch_tokens=batch_tokens,
-            max_examples=max_examples,
-            quadratic_length=quadratic_length,
-            batch_output_tokens=batch_output_tokens,
-        ),
-        packing_buffer_size=packing_buffer_size,
-        drop_last=drop_last,
-    )
-
-
-def make_bucketing_sampler(
-    *cuts,
-    batch_tokens=10,
-    max_examples=None,
-    batch_output_tokens=None,
-    duration_bins=(100,),
-    max_examples_per_bucket=None,
-    packing_buffer_size=4,
-    buffer_size=32,
     shuffle=False,
-    drop_last=False,
-    seed=0,
+    duration_bins=(100,),
+    buffer_size=32,
+    batch_tokens=10,
+    **constraint_kwargs,
 ):
-    return PackedSequenceDynamicBucketingSampler(
-        *cuts,
+    cuts = [load_manifest_lazy(path, indexed=indexed) for path in paths]
+    kwargs = dict(
         constraint=PackedTokenConstraint(
-            batch_tokens=batch_tokens,
-            max_examples=max_examples,
-            batch_output_tokens=batch_output_tokens,
-            bucket_bins=(
-                list(duration_bins) if max_examples_per_bucket is not None else None
-            ),
-            max_examples_per_bucket=max_examples_per_bucket,
+            batch_tokens=batch_tokens, **constraint_kwargs
         ),
-        duration_bins=list(duration_bins),
         packing_buffer_size=packing_buffer_size,
-        buffer_size=buffer_size,
-        shuffle=shuffle,
         drop_last=drop_last,
-        seed=seed,
+        shuffle=shuffle,
+        seed=0,
+    )
+    if kind == "cut":
+        return PackedSequenceDynamicCutSampler(*cuts, **kwargs)
+    return PackedSequenceDynamicBucketingSampler(
+        *cuts, duration_bins=list(duration_bins), buffer_size=buffer_size, **kwargs
     )
 
 
@@ -104,19 +66,25 @@ def batch_ids(batches):
     return [[int(cut.id[-4:]) for cut in batch] for batch in batches]
 
 
-def remaining_batch_ids(sampler):
+def tuple_batch_ids(batches):
+    return [tuple(batch_ids(batch)) for batch in batches]
+
+
+def remaining_batches(sampler):
     """Drain the current epoch; ``iter(sampler)`` would start a new one."""
     batches = []
     while True:
         try:
             batches.append(next(sampler))
         except StopIteration:
-            return batch_ids(batches)
+            return batches
 
 
 def test_select_best_fit_indices_is_exact_and_prefers_earlier_items():
     assert _select_best_fit_indices([4, 6, 3, 3, 1], capacity=7) == [0, 2]
     assert _select_best_fit_indices([4, 6, 3, 3, 1], capacity=7, max_items=1) == [1]
+    assert _select_best_fit_indices([1, 1, 2], capacity=2) == [0, 1]
+    assert _select_best_fit_indices([1, 1, 2], capacity=2, max_items=2) == [2]
     assert _select_best_fit_indices([5, 5], capacity=4) == []
 
 
@@ -183,73 +151,55 @@ def test_packed_token_constraint_rejects_invalid_arguments(kwargs):
         PackedTokenConstraint(**kwargs)
 
 
-def test_packed_sampler_backfills_up_to_exact_token_cap(cuts_path):
-    batches = list(make_sampler(open_cuts(cuts_path())))
-
-    # A greedy batcher stops before the 4/6-token examples; best-fit packing
-    # reaches past them for the 3-token example.
-    assert batch_ids(batches) == [[0, 3], [1, 2]]
-    assert [sum(cut.num_tokens for cut in batch) for batch in batches] == [10, 10]
-
-
-def test_packed_sampler_squeezes_around_large_next_candidate(cuts_path):
-    batches = list(make_sampler(open_cuts(cuts_path((9, 12, 4, 3))), batch_tokens=16))
-
-    assert batch_ids(batches) == [[0, 2, 3], [1]]
-
-
-def test_packed_sampler_anchor_prevents_starvation(cuts_path):
-    batches = list(make_sampler(open_cuts(cuts_path((6, 6, 4, 4, 4, 4)))))
-
-    # Example 1 doesn't fit beside example 0, but it anchors the very next batch.
-    assert batch_ids(batches) == [[0, 2], [1, 3], [4, 5]]
-
-
-def test_packed_sampler_max_examples(cuts_path):
-    batches = list(make_sampler(open_cuts(cuts_path((2, 2, 2, 2))), max_examples=2))
-
-    assert batch_ids(batches) == [[0, 1], [2, 3]]
-
-
-def test_packed_sampler_quadratic_length(cuts_path):
-    # Each 5-token example takes 5 + 25 / 10 = 7.5 -> 8 tokens of the budget.
-    batches = list(make_sampler(open_cuts(cuts_path((5, 5))), quadratic_length=10))
-
-    assert batch_ids(batches) == [[0], [1]]
-
-
+@both_samplers
 @pytest.mark.parametrize(
-    ("drop_last", "expected_ids"), [(False, [[0, 1], [2, 3]]), (True, [[0, 1]])]
+    ("num_tokens", "kwargs", "expected_ids"),
+    [
+        # A greedy batcher stops before the 4/6-token examples; best-fit packing
+        # reaches past them for the 3-token example.
+        ((7, 4, 6, 3), {}, [[0, 3], [1, 2]]),
+        ((9, 12, 4, 3), dict(batch_tokens=16), [[0, 2, 3], [1]]),
+        # Example 1 doesn't fit beside example 0, but it anchors the very next batch.
+        ((6, 6, 4, 4, 4, 4), {}, [[0, 2], [1, 3], [4, 5]]),
+        ((2, 2, 2, 2), dict(max_examples=2), [[0, 1], [2, 3]]),
+        # Each 5-token example takes 5 + 25 / 10 = 7.5 -> 8 tokens of the budget.
+        ((5, 5), dict(quadratic_length=10), [[0], [1]]),
+        ((5, 5, 2, 2), {}, [[0, 1], [2, 3]]),
+        ((5, 5, 2, 2), dict(drop_last=True), [[0, 1]]),
+    ],
 )
-def test_packed_sampler_drop_last(cuts_path, drop_last, expected_ids):
-    batches = list(
-        make_sampler(open_cuts(cuts_path((5, 5, 2, 2))), drop_last=drop_last)
+def test_packed_sampler_packs_best_fit_batches(
+    cuts_path, kind, num_tokens, kwargs, expected_ids
+):
+    sampler = make_sampler(kind, cuts_path(num_tokens), **kwargs)
+
+    assert batch_ids(sampler) == expected_ids
+
+
+@both_samplers
+@pytest.mark.parametrize(
+    ("num_tokens", "num_output_tokens", "batch_output_tokens", "expected_ids"),
+    [
+        # The best fit for the token budget pairs the anchor with the last example, which the output cap forbids.
+        ((7, 4, 6, 3), (8, 2, 2, 2), None, [[0, 3], [1, 2]]),
+        ((7, 4, 6, 3), (8, 2, 2, 2), 9, [[0], [1, 2], [3]]),
+        # The exact fit [0, 1] has 12 output tokens; example 1 is dropped and two small examples fill both budgets.
+        ((5, 5, 3, 2), (6, 6, 1, 1), 8, [[0, 2, 3], [1]]),
+    ],
+)
+def test_packed_sampler_output_token_cap(
+    cuts_path, kind, num_tokens, num_output_tokens, batch_output_tokens, expected_ids
+):
+    sampler = make_sampler(
+        kind,
+        cuts_path(num_tokens, num_output_tokens),
+        batch_output_tokens=batch_output_tokens,
     )
 
-    assert batch_ids(batches) == expected_ids
+    assert batch_ids(sampler) == expected_ids
 
 
-def test_packed_sampler_output_token_cap(cuts_path):
-    path = cuts_path((7, 4, 6, 3), (8, 2, 2, 2))
-
-    # The best fit for the token budget pairs the anchor with the last example, which the output cap forbids.
-    assert batch_ids(make_sampler(open_cuts(path))) == [[0, 3], [1, 2]]
-    assert batch_ids(make_sampler(open_cuts(path), batch_output_tokens=9)) == [
-        [0],
-        [1, 2],
-        [3],
-    ]
-
-
-def test_packed_sampler_backfills_within_output_cap(cuts_path):
-    path = cuts_path((5, 5, 3, 2), (6, 6, 1, 1))
-
-    batches = list(make_sampler(open_cuts(path), batch_output_tokens=8))
-
-    # The exact fit [0, 1] has 12 output tokens; example 1 is dropped and two small examples fill both budgets.
-    assert batch_ids(batches) == [[0, 2, 3], [1]]
-
-
+@both_samplers
 @pytest.mark.parametrize(
     ("num_tokens", "num_output_tokens", "batch_output_tokens", "match"),
     [
@@ -259,10 +209,11 @@ def test_packed_sampler_backfills_within_output_cap(cuts_path):
     ],
 )
 def test_packed_sampler_rejects_examples_over_limits(
-    cuts_path, num_tokens, num_output_tokens, batch_output_tokens, match
+    cuts_path, kind, num_tokens, num_output_tokens, batch_output_tokens, match
 ):
     sampler = make_sampler(
-        open_cuts(cuts_path(num_tokens, num_output_tokens)),
+        kind,
+        cuts_path(num_tokens, num_output_tokens),
         batch_output_tokens=batch_output_tokens,
     )
 
@@ -270,72 +221,71 @@ def test_packed_sampler_rejects_examples_over_limits(
         next(iter(sampler))
 
 
-def test_packed_sampler_rejects_invalid_setup():
+@pytest.mark.parametrize(
+    ("sampler_cls", "kwargs"),
+    [
+        (PackedSequenceDynamicCutSampler, {}),
+        (PackedSequenceDynamicBucketingSampler, dict(duration_bins=[5])),
+    ],
+)
+def test_packed_sampler_rejects_invalid_setup(sampler_cls, kwargs):
     cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+    constraint = PackedTokenConstraint(batch_tokens=10)
     with pytest.raises(ValueError, match="packing_buffer_size must be positive"):
-        make_sampler(cuts, packing_buffer_size=0)
+        sampler_cls(cuts, constraint=constraint, packing_buffer_size=0, **kwargs)
     with pytest.raises(ValueError, match="require constraint=PackedTokenConstraint"):
-        PackedSequenceDynamicCutSampler(cuts, max_duration=10)
+        sampler_cls(cuts, max_duration=10, **kwargs)
 
 
-def test_packed_sampler_tuple_inputs(cuts_path):
-    first = open_cuts(cuts_path(name="first.jsonl"))
-    second = open_cuts(cuts_path((1, 1, 1, 1), name="second.jsonl"))
+@both_samplers
+def test_packed_sampler_tuple_inputs(cuts_path, kind):
+    first = cuts_path(name="first.jsonl")
+    second = cuts_path((1, 1, 1, 1), name="second.jsonl")
 
-    batches = list(make_sampler(first, second))
+    sampler = make_sampler(kind, first, second)
 
-    assert [tuple(batch_ids(batch)) for batch in batches] == [
-        ([0, 3], [0, 3]),
-        ([1, 2], [1, 2]),
-    ]
+    assert tuple_batch_ids(sampler) == [([0, 3], [0, 3]), ([1, 2], [1, 2])]
 
 
+@both_samplers
 @pytest.mark.parametrize("indexed", [False, True])
-def test_packed_sampler_resume_preserves_packing_buffer(cuts_path, indexed):
-    path = cuts_path(indexed=indexed)
-    sampler = make_sampler(open_cuts(path, indexed))
-    assert batch_ids([next(iter(sampler))]) == [[0, 3]]
+@pytest.mark.parametrize("num_inputs", [1, 2])
+def test_packed_sampler_resume_preserves_packing_buffer(
+    cuts_path, kind, indexed, num_inputs
+):
+    paths = [cuts_path(name=f"cuts{idx}.jsonl") for idx in range(num_inputs)]
+    sampler = make_sampler(kind, *paths, indexed=indexed)
+    next(iter(sampler))
     state = sampler.state_dict()
     assert state["packing_buffer_size"] == 4
-    assert state["packing_buffer_tokens"] == ([(1,), (2,)] if indexed else None)
+    if kind == "cut":
+        pool_tokens = [(1,) * num_inputs, (2,) * num_inputs]
+        assert state["packing_buffer_tokens"] == (pool_tokens if indexed else None)
+    elif indexed:
+        pool_tokens = [[1] * num_inputs, [2] * num_inputs]
+        assert state["bucketer_state"]["bucket_tokens"][0] == pool_tokens
 
-    restored = make_sampler(open_cuts(path, indexed), packing_buffer_size=1)
+    restored = make_sampler(kind, *paths, indexed=indexed, packing_buffer_size=1)
     restored.load_state_dict(deepcopy(state))
 
-    assert batch_ids(restored) == remaining_batch_ids(sampler) == [[1, 2]]
+    expected = [[1, 2]] if num_inputs == 1 else [([1, 2], [1, 2])]
+    actual = batch_ids(restored) if num_inputs == 1 else tuple_batch_ids(restored)
+    remaining = remaining_batches(sampler)
+    assert actual == expected
+    assert (
+        batch_ids(remaining) if num_inputs == 1 else tuple_batch_ids(remaining)
+    ) == expected
     assert restored.packing_buffer_size == 4
 
 
-def test_packed_sampler_indexed_tuple_inputs_resume(cuts_path):
-    paths = (
-        cuts_path(name="first.jsonl", indexed=True),
-        cuts_path((1, 1, 1, 1), name="second.jsonl", indexed=True),
-    )
-    sampler = make_sampler(*(open_cuts(p, indexed=True) for p in paths))
-    next(iter(sampler))
-    state = sampler.state_dict()
-    assert state["packing_buffer_tokens"] == [(1, 1), (2, 2)]
-
-    restored = make_sampler(*(open_cuts(p, indexed=True) for p in paths))
-    restored.load_state_dict(deepcopy(state))
-
-    assert [tuple(batch_ids(b)) for b in restored] == [([1, 2], [1, 2])]
-    assert [tuple(batch_ids(b)) for b in sampler] == [
-        ([0, 3], [0, 3]),
-        ([1, 2], [1, 2]),
-    ]
-
-
-def test_packed_sampler_multiworker_stateful_resume(tmp_path):
+def test_packed_sampler_multiworker_stateful_resume(cuts_path):
     StatefulDataLoader = pytest.importorskip(
         "torchdata.stateful_dataloader"
     ).StatefulDataLoader
-    path = tmp_path / "cuts.jsonl"
-    make_cuts([(7, 4, 6, 3)[idx % 4] for idx in range(160)]).to_file(path)
-    create_jsonl_index(path)
+    path = cuts_path([(7, 4, 6, 3)[idx % 4] for idx in range(160)])
 
     def make_loader():
-        sampler = make_sampler(open_cuts(path, indexed=True), packing_buffer_size=16)
+        sampler = make_sampler("cut", path, indexed=True, packing_buffer_size=16)
         return StatefulDataLoader(
             IterableDatasetWrapper(IdentityDataset(), sampler),
             batch_size=None,
@@ -354,109 +304,45 @@ def test_packed_sampler_multiworker_stateful_resume(tmp_path):
     assert prefix + batch_ids(restored) == expected
 
 
-def test_packed_bucketing_sampler_backfills_up_to_exact_token_cap(cuts_path):
-    batches = list(make_bucketing_sampler(open_cuts(cuts_path()), buffer_size=4))
-
-    assert batch_ids(batches) == [[0, 3], [1, 2]]
-
-
-def test_packed_bucketing_sampler_anchor_prevents_starvation(cuts_path):
-    batches = list(
-        make_bucketing_sampler(open_cuts(cuts_path((6, 6, 4, 4, 4, 4))), buffer_size=6)
-    )
-
-    assert batch_ids(batches) == [[0, 2], [1, 3], [4, 5]]
-
-
 def test_packed_bucketing_sampler_never_mixes_buckets(cuts_path):
-    batches = list(
-        make_bucketing_sampler(
-            open_cuts(cuts_path((2, 6) * 4)), buffer_size=8, duration_bins=(4,)
-        )
-    )
+    sampler = make_sampler("bucketing", cuts_path((2, 6) * 4), duration_bins=(4,))
 
-    assert sorted(idx for batch in batch_ids(batches) for idx in batch) == list(
-        range(8)
-    )
-    for batch in batch_ids(batches):
-        assert len({idx % 2 for idx in batch}) == 1
+    batches = batch_ids(sampler)
+
+    assert sorted(idx for batch in batches for idx in batch) == list(range(8))
+    assert all(len({idx % 2 for idx in batch}) == 1 for batch in batches)
 
 
 def test_packed_bucketing_sampler_max_examples_per_bucket(cuts_path):
-    batches = list(
-        make_bucketing_sampler(
-            open_cuts(cuts_path((2, 2, 2, 6, 2, 2))),
-            buffer_size=6,
-            duration_bins=(5, 10),
-            max_examples_per_bucket=(2, 1),
-        )
+    sampler = make_sampler(
+        "bucketing",
+        cuts_path((2, 2, 2, 6, 2, 2)),
+        duration_bins=(5, 10),
+        bucket_bins=(5, 10),
+        max_examples_per_bucket=(2, 1),
     )
 
-    assert sorted(map(sorted, batch_ids(batches))) == [[0, 1], [2, 4], [3], [5]]
-
-
-def test_packed_bucketing_sampler_output_token_cap(cuts_path):
-    path = cuts_path((7, 4, 6, 3), (8, 2, 2, 2))
-
-    batches = list(make_bucketing_sampler(open_cuts(path), batch_output_tokens=9))
-
-    assert batch_ids(batches) == [[0], [1, 2], [3]]
-
-
-def test_packed_bucketing_sampler_tuple_inputs(cuts_path):
-    first = open_cuts(cuts_path(name="first.jsonl"))
-    second = open_cuts(cuts_path((1, 1, 1, 1), name="second.jsonl"))
-
-    batches = list(make_bucketing_sampler(first, second, buffer_size=4))
-
-    assert [tuple(batch_ids(batch)) for batch in batches] == [
-        ([0, 3], [0, 3]),
-        ([1, 2], [1, 2]),
-    ]
+    assert sorted(map(sorted, batch_ids(sampler))) == [[0, 1], [2, 4], [3], [5]]
 
 
 def test_packed_bucketing_sampler_shuffle_is_deterministic(cuts_path):
-    path = cuts_path((6, 5, 4, 3, 2, 4, 3, 2))
+    num_tokens = (6, 5, 4, 3, 2, 4, 3, 2)
+    path = cuts_path(num_tokens)
 
-    def sample():
-        sampler = make_bucketing_sampler(
-            open_cuts(path), buffer_size=8, shuffle=True, seed=31
-        )
-        return batch_ids(sampler)
+    batches = batch_ids(make_sampler("bucketing", path, shuffle=True))
 
-    batches = sample()
-    assert batches == sample()
+    assert batches == batch_ids(make_sampler("bucketing", path, shuffle=True))
     assert sorted(idx for batch in batches for idx in batch) == list(range(8))
-    assert all(sum((6, 5, 4, 3, 2, 4, 3, 2)[i] for i in b) <= 10 for b in batches)
+    assert all(sum(num_tokens[idx] for idx in batch) <= 10 for batch in batches)
 
 
-@pytest.mark.parametrize(
-    ("drop_last", "expected_ids"), [(False, [0, 1, 2, 3]), (True, [0, 1])]
-)
-def test_packed_bucketing_sampler_drop_last(cuts_path, drop_last, expected_ids):
-    batches = list(
-        make_bucketing_sampler(
-            open_cuts(cuts_path((5, 5, 2, 2))), buffer_size=4, drop_last=drop_last
-        )
-    )
-
-    assert [idx for batch in batch_ids(batches) for idx in batch] == expected_ids
-
-
-def test_packed_bucketing_sampler_indexed_resume_preserves_arbitrary_removals(
+def test_packed_bucketing_sampler_drop_last_does_not_stop_at_stuck_anchor(
     cuts_path,
 ):
-    path = cuts_path(indexed=True)
-    sampler = make_bucketing_sampler(open_cuts(path, indexed=True), buffer_size=4)
-    assert batch_ids([next(iter(sampler))]) == [[0, 3]]
-    state = sampler.state_dict()
-    assert state["packing_buffer_size"] == 4
-    assert state["bucketer_state"]["bucket_tokens"][0] == [[1], [2]]
-
-    restored = make_bucketing_sampler(
-        open_cuts(path, indexed=True), buffer_size=4, packing_buffer_size=1
+    # Nothing fits next to the 3-token anchor, so its batch is never full;
+    # the 8-token batches behind it must still be sampled.
+    sampler = make_sampler(
+        "bucketing", cuts_path((3,) + (8,) * 40), buffer_size=20, drop_last=True
     )
-    restored.load_state_dict(deepcopy(state))
 
-    assert batch_ids(restored) == remaining_batch_ids(sampler) == [[1, 2]]
-    assert restored.packing_buffer_size == 4
+    assert batch_ids(sampler) == [[idx] for idx in range(41)]
