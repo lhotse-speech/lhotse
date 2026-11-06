@@ -239,10 +239,12 @@ Background-thread bucket fetching and clean shutdown
 ****************************************************
 
 When :class:`~lhotse.dataset.sampling.DynamicBucketingSampler` is constructed
-with ``concurrent_bucketing=True`` (the default), a background thread fills
-the bucket buffers in parallel with iteration. That thread is created as a
+with ``concurrent=True``, a background thread fills
+the bucket buffers in parallel with iteration. Concurrent bucketing makes sampling
+non-deterministic and cannot be checkpointed, so it is disabled (with a warning)
+when all inputs are indexed. The thread is created as a
 daemon, so it never blocks interpreter shutdown — useful when combining
-``concurrent_bucketing=True`` with ``persistent_workers=True``, where lingering
+``concurrent=True`` with ``persistent_workers=True``, where lingering
 references from FSDP / dataloader workers can otherwise prevent the sampler's
 ``__del__`` from running before the main process tries to exit.
 

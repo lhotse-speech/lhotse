@@ -32,6 +32,7 @@ from lhotse.dataset.sampling.base import (
     SamplingConstraint,
     SamplingDiagnostics,
     TimeConstraint,
+    has_graph_restorable_sources,
     require_graph_restorable_sources,
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
@@ -147,8 +148,8 @@ class DynamicBucketingSampler(CutSampler):
             bucketing buffers before the sampler starts yielding examples. For tarred/Lhotse Shar data
             this can speed up the start of the training. Note that enabling concurrency will cause the
             sampling results to be non-deterministic. This feature is experimental.
-            Concurrent bucketing does not support checkpoint resumption: ``load_state_dict`` raises
-            for a concurrent sampler or for a state saved by one.
+            Concurrent bucketing does not support checkpointing, so it is disabled (with a warning)
+            when all inputs are indexed, which keeps sampling deterministic and resumable.
         :param compact_state: Store buffered graph tokens as immutable bytes instead of nested lists.
             This reduces object reconstruction and garbage collection in worker-to-parent snapshot transport.
             Tokens may be any pickle-compatible objects; only load checkpoints from trusted sources.
@@ -176,6 +177,12 @@ class DynamicBucketingSampler(CutSampler):
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
         self.sync_buckets = sync_buckets
+        if concurrent and has_graph_restorable_sources(cuts):
+            warnings.warn(
+                "DynamicBucketingSampler: disabling concurrent bucketing for indexed inputs "
+                "to keep sampling deterministic and checkpointable."
+            )
+            concurrent = False
         self.concurrent = concurrent
         self.compact_state = compact_state
         self.rng = None
@@ -226,9 +233,6 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "quadratic_duration": self.quadratic_duration,
-                # load_state_dict rejects states captured with concurrent bucketing:
-                # the producer thread mutates the buffers while they are being captured.
-                "concurrent": self.concurrent,
             }
         )
         bucketer_state = self._checkpoint_bucketer_state()
@@ -267,15 +271,14 @@ class DynamicBucketingSampler(CutSampler):
         return state
 
     def load_state_dict(self, sd: Dict[str, Any]) -> None:
-        if self.concurrent or sd.get("concurrent", False):
-            raise RuntimeError(
-                "DynamicBucketingSampler with concurrent=True does not support checkpointing "
-                "or resumption: the background bucketing thread makes the sampler state "
-                "non-deterministic. Construct the sampler with concurrent=False both when "
-                "saving and when restoring its state."
-            )
         require_graph_restorable_sources(self, self.cuts)
-        sd.pop("concurrent", None)
+        # Indexed inputs disable concurrent bucketing, but older checkpoints may have
+        # been captured while the producer thread was mutating the buffers.
+        if sd.pop("concurrent", False):
+            raise RuntimeError(
+                "Cannot restore a DynamicBucketingSampler checkpoint saved with concurrent=True: "
+                "the background bucketing thread made the saved state non-deterministic."
+            )
         self.max_duration = sd.pop("max_duration")
         self.max_cuts = sd.pop("max_cuts")
         self.consistent_ids = sd.pop("consistent_ids")

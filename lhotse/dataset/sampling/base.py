@@ -70,17 +70,22 @@ def restore_sources_state(sources, cuts_state: Optional[list]) -> None:
             restore_state_dict(src, state)
 
 
-def require_graph_restorable_sources(sampler: "CutSampler", sources) -> None:
+def has_graph_restorable_sources(sources) -> bool:
     """
-    Raise unless every input of ``sampler`` can be checkpointed in constant time.
+    Return ``True`` when every source can be checkpointed in constant time.
 
     Sampler checkpoints rebuild buffered examples from graph tokens, which requires
     indexed lazy sources such as ``CutSet.from_file(..., indexed=True)`` or
     ``CutSet.from_shar(..., indexed=True)``.
     """
-    if len(sources) > 0 and all(
+    return len(sources) > 0 and all(
         getattr(src, "has_constant_time_access", False) for src in sources
-    ):
+    )
+
+
+def require_graph_restorable_sources(sampler: "CutSampler", sources) -> None:
+    """Raise unless every input of ``sampler`` can be checkpointed in constant time."""
+    if has_graph_restorable_sources(sources):
         return
     raise RuntimeError(
         f"{type(sampler).__name__} checkpointing requires indexed lazy inputs, "
