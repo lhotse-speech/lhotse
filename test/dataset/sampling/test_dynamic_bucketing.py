@@ -1,4 +1,5 @@
 import random
+import threading
 from itertools import islice
 
 import pytest
@@ -150,6 +151,114 @@ def test_dynamic_bucketing_sampler(concurrent):
 
     assert len(batches[3]) == 1
     assert sum(c.duration for c in batches[3]) == 2
+
+
+def _run_with_timeout(fn, timeout: float = 30.0):
+    """Run ``fn`` in a daemon thread so that a hang fails the test instead of blocking CI."""
+    result = {}
+
+    def target():
+        try:
+            result["value"] = fn()
+        except BaseException as e:
+            result["error"] = e
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    assert not thread.is_alive(), f"Iteration did not finish within {timeout}s."
+    if "error" in result:
+        raise result["error"]
+    return result["value"]
+
+
+class _FailingCutSource:
+    def __init__(self, num_ok: int, total: int = 100):
+        self.num_ok = num_ok
+        self.total = total
+
+    def __iter__(self):
+        for i in range(self.total):
+            if i == self.num_ok:
+                raise IndexError("simulated data loading error")
+            yield dummy_cut(i, duration=1.0)
+
+
+@pytest.mark.parametrize("concurrent", [False, True])
+@pytest.mark.parametrize("num_ok", [0, 5, 20])
+def test_dynamic_bucketing_sampler_propagates_source_error(concurrent, num_ok):
+    sampler = DynamicBucketingSampler(
+        CutSet(_FailingCutSource(num_ok=num_ok)),
+        max_duration=5,
+        duration_bins=[1.5],
+        buffer_size=50,
+        seed=0,
+        concurrent=concurrent,
+    )
+    with pytest.raises(IndexError, match="simulated data loading error"):
+        _run_with_timeout(lambda: [b for b in sampler])
+
+
+def _make_indexed_sampler(tmp_path, concurrent: bool) -> DynamicBucketingSampler:
+    path = tmp_path / "cuts.jsonl"
+    if not path.exists():
+        DummyManifest(CutSet, begin_id=0, end_id=200).to_jsonl(path)
+    return DynamicBucketingSampler(
+        CutSet.from_file(path, indexed=True),
+        max_cuts=5,
+        num_buckets=2,
+        buffer_size=50,
+        seed=0,
+        concurrent=concurrent,
+    )
+
+
+@pytest.mark.parametrize(
+    ["save_concurrent", "load_concurrent"], [(False, True), (True, False), (True, True)]
+)
+def test_dynamic_bucketing_sampler_concurrent_rejects_resumption(
+    tmp_path, save_concurrent, load_concurrent
+):
+    sampler = _make_indexed_sampler(tmp_path, concurrent=save_concurrent)
+    it = iter(sampler)
+    for _ in range(5):
+        next(it)
+    # state_dict() keeps working: torchdata's StatefulDataLoader snapshots it on every step
+    # even when the user never saves a checkpoint.
+    state = sampler.state_dict()
+    assert state["concurrent"] is save_concurrent
+
+    restored = _make_indexed_sampler(tmp_path, concurrent=load_concurrent)
+    with pytest.raises(
+        RuntimeError, match="concurrent=True does not support checkpointing"
+    ):
+        restored.load_state_dict(state)
+
+
+def test_dynamic_bucketing_sampler_non_concurrent_resumption_still_works(tmp_path):
+    sampler = _make_indexed_sampler(tmp_path, concurrent=False)
+    it = iter(sampler)
+    seen = [c.id for _ in range(5) for c in next(it)]
+    state = sampler.state_dict()
+    assert "bucketer_state" in state
+
+    restored = _make_indexed_sampler(tmp_path, concurrent=False)
+    restored.load_state_dict(state)
+    rest = [c.id for b in restored for c in b]
+
+    assert len(seen) + len(rest) == 200
+    assert len(set(seen) | set(rest)) == 200
+
+
+def test_dynamic_bucketer_concurrent_rejects_set_state():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    bucketer = DynamicBucketer(
+        cuts, duration_bins=[1.5], max_duration=5, world_size=1, concurrent=True
+    )
+    with pytest.raises(
+        RuntimeError, match="concurrent=True does not support restoring"
+    ):
+        bucketer.set_state({})
 
 
 def test_dynamic_bucketing_sampler_precomputed_duration_bins():
