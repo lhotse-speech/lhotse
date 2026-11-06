@@ -1546,3 +1546,97 @@ def test_cutset_from_files_index_path_length_mismatch_raises(tmp_path):
 
     with pytest.raises(ValueError, match="index_path has"):
         CutSet.from_files([p1], index_path=["a.idx", "b.idx"])
+
+
+def test_remote_gzip_index_export_uses_a_buffer(tmp_path, monkeypatch):
+    import io
+
+    import lhotse.indexing as indexing
+
+    pytest.importorskip("indexed_gzip")
+    objects = {}
+
+    class Writer(io.BytesIO):
+        @property
+        def mode(self):
+            # Match object-store writers which cannot be passed to indexed_gzip.
+            raise ValueError("I/O operation on uninitialized object")
+
+        def __init__(self, path):
+            super().__init__()
+            self.path = path
+
+        def close(self):
+            if not self.closed:
+                objects[self.path] = self.getvalue()
+            super().close()
+
+    original_open = indexing.open_best
+    monkeypatch.setattr(
+        indexing,
+        "open_best",
+        lambda path, mode: (
+            Writer(str(path))
+            if str(path).startswith("ais://")
+            else original_open(path, mode)
+        ),
+    )
+    source = tmp_path / "cuts.jsonl.gz"
+    remote_index = "ais://bucket/cuts.jsonl.gz.idx"
+    local_index = tmp_path / "cuts.jsonl.gz.idx"
+    for count in (3, 7):
+        records = [{"id": i, "text": "example"} for i in range(count)]
+        with gzip.open(source, "wt") as stream:
+            for record in records:
+                stream.write(json.dumps(record) + "\n")
+        create_jsonl_index(source, output_path=remote_index)
+        seek_index = indexing.gzip_index_file_path(source, index_path=remote_index)
+        local_index.write_bytes(objects[remote_index])
+        Path(indexing.gzip_index_file_path(source, index_path=local_index)).write_bytes(
+            objects[str(seek_index)]
+        )
+        reader = IndexedJsonlReader(source, index_path=local_index)
+        assert len(reader) == count
+        assert [reader[i] for i in reversed(range(count))] == list(reversed(records))
+        reader.close()
+
+
+def test_remote_gzip_export_failure_does_not_publish(monkeypatch):
+    import lhotse.indexing as indexing
+
+    class BrokenReader:
+        def export_index(self, fileobj):
+            fileobj.write(b"partial")
+            raise RuntimeError("export failed")
+
+    def unexpected_write(*args, **kwargs):
+        pytest.fail("An unsuccessful export must not open the destination")
+
+    monkeypatch.setattr(indexing, "open_best", unexpected_write)
+    with pytest.raises(RuntimeError, match="export failed"):
+        indexing._write_gzip_index(BrokenReader(), "ais://bucket/cuts.jsonl.gz.gzidx")
+
+
+def test_rebuilding_remote_index_invalidates_downloaded_copy(tmp_path, monkeypatch):
+    import io
+
+    import lhotse.indexing as indexing
+
+    remote = "ais://bucket/cuts.jsonl.idx"
+    objects = {}
+
+    class Writer(io.BytesIO):
+        def close(self):
+            if not self.closed:
+                objects[remote] = self.getvalue()
+            super().close()
+
+    def open_object(path, mode):
+        return io.BytesIO(objects[str(path)]) if mode == "rb" else Writer()
+
+    monkeypatch.setattr(indexing, "open_best", open_object)
+    monkeypatch.setattr(indexing, "_remote_index_cache_dir", lambda: tmp_path)
+    indexing._write_index([0, 10], remote)
+    np.testing.assert_array_equal(read_index(remote), [0, 10])
+    indexing._write_index([0, 10, 20], remote)
+    np.testing.assert_array_equal(read_index(remote), [0, 10, 20])

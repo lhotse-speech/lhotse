@@ -924,7 +924,7 @@ class AIStoreIOBackend(IOBackend):
                 f"Writing to AIStore requires at least version 1.10.0 of AIStore Python SDK, "
                 f"but your version is {version}"
             )
-            return object.get_writer().as_file()
+            return object.get_writer().as_file(mode="w")
 
     @classmethod
     def is_available(cls) -> bool:

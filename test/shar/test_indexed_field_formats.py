@@ -341,7 +341,7 @@ def ais_objects(monkeypatch, request):
             )
 
         def get_writer(self):
-            return SimpleNamespace(as_file=lambda: WriteBuffer(self.url))
+            return SimpleNamespace(as_file=lambda mode="w": WriteBuffer(self.url))
 
     def bucket(name, provider):
         prefix_url = f"{provider}://{name}/"

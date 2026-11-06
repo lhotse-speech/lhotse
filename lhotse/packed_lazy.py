@@ -17,6 +17,7 @@ import warnings
 import weakref
 from collections import OrderedDict
 from collections.abc import Callable
+from contextlib import contextmanager
 from json import JSONDecodeError
 from typing import Any
 
@@ -381,9 +382,11 @@ class _PackedFileCache:
     """
     Process-local least-recently-used cache of open shard files.
 
-    Local files use ``os.pread``. Remote and gzip readers use a lock around
-    seeking and reading. The cache drops inherited handles after ``fork()``
-    and is pickle-safe for data-loader workers.
+    Active handles are pinned until reads finish; opening another file waits
+    when every cache slot is in use. Local files use ``os.pread``. Remote and
+    gzip readers also serialize seeking and reading on each handle. The cache
+    drops inherited handles after ``fork()`` and is pickle-safe for data-loader
+    workers.
 
     Args:
         max_open_files:
@@ -397,6 +400,9 @@ class _PackedFileCache:
         self.max_open_files = max_open_files
         self._pid = os.getpid()
         self._fds: OrderedDict[str, object] = OrderedDict()
+        self._users: dict[str, int] = {}
+        self._condition = threading.Condition()
+        self._closing = False
 
     def read(
         self, path: str, start: int, end: int, *, gzip_info=None, index_pack=None
@@ -410,63 +416,106 @@ class _PackedFileCache:
         """
         if start < 0 or end < start:
             raise ValueError(f"Invalid packed byte range: [{start}, {end})")
+        with self._acquire(path, gzip_info, index_pack) as handle:
+            if not isinstance(handle, int):
+                reader, _, lock = handle
+                with lock:
+                    reader.seek(start)
+                    chunks = []
+                    remaining = end - start
+                    while remaining:
+                        chunk = reader.read(remaining)
+                        if not chunk:
+                            raise EOFError(
+                                f"Short indexed read from {path}: requested [{start}, {end})"
+                            )
+                        chunks.append(chunk)
+                        remaining -= len(chunk)
+                    return b"".join(chunks)
+            chunks = []
+            position = start
+            while position < end:
+                chunk = os.pread(handle, end - position, position)
+                if not chunk:
+                    received = position - start
+                    raise EOFError(
+                        f"Short indexed read from {path}: requested [{start}, {end}), "
+                        f"received {received} bytes"
+                    )
+                chunks.append(chunk)
+                position += len(chunk)
+            return b"".join(chunks)
+
+    @contextmanager
+    def _acquire(self, path, gzip_info, index_pack):
         self._ensure_process()
-        handle = self._fds.pop(path, None)
-        if handle is None:
-            if gzip_info:
-                handle = self._open_gzip(path, gzip_info, index_pack)
-            elif is_valid_url(path):
-                source = _open_for_indexed_read(path)
-                handle = source, source, threading.Lock()
-            else:
-                handle = os.open(path, os.O_RDONLY)
-        self._fds[path] = handle
-        while len(self._fds) > self.max_open_files:
-            _, evicted = self._fds.popitem(last=False)
-            self._close_handle(evicted)
-        if not isinstance(handle, int):
-            reader, _, lock = handle
-            with lock:
-                reader.seek(start)
-                chunks = []
-                remaining = end - start
-                while remaining:
-                    chunk = reader.read(remaining)
-                    if not chunk:
-                        raise EOFError(
-                            f"Short indexed read from {path}: requested [{start}, {end})"
-                        )
-                    chunks.append(chunk)
-                    remaining -= len(chunk)
-                return b"".join(chunks)
-        chunks = []
-        position = start
-        while position < end:
-            chunk = os.pread(handle, end - position, position)
-            if not chunk:
-                received = position - start
-                raise EOFError(
-                    f"Short indexed read from {path}: requested [{start}, {end}), "
-                    f"received {received} bytes"
-                )
-            chunks.append(chunk)
-            position += len(chunk)
-        return b"".join(chunks)
+        with self._condition:
+            while True:
+                if self._closing:
+                    self._condition.wait()
+                    continue
+                if path in self._fds:
+                    handle = self._fds.pop(path)
+                    self._fds[path] = handle
+                    break
+                if len(self._fds) < self.max_open_files:
+                    if gzip_info:
+                        handle = self._open_gzip(path, gzip_info, index_pack)
+                    elif is_valid_url(path):
+                        source = _open_for_indexed_read(path)
+                        handle = source, source, threading.Lock()
+                    else:
+                        handle = os.open(path, os.O_RDONLY)
+                    self._fds[path] = handle
+                    self._users[path] = 0
+                    break
+                if not self._evict_idle():
+                    self._condition.wait()
+            self._users[path] += 1
+        try:
+            yield handle
+        finally:
+            with self._condition:
+                self._users[path] -= 1
+                self._condition.notify_all()
+
+    def _evict_idle(self) -> bool:
+        """Evict one unused handle while holding the cache condition."""
+        for path in self._fds:
+            if self._users[path] == 0:
+                handle = self._fds.pop(path)
+                del self._users[path]
+                self._close_handle(handle)
+                return True
+        return False
 
     def limit_to(self, max_open_files: int) -> None:
-        """Tighten this shared cache's descriptor bound."""
+        """Tighten the descriptor bound, waiting for active readers if needed."""
         if max_open_files < 1:
             raise ValueError("max_open_files must be positive")
-        self.max_open_files = min(self.max_open_files, max_open_files)
-        while len(self._fds) > self.max_open_files:
-            _, evicted = self._fds.popitem(last=False)
-            self._close_handle(evicted)
+        self._ensure_process()
+        with self._condition:
+            self.max_open_files = min(self.max_open_files, max_open_files)
+            while len(self._fds) > self.max_open_files:
+                if not self._evict_idle():
+                    self._condition.wait()
+            self._condition.notify_all()
 
     def close(self) -> None:
-        """Close all cached descriptors."""
-        for fd in self._fds.values():
-            self._close_handle(fd)
-        self._fds.clear()
+        """Wait for readers before closing cached handles; the cache is reusable."""
+        self._ensure_process()
+        with self._condition:
+            while self._closing:
+                self._condition.wait()
+            self._closing = True
+            try:
+                while any(self._users.values()):
+                    self._condition.wait()
+                while self._evict_idle():
+                    pass
+            finally:
+                self._closing = False
+                self._condition.notify_all()
 
     @staticmethod
     def _close_handle(handle) -> None:
@@ -501,9 +550,7 @@ class _PackedFileCache:
         return {"max_open_files": self.max_open_files}
 
     def __setstate__(self, state):
-        self.max_open_files = state["max_open_files"]
-        self._pid = os.getpid()
-        self._fds = OrderedDict()
+        self.__init__(max_open_files=state["max_open_files"])
 
     def __del__(self):
         if hasattr(self, "_fds"):
@@ -511,24 +558,29 @@ class _PackedFileCache:
 
     def _ensure_process(self) -> None:
         if self._pid != os.getpid():
-            self.close()
+            # Locks and active-reader counts belong to the parent process.
+            self._condition = threading.Condition()
+            self._users = dict.fromkeys(self._fds, 0)
+            self._closing = False
             self._pid = os.getpid()
+            self.close()
 
 
 def _file_cache_for_pack(
     index_pack: IndexPack, max_open_files: int
 ) -> _PackedFileCache:
-    global _PACKED_FILE_CACHE_PID
+    global _PACKED_FILE_CACHE_PID, _PACKED_FILE_CACHES_LOCK
     pid = os.getpid()
     if pid != _PACKED_FILE_CACHE_PID:
+        _PACKED_FILE_CACHES_LOCK = threading.Lock()
         _PACKED_FILE_CACHES.clear()
         _PACKED_FILE_CACHE_PID = pid
-    cache = _PACKED_FILE_CACHES.get(index_pack)
-    if cache is None:
-        cache = _PackedFileCache(max_open_files)
-        _PACKED_FILE_CACHES[index_pack] = cache
-    else:
-        cache.limit_to(max_open_files)
+    with _PACKED_FILE_CACHES_LOCK:
+        cache = _PACKED_FILE_CACHES.get(index_pack)
+        if cache is None:
+            cache = _PackedFileCache(max_open_files)
+            _PACKED_FILE_CACHES[index_pack] = cache
+    cache.limit_to(max_open_files)
     return cache
 
 
@@ -536,3 +588,5 @@ _PACKED_FILE_CACHES: weakref.WeakKeyDictionary[IndexPack, _PackedFileCache] = (
     weakref.WeakKeyDictionary()
 )
 _PACKED_FILE_CACHE_PID = os.getpid()
+
+_PACKED_FILE_CACHES_LOCK = threading.Lock()
