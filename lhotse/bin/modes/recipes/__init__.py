@@ -77,6 +77,7 @@ from .radio import *
 from .reazonspeech import *
 from .rir_noise import *
 from .sbcsae import *
+from .seamless_interaction import *
 from .slu import *
 from .spatial_librispeech import *
 from .speechcommands import *
