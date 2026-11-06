@@ -147,6 +147,8 @@ class DynamicBucketingSampler(CutSampler):
             bucketing buffers before the sampler starts yielding examples. For tarred/Lhotse Shar data
             this can speed up the start of the training. Note that enabling concurrency will cause the
             sampling results to be non-deterministic. This feature is experimental.
+            Concurrent bucketing does not support checkpoint resumption: ``load_state_dict`` raises
+            for a concurrent sampler or for a state saved by one.
         :param compact_state: Store buffered graph tokens as immutable bytes instead of nested lists.
             This reduces object reconstruction and garbage collection in worker-to-parent snapshot transport.
             Tokens may be any pickle-compatible objects; only load checkpoints from trusted sources.
@@ -223,6 +225,9 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "quadratic_duration": self.quadratic_duration,
+                # load_state_dict rejects states captured with concurrent bucketing:
+                # the producer thread mutates the buffers while they are being captured.
+                "concurrent": self.concurrent,
             }
         )
         # Capture bucketer state for O(1) indexed restore.
@@ -284,6 +289,14 @@ class DynamicBucketingSampler(CutSampler):
         return sd
 
     def load_state_dict(self, sd: Dict[str, Any]) -> None:
+        if self.concurrent or sd.get("concurrent", False):
+            raise RuntimeError(
+                "DynamicBucketingSampler with concurrent=True does not support checkpointing "
+                "or resumption: the background bucketing thread makes the sampler state "
+                "non-deterministic. Construct the sampler with concurrent=False both when "
+                "saving and when restoring its state."
+            )
+        sd.pop("concurrent", None)
         self.max_duration = sd.pop("max_duration")
         self.max_cuts = sd.pop("max_cuts")
         self.consistent_ids = sd.pop("consistent_ids")
@@ -670,6 +683,7 @@ class DynamicBucketer:
         self.buckets: List[Queue] = [Queue() for _ in range(len(duration_bins) + 1)]
 
         self._producer_thread = None
+        self._producer_error = None
         self._source_exhausted = False
         self._saved_state = None
         self._selection_state = None
@@ -772,6 +786,11 @@ class DynamicBucketer:
 
     def set_state(self, state: Dict[str, Any]) -> None:
         """Store state to be consumed at the top of the next __iter__ call."""
+        if self.concurrent:
+            raise RuntimeError(
+                "DynamicBucketer with concurrent=True does not support restoring a saved state. "
+                "Use concurrent=False."
+            )
         self._saved_state = state
 
     def _restore_from_saved_state(self) -> "BucketSelectionState":
@@ -1030,18 +1049,33 @@ class DynamicBucketer:
                     self.buckets[bucket_idx].put(cuts)
             except StopIteration:
                 self._source_exhausted = True
+            except BaseException as e:
+                # Hand the error over to the consumer thread, which re-raises it in __iter__.
+                # Without this, the consumer would wait forever for data that never arrives.
+                self._producer_error = e
 
+        self._producer_error = None
         # ``daemon=True`` so this background thread does not block process shutdown
         self._producer_thread = threading.Thread(target=producer, daemon=True)
         self._producer_thread.start()
 
     def _maybe_wait_for_producer(self):
         """Triggers wait for producer if the bucket buffers are less than 10% utilized."""
+        self._raise_if_producer_failed()
         while (
             sum(b.qsize() for b in self.buckets) < self.buffer_size / 10
             and not self._source_exhausted
         ):
-            time.sleep(1.0)
+            self._raise_if_producer_failed()
+            time.sleep(0.1)
+        self._raise_if_producer_failed()
+
+    def _raise_if_producer_failed(self) -> None:
+        """Re-raise in the consumer thread an exception that terminated the producer thread."""
+        error = self._producer_error
+        if error is not None:
+            self._producer_error = None
+            raise error
 
     def _collect_cuts_in_buckets(self, n_cuts: int) -> None:
         """Fetches ``n_cuts`` from the input data iterable. Doesn't use concurrency."""
