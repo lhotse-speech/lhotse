@@ -410,6 +410,35 @@ A minimal example of how to perform text-only dataloading is available below (no
 
 .. note:: Support for this kind of dataloading is experimental in Lhotse. If you run into any rough edges, please let us know.
 
+Packed sequence sampling
+************************
+
+Models that consume a mini-batch as one packed sequence (examples concatenated without padding,
+e.g. with variable-length attention kernels) spend compute and memory proportional to the sum of example lengths,
+rather than the batch size times the longest example.
+:class:`~lhotse.dataset.sampling.packed.PackedTokenConstraint` caps that sum exactly with ``batch_tokens``
+(optionally also the number of examples, a quadratic length penalty, and the total number of output tokens),
+and the packed samplers select examples that fill it as closely as possible.
+Each mini-batch is the best-fitting subset of the next ``packing_buffer_size`` examples (within a bucket, for the bucketing sampler)
+that includes the oldest one, so that no example is starved::
+
+    from lhotse.dataset import PackedSequenceDynamicBucketingSampler, PackedTokenConstraint
+
+    sampler = PackedSequenceDynamicBucketingSampler(
+        examples,  # each example has a num_tokens attribute
+        constraint=PackedTokenConstraint(batch_tokens=8192),
+        duration_bins=[256, 512, 1024],  # in tokens
+        packing_buffer_size=128,
+        shuffle=True,
+    )
+
+.. autoclass:: lhotse.dataset.sampling.packed.PackedTokenConstraint
+    :members:
+
+.. autoclass:: lhotse.dataset.sampling.packed.PackedSequenceDynamicCutSampler
+
+.. autoclass:: lhotse.dataset.sampling.packed.PackedSequenceDynamicBucketingSampler
+
 Dataset's list
 --------------
 
