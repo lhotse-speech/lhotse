@@ -156,7 +156,8 @@ reject newer versions explicitly.
 ``write_index_pack()`` normally reads the sidecar returned by
 :func:`lhotse.indexing.index_file_path` and requires its final sentinel to
 match the local source size, or the uncompressed stream size for gzip JSONL.
-Gzip sources require a local source and a corresponding ``.gzidx`` sidecar.
+Gzip sources require a corresponding ``.gzidx`` sidecar. Sources may be local
+files or AIStore/S3 objects.
 The builder independently obtains the uncompressed EOF before validating the
 ``.idx`` sentinel, including gzip files containing concatenated members.
 Builders that have independently validated a
@@ -266,21 +267,25 @@ argument of the reader (a mapping with only ``"cuts"`` reads metadata without
 touching any tar). A reader finds its source in the pack through the arguments it
 is given:
 
-* a directory is identified by ``str(Path(in_dir))``. The path is not resolved, so
-  write and read it with the same spelling (a trailing slash does not matter);
+* a local directory or object-store location is identified by its path or URL.
+  Use the same spelling when writing and reading (a trailing slash does not matter);
 * a mapping is identified by its field names and its ordered shard paths.
 
 A pack written from a directory is therefore not found when the same files are
 requested as a mapping; list both as sources if both are needed. Files shared by
 several sources are stored once.
 
-While packing, Lhotse verifies that every field has the same shards and the same
-number of records per shard as the cuts, that no source is newer than its
-sidecar, and that bytes after the last indexed sample of a tar are the all-zero
-end-of-archive padding. Shards must be local files; ``.jsonl``, ``.jsonl.gz``
-(requires ``indexed_gzip``) cuts and uncompressed ``.tar`` fields are supported,
-and compressed tars are rejected. The pack file may be stored inside the Shar
-directory; it is ignored when the directory is listed.
+Shards and sidecars may be local files or AIStore/S3 objects. Remote reads use
+AIStore byte-range requests. Keep the pack on local disk for memory mapping::
+
+    write_shar_index_pack("shar.idxpack", "ais://bucket/dataset")
+    cuts = CutSet.from_shar(in_dir="ais://bucket/dataset", index_pack="shar.idxpack")
+
+Lhotse checks that each field has the same number of shards and records as the
+cuts, and that any bytes after the last indexed tar sample are zero padding.
+For local shards and sidecars, it also compares modification times. Gzip JSONL
+uses the ``.gzidx`` seek index; tar shards must be uncompressed.
+The pack file is ignored when listing a Shar directory.
 
 How iterator composition works
 ------------------------------

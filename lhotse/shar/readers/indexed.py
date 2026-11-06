@@ -27,7 +27,7 @@ from lhotse.shar.index_pack import (
     PackedTarShardReader,
     shar_source_spec,
 )
-from lhotse.shar.readers.lazy import _discover_fields
+from lhotse.shar.readers.discovery import discover_shar_fields
 from lhotse.utils import Pathlike, exactly_one_not_null, is_valid_url
 
 
@@ -56,8 +56,9 @@ class LazyIndexedSharIterator(IteratorNode):
     :param fields: a dict whose keys specify which fields to load,
         and values are lists of shards (either paths or shell commands).
         The field "cuts" pointing to CutSet shards always has to be present.
-    :param in_dir: path to a directory created with ``SharWriter`` with
-        all the shards in a single place. Can be used instead of ``fields``.
+    :param in_dir: directory or ``ais://`` / ``s3://`` location containing
+        Shar shards. Use this instead of ``fields`` to find shards automatically.
+        Lhotse searches directly under this location and skips index files.
     :param shuffle: if ``True``, iteration uses a Feistel-network
         permutation for true random access across all shards.
     :param seed: seed for the shuffle permutation.
@@ -85,7 +86,7 @@ class LazyIndexedSharIterator(IteratorNode):
         The source is looked up in the pack by the same ``in_dir`` / ``fields``
         arguments it was packed with (see :mod:`lhotse.shar.index_pack`).
         Mutually exclusive with ``index_path`` and ``indexes_root``.
-        Shards must be local files; tar shards must be uncompressed.
+        Shards may be local files or AIStore/S3 objects. Tar shards must be uncompressed.
         Iteration order, shuffling, partitioning and ``state_dict`` are
         identical to the sidecar-based reader.
     :param index_pack_max_open_files: bound on the number of shard files kept
@@ -121,7 +122,7 @@ class LazyIndexedSharIterator(IteratorNode):
                 "'index_pack' is mutually exclusive with 'index_path' and 'indexes_root': "
                 "a pack contains the offsets of its shards."
             )
-        self.in_dir = Path(in_dir) if in_dir is not None else None
+        self.in_dir = in_dir if in_dir is None or is_valid_url(in_dir) else Path(in_dir)
         self._packed: Optional[PackedSharSource] = None
         self._cuts_readers: Optional[List[IndexedJsonlReader]] = None
         # Lazily-created indexed readers for non-cuts fields.
@@ -265,7 +266,7 @@ class LazyIndexedSharIterator(IteratorNode):
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
         if in_dir is not None:
-            _, streams = _discover_fields(Path(in_dir))
+            _, streams = discover_shar_fields(in_dir=in_dir)
             field_names = set(streams.keys())
             field_names.remove("cuts")
             return field_names, streams
@@ -519,7 +520,8 @@ class LazyIndexedSharIterator(IteratorNode):
             return self.shards[shard_idx]["cuts"]
         if self.streams is not None:
             return self.streams["cuts"][shard_idx]
-        return Path(self._packed.cuts_shard_path(shard_idx))
+        path = self._packed.cuts_shard_path(shard_idx)
+        return path if is_valid_url(path) else Path(path)
 
     def __iter__(self):
         for global_idx in self._iter_state.iterate(self._total_len):

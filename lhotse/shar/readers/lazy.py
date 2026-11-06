@@ -22,8 +22,9 @@ from lhotse.lazy import (
     count_newlines_fast,
 )
 from lhotse.serialization import extension_contains
+from lhotse.shar.readers.discovery import discover_shar_fields
 from lhotse.shar.readers.tar import TarIterator
-from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
+from lhotse.utils import Pathlike, exactly_one_not_null, ifnone, is_valid_url
 
 
 def _is_local_uncompressed(path) -> bool:
@@ -32,36 +33,6 @@ def _is_local_uncompressed(path) -> bool:
     if p.startswith("pipe:") or "://" in p:
         return False
     return not extension_contains(".gz", p)
-
-
-def _discover_fields(in_dir: Path) -> Tuple[set, dict]:
-    """Discover shard fields from an ``in_dir``.
-
-    Returns ``(fields, streams)`` where *fields* is a set of non-cuts
-    field names and *streams* maps each field (plus ``"cuts"``) to a
-    sorted list of shard paths.
-
-    Index files (``.idx``, ``.gzidx`` and ``.idxpack``) are excluded from discovery.
-    """
-    all_paths = [
-        p
-        for p in in_dir.glob("*")
-        if not p.name.endswith((".idx", ".gzidx", ".idxpack"))
-    ]
-    fields = set(p.stem.split(".")[0] for p in all_paths)
-    assert "cuts" in fields, f"No cuts JSONL shards found in {in_dir}"
-    fields.remove("cuts")
-
-    streams: Dict[str, list] = {
-        "cuts": sorted(
-            p
-            for p in all_paths
-            if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
-        )
-    }
-    for field in fields:
-        streams[field] = sorted(p for p in all_paths if p.name.split(".")[0] == field)
-    return fields, streams
 
 
 class LazySharIterator(IteratorNode):
@@ -141,8 +112,9 @@ class LazySharIterator(IteratorNode):
     :param fields: a dict whose keys specify which fields to load,
         and values are lists of shards (either paths or shell commands).
         The field "cuts" pointing to CutSet shards always has to be present.
-    :param in_dir: path to a directory created with ``SharWriter`` with
-        all the shards in a single place. Can be used instead of ``fields``.
+    :param in_dir: directory or ``ais://`` / ``s3://`` location containing
+        Shar shards. Use this instead of ``fields`` to find shards automatically.
+        Lhotse searches directly under this location and skips index files.
     :param split_for_dataloading: bool, by default ``False`` which does nothing.
         Setting it to ``True`` is intended for PyTorch training with multiple
         dataloader workers and possibly multiple DDP nodes.
@@ -211,8 +183,8 @@ class LazySharIterator(IteratorNode):
 
         self._len = None
         if in_dir is not None:
-            self.in_dir = Path(in_dir)
-            self.fields, self.streams = _discover_fields(self.in_dir)
+            self.in_dir = in_dir if is_valid_url(in_dir) else Path(in_dir)
+            self.fields, self.streams = discover_shar_fields(in_dir=in_dir)
         else:
             self._init_from_inputs(fields)
 

@@ -1163,3 +1163,210 @@ def test_lazy_packed_manifest_warns_when_skipping_decode_error(tmp_path):
 
     with pytest.warns(UserWarning, match="Skipping malformed packed manifest"):
         assert [item["id"] for item in source] == ["good"]
+
+
+def test_packed_range_retries_short_remote_reads(monkeypatch):
+    import io
+
+    class ShortReader(io.BytesIO):
+        def read(self, size=-1):
+            return super().read(min(size, 2))
+
+    handles = []
+
+    def open_source(path):
+        reader = ShortReader(b"abcdefgh")
+        handles.append(reader)
+        return reader
+
+    monkeypatch.setattr(packed_lazy_module, "_open_for_indexed_read", open_source)
+    cache = packed_lazy_module._PackedFileCache(max_open_files=1)
+    assert cache.read("ais://bucket/first", 1, 7) == b"bcdefg"
+    assert cache.read("ais://bucket/second", 0, 2) == b"ab"
+    assert handles[0].closed
+    assert len(cache._fds) == 1
+    with pytest.raises(EOFError, match="Short indexed read"):
+        cache.read("ais://bucket/second", 0, 10)
+    cache.close()
+    assert handles[1].closed
+
+
+@pytest.mark.parametrize("kind", ["local", "remote", "gzip"])
+@pytest.mark.parametrize("operation", ["evict", "close"])
+def test_packed_cache_keeps_active_handles_open(tmp_path, monkeypatch, kind, operation):
+    import io
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from types import SimpleNamespace
+
+    entered = threading.Event()
+    release = threading.Event()
+    started = threading.Event()
+    cache = packed_lazy_module._PackedFileCache(max_open_files=1)
+    paths = [str(tmp_path / name) for name in ("first", "second")]
+    for path in paths:
+        Path(path).write_bytes(b"abcdefgh")
+
+    def pause():
+        entered.set()
+        assert release.wait(10)
+
+    class PausedReader:
+        def __init__(self, reader, paused):
+            self.reader = reader
+            self.paused = paused
+
+        def seek(self, *args):
+            return self.reader.seek(*args)
+
+        def read(self, *args):
+            if self.paused:
+                pause()
+            return self.reader.read(*args)
+
+        def close(self):
+            self.reader.close()
+
+    options = [{}, {}]
+    if kind == "local":
+        original = os.pread
+        first_read = True
+
+        def pread(*args):
+            nonlocal first_read
+            if first_read:
+                first_read = False
+                pause()
+            return original(*args)
+
+        monkeypatch.setattr(packed_lazy_module.os, "pread", pread)
+    elif kind == "remote":
+        paths = ["ais://bucket/first", "ais://bucket/second"]
+        monkeypatch.setattr(
+            packed_lazy_module,
+            "_open_for_indexed_read",
+            lambda path: PausedReader(io.BytesIO(b"abcdefgh"), path == paths[0]),
+        )
+    else:
+        pytest.importorskip("indexed_gzip")
+        paths = [path + ".jsonl.gz" for path in paths]
+        for path in paths:
+            with gzip.open(path, "wb") as stream:
+                stream.write(b"abcdefgh")
+        original = cache._open_gzip
+        seek_indexes = {}
+        for path in paths:
+            create_jsonl_index(path)
+            seek_indexes[path] = Path(path + ".gzidx").read_bytes()
+        pack = SimpleNamespace(gzip_index_bytes=lambda path: seek_indexes[path])
+        options = [
+            {"gzip_info": (Path(path).stat().st_size, 0, 0, 0), "index_pack": pack}
+            for path in paths
+        ]
+
+        def open_gzip(path, info, index_pack):
+            reader, source, lock = original(path, info, index_pack)
+            return PausedReader(reader, path == paths[0]), source, lock
+
+        monkeypatch.setattr(cache, "_open_gzip", open_gzip)
+
+    def compete():
+        started.set()
+        if operation == "close":
+            cache.close()
+        else:
+            return cache.read(paths[1], 0, 4, **options[1])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        active = pool.submit(cache.read, paths[0], 0, 4, **options[0])
+        try:
+            assert entered.wait(10)
+            competing = pool.submit(compete)
+            assert started.wait(10)
+            with pytest.raises(TimeoutError):
+                competing.result(timeout=0.1)
+        finally:
+            release.set()
+        assert active.result(timeout=10) == b"abcd"
+        assert competing.result(timeout=10) == (
+            None if operation == "close" else b"abcd"
+        )
+    assert len(cache._fds) <= 1
+    cache.close()
+
+
+def test_packed_cache_allows_parallel_reads_and_safe_limit(monkeypatch):
+    import io
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+    barrier = threading.Barrier(3)
+    release = threading.Event()
+    limiting = threading.Event()
+
+    class Reader(io.BytesIO):
+        def read(self, *args):
+            barrier.wait(timeout=10)
+            assert release.wait(10)
+            return super().read(*args)
+
+    monkeypatch.setattr(
+        packed_lazy_module, "_open_for_indexed_read", lambda _: Reader(b"abcdefgh")
+    )
+    cache = packed_lazy_module._PackedFileCache(max_open_files=2)
+
+    def limit():
+        limiting.set()
+        cache.limit_to(1)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        readers = [
+            pool.submit(cache.read, f"ais://bucket/{name}", 0, 4)
+            for name in ("first", "second")
+        ]
+        try:
+            # Both reads must start before either is allowed to finish.
+            barrier.wait(timeout=10)
+            tightener = pool.submit(limit)
+            assert limiting.wait(10)
+            with pytest.raises(TimeoutError):
+                tightener.result(timeout=0.1)
+        finally:
+            release.set()
+        assert [reader.result(timeout=10) for reader in readers] == [b"abcd", b"abcd"]
+        tightener.result(timeout=10)
+    assert len(cache._fds) <= 1
+    restored = pickle.loads(pickle.dumps(cache))
+    assert restored.max_open_files == 1 and not restored._fds
+    cache.close()
+    restored.close()
+
+
+def test_packed_cache_resets_inherited_lock_after_fork(tmp_path):
+    if "fork" not in mp.get_all_start_methods():
+        pytest.skip("Requires fork")
+    context = mp.get_context("fork")
+    path = tmp_path / "source"
+    path.write_bytes(b"abcdefgh")
+    cache = packed_lazy_module._PackedFileCache(max_open_files=1)
+    assert cache.read(str(path), 0, 4) == b"abcd"
+    queue = context.Queue()
+
+    def read_in_child():
+        queue.put(cache.read(str(path), 4, 8))
+        cache.close()
+
+    child = context.Process(target=read_in_child)
+    try:
+        with cache._condition:
+            child.start()
+            child.join(timeout=10)
+            assert not child.is_alive(), "Child inherited a locked cache condition"
+        assert child.exitcode == 0
+        assert queue.get(timeout=5) == b"efgh"
+    finally:
+        if child.is_alive():
+            child.terminate()
+        child.join(timeout=5)
+        queue.close()
+        cache.close()

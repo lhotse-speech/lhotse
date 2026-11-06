@@ -295,6 +295,8 @@ def _write_index(offsets: list, path: Pathlike) -> None:
     # original direct-write path.
     with open_best(path, "wb") as f:
         f.write(arr.tobytes())
+    # Rebuilding an object must not leave a previously downloaded index in use.
+    _remote_index_cache_path(path).unlink(missing_ok=True)
 
 
 def _remote_index_cache_dir() -> Path:
@@ -552,8 +554,12 @@ def _gzip_index_exists(data_path: Pathlike, index_path: Pathlike) -> bool:
 def _write_gzip_index(reader, path: Pathlike) -> None:
     local_path = _as_local_path(path)
     if local_path is None:
-        with open_best(path, "wb") as f:
-            reader.export_index(fileobj=f)
+        # Some object-store writers are not compatible with the C extension's
+        # file-object interface. Finish exporting before publishing any bytes.
+        with io.BytesIO() as buffer:
+            reader.export_index(fileobj=buffer)
+            with open_best(path, "wb") as destination:
+                destination.write(buffer.getvalue())
         return
     local_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = local_path.with_name(

@@ -651,3 +651,42 @@ def test_msc_io_backend_is_applicable(monkeypatch):
     monkeypatch.setenv("LHOTSE_MSC_BACKEND_FORCED", "")
     assert not backend.is_applicable("s3://bucket/path")
     assert not backend.is_applicable("/path/to/local/file")
+
+
+def test_aistore_write_replaces_existing_object(monkeypatch):
+    from io import BytesIO
+    from types import SimpleNamespace
+
+    from packaging.version import parse
+
+    import lhotse.serialization as serialization
+
+    objects = {"ais://bucket/index.idx": b"old longer index"}
+
+    class Writer(BytesIO):
+        def __init__(self, url, mode):
+            super().__init__(objects[url] if mode == "a" else b"")
+            self.url = url
+            self.seek(0, 2)
+
+        def close(self):
+            if not self.closed:
+                objects[self.url] = self.getvalue()
+            super().close()
+
+    client = SimpleNamespace(
+        get_object_from_url=lambda url: SimpleNamespace(
+            get_writer=lambda: SimpleNamespace(
+                as_file=lambda mode="a": Writer(url, mode)
+            )
+        )
+    )
+    monkeypatch.setattr(
+        serialization, "get_aistore_client", lambda: (client, parse("1.26.0"))
+    )
+    for content in (b"replacement", b"short"):
+        with serialization.AIStoreIOBackend().open(
+            "ais://bucket/index.idx", "wb"
+        ) as stream:
+            stream.write(content)
+        assert objects["ais://bucket/index.idx"] == content

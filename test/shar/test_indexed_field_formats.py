@@ -341,9 +341,19 @@ def ais_objects(monkeypatch, request):
             )
 
         def get_writer(self):
-            return SimpleNamespace(as_file=lambda: WriteBuffer(self.url))
+            return SimpleNamespace(as_file=lambda mode="w": WriteBuffer(self.url))
 
-    client = SimpleNamespace(get_object_from_url=Object)
+    def bucket(name, provider):
+        prefix_url = f"{provider}://{name}/"
+        return SimpleNamespace(
+            list_all_objects=lambda prefix: [
+                SimpleNamespace(name=url[len(prefix_url) :])
+                for url in objects
+                if url.startswith(prefix_url + prefix)
+            ]
+        )
+
+    client = SimpleNamespace(get_object_from_url=Object, bucket=bucket)
     monkeypatch.setattr(
         "lhotse.serialization.get_aistore_client",
         lambda: (client, parse_version("1.10.0")),
@@ -361,8 +371,9 @@ def ais_objects(monkeypatch, request):
 
 @pytest.mark.parametrize("compress", [False, True])
 @pytest.mark.parametrize("mirror", [False, True])
+@pytest.mark.parametrize("directory", [False, True])
 def test_shar_ais_all_fields_and_automatic_index_creation(
-    tmp_path, ais_objects, compress, mirror
+    tmp_path, ais_objects, compress, mirror, directory
 ):
     pytest.importorskip("indexed_gzip")
     root = tmp_path / "shar"
@@ -379,7 +390,10 @@ def test_shar_ais_all_fields_and_automatic_index_creation(
             fields[field].append(url)
     indexes_root = tmp_path / "mirror" if mirror else None
     # No indexes are copied. The reader creates both JSONL companions and tar indexes.
-    eager = LazyIndexedSharIterator(fields=fields, indexes_root=indexes_root)
+    source = (
+        {"in_dir": f"ais://bucket/{namespace}"} if directory else {"fields": fields}
+    )
+    eager = LazyIndexedSharIterator(**source, indexes_root=indexes_root)
     for urls in fields.values():
         for url in urls:
             if url.endswith(".tar"):
@@ -400,7 +414,7 @@ def test_shar_ais_all_fields_and_automatic_index_creation(
         assert any(url.endswith(".gzidx") for url in objects) == compress
     # Prebuilt indexes work in both modes, and lazy construction avoids tar payloads.
     requests.clear()
-    lazy = LazyIndexedSharIterator(fields=fields, indexes_root=indexes_root, lazy=True)
+    lazy = LazyIndexedSharIterator(**source, indexes_root=indexes_root, lazy=True)
     first = lazy[0]
     assert not any(url.endswith(".tar") for url, _ in requests)
     _assert_fields(_loaded_fields(first), expected[0])
@@ -411,3 +425,180 @@ def test_shar_ais_all_fields_and_automatic_index_creation(
         subset[1].load_custom_features(), expected[1]["custom_features"]
     )
     assert subset[1].label == expected[1]["label"]
+
+
+@pytest.mark.parametrize("compress", [False, True])
+def test_shar_ais_directory_with_explicit_index_directory(
+    tmp_path, ais_objects, compress
+):
+    pytest.importorskip("indexed_gzip")
+    root = tmp_path / "shar"
+    _, paths = _write_fields(root, compress=compress)
+    expected = [_loaded_fields(cut) for cut in LazySharIterator(in_dir=root)]
+    objects, _ = ais_objects
+    for shards in paths.values():
+        for path in shards:
+            objects[f"ais://bucket/shar/{Path(path).name}"] = Path(path).read_bytes()
+    # Include an index pack and a nested object to check that discovery skips them.
+    objects["ais://bucket/shar/dataset.idxpack"] = b"ignored"
+    objects["ais://bucket/shar/nested/unrelated.tar"] = b"ignored"
+    options = dict(in_dir="ais://bucket/shar", index_path=tmp_path / "indexes")
+    eager = CutSet.from_shar(**options, indexed=True)
+    for actual, reference in zip(eager, expected):
+        _assert_fields(_loaded_fields(actual), reference)
+    automatic = CutSet.from_shar(**options)
+    assert automatic.is_indexed
+    _assert_fields(_loaded_fields(automatic[1]), expected[1])
+    iterator = iter(automatic)
+    next(iterator)
+    state = automatic.data.state_dict()
+    restored = CutSet.from_shar(**options)
+    restored.data.load_state_dict(state)
+    assert [c.id for c in restored] == [c.id for c in iterator]
+
+
+@pytest.mark.parametrize("compress", [False, True])
+@pytest.mark.parametrize("index_location", ["adjacent", "local", "remote"])
+@pytest.mark.parametrize("directory", [False, True])
+@pytest.mark.parametrize("scheme", ["ais", "s3"])
+def test_shar_ais_index_pack(
+    tmp_path, ais_objects, monkeypatch, compress, index_location, directory, scheme
+):
+    import pickle
+
+    from lhotse.shar import write_shar_index_pack
+
+    pytest.importorskip("indexed_gzip")
+    root = tmp_path / "shar"
+    _, paths = _write_fields(root, compress=compress)
+    reference = list(LazySharIterator(in_dir=root))
+    expected = [_loaded_fields(cut) for cut in reference]
+    expected_by_id = {cut.id: value for cut, value in zip(reference, expected)}
+    objects, requests = ais_objects
+    monkeypatch.setattr(AIStoreIOBackend, "is_available", lambda: True)
+    namespace = uuid4().hex
+    fields = {}
+    for field, shards in paths.items():
+        fields[field] = []
+        for path in shards:
+            url = f"{scheme}://bucket/{namespace}/{Path(path).name}"
+            objects[url] = Path(path).read_bytes()
+            fields[field].append(url)
+    source = (
+        {"in_dir": f"{scheme}://bucket/{namespace}"}
+        if directory
+        else {"fields": fields}
+    )
+    indexes_root = {
+        "adjacent": None,
+        "local": tmp_path / "indexes",
+        "remote": f"{scheme}://index-bucket/{namespace}",
+    }[index_location]
+    sidecar = LazyIndexedSharIterator(**source, indexes_root=indexes_root)
+    sidecar_manifests = [sidecar[i].to_dict() for i in range(len(sidecar))]
+    pack_path = tmp_path / "dataset.idxpack"
+    write_shar_index_pack(
+        pack_path, source.get("in_dir", source.get("fields")), indexes_root=indexes_root
+    )
+
+    def no_listing(*args, **kwargs):
+        pytest.fail("Packed reads should use the shard catalog in the pack.")
+
+    monkeypatch.setattr("lhotse.ais.list_aistore_objects", no_listing)
+    # A packed reader needs no sidecars or bucket listing.
+    for url in list(objects):
+        if url.endswith((".idx", ".gzidx")):
+            del objects[url]
+    if index_location == "local":
+        import shutil
+
+        shutil.rmtree(indexes_root)
+    requests.clear()
+    packed = CutSet.from_shar(
+        **source, index_pack=pack_path, index_pack_max_open_files=2
+    )
+    for position in (2, 0, 1):
+        actual = packed[position]
+        assert actual.to_dict() == sidecar_manifests[position]
+        loaded = _loaded_fields(actual)
+        _assert_fields(loaded, expected[position])
+        for field, value in loaded.items():
+            if isinstance(value, np.ndarray):
+                assert value.shape == expected[position][field].shape
+                assert value.dtype == expected[position][field].dtype
+                np.testing.assert_array_equal(value, expected[position][field])
+    assert any(url.endswith(".tar") and byte_range for url, byte_range in requests)
+    assert all(not url.endswith((".idx", ".gzidx")) for url, _ in requests)
+    for lazy in (False, True):
+        restored = pickle.loads(
+            pickle.dumps(
+                LazyIndexedSharIterator(
+                    **source, index_pack=pack_path, lazy=lazy, shuffle=True, seed=7
+                )
+            )
+        )
+        iterator = iter(restored)
+        next(iterator)
+        state = restored.state_dict()
+        resumed = LazyIndexedSharIterator(
+            **source, index_pack=pack_path, lazy=lazy, shuffle=True, seed=7
+        )
+        resumed.load_state_dict(state)
+        remaining = list(iterator)
+        actual = list(resumed)
+        assert [cut.to_dict() for cut in actual] == [cut.to_dict() for cut in remaining]
+        for cut in actual:
+            _assert_fields(_loaded_fields(cut), expected_by_id[cut.id])
+    from lhotse.packed_lazy import _file_cache_for_pack
+
+    assert len(_file_cache_for_pack(packed.data._packed.index_pack, 2)._fds) <= 2
+
+
+@pytest.mark.parametrize("corruption", ["jsonl_tail", "tar_tail", "tar_truncated"])
+def test_shar_index_pack_rejects_stale_remote_sidecar(
+    tmp_path, ais_objects, corruption
+):
+    import struct
+
+    from lhotse.shar import write_shar_index_pack
+
+    objects, _ = ais_objects
+    namespace = uuid4().hex
+    cuts = f"ais://bucket/{namespace}/cuts.jsonl"
+    audio = f"ais://bucket/{namespace}/recording.tar"
+    objects[cuts] = b'{"id": "cut"}\n'
+    objects[cuts + ".idx"] = struct.pack("<QQ", 0, len(objects[cuts]))
+    objects[audio] = b"abc\0"
+    objects[audio + ".idx"] = struct.pack("<QQ", 0, 3)
+    if corruption == "jsonl_tail":
+        objects[cuts] += b"{}\n"
+        message = "ends at byte"
+    elif corruption == "tar_tail":
+        objects[audio] = b"abcx"
+        message = "non-zero bytes"
+    else:
+        objects[audio] = b"ab"
+        message = "beyond the end"
+    output = tmp_path / "dataset.idxpack"
+    with pytest.raises(ValueError, match=message):
+        write_shar_index_pack(output, {"cuts": [cuts], "recording": [audio]})
+    assert not output.exists()
+
+
+def test_cli_shar_index_pack_from_object_store(tmp_path, ais_objects):
+    import struct
+
+    from click.testing import CliRunner
+
+    from lhotse.bin.modes.cli_base import cli
+
+    cut = next(iter(DummyManifest(CutSet, begin_id=0, end_id=1)))
+    directory = f"ais://bucket/{uuid4().hex}"
+    path = f"{directory}/cuts.000000.jsonl"
+    objects, _ = ais_objects
+    objects[path] = json.dumps(cut.to_dict()).encode() + b"\n"
+    objects[path + ".idx"] = struct.pack("<QQ", 0, len(objects[path]))
+    output = tmp_path / "dataset.idxpack"
+    result = CliRunner().invoke(cli, ["index", "shar-pack", str(output), directory])
+    assert result.exit_code == 0, result.output
+    assert CutSet.from_shar(in_dir=directory, index_pack=output)[0].id == cut.id

@@ -95,9 +95,7 @@ def shar(shar_dir: str, output_dir: str):
 
 @index.command(name="shar-pack")
 @click.argument("output", type=click.Path(dir_okay=False))
-@click.argument(
-    "shar_dirs", nargs=-1, required=True, type=click.Path(exists=True, file_okay=False)
-)
+@click.argument("shar_dirs", nargs=-1, required=True)
 @click.option(
     "--indexes-root",
     type=click.Path(file_okay=False),
@@ -111,12 +109,11 @@ def shar(shar_dir: str, output_dir: str):
 )
 def shar_pack(output: str, shar_dirs, indexes_root: str, overwrite: bool):
     """
-    Pack the .idx files of one or more Shar directories into a single .idxpack.
+    Pack the indexes of local or AIStore/S3 Shar datasets into one local .idxpack.
 
-    The indexes must exist already (see ``lhotse index shar``). A Shar reader is pointed
-    at the pack with ``CutSet.from_shar(in_dir=SHAR_DIR, index_pack=OUTPUT)``; each reader
-    finds its directory in the pack by the same path string it was packed with.
-    Tar shards must be uncompressed; their sidecars are validated while packing.
+    Create the indexes first, then pass directories or object-store URLs as SHAR_DIRS.
+    Read the result with ``CutSet.from_shar(in_dir=SHAR_DIR, index_pack=OUTPUT)``,
+    using the same path or URL. Tar shards must be uncompressed.
     """
     from lhotse.shar import write_shar_index_pack
 

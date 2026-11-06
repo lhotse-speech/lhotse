@@ -581,8 +581,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param fields: a dict whose keys specify which fields to load,
             and values are lists of shards (either paths or shell commands).
             The field "cuts" pointing to CutSet shards always has to be present.
-        :param in_dir: path to a directory created with ``SharWriter`` with
-            all the shards in a single place. Can be used instead of ``fields``.
+        :param in_dir: directory or ``ais://`` / ``s3://`` location containing
+            Shar shards. Use this instead of ``fields`` to find shards automatically.
+            Lhotse searches directly under this location and skips index files.
         :param split_for_dataloading: bool, by default ``False`` which does nothing.
             Setting it to ``True`` is intended for PyTorch training with multiple
             dataloader workers and possibly multiple DDP nodes.

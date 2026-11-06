@@ -13,8 +13,8 @@ and pass the result to ``CutSet.from_shar(..., index_pack=...)`` or ``LazyIndexe
 **Source identity.** A pack may hold several Shar *sources*. Every source is identified by the arguments that a
 reader is given, so a reader finds its source in the pack by passing the same arguments:
 
-* a Shar directory, identified by ``str(Path(in_dir))`` (the path is not resolved, so use the same spelling when
-  writing and reading; a trailing slash does not matter);
+* a local Shar directory or an AIStore/S3 location, identified by its path or URL
+  (use the same spelling when writing and reading; a trailing slash does not matter);
 * a per-field mapping ``{"cuts": [shard, ...], "<field>": [shard, ...], ...}``, identified by the mapping's
   content: the field names and the ordered shard paths as strings.
 
@@ -28,10 +28,13 @@ per cut (a tar member pair for tar fields, a JSONL row for JSONL fields).
 
 import io
 import os
+import shutil
 import struct
+import tempfile
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Generator, List, Optional, Sequence, Tuple, Union
 
 from lhotse.index_pack import (
     IndexPack,
@@ -41,12 +44,15 @@ from lhotse.index_pack import (
     write_index_pack,
 )
 from lhotse.indexing import (
+    _is_gzip_jsonl,
+    _open_for_indexed_read,
+    gzip_index_file_path,
     index_file_path,
     indexed_path_kind,
     read_tar_pair_at,
 )
 from lhotse.packed_lazy import read_packed_range
-from lhotse.serialization import decode_json_line
+from lhotse.serialization import decode_json_line, open_best
 from lhotse.utils import Pathlike, is_valid_url
 
 SHAR_CUTS_ROLE = "shar_cuts"
@@ -78,20 +84,19 @@ def write_shar_index_pack(
     module docstring for how a source is identified. One pack can serve several readers, e.g. one reader per
     directory of a multiplexed dataset.
 
-    The sidecars must exist (create them with ``lhotse index shar`` or ``SharWriter(create_index=True)``).
-    The following is verified while packing, and a violation raises an error:
+    Create the sidecars first with ``lhotse index shar`` or ``SharWriter(create_index=True)``.
+    Shards and sidecars may be local files or AIStore/S3 objects. Remote sidecars
+    are downloaded while building the pack. The finished pack is a local file.
 
-    * every shard is a local, randomly addressable file: ``.jsonl`` / ``.jsonl.gz`` cuts, ``.tar`` fields
-      (or ``.jsonl`` / ``.jsonl.gz`` fields); compressed tars cannot be addressed and are rejected;
-    * every field has as many shards as the cuts, and every shard has as many records as the corresponding cuts shard;
-    * no source file is newer than its sidecar;
-    * when a tar sidecar ends before the end of the file, the remaining bytes are the zero padding of the tar
-      end-of-archive marker (they are verified to be all zeros; the pack then records the file size).
+    Each field must have the same number of shards and records as the cuts.
+    Lhotse checks shard sizes and tar padding before writing the pack. For local
+    files, it also checks that the sidecars are newer than the shards.
+    Gzip JSONL requires its ``.gzidx`` seek index; tar shards must be uncompressed.
 
     :param output_path: where to write the pack.
     :param sources: one Shar source, or a sequence of them (see above).
     :param indexes_root: optional root that mirrors the data layout for sidecar lookup, as in
-        :func:`lhotse.indexing.index_file_path`. Sidecars must be local files.
+        :func:`lhotse.indexing.index_file_path`.
     :param overwrite: replace an existing pack atomically instead of failing.
     :return: ``output_path`` as a :class:`~pathlib.Path`.
     """
@@ -110,21 +115,29 @@ def write_shar_index_pack(
         seen.add(key)
         specs.extend(_collection_specs(source_spec, streams))
 
-    record_counts = {}
-    for _, streams in resolved:
-        _check_record_counts(streams, indexes_root, record_counts)
-    source_size_overrides = _tar_padding_source_sizes(
-        sorted({p for _, streams in resolved for p in _tar_shards(streams)}),
-        indexes_root,
+    shard_paths = sorted(
+        {
+            path
+            for _, streams in resolved
+            for paths in streams.values()
+            for path in paths
+        }
     )
-
-    return write_index_pack(
-        output_path,
-        specs,
-        indexes_root=indexes_root,
-        overwrite=overwrite,
-        source_size_overrides=source_size_overrides,
-    )
+    with _local_sidecars(paths=shard_paths, indexes_root=indexes_root) as index_paths:
+        record_counts = {}
+        for _, streams in resolved:
+            _check_record_counts(streams, index_paths, record_counts)
+        source_size_overrides = _source_sizes(
+            paths=shard_paths, index_paths=index_paths
+        )
+        return write_index_pack(
+            output_path,
+            specs,
+            indexes_root=indexes_root,
+            overwrite=overwrite,
+            source_size_overrides=source_size_overrides,
+            index_path_overrides=index_paths,
+        )
 
 
 def shar_source_spec(
@@ -137,7 +150,11 @@ def shar_source_spec(
     if (fields is None) == (in_dir is None):
         raise ValueError("Provide exactly one of 'fields' and 'in_dir'.")
     if in_dir is not None:
-        return {"in_dir": str(Path(in_dir))}
+        return {
+            "in_dir": (
+                str(in_dir).rstrip("/") if is_valid_url(in_dir) else str(Path(in_dir))
+            )
+        }
     if "cuts" not in fields:
         raise ValueError("A Shar 'fields' mapping must contain the key 'cuts'.")
     return {"fields": {str(k): [str(p) for p in v] for k, v in fields.items()}}
@@ -321,11 +338,11 @@ def _resolve_source(source: ShardSource) -> Tuple[dict, Dict[str, List[str]]]:
         source_spec = shar_source_spec(fields=source)
         streams = {k: list(v) for k, v in source_spec["fields"].items()}
     else:
-        from lhotse.shar.readers.lazy import _discover_fields
+        from lhotse.shar.readers.discovery import discover_shar_fields
 
         source_spec = shar_source_spec(in_dir=source)
         try:
-            _, found = _discover_fields(Path(source))
+            _, found = discover_shar_fields(in_dir=source)
         except AssertionError as ex:
             raise ValueError(f"No Shar cuts shards found in {source}.") from ex
         streams = {k: [str(p) for p in v] for k, v in found.items()}
@@ -343,9 +360,9 @@ def _resolve_source(source: ShardSource) -> Tuple[dict, Dict[str, List[str]]]:
 
 
 def _check_shard(field: str, path: str) -> None:
-    if path.startswith("pipe:") or is_valid_url(path):
+    if path.startswith("pipe:"):
         raise ValueError(
-            f"Index packs require local shard files, got '{path}' (field '{field}')."
+            f"Index packs require seekable shards, got '{path}' (field '{field}')."
         )
     kind = indexed_path_kind(path)
     if field == "cuts" and kind != "jsonl":
@@ -391,30 +408,42 @@ def _collection_specs(
     return specs
 
 
-def _tar_shards(streams: Dict[str, List[str]]) -> List[str]:
-    return [p for shards in streams.values() for p in shards if _is_tar(p)]
-
-
-def _is_tar(path: str) -> bool:
-    return indexed_path_kind(path) == "tar"
-
-
-def _sidecar_path(path: str, indexes_root: Optional[Pathlike]) -> Path:
-    idx = index_file_path(path, indexes_root)
-    if is_valid_url(str(idx)):
-        raise ValueError(
-            f"Index packs are built from local sidecars, got '{idx}' for '{path}'."
-        )
-    if not Path(idx).exists():
-        raise FileNotFoundError(
-            f"Missing .idx sidecar for '{path}': {idx}. Create it with `lhotse index shar`."
-        )
-    return Path(idx)
+@contextmanager
+def _local_sidecars(
+    paths: Sequence[str], indexes_root: Optional[Pathlike]
+) -> Generator[Dict[str, Path], None, None]:
+    """Download remote sidecars to a temporary directory while building a pack."""
+    with tempfile.TemporaryDirectory(prefix="lhotse-shar-pack-") as directory:
+        index_paths = {}
+        for path in paths:
+            index_path = index_file_path(path, indexes_root)
+            if is_valid_url(index_path):
+                local_path = Path(directory) / f"{len(index_paths)}.idx"
+                downloads = [(index_path, local_path)]
+                if _is_gzip_jsonl(path):
+                    downloads.append(
+                        (
+                            gzip_index_file_path(path, index_path=index_path),
+                            gzip_index_file_path(path, index_path=local_path),
+                        )
+                    )
+                for source, destination in downloads:
+                    with open_best(source, "rb") as src, open(destination, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                index_path = local_path
+            index_path = Path(index_path)
+            if not index_path.is_file():
+                raise FileNotFoundError(
+                    f"Missing .idx sidecar for '{path}': {index_path}. "
+                    "Create it with `lhotse index shar`."
+                )
+            index_paths[path] = index_path
+        yield index_paths
 
 
 def _check_record_counts(
     streams: Dict[str, List[str]],
-    indexes_root: Optional[Pathlike],
+    index_paths: Dict[str, Path],
     cache: Dict[str, int],
 ) -> None:
     """Every field shard must hold one record per cut of the corresponding cuts shard."""
@@ -422,9 +451,7 @@ def _check_record_counts(
     def count(path: str) -> int:
         if path not in cache:
             # Sidecars are uint64 offsets followed by a size sentinel.
-            cache[path] = (
-                _sidecar_path(path, indexes_root).stat().st_size // _U64.size - 1
-            )
+            cache[path] = index_paths[path].stat().st_size // _U64.size - 1
         return cache[path]
 
     for field, shards in streams.items():
@@ -438,32 +465,38 @@ def _check_record_counts(
                 )
 
 
-def _tar_padding_source_sizes(
-    tar_paths: Sequence[str], indexes_root: Optional[Pathlike]
-) -> Dict[str, int]:
-    """
-    The sentinel of a tar sidecar may end at the last member pair, while the file additionally carries the zero
-    blocks of the tar end-of-archive marker. Verify that the tail is all zeros and return the file sizes to record.
-    """
+def _source_sizes(paths: Sequence[str], index_paths: Dict[str, Path]) -> Dict[str, int]:
+    """Check remote JSONL sizes and return tar sizes after verifying zero padding."""
     sizes = {}
-    for path in tar_paths:
-        sidecar = _sidecar_path(path, indexes_root)
+    for path in paths:
+        is_tar = indexed_path_kind(path) == "tar"
+        if not is_tar and (not is_valid_url(path) or _is_gzip_jsonl(path)):
+            continue
+        sidecar = index_paths[path]
         with open(sidecar, "rb") as f:
             f.seek(-_U64.size, os.SEEK_END)
             (sentinel,) = _U64.unpack(f.read(_U64.size))
-        size = Path(path).stat().st_size
+        if is_valid_url(path):
+            with _open_for_indexed_read(path) as source:
+                size = source.seek(0, os.SEEK_END)
+        else:
+            size = Path(path).stat().st_size
         if sentinel > size:
             raise ValueError(
                 f"Sidecar {sidecar} ends at byte {sentinel}, beyond the end of '{path}' ({size} bytes)."
             )
         if sentinel < size:
+            if not is_tar:
+                raise ValueError(
+                    f"Sidecar {sidecar} ends at byte {sentinel}, but '{path}' has {size} bytes."
+                )
             _check_zero_tail(path, sentinel, size)
             sizes[path] = size
     return sizes
 
 
 def _check_zero_tail(path: str, start: int, end: int) -> None:
-    with open(path, "rb") as f:
+    with _open_for_indexed_read(path) as f:
         f.seek(start)
         remaining = end - start
         while remaining > 0:
