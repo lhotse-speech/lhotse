@@ -439,7 +439,7 @@ def test_shar_ais_directory_with_explicit_index_directory(
     for shards in paths.values():
         for path in shards:
             objects[f"ais://bucket/shar/{Path(path).name}"] = Path(path).read_bytes()
-    # These must be ignored by discovery rather than attached as custom fields.
+    # Include an index pack and a nested object to check that discovery skips them.
     objects["ais://bucket/shar/dataset.idxpack"] = b"ignored"
     objects["ais://bucket/shar/nested/unrelated.tar"] = b"ignored"
     options = dict(in_dir="ais://bucket/shar", index_path=tmp_path / "indexes")

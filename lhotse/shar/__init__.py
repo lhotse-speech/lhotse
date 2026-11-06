@@ -11,5 +11,6 @@ __all__ = [
     "SharWriter",
     "TarIterator",
     "TarWriter",
+    "discover_shar_fields",
     "write_shar_index_pack",
 ]

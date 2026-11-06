@@ -1,4 +1,4 @@
-"""Directory discovery shared by streaming, sidecar and pack readers."""
+"""Test how Lhotse finds Shar shards."""
 
 import sys
 from types import SimpleNamespace
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from lhotse.serialization import AIStoreIOBackend
-from lhotse.shar.readers.discovery import _discover_fields
+from lhotse.shar import discover_shar_fields
 from lhotse.shar.readers.lazy import LazySharIterator
 
 
@@ -58,7 +58,7 @@ def test_remote_discovery(monkeypatch, scheme, prefix, backend):
             sys.modules, "boto3", SimpleNamespace(client=lambda service: client)
         )
     directory = f"{scheme}://bucket/{prefix}"
-    fields, streams = _discover_fields(directory)
+    fields, streams = discover_shar_fields(directory)
     assert fields == {"audio", "audio_extra"}
     assert streams == {
         field: [
@@ -90,7 +90,7 @@ def test_local_discovery_preserves_paths_and_excludes_indexes(tmp_path):
         "data.idxpack",
     ]:
         (tmp_path / name).touch()
-    assert _discover_fields(tmp_path) == (
+    assert discover_shar_fields(tmp_path) == (
         {"audio", "audio_extra"},
         {
             field: [tmp_path / f"{field}.000000.{suffix}"]
@@ -108,7 +108,7 @@ def test_local_discovery_preserves_paths_and_excludes_indexes(tmp_path):
 )
 def test_invalid_directory_uri(uri):
     with pytest.raises(ValueError):
-        _discover_fields(uri)
+        discover_shar_fields(uri)
     with pytest.raises(ValueError):
         LazySharIterator(in_dir=uri)
 
@@ -121,7 +121,7 @@ def test_ais_missing_configuration_does_not_use_s3(monkeypatch):
     is_aistore_available.cache_clear()
     monkeypatch.setattr("lhotse.serialization.is_module_available", lambda _: True)
     with pytest.raises(ValueError, match="AIS_ENDPOINT"):
-        _discover_fields("ais://bucket/shar")
+        discover_shar_fields("ais://bucket/shar")
     get_aistore_client.cache_clear()
     is_aistore_available.cache_clear()
 

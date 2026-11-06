@@ -151,18 +151,32 @@ See :doc:`contributing` for the locked uv environment, system dependencies,
 tests, formatting, documentation builds, accelerator environments, dependency
 updates, and releases.
 
-Shar object store discovery
-***************************
+Reading Shar from object stores
+*******************************
 
-Shar directory discovery accepts ``CutSet.from_shar(in_dir="ais://bucket/prefix")``
-and ``s3://`` prefixes (``s3a://`` and ``s3n://`` aliases normalize to ``s3://``).
-Only immediate children are included; ``.idx``, ``.gzidx`` and ``.idxpack`` files
-are excluded. With the AIStore SDK installed and ``AIS_ENDPOINT`` configured,
-discovery uses AIStore, including for S3. Otherwise S3 discovery requires
-``pip install boto3`` and uses its standard credential configuration.
-Sidecar indexes, ``index_path`` and ``indexes_root`` use the same discovered
-shard URLs as explicit ``fields``. Index packs retain their existing local-shard
-requirement and source identifiers.
+Pass an AIStore or S3 location to ``in_dir`` to find and read its Shar shards::
+
+    cuts = CutSet.from_shar(in_dir="ais://bucket/dataset")
+    cuts = CutSet.from_shar(in_dir="s3://bucket/dataset")
+
+Lhotse looks for shards directly under that location. It skips subdirectories
+and index files (``.idx``, ``.gzidx`` and ``.idxpack``).
+
+For AIStore, install ``aistore`` and set ``AIS_ENDPOINT`` to your cluster URL.
+This also routes S3 requests through AIStore. To read S3 directly, leave
+``AIS_ENDPOINT`` unset, install ``boto3``, and configure your AWS credentials.
+You can also use ``s3a://`` and ``s3n://``; Lhotse converts them to ``s3://``.
+
+To get the shard paths without opening them, use
+:func:`~lhotse.shar.readers.discover_shar_fields`::
+
+    from lhotse.shar import discover_shar_fields
+
+    fields, streams = discover_shar_fields("s3://bucket/dataset")
+
+Use ``index_path`` to store indexes in a separate directory, or ``indexes_root``
+to mirror the shard layout under another location. Index packs work with local
+shard files.
 
 Environment variables
 *********************

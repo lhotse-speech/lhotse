@@ -321,11 +321,11 @@ def _resolve_source(source: ShardSource) -> Tuple[dict, Dict[str, List[str]]]:
         source_spec = shar_source_spec(fields=source)
         streams = {k: list(v) for k, v in source_spec["fields"].items()}
     else:
-        from lhotse.shar.readers.discovery import _discover_fields
+        from lhotse.shar.readers.discovery import discover_shar_fields
 
         source_spec = shar_source_spec(in_dir=source)
         try:
-            _, found = _discover_fields(Path(source))
+            _, found = discover_shar_fields(in_dir=Path(source))
         except AssertionError as ex:
             raise ValueError(f"No Shar cuts shards found in {source}.") from ex
         streams = {k: [str(p) for p in v] for k, v in found.items()}

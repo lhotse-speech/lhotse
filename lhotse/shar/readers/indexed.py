@@ -27,7 +27,7 @@ from lhotse.shar.index_pack import (
     PackedTarShardReader,
     shar_source_spec,
 )
-from lhotse.shar.readers.discovery import _discover_fields
+from lhotse.shar.readers.discovery import discover_shar_fields
 from lhotse.utils import Pathlike, exactly_one_not_null, is_valid_url
 
 
@@ -56,10 +56,9 @@ class LazyIndexedSharIterator(IteratorNode):
     :param fields: a dict whose keys specify which fields to load,
         and values are lists of shards (either paths or shell commands).
         The field "cuts" pointing to CutSet shards always has to be present.
-    :param in_dir: path to a directory created with ``SharWriter`` with
-        all the shards in a single place, or an ``ais://`` / ``s3://`` prefix.
-        Discovery includes immediate children and excludes index files.
-        Can be used instead of ``fields``.
+    :param in_dir: directory or ``ais://`` / ``s3://`` location containing
+        Shar shards. Use this instead of ``fields`` to find shards automatically.
+        Lhotse searches directly under this location and skips index files.
     :param shuffle: if ``True``, iteration uses a Feistel-network
         permutation for true random access across all shards.
     :param seed: seed for the shuffle permutation.
@@ -267,7 +266,7 @@ class LazyIndexedSharIterator(IteratorNode):
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
         if in_dir is not None:
-            _, streams = _discover_fields(in_dir)
+            _, streams = discover_shar_fields(in_dir=in_dir)
             field_names = set(streams.keys())
             field_names.remove("cuts")
             return field_names, streams

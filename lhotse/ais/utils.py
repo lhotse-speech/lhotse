@@ -1,10 +1,10 @@
-"""AIStore object discovery without importing the optional SDK at module load."""
+"""List objects in AIStore buckets."""
 
 from typing import Iterable
 
 
 def list_aistore_objects(provider: str, bucket: str, prefix: str) -> Iterable[str]:
-    """List all object keys under a prefix, including every listing page."""
+    """List all object names that start with ``prefix``."""
     from lhotse.serialization import get_aistore_client
 
     client, _ = get_aistore_client()
