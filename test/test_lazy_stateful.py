@@ -693,6 +693,31 @@ class TestLazyShufflerStateful:
         assert first_k + list(shuf2) == expected_pass1
         assert list(shuf2) == expected_pass2
 
+    def test_restore_with_exhausted_nested_shuffler_keeps_its_rng(self):
+        """Regression: the exhausted source's cross-pass state (here the inner
+        shuffler's RNG) must still be restored, otherwise the passes after the
+        restored one diverge from an uninterrupted run."""
+        items = [_ToyItem(f"item-{idx}", idx) for idx in range(12)]
+
+        def make():
+            inner = LazyShuffler(
+                _IndexedGraphIterator(items), buffer_size=4, rng=random.Random(3)
+            )
+            return LazyShuffler(inner, buffer_size=20, rng=random.Random(7))
+
+        reference = make()
+        expected = [list(reference) for _ in range(3)]
+
+        shuf1 = make()
+        first_k = consume(iter(shuf1), 5)
+        sd = shuf1.state_dict()
+        assert sd["source_exhausted"]
+
+        shuf2 = make()
+        shuf2.load_state_dict(sd)
+        assert first_k + list(shuf2) == expected[0]
+        assert [list(shuf2) for _ in range(2)] == expected[1:]
+
 
 # ---------------------------------------------------------------------------
 # LazyFilter
@@ -934,6 +959,49 @@ class TestLazySlicerStateful:
 # ---------------------------------------------------------------------------
 # Nested graph test
 # ---------------------------------------------------------------------------
+
+
+def _nested_shuffler(items, seed):
+    return LazyShuffler(
+        _IndexedGraphIterator(items), buffer_size=4, rng=random.Random(seed)
+    )
+
+
+def _short_shuffled_chain():
+    # The short shuffled source is consumed first and is exhausted at checkpoint time.
+    return LazyIteratorChain(
+        _nested_shuffler([_ToyItem(f"a-{i}", i) for i in range(6)], seed=3),
+        _IndexedGraphIterator([_ToyItem(f"b-{i}", i) for i in range(12)]),
+    )
+
+
+def _short_shuffled_mux():
+    # The multiplexer stops sampling the short shuffled source once it is exhausted.
+    return LazyIteratorMultiplexer(
+        _nested_shuffler([_ToyItem(f"a-{i}", i) for i in range(4)], seed=3),
+        _IndexedGraphIterator([_ToyItem(f"b-{i}", i) for i in range(20)]),
+        seed=7,
+    )
+
+
+@pytest.mark.parametrize("make", [_short_shuffled_chain, _short_shuffled_mux])
+def test_restore_keeps_cross_pass_state_of_exhausted_children(make):
+    """Regression: a child that was exhausted at checkpoint time must get its
+    cross-pass state (here a shuffler's RNG) restored, or the passes after the
+    restored one diverge from an uninterrupted run."""
+    reference = make()
+    expected = [list(reference) for _ in range(3)]
+
+    pipe = make()
+    first_k = consume(iter(pipe), 12)
+    sd = pipe.state_dict()
+    exhausted = sd.get("exhausted") or [True] * sd["current_iter_idx"]
+    assert exhausted[0], "the shuffled child must be exhausted at checkpoint time"
+
+    restored = make()
+    restored.load_state_dict(sd)
+    assert first_k + list(restored) == expected[0]
+    assert [list(restored) for _ in range(2)] == expected[1:]
 
 
 class TestNestedStatefulGraph:
