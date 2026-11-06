@@ -5,6 +5,8 @@ These tests use mocking to simulate AIStore client behavior,
 allowing them to run in CI environments without AIStore infrastructure.
 """
 
+import tarfile
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -826,11 +828,82 @@ class TestAISBatchLoaderIntegration:
 class TestAISBatchLoaderVersionCompatibility:
     """Tests for backward compatibility with older AIStore versions."""
 
+    def test_batch_add_string_api(self, monkeypatch):
+        pytest.importorskip("aistore", minversion="1.26.0")
+        client = aistore.Client("http://localhost:8080")
+        batch = client.batch()
+        add = MagicMock(wraps=batch.add)
+        monkeypatch.setattr(batch, "add", add)
+        monkeypatch.setattr(client, "bucket", MagicMock())
+        loader = AISBatchLoader()
+        loader._client = client
+
+        loader._add_url_to_batch("ais://mybucket/shard.tar/audio.wav", batch)
+
+        add.assert_called_once_with(
+            "shard.tar",
+            bck="mybucket",
+            provider="ais",
+            archpath="audio.wav",
+            start=None,
+            length=None,
+        )
+        client.bucket.assert_not_called()
+        assert batch.requests_list[0].dict() == {
+            "objname": "shard.tar",
+            "bucket": "mybucket",
+            "provider": "ais",
+            "archpath": "audio.wav",
+        }
+
+    @pytest.mark.parametrize("skip_failed_fetches", [False, True])
+    def test_shar_zero_offset_retry(
+        self, monkeypatch, cut_with_url_recording, skip_failed_fetches
+    ):
+        pytest.importorskip("aistore", minversion="1.26.0")
+        from lhotse.shar.lazy_pointer import encode_pointer
+
+        payload = b"audio payload"
+        buffer = BytesIO()
+        with tarfile.open(
+            fileobj=buffer, mode="w", format=tarfile.USTAR_FORMAT
+        ) as archive:
+            member = tarfile.TarInfo("audio.wav")
+            member.size = len(payload)
+            archive.addfile(member, BytesIO(payload))
+        client = aistore.Client("http://localhost:8080")
+        batch = client.batch()
+        monkeypatch.setattr(batch, "get", lambda: iter(()))
+        monkeypatch.setattr(client, "batch", lambda **kwargs: batch)
+        recording = cut_with_url_recording.recording
+        recording.sources = [
+            AudioSource(
+                type="shar_ptr",
+                channels=[0],
+                source=encode_pointer("ais://mybucket/shard.tar", 0, 1024),
+            )
+        ]
+        loader = AISBatchLoader(skip_failed_fetches=skip_failed_fetches)
+        loader._client = client
+
+        with patch("aistore.sdk.obj.object.Object.get_reader") as get_reader:
+            get_reader.return_value.read_all.return_value = buffer.getvalue()[:1024]
+            result = loader(CutSet.from_cuts([cut_with_url_recording]))
+
+        get_reader.assert_called_once_with(byte_range="bytes=0-1023")
+        assert len(result) == 1
+        assert result[0].id == cut_with_url_recording.id
+        assert result[0].recording.sources == [
+            AudioSource(type="memory", channels=[0], source=payload)
+        ]
+
     @patch("lhotse.ais.batch_loader.get_aistore_client")
     def test_colocation_not_available_fallback(
-        self, mock_get_client, cut_with_url_recording
+        self, mock_get_client, cut_with_url_recording, monkeypatch
     ):
         """Test that batch creation works when Colocation is not available (older versions)."""
+        # Exercise the keyword fallback even on SDKs without the enum.
+        monkeypatch.setattr("aistore.sdk.enums.Colocation", MagicMock(), raising=False)
         client = MagicMock()
         batch = MagicMock()
 
