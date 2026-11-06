@@ -999,12 +999,19 @@ def test_cut_set_reverb_rir_rng_seed_is_reproducible(with_rirs):
     assert len(set(a)) > 1
 
 
-def test_cut_set_reverb_rir_unseeded_keeps_legacy_behaviour():
+@pytest.mark.parametrize("with_rirs", [True, False])
+def test_cut_set_reverb_rir_unseeded_picks_per_cut(with_rirs):
     import random
 
     cuts, rirs = _reverb_inputs()
-    # A single RIR, chosen with the global `random` module, is used for the whole set.
+    rirs = rirs if with_rirs else None
+    # Seed the global RNG so that the test is robust; the choices still differ across cuts.
     random.seed(3)
-    expected = random.choice(list(rirs)).id
-    random.seed(3)
-    assert _reverb_choices(cuts.reverb_rir(rirs)) == [expected] * len(cuts)
+    choices = _reverb_choices(cuts.reverb_rir(rirs))
+    assert len(choices) == len(cuts)
+    assert len(set(choices)) > 1
+    if with_rirs:
+        # The RIRs are chosen with the global `random` module, one draw per cut.
+        random.seed(3)
+        rir_list = list(rirs)
+        assert choices == [random.choice(rir_list).id for _ in cuts]
