@@ -30,6 +30,12 @@ class ReverbWithImpulseResponse(AudioTransform):
     early_only: bool = False
     rir_channels: List[int] = field(default_factory=lambda: [0])
     rir_generator: Optional[Union[dict, Callable]] = None
+    # When True, a seeded ``FastRandomRIRGenerator`` restarts from its seeds on every call,
+    # so this transform always produces the same RIR. Set by ``reverb_rir()`` of cuts and
+    # recordings, where the transform belongs to a single cut/recording. When False (default),
+    # the generator advances on every call, so a transform shared across inputs produces a
+    # different (but still seed-determined) RIR for each of them.
+    reset_rir_generator: bool = False
 
     RIR_SCALING_FACTOR: float = 0.5**15
 
@@ -77,6 +83,9 @@ class ReverbWithImpulseResponse(AudioTransform):
                     or isinstance(self.rir_generator, dict)
                     else self.rir_generator.to_dict()
                 ),
+                # Only serialized when set, so manifests without it stay readable by
+                # older Lhotse versions.
+                **({"reset_rir_generator": True} if self.reset_rir_generator else {}),
             },
         }
 
@@ -116,9 +125,14 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         # Generate a random RIR if not provided.
         if self.rir is None:
-            # Use a fresh copy of the generator so that its RNGs start from their seeds on
-            # every call: loading the same cut twice then yields the same audio.
-            rir_ = FastRandomRIRGenerator(**self.rir_generator.to_dict())(nsource=1)
+            generator = self.rir_generator
+            if self.reset_rir_generator and isinstance(
+                generator, FastRandomRIRGenerator
+            ):
+                # This transform belongs to a single cut/recording: restart the generator
+                # from its seeds so that every load of that cut yields the same audio.
+                generator = FastRandomRIRGenerator(**generator.to_dict())
+            rir_ = generator(nsource=1)
         else:
             from lhotse import Recording
 

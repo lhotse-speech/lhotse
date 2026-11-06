@@ -141,3 +141,56 @@ def test_seeded_synthetic_reverb_cut_audio_is_reproducible(mixed):
     np.testing.assert_array_equal(rvb.load_audio(), first)
     np.testing.assert_array_equal(cut.reverb_rir(room_rng_seed=123).load_audio(), first)
     assert not np.array_equal(cut.reverb_rir(room_rng_seed=124).load_audio(), first)
+
+
+@pytest.mark.skipif(not is_torchaudio_available(), reason="Requires torchaudio")
+def test_shared_seeded_reverb_transform_draws_a_new_rir_per_call():
+    # One seeded transform reused across inputs must keep advancing its generator,
+    # so each input gets a different simulated room.
+    def make():
+        return ReverbWithImpulseResponse(
+            rir_generator=FastRandomRIRGenerator(room_seed=17, source_seed=23),
+            normalize_output=False,
+        )
+
+    rng = np.random.default_rng(0)
+    inputs = [rng.standard_normal((1, 16000)).astype(np.float32) for _ in range(3)]
+    # A unit impulse reverberates into the RIR itself.
+    impulse = np.zeros((1, 16000), dtype=np.float32)
+    impulse[0, 0] = 1.0
+
+    transform = make()
+    rirs = []
+    for x in inputs:
+        transform(x, sampling_rate=16000)
+        rirs.append(transform(impulse, sampling_rate=16000))
+    for i in range(len(rirs)):
+        for j in range(i + 1, len(rirs)):
+            assert not np.array_equal(rirs[i], rirs[j])
+
+    # The sequence of RIRs is still determined by the generator's seeds.
+    transform = make()
+    rirs_again = []
+    for x in inputs:
+        transform(x, sampling_rate=16000)
+        rirs_again.append(transform(impulse, sampling_rate=16000))
+    for a, b in zip(rirs, rirs_again):
+        np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.skipif(not is_torchaudio_available(), reason="Requires torchaudio")
+def test_reverb_transform_serialization_round_trip_keeps_reset_flag():
+    cut = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    cut.features = None
+    rvb = cut.reverb_rir(room_rng_seed=123)
+    first = rvb.load_audio()
+    # Reloading from the serialized manifest yields the same audio, every time it is loaded.
+    restored = type(rvb).from_dict(rvb.to_dict())
+    np.testing.assert_array_equal(restored.load_audio(), first)
+    np.testing.assert_array_equal(restored.load_audio(), first)
+
+    # A transform that isn't owned by a single cut doesn't serialize the flag.
+    shared = ReverbWithImpulseResponse(
+        rir_generator=FastRandomRIRGenerator(room_seed=1)
+    )
+    assert "reset_rir_generator" not in shared.to_dict()["kwargs"]
