@@ -240,6 +240,8 @@ def prepare_voxceleb(
         raise ValueError("Either VoxCeleb1 or VoxCeleb2 path must be provided.")
 
     output_dir = Path(output_dir) if output_dir is not None else None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
     manifests = defaultdict(dict)
     if voxceleb1_root:
         logging.info("Preparing VoxCeleb1...")
@@ -371,7 +373,7 @@ def _prepare_voxceleb_trials(
                         recording=recordings[utt1],
                         start=0,
                         duration=recordings[utt1].duration,
-                        supervisions=supervisions[utt1],
+                        supervisions=[supervisions[utt1]],
                         channel=0,
                     )
                 )
@@ -381,7 +383,7 @@ def _prepare_voxceleb_trials(
                         recording=recordings[utt2],
                         start=0,
                         duration=recordings[utt2].duration,
-                        supervisions=supervisions[utt2],
+                        supervisions=[supervisions[utt2]],
                         channel=0,
                     )
                 )
@@ -392,7 +394,7 @@ def _prepare_voxceleb_trials(
                         recording=recordings[utt1],
                         start=0,
                         duration=recordings[utt1].duration,
-                        supervisions=supervisions[utt1],
+                        supervisions=[supervisions[utt1]],
                         channel=0,
                     )
                 )
@@ -402,7 +404,7 @@ def _prepare_voxceleb_trials(
                         recording=recordings[utt2],
                         start=0,
                         duration=recordings[utt2].duration,
-                        supervisions=supervisions[utt2],
+                        supervisions=[supervisions[utt2]],
                         channel=0,
                     )
                 )

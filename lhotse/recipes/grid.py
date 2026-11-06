@@ -190,6 +190,7 @@ def prepare_grid(
     cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_file(output_dir / "grid_recordings.jsonl.gz")
         if with_supervisions:
             supervisions.to_file(output_dir / "grid_supervisions.jsonl.gz")

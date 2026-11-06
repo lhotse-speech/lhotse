@@ -360,6 +360,7 @@ def prepare_speechcommands(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     manifests = defaultdict(dict)
+    train_paths = valid_paths = None
 
     for part in tqdm(subsets, desc="Dataset parts"):
         logging.info(
@@ -374,11 +375,20 @@ def prepare_speechcommands(
             logging.info(
                 f"Speech Commands v0.0{speechcommands_version} subset: {part} already prepared - skipping."
             )
+            manifests.update(
+                read_manifests_if_cached(
+                    dataset_parts=[part],
+                    output_dir=output_dir,
+                    prefix=f"speechcommands{speechcommands_version}",
+                )
+            )
             continue
-        if part == "train":
+        if part in ("train", "valid") and train_paths is None:
+            # Compute lazily: "train" may have been skipped as already prepared.
             train_paths, valid_paths = _split_train_valid(
                 speechcommands_version, corpus_dir
             )
+        if part == "train":
             recording_set, supervision_set = _prepare_train(
                 speechcommands_version, train_paths, corpus_dir
             )

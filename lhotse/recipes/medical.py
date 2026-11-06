@@ -25,7 +25,11 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import CutSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import create_cuts_per_recording, manifests_exist
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
@@ -181,6 +185,11 @@ def prepare_medical(
             suffix="jsonl.gz",
         ):
             logging.info(f"Medical subset: {part} already prepared - skipping.")
+            manifests.update(
+                read_manifests_if_cached(
+                    dataset_parts=[part], output_dir=output_dir, prefix="medical"
+                )
+            )
             continue
 
         recording_set, supervision_set = _prepare_subset(part, corpus_dir, num_jobs)

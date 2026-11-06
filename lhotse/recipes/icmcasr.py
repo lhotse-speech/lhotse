@@ -21,6 +21,7 @@ from lhotse.recipes.utils import (
     create_cuts_per_recording,
     manifests_exist,
     normalize_text_alimeeting,
+    read_manifests_if_cached,
 )
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
@@ -226,6 +227,11 @@ def prepare_icmcasr(
             suffix="jsonl.gz",
         ):
             logging.info(f"ICMC-ASR subset: {part} already prepared - skipping.")
+            manifests.update(
+                read_manifests_if_cached(
+                    dataset_parts=[part], output_dir=output_dir, prefix=f"icmcasr-{mic}"
+                )
+            )
             continue
 
         recording_set, supervision_set = _prepare_subset(

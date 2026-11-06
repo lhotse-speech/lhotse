@@ -105,6 +105,8 @@ def prepare_tedlium2(
     """
     tedlium_root = Path(tedlium_root)
     output_dir = Path(output_dir) if output_dir is not None else None
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
     corpus = {}
 
     dataset_parts = [dataset_parts] if isinstance(dataset_parts, str) else dataset_parts

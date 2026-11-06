@@ -163,7 +163,7 @@ def prepare_atcosim(
     foreign_sym: Optional[str] = "<unk>",
     partial_sym: Optional[str] = "<unk>",
     unknown_sym: Optional[str] = "<unk>",
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
 
@@ -174,9 +174,7 @@ def prepare_atcosim(
     :param foreign_sym: str, foreign symbol.
     :param partial_sym: str, partial symbol. When set to None, will output partial words
     :param unknown_sym: str, unknown symbol
-    :return: The RecordingSet and SupervisionSet with the keys 'audio' and 'supervisions'.
-        A CutSet with one cut per recording is also written to ``atcosim_cuts_all.jsonl.gz``
-        in ``output_dir``.
+    :return: a Dict with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     if not is_module_available("pandas"):
         raise ImportError("Please 'pip install pandas' first.")
@@ -256,11 +254,12 @@ def prepare_atcosim(
             cut.supervisions = [segment]
             cuts_writer.write(cut)
 
-    recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
-    supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)
-
     logging.warning(
         "Manifests are lazily materialized. You may want to call `lhotse.qa.fix_manifests()`"
         " to ensure that all supervisions fall within the corresponding recordings."
     )
-    return recordings, supervisions
+    return {
+        "recordings": RecordingSet.from_jsonl_lazy(recs_writer.path),
+        "supervisions": SupervisionSet.from_jsonl_lazy(sups_writer.path),
+        "cuts": CutSet.from_jsonl_lazy(cuts_writer.path),
+    }

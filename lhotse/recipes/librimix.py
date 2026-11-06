@@ -174,7 +174,7 @@ def prepare_librimix(
         if "info" not in file and file != ".completed"
     ]
     for md_filename in md_filename_list:
-        part_name = f"{md_filename.replace('.csv', '')}_clean"
+        part_name = f"{md_filename.replace('.csv', '')}"
         part_name_noisy = f"{md_filename.replace('.csv', '')}_noisy"
         dataset_parts.extend([part_name, part_name_noisy])
 
@@ -424,7 +424,7 @@ def _process_metadata_file(
         lambda c: "-".join(c.split("-")[:-1])
     )
 
-    split_name = "".join(md_filename.split("_")[1:]).split("-")[0]
+    split_name = "".join(Path(md_filename).stem.split("_")[1:]).split("-")[0]
     wham_recset = wham_recsets[split_name]
 
     clean_cuts = []

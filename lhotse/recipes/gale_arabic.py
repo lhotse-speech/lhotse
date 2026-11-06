@@ -210,8 +210,7 @@ def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
                 "text": str,
             },
             skipinitialspace=True,
-            error_bad_lines=False,
-            warn_bad_lines=True,
+            on_bad_lines="warn",
         )
         # Remove segments with no transcription
         df = df[df.speaker != "no speaker"]

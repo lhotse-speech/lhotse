@@ -219,7 +219,7 @@ def prepare_sbcsae(
             s_ = fastcopy(
                 s,
                 start=new_start,
-                duration=min(new_start + 0.02, s_reco.duration),
+                duration=min(0.02, s_reco.duration - new_start),
             )
         else:
             s_ = s
@@ -265,25 +265,25 @@ def prepare_sbcsae(
         _, asr_supervisions = fix_manifests(recordings, asr_supervisions)
         _, diar_supervisions = fix_manifests(recordings, diar_supervisions)
 
-        asr_supervisions.to_file(
-            output_dir / "sbcsae_supervisions_asr_aligned.jsonl.gz"
-        )
-        diar_supervisions.to_file(
-            output_dir / "sbcsae_supervisions_diar_aligned.jsonl.gz"
-        )
+        asr_cuts_path = diar_cuts_path = None
+        if output_dir is not None:
+            asr_supervisions.to_file(
+                output_dir / "sbcsae_supervisions_asr_aligned.jsonl.gz"
+            )
+            diar_supervisions.to_file(
+                output_dir / "sbcsae_supervisions_diar_aligned.jsonl.gz"
+            )
+            asr_cuts_path = output_dir / "sbcsae_cuts_asr_aligned.jsonl.gz"
+            diar_cuts_path = output_dir / "sbcsae_cuts_diar_aligned.jsonl.gz"
 
         manifests = {
             "asr_supervisions": asr_supervisions,
             "diar_supervisions": diar_supervisions,
             "asr_cuts": create_cuts_per_recording(
-                recordings,
-                asr_supervisions,
-                output_path=output_dir / "sbcsae_cuts_asr_aligned.jsonl.gz",
+                recordings, asr_supervisions, output_path=asr_cuts_path
             ),
             "diar_cuts": create_cuts_per_recording(
-                recordings,
-                diar_supervisions,
-                output_path=output_dir / "sbcsae_cuts_diar_aligned.jsonl.gz",
+                recordings, diar_supervisions, output_path=diar_cuts_path
             ),
             **manifests,
         }

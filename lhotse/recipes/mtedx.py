@@ -156,7 +156,7 @@ def prepare_mtedx(
     manifests = defaultdict(dict)
     for lang in langs_list:
         corpus_dir_lang = corpus_dir / f"{lang}-{lang}"
-        output_dir_lang = output_dir / f"{lang}"
+        output_dir_lang = output_dir / f"{lang}" if output_dir is not None else None
         if corpus_dir_lang.is_dir():
             manifests[lang] = prepare_single_mtedx_language(
                 corpus_dir_lang,

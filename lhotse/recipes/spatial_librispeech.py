@@ -15,6 +15,11 @@ BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial
 META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/metadata.parquet"
 
 
+def _recording_id_from_path(path: Path) -> str:
+    # Module-level (not a lambda) so it can be pickled when num_jobs > 1.
+    return path.stem
+
+
 def _download_and_save_audio(target_file: Pathlike, url: str):
     # Implementation from https://github.com/apple/ml-spatial-librispeech/pull/1/
     # Use the requests module to avoid the 403 forbidden error
@@ -214,7 +219,7 @@ def prepare_spatial_librispeech(
             part_dir,
             pattern="*.flac",
             num_jobs=num_jobs,
-            recording_id=lambda x: x.stem,
+            recording_id=_recording_id_from_path,
         )
 
         supervision_segments = []

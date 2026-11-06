@@ -165,7 +165,7 @@ def make_supervisions(
                             gender=turn.attrs["spkrtype"],
                         )
                     )
-                text_idx += 1
+                    text_idx += 1
     return {"sections": section_supervisions, "segments": text_supervisions}
 
 

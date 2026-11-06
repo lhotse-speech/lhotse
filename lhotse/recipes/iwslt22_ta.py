@@ -171,8 +171,8 @@ def prepare_iwslt22_ta(
             if output_dir is not None:
                 output_dir = Path(output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
-                sups_.to_file(output_dir / f"iwslt22-ta_recordings_{split}.jsonl.gz")
-                recs_.to_file(output_dir / f"iwslt22-ta_supervisions_{split}.jsonl.gz")
+                recs_.to_file(output_dir / f"iwslt22-ta_recordings_{split}.jsonl.gz")
+                sups_.to_file(output_dir / f"iwslt22-ta_supervisions_{split}.jsonl.gz")
                 cuts_path = output_dir / f"iwslt22-ta_cuts_{split}.jsonl.gz"
 
             manifests[split] = {
@@ -187,7 +187,7 @@ def prepare_iwslt22_ta(
 def _filename_to_supervisions(
     p: Path,
     translations_path: Path,
-    normalize_text: bool,
+    aggressive_normalization: bool,
     exclude: list,
     langs: list,
 ):
@@ -220,7 +220,7 @@ def _filename_to_supervisions(
             utt_id == utt_id_tgt
         ), f"The loaded source and target files are not sorted properly: {utt_id} {utt_id_tgt}"
 
-        if normalize_text:
+        if aggressive_normalization:
             # Aggressive Tunisian text normalization from https://aclanthology.org/2022.iwslt-1.29.pdf
             text = text_cleaning(text)
             if text.strip() == "":

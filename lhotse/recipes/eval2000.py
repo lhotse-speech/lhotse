@@ -30,7 +30,7 @@ EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
 
 def prepare_eval2000(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
     transcript_path: Optional[Pathlike] = None,
     absolute_paths: bool = False,
     num_jobs: int = 1,
@@ -45,8 +45,6 @@ def prepare_eval2000(
     """
 
     corpus_dir = Path(corpus_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     audio_partition_dir_path = corpus_dir / EVAL2000_AUDIO_DIR / "hub5e_00" / "english"
     assert (
         audio_partition_dir_path.is_dir()

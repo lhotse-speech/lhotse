@@ -566,8 +566,13 @@ def prepare_audio_single(
 
     recordings = []
     for audio_path in tqdm(audio_paths, desc="Processing audio files"):
+        # The beamformed files are named "<session>_MDM8.wav", and live either in
+        # "beamformed/<session>/" (official layout) or in "<session>/audio/"
+        # (layout created by download_ami), so we take the session from the file name.
         session_name = (
-            audio_path.parts[-3] if mic != "mdm8-bf" else audio_path.parts[-2]
+            audio_path.parts[-3]
+            if mic != "mdm8-bf"
+            else audio_path.name.split("_MDM8")[0]
         )
         audio_sf = sf.SoundFile(str(audio_path))
         recordings.append(

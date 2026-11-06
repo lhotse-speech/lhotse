@@ -199,8 +199,7 @@ def parse_transcripts(
                 "text": str,
             },
             skipinitialspace=True,
-            error_bad_lines=False,
-            warn_bad_lines=True,
+            on_bad_lines="warn",
         )
         # We only keep sections which have some transcriptions
         df = df[df.section_type != "nontrans"]

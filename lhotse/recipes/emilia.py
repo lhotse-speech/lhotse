@@ -160,6 +160,7 @@ def prepare_emilia(
 
     if output_dir is not None:
         output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         cut_set.to_file(output_dir / f"emilia_cuts_{lang_uppercase}.jsonl.gz")
 
     return cut_set

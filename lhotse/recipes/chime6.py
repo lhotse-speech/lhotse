@@ -267,15 +267,17 @@ def prepare_chime6(
         supervisions = []
 
         # Since CHiME-7 uses a different split, we need to change the sessions
-        if use_chime7_split:
-            DATASET_PARTS[part] = DATASET_PARTS_CHIME7[part]
+        # (without modifying the module-level tables, which would affect later calls).
+        part_sessions = (
+            DATASET_PARTS_CHIME7[part] if use_chime7_split else DATASET_PARTS[part]
+        )
         # Also, if the session is S19 or S20, we will look for its audio and transcriptions
         # in the train set, since it was originally in train.
 
         # First we create the recordings
         if mic == "ihm":
             global_spk_channel_map = {}
-            for session in DATASET_PARTS[part]:
+            for session in part_sessions:
                 part_ = (
                     "train" if use_chime7_split and session in ["S19", "S20"] else part
                 )
@@ -315,7 +317,7 @@ def prepare_chime6(
                 )
 
         else:
-            for session in DATASET_PARTS[part]:
+            for session in part_sessions:
                 part_ = (
                     "train" if use_chime7_split and session in ["S19", "S20"] else part
                 )
@@ -356,7 +358,7 @@ def prepare_chime6(
                 )
 
         # Then we create the supervisions
-        for session in DATASET_PARTS[part]:
+        for session in part_sessions:
             part_ = "train" if use_chime7_split and session in ["S19", "S20"] else part
 
             with open(chime6_dir / "transcriptions" / part_ / f"{session}.json") as f:

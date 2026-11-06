@@ -27,7 +27,7 @@ import string
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -91,7 +91,7 @@ def prepare_earnings22(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     normalize_text: bool = False,
-) -> Union[RecordingSet, SupervisionSet]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply
@@ -103,8 +103,7 @@ def prepare_earnings22(
         in the directory [corpus_dir]/transcripts/nlp_references
     :param output_dir: Pathlike, the path where to write the manifests.
     :param normalize_text: Bool, if True, normalize the text.
-    :return: (recordings, supervisions) pair. When ``output_dir`` is provided,
-        a CutSet with one cut per recording is also written to it.
+    :return: a Dict with the keys 'recordings', 'supervisions', and 'cuts'.
 
     .. caution::
         The `normalize_text` option removes all punctuation and converts all upper case
@@ -156,13 +155,16 @@ def prepare_earnings22(
 
     recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
+    cuts_path = None
     if output_dir is not None:
         supervision_set.to_file(output_dir / "earnings22_supervisions_all.jsonl.gz")
         recording_set.to_file(output_dir / "earnings22_recordings_all.jsonl.gz")
-        create_cuts_per_recording(
-            recording_set,
-            supervision_set,
-            output_path=output_dir / "earnings22_cuts_all.jsonl.gz",
-        )
+        cuts_path = output_dir / "earnings22_cuts_all.jsonl.gz"
 
-    return recording_set, supervision_set
+    return {
+        "recordings": recording_set,
+        "supervisions": supervision_set,
+        "cuts": create_cuts_per_recording(
+            recording_set, supervision_set, output_path=cuts_path
+        ),
+    }
