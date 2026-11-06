@@ -151,6 +151,19 @@ See :doc:`contributing` for the locked uv environment, system dependencies,
 tests, formatting, documentation builds, accelerator environments, dependency
 updates, and releases.
 
+Shar object store discovery
+***************************
+
+Shar directory discovery accepts ``CutSet.from_shar(in_dir="ais://bucket/prefix")``
+and ``s3://`` prefixes (``s3a://`` and ``s3n://`` aliases normalize to ``s3://``).
+Only immediate children are included; ``.idx``, ``.gzidx`` and ``.idxpack`` files
+are excluded. With the AIStore SDK installed and ``AIS_ENDPOINT`` configured,
+discovery uses AIStore, including for S3. Otherwise S3 discovery requires
+``pip install boto3`` and uses its standard credential configuration.
+Sidecar indexes, ``index_path`` and ``indexes_root`` use the same discovered
+shard URLs as explicit ``fields``. Index packs retain their existing local-shard
+requirement and source identifiers.
+
 Environment variables
 *********************
 

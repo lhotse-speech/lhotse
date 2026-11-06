@@ -343,7 +343,17 @@ def ais_objects(monkeypatch, request):
         def get_writer(self):
             return SimpleNamespace(as_file=lambda: WriteBuffer(self.url))
 
-    client = SimpleNamespace(get_object_from_url=Object)
+    def bucket(name, provider):
+        prefix_url = f"{provider}://{name}/"
+        return SimpleNamespace(
+            list_all_objects=lambda prefix: [
+                SimpleNamespace(name=url[len(prefix_url) :])
+                for url in objects
+                if url.startswith(prefix_url + prefix)
+            ]
+        )
+
+    client = SimpleNamespace(get_object_from_url=Object, bucket=bucket)
     monkeypatch.setattr(
         "lhotse.serialization.get_aistore_client",
         lambda: (client, parse_version("1.10.0")),
@@ -361,8 +371,9 @@ def ais_objects(monkeypatch, request):
 
 @pytest.mark.parametrize("compress", [False, True])
 @pytest.mark.parametrize("mirror", [False, True])
+@pytest.mark.parametrize("directory", [False, True])
 def test_shar_ais_all_fields_and_automatic_index_creation(
-    tmp_path, ais_objects, compress, mirror
+    tmp_path, ais_objects, compress, mirror, directory
 ):
     pytest.importorskip("indexed_gzip")
     root = tmp_path / "shar"
@@ -379,7 +390,10 @@ def test_shar_ais_all_fields_and_automatic_index_creation(
             fields[field].append(url)
     indexes_root = tmp_path / "mirror" if mirror else None
     # No indexes are copied. The reader creates both JSONL companions and tar indexes.
-    eager = LazyIndexedSharIterator(fields=fields, indexes_root=indexes_root)
+    source = (
+        {"in_dir": f"ais://bucket/{namespace}"} if directory else {"fields": fields}
+    )
+    eager = LazyIndexedSharIterator(**source, indexes_root=indexes_root)
     for urls in fields.values():
         for url in urls:
             if url.endswith(".tar"):
@@ -400,7 +414,7 @@ def test_shar_ais_all_fields_and_automatic_index_creation(
         assert any(url.endswith(".gzidx") for url in objects) == compress
     # Prebuilt indexes work in both modes, and lazy construction avoids tar payloads.
     requests.clear()
-    lazy = LazyIndexedSharIterator(fields=fields, indexes_root=indexes_root, lazy=True)
+    lazy = LazyIndexedSharIterator(**source, indexes_root=indexes_root, lazy=True)
     first = lazy[0]
     assert not any(url.endswith(".tar") for url, _ in requests)
     _assert_fields(_loaded_fields(first), expected[0])
@@ -411,3 +425,33 @@ def test_shar_ais_all_fields_and_automatic_index_creation(
         subset[1].load_custom_features(), expected[1]["custom_features"]
     )
     assert subset[1].label == expected[1]["label"]
+
+
+@pytest.mark.parametrize("compress", [False, True])
+def test_shar_ais_directory_with_explicit_index_directory(
+    tmp_path, ais_objects, compress
+):
+    pytest.importorskip("indexed_gzip")
+    root = tmp_path / "shar"
+    _, paths = _write_fields(root, compress=compress)
+    expected = [_loaded_fields(cut) for cut in LazySharIterator(in_dir=root)]
+    objects, _ = ais_objects
+    for shards in paths.values():
+        for path in shards:
+            objects[f"ais://bucket/shar/{Path(path).name}"] = Path(path).read_bytes()
+    # These must be ignored by discovery rather than attached as custom fields.
+    objects["ais://bucket/shar/dataset.idxpack"] = b"ignored"
+    objects["ais://bucket/shar/nested/unrelated.tar"] = b"ignored"
+    options = dict(in_dir="ais://bucket/shar", index_path=tmp_path / "indexes")
+    eager = CutSet.from_shar(**options, indexed=True)
+    for actual, reference in zip(eager, expected):
+        _assert_fields(_loaded_fields(actual), reference)
+    automatic = CutSet.from_shar(**options)
+    assert automatic.is_indexed
+    _assert_fields(_loaded_fields(automatic[1]), expected[1])
+    iterator = iter(automatic)
+    next(iterator)
+    state = automatic.data.state_dict()
+    restored = CutSet.from_shar(**options)
+    restored.data.load_state_dict(state)
+    assert [c.id for c in restored] == [c.id for c in iterator]

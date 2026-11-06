@@ -582,7 +582,9 @@ class CutSet(Serializable, AlgorithmMixin):
             and values are lists of shards (either paths or shell commands).
             The field "cuts" pointing to CutSet shards always has to be present.
         :param in_dir: path to a directory created with ``SharWriter`` with
-            all the shards in a single place. Can be used instead of ``fields``.
+            all the shards in a single place, or an ``ais://`` / ``s3://`` prefix.
+            Discovery includes immediate children and excludes index files.
+            Can be used instead of ``fields``.
         :param split_for_dataloading: bool, by default ``False`` which does nothing.
             Setting it to ``True`` is intended for PyTorch training with multiple
             dataloader workers and possibly multiple DDP nodes.
