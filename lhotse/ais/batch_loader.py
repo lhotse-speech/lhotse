@@ -10,7 +10,6 @@ from lhotse.array import Array, TemporalArray
 from lhotse.audio.recording import Recording
 from lhotse.audio.source import resolve_s3_to_local_mirror
 from lhotse.cut import CutSet
-from lhotse.features.base import Features
 from lhotse.image import Image
 from lhotse.indexing import read_tar_member_at
 from lhotse.serialization import get_aistore_client
@@ -556,7 +555,7 @@ class AISBatchLoader:
                             return True
                     elif is_valid_url(f"{inner.storage_path}/{inner.storage_key}"):
                         return True
-                elif isinstance(manifest, (Array, Features, Image)):
+                elif isinstance(manifest, (Array, Image)):
                     if manifest.storage_type == "shar_ptr_array":
                         if _shar_ptr_is_url(manifest.storage_key):
                             return True
@@ -634,7 +633,7 @@ class AISBatchLoader:
                 return True
             return False
 
-        elif isinstance(manifest, (Array, Features, Image)):
+        elif isinstance(manifest, (Array, Image)):
             if manifest.storage_type == "shar_ptr_array":
                 if self._add_shar_ptr_to_batch(
                     manifest.storage_key,
@@ -857,7 +856,7 @@ class AISBatchLoader:
                 inner_array.storage_path = ""
                 inner_array.storage_key = content
 
-        elif isinstance(manifest, (Array, Features, Image)):
+        elif isinstance(manifest, (Array, Image)):
             if manifest.storage_type == "shar_ptr_array":
                 payload = _extract_shar_pointer_payload(content)
                 manifest.storage_type = _shar_ptr_payload_memory_type(payload)

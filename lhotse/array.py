@@ -177,6 +177,10 @@ class TemporalArray:
     # the shape, temporal_dim, and frame_shift.
     start: Seconds
 
+    # How far before ``self.start`` a partial read may begin (in seconds)
+    # before :meth:`load` reports it as out of range.
+    _start_tolerance = 1e-5
+
     @property
     def is_in_memory(self) -> bool:
         return self.array.is_in_memory
@@ -241,24 +245,16 @@ class TemporalArray:
             start = self.start
         # In case the caller requested only a sub-span of the features, trim them.
         # Left trim
-        if start < self.start - 1e-5:
+        if start < self.start - self._start_tolerance:
             raise ValueError(
                 f"Cannot load array starting from {start}s. "
                 f"The available range is ({self.start}, {self.end}) seconds."
             )
         if not isclose(start, self.start):
-            left_offset_frames = seconds_to_frames(
-                start - self.start,
-                frame_shift=self.frame_shift,
-                max_index=self.shape[self.temporal_dim],
-            )
+            left_offset_frames = self._seconds_to_frames(start - self.start)
         # Right trim
         if duration is not None:
-            right_offset_frames = left_offset_frames + seconds_to_frames(
-                duration,
-                frame_shift=self.frame_shift,
-                max_index=self.shape[self.temporal_dim],
-            )
+            right_offset_frames = left_offset_frames + self._seconds_to_frames(duration)
 
         if self.temporal_dim != 0:
             array = storage.read(self.array.storage_key)
@@ -271,6 +267,11 @@ class TemporalArray:
             self.array.storage_key,
             left_offset_frames=left_offset_frames,
             right_offset_frames=right_offset_frames,
+        )
+
+    def _seconds_to_frames(self, seconds: Seconds) -> int:
+        return seconds_to_frames(
+            seconds, frame_shift=self.frame_shift, max_index=self.num_frames
         )
 
     def with_path_prefix(self, path: Pathlike) -> "TemporalArray":
@@ -307,15 +308,14 @@ class TemporalArray:
         else:
             writer = get_memory_writer("memory_raw")()
         data = writer.write("", arr)  # key is ignored by in memory writers
-        out = TemporalArray(
+        out = fastcopy(
+            self,
             array=Array(
                 storage_type=writer.name,
                 storage_key=data,
                 storage_path="",
                 shape=list(arr.shape),
             ),
-            temporal_dim=self.temporal_dim,
-            frame_shift=self.frame_shift,
             # note: to understand why start is set to zero here, consider two cases:
             # 1) this method moves the whole array to memory => the start was 0 anyway
             # 2) this method moves a subset of the array to memory => the manifest is
@@ -361,11 +361,16 @@ def deserialize_array(raw_data: dict) -> Union[Array, TemporalArray]:
     """
     Figures out the right manifest type to use for deserialization.
 
-    :param raw_data: The result of calling ``.to_dict`` on :class:`.Array`
-        or :class:`.TemporalArray`.
-    :return an :class:`.Array.` or :class:`.TemporalArray` instance.
+    :param raw_data: The result of calling ``.to_dict`` on :class:`.Array`,
+        :class:`.TemporalArray`, or :class:`~lhotse.features.base.Features`.
+    :return an :class:`.Array`, :class:`.TemporalArray`, or
+        :class:`~lhotse.features.base.Features` instance.
     """
     if "array" in raw_data:
+        if "sampling_rate" in raw_data:
+            from lhotse.features import Features
+
+            return Features.from_dict(raw_data)
         return TemporalArray.from_dict(raw_data)
     if "shape" in raw_data:
         return Array.from_dict(raw_data)

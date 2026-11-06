@@ -6,7 +6,7 @@ from lhotse.array import Array, TemporalArray
 from lhotse.cut import Cut
 from lhotse.utils import Pathlike
 
-Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
+Manifest = TypeVar("Manifest", Recording, Array, TemporalArray)
 
 
 def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manifest:
@@ -28,32 +28,21 @@ def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manife
         )
     elif isinstance(manifest, Array):
         return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")
-    elif isinstance(manifest, Features):
-        return fastcopy(
-            manifest,
-            start=0,
-            duration=cut.duration if cut is not None else manifest.duration,
-            storage_type="shar",
-            storage_path="",
-            storage_key="",
-        )
     elif isinstance(manifest, TemporalArray):
-        return fastcopy(
+        placeholder = fastcopy(
             manifest,
             start=0,
-            array=fastcopy(
-                manifest.array,
-                storage_type="shar",
-                storage_path="",
-                storage_key="",
-            ),
+            array=to_shar_placeholder(manifest.array),
         )
+        if isinstance(manifest, Features) and cut is not None:
+            placeholder.duration = cut.duration
+        return placeholder
     else:
         raise RuntimeError(f"Unexpected manifest type: {type(manifest)}")
 
 
 def fill_shar_placeholder(
-    manifest: Union[Cut, Recording, Features, Array, TemporalArray],
+    manifest: Union[Cut, Recording, Array, TemporalArray],
     data: bytes,
     tarpath: Pathlike,
     field: Optional[str] = None,
@@ -76,7 +65,7 @@ def fill_shar_placeholder(
         manifest.sources[0].type = "memory"
         manifest.sources[0].source = data
 
-    elif isinstance(manifest, (Features, Array)):
+    elif isinstance(manifest, Array):
         manifest.storage_key = data
         if tarpath.suffix == ".llc":
             manifest.storage_type = "memory_lilcom"
@@ -99,7 +88,7 @@ def fill_shar_placeholder(
 
 
 def fill_shar_placeholder_lazy(
-    manifest: Union[Cut, Recording, Features, Array, TemporalArray],
+    manifest: Union[Cut, Recording, Array, TemporalArray],
     *,
     tar_path: Pathlike,
     offset: int,
@@ -142,7 +131,7 @@ def fill_shar_placeholder_lazy(
         manifest.sources[0].type = "shar_ptr"
         manifest.sources[0].source = pointer
 
-    elif isinstance(manifest, (Features, Array)):
+    elif isinstance(manifest, Array):
         manifest.storage_type = "shar_ptr_array"
         manifest.storage_path = str(tar_path)
         manifest.storage_key = pointer

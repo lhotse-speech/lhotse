@@ -32,6 +32,7 @@ import torch
 from intervaltree import IntervalTree
 from tqdm.auto import tqdm
 
+from lhotse.array import Array
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
@@ -2376,17 +2377,18 @@ class CutSet(Serializable, AlgorithmMixin):
                     feat_mat = feat_mat.cpu().numpy()
                 storage_key = feats_writer.write(cut.id, feat_mat)
                 feat_manifest = Features(
+                    array=Array(
+                        storage_type=feats_writer.name,
+                        storage_path=str(feats_writer.storage_path),
+                        storage_key=storage_key,
+                        shape=list(feat_mat.shape),
+                    ),
                     start=cut.start,
                     duration=cut.duration,
                     type=extractor.name,
-                    num_frames=feat_mat.shape[0],
-                    num_features=feat_mat.shape[1],
                     frame_shift=frame_shift,
                     sampling_rate=cut.sampling_rate,
                     channels=cut.channel,
-                    storage_type=feats_writer.name,
-                    storage_path=str(feats_writer.storage_path),
-                    storage_key=storage_key,
                 )
                 validate_features(feat_manifest, feats_data=feat_mat)
 

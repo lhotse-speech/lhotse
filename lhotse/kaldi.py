@@ -6,6 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from lhotse.array import Array
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -265,16 +266,17 @@ def load_kaldi_data_dir(
 
                     features.append(
                         Features(
+                            array=Array(
+                                storage_type=KaldiReader.name,
+                                storage_path=ark,
+                                storage_key=utt_id,
+                                shape=[mat_shape.num_rows, mat_shape.num_cols],
+                            ),
                             type=feature_type,
-                            num_frames=mat_shape.num_rows,
-                            num_features=mat_shape.num_cols,
                             frame_shift=frame_shift,
                             sampling_rate=sampling_rate,
                             start=start,
                             duration=duration,
-                            storage_type=KaldiReader.name,
-                            storage_path=ark,
-                            storage_key=utt_id,
                             recording_id=(
                                 supervision_set[fix_id(utt_id)].recording_id
                                 if supervision_set is not None

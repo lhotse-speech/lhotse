@@ -14,9 +14,10 @@ import numpy as np
 import torch
 from tqdm.auto import tqdm
 
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
-from lhotse.features.io import FeaturesWriter, get_reader, is_in_memory
+from lhotse.features.io import FeaturesWriter
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import LazyMixin, Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (
@@ -263,17 +264,18 @@ class FeatureExtractor(metaclass=ABCMeta):
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
         manifest = Features(
+            array=Array(
+                storage_type=storage.name,
+                storage_path=str(storage.storage_path),
+                storage_key=storage_key,
+                shape=list(feats.shape),
+            ),
             start=offset,
             duration=duration,
             type=self.name,
-            num_frames=feats.shape[0],
-            num_features=feats.shape[1],
             frame_shift=self.frame_shift,
             sampling_rate=sampling_rate,
             channels=channel,
-            storage_type=storage.name,
-            storage_path=str(storage.storage_path),
-            storage_key=storage_key,
         )
         validate_features(manifest, feats_data=feats)
         return manifest
@@ -325,13 +327,14 @@ class FeatureExtractor(metaclass=ABCMeta):
             start=offset,
             duration=recording.duration if duration is not None else recording.duration,
             type=self.name,
-            num_frames=feats.shape[0],
-            num_features=feats.shape[1],
             frame_shift=self.frame_shift,
             sampling_rate=recording.sampling_rate,
-            storage_type=storage.name,
-            storage_path=str(storage.storage_path),
-            storage_key=storage_key,
+            array=Array(
+                storage_type=storage.name,
+                storage_path=str(storage.storage_path),
+                storage_key=storage_key,
+                shape=list(feats.shape),
+            ),
         )
         validate_features(manifest, feats_data=feats)
         return manifest
@@ -432,40 +435,32 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
         return self.config.frame_shift
 
 
-@dataclass(order=True)
-class Features:
+@dataclass(init=False, repr=False)
+class Features(TemporalArray):
     """
     Represents features extracted for some particular time range in a given recording and channel.
-    It contains metadata about how it's stored: storage_type describes "how to read it", for now
-    it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
-    storage_path is the path to the file on the local filesystem.
+
+    :class:`.Features` is a :class:`~lhotse.array.TemporalArray` whose first axis is time,
+    i.e., its shape is ``(num_frames, num_features)``. On top of that, it describes how the
+    features were obtained: their ``type`` (e.g. ``"kaldi-fbank"``), the ``sampling_rate``
+    and ``duration`` of the source audio, and which ``recording_id`` and ``channels`` it came from.
+
+    For backward compatibility, it also accepts and exposes the flat fields used before
+    it became a :class:`~lhotse.array.TemporalArray`: ``num_frames``, ``num_features``,
+    ``storage_type``, ``storage_path``, and ``storage_key``.
+    :meth:`from_dict` reads manifests in either layout.
     """
 
-    # Useful information about the features - their type (fbank, mfcc) and shape
+    # Fields inherited from TemporalArray: array, temporal_dim, frame_shift, start.
+
+    # The kind of features (e.g. "kaldi-fbank") and the sampling rate of the source audio.
     type: str
-    num_frames: int
-    num_features: int
-    frame_shift: Seconds
     sampling_rate: int
 
-    # Information about the time range of the features.
-    start: Seconds
-    duration: Seconds
-
-    # Parameters related to storage - they define how to load the feature matrix.
-
-    # Storage type defines which features reader type should be instantiated
-    # e.g. 'lilcom_files', 'numpy_files', 'lilcom_hdf5'
-    storage_type: str
-
-    # Storage path is either the path to some kind of archive (like HDF5 file) or a path
-    # to a directory holding files with feature matrices (exact semantics depend on storage_type).
-    storage_path: str
-
-    # Storage key is either the key used to retrieve a feature matrix from an archive like HDF5,
-    # or the name of the file in a directory (exact semantics depend on the storage_type).
-    # It can also be raw bytes for compressed arrays held in-memory.
-    storage_key: Union[str, bytes]
+    # Duration of the audio the features were extracted from.
+    # It may differ from ``num_frames * frame_shift`` by a fraction of a frame.
+    # The default value shadows TemporalArray.duration property, which would compute it from shape.
+    duration: Seconds = None
 
     # Information which recording and channels were used to extract the features.
     # When ``recording_id`` and ``channels`` are ``None``, it means that the
@@ -474,17 +469,81 @@ class Features:
     recording_id: Optional[str] = None
     channels: Optional[Union[int, List[int]]] = None
 
-    @property
-    def end(self) -> Seconds:
-        return self.start + self.duration
+    _start_tolerance = 1e-3
+
+    def __init__(
+        self,
+        *,
+        type: str,
+        frame_shift: Seconds,
+        sampling_rate: int,
+        start: Seconds,
+        array: Optional[Array] = None,
+        temporal_dim: int = 0,
+        duration: Optional[Seconds] = None,
+        recording_id: Optional[str] = None,
+        channels: Optional[Union[int, List[int]]] = None,
+        # Legacy flat fields describing ``array``; when ``array`` is given, they override it.
+        num_frames: Optional[int] = None,
+        num_features: Optional[int] = None,
+        storage_type: Optional[str] = None,
+        storage_path: Optional[str] = None,
+        storage_key: Optional[Union[str, bytes]] = None,
+    ) -> None:
+        legacy = {
+            "storage_type": storage_type,
+            "storage_path": storage_path,
+            "storage_key": storage_key,
+        }
+        if array is None:
+            array = Array(shape=[num_frames, num_features], **legacy)
+        else:
+            overrides = {k: v for k, v in legacy.items() if v is not None}
+            if num_frames is not None or num_features is not None:
+                overrides["shape"] = [
+                    ifnone(num_frames, array.shape[0]),
+                    ifnone(num_features, array.shape[1]),
+                    *array.shape[2:],
+                ]
+            if overrides:
+                array = fastcopy(array, **overrides)
+        self.array = array
+        self.temporal_dim = temporal_dim
+        self.frame_shift = frame_shift
+        self.start = start
+        self.type = type
+        self.sampling_rate = sampling_rate
+        self.duration = ifnone(duration, self.num_frames * frame_shift)
+        self.recording_id = recording_id
+        self.channels = channels
 
     @property
-    def is_in_memory(self) -> bool:
-        return is_in_memory(self.storage_type)
+    def num_features(self) -> int:
+        return self.shape[1]
 
     @property
-    def is_placeholder(self) -> bool:
-        return self.storage_type == "shar"
+    def storage_type(self) -> str:
+        return self.array.storage_type
+
+    @storage_type.setter
+    def storage_type(self, value: str) -> None:
+        self.array = fastcopy(self.array, storage_type=value)
+
+    @property
+    def storage_path(self) -> str:
+        return self.array.storage_path
+
+    @storage_path.setter
+    def storage_path(self, value: str) -> None:
+        self.array = fastcopy(self.array, storage_path=value)
+
+    @property
+    def storage_key(self) -> Union[str, bytes]:
+        return self.array.storage_key
+
+    @storage_key.setter
+    def storage_key(self, value: Union[str, bytes]) -> None:
+        self.array = fastcopy(self.array, storage_key=value)
 
     def load(
         self,
@@ -492,36 +551,16 @@ class Features:
         duration: Optional[Seconds] = None,
         channel_id: Union[int, List[int]] = 0,
     ) -> np.ndarray:
-        # noinspection PyArgumentList
-        storage = get_reader(self.storage_type)(self.storage_path)
-        left_offset_frames, right_offset_frames = 0, None
+        """
+        Load the feature matrix, or its ``[start, start + duration)`` sub-span.
+        ``channel_id`` is accepted for backward compatibility and ignored.
+        """
+        return super().load(start=start, duration=duration)
 
-        if start is None:
-            start = self.start
-        # In case the caller requested only a sub-span of the features, trim them.
-        # Left trim
-        if start < self.start - 1e-3:
-            raise ValueError(
-                f"Cannot load features for recording {self.recording_id} starting from {start}s. "
-                f"The available range is ({self.start}, {self.end}) seconds."
-            )
-        if not isclose(start, self.start):
-            left_offset_frames = compute_num_frames(
-                start - self.start,
-                frame_shift=self.frame_shift,
-                sampling_rate=self.sampling_rate,
-            )
-        # Right trim
-        if duration is not None:
-            right_offset_frames = left_offset_frames + compute_num_frames(
-                duration, frame_shift=self.frame_shift, sampling_rate=self.sampling_rate
-            )
-
-        # Load and return the features (subset) from the storage
-        return storage.read(
-            self.storage_key,
-            left_offset_frames=left_offset_frames,
-            right_offset_frames=right_offset_frames,
+    def _seconds_to_frames(self, seconds: Seconds) -> int:
+        # Count frames the same way as the feature extractors do.
+        return compute_num_frames(
+            seconds, frame_shift=self.frame_shift, sampling_rate=self.sampling_rate
         )
 
     def move_to_memory(
@@ -530,44 +569,10 @@ class Features:
         duration: Optional[Seconds] = None,
         lilcom: bool = False,
     ) -> "Features":
-        from lhotse.features.io import get_memory_writer
-
-        if self.storage_type in ("memory_lilcom", "memory_writer"):
-            return self  # nothing to do
-
-        arr = self.load(start=start, duration=duration)
-        if issubclass(arr.dtype.type, np.floating) and lilcom:
-            writer = get_memory_writer("memory_lilcom")()
-        else:
-            writer = get_memory_writer("memory_raw")()
-        data = writer.write("", arr)  # key is ignored by in memory writers
-        return fastcopy(
-            self,
-            # note: to understand why start is set to zero here, consider two cases:
-            # 1) this method moves the whole array to memory => the start was 0 anyway
-            # 2) this method moves a subset of the array to memory => the manifest is
-            #    now relative to the start of that subset, and since it describes the
-            #    whole subset, start=0 and duration=self.duration
-            start=0.0,
-            duration=ifnone(duration, self.duration),
-            num_frames=arr.shape[0],
-            storage_type=writer.name,
-            storage_key=data,
-            storage_path="",
-        )
-
-    def with_path_prefix(self, path: Pathlike) -> "Features":
-        return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
-
-    def copy_with(self, **kwargs) -> "Features":
-        """
-        Return a copy of this manifest with the selected fields overwritten.
-
-        This is a convenience wrapper around :func:`lhotse.utils.fastcopy`, e.g.::
-
-            >>> features2 = features.copy_with(start=5.0)
-        """
-        return fastcopy(self, **kwargs)
+        out = super().move_to_memory(start=start, duration=duration, lilcom=lilcom)
+        if out is not self and duration is not None:
+            out.duration = duration
+        return out
 
     def to_dict(self) -> dict:
         return asdict_nonull(self)
@@ -579,16 +584,21 @@ class Features:
         """
         feats = self.load()
         new_key = writer.write(self.storage_key, feats)
-        item = fastcopy(
+        return fastcopy(
             self,
-            storage_type=writer.name,
-            storage_path=writer.storage_path,
-            storage_key=new_key,
+            array=fastcopy(
+                self.array,
+                storage_type=writer.name,
+                storage_path=writer.storage_path,
+                storage_key=new_key,
+            ),
         )
-        return item
 
-    @staticmethod
-    def from_dict(data: dict) -> "Features":
+    @classmethod
+    def from_dict(cls, data: dict) -> "Features":
+        if "array" in data:
+            return cls(**{**data, "array": Array.from_dict(data["array"])})
+        # Legacy flat layout, written before Features became a TemporalArray.
         # The "storage_type" check is to ensure that the "data" dict actually contains
         # the data for a "Features" object, and not something else.
         # Some Lhotse utilities try to "guess" what is the right object type via trial-and-error,
@@ -601,13 +611,13 @@ class Features:
             data["frame_shift"] = round(
                 data["duration"] / data["num_frames"], ndigits=3
             )
-        if (
-            "storage_key" in data
-            and "storage_type" in data
-            and "storage_path" not in data
-        ):
-            data["storage_path"] = None
-        return Features(**data)
+        return cls(**data)
+
+    def __setstate__(self, state: dict) -> None:
+        # Objects pickled before Features became a TemporalArray hold the legacy flat fields.
+        if "array" not in state:
+            state = vars(Features(**state))
+        self.__dict__.update(state)
 
     def __repr__(self):
         return (
