@@ -380,7 +380,7 @@ class DynamicBucketingSampler(CutSampler):
             diagnostics=self.diagnostics,
         )
         # Convert Iterable[Cut] -> Iterable[CutSet]
-        self._bucketer = DynamicBucketer(
+        self._bucketer = self._create_bucketer(
             cuts_iter,
             duration_bins=self.duration_bins,
             world_size=self.world_size,
@@ -399,6 +399,9 @@ class DynamicBucketingSampler(CutSampler):
         )
         self.cuts_iter = iter(self._bucketer)
         return self
+
+    def _create_bucketer(self, cuts: Iterable, **kwargs) -> "DynamicBucketer":
+        return DynamicBucketer(cuts, **kwargs)
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
         batch = next(self.cuts_iter)
@@ -884,23 +887,8 @@ class DynamicBucketer:
         try:
             while True:
                 sampling_bucket = self._select_bucket(self._selection_state)
-                # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
-                maybe_shuffled = sampling_bucket
-                indexes_used = []
-                if self.shuffle:
-                    maybe_shuffled = pick_at_random(
-                        maybe_shuffled, rng=self.rng, out_indexes_used=indexes_used
-                    )
-                else:
-                    with sampling_bucket.mutex:
-                        maybe_shuffled = list(sampling_bucket.queue)
                 # Sample one batch from that bucket and yield it to the caller.
-                batcher = DurationBatcher(
-                    maybe_shuffled,
-                    constraint=self.constraint.copy(),
-                    diagnostics=self.diagnostics,
-                )
-                batch = next(iter(batcher))
+                batch, indexes_used = self._collect_batch(sampling_bucket)
                 if isinstance(batch, tuple):
                     batch_size = len(batch[0])
                 else:
@@ -943,6 +931,30 @@ class DynamicBucketer:
 
             # Cleanup.
             self.cuts_iter = None
+
+    def _collect_batch(
+        self, bucket: Queue
+    ) -> Tuple[Union[CutSet, Tuple[CutSet]], List[int]]:
+        """
+        Sample one batch from ``bucket`` without modifying it.
+        Returns the batch and the positions of its items in the bucket's queue;
+        an empty list means the batch is the queue's prefix.
+        """
+        # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
+        indexes_used = []
+        if self.shuffle:
+            maybe_shuffled = pick_at_random(
+                bucket, rng=self.rng, out_indexes_used=indexes_used
+            )
+        else:
+            with bucket.mutex:
+                maybe_shuffled = list(bucket.queue)
+        batcher = DurationBatcher(
+            maybe_shuffled,
+            constraint=self.constraint.copy(),
+            diagnostics=self.diagnostics,
+        )
+        return next(iter(batcher)), indexes_used
 
     def _select_bucket(self, state: BucketSelectionState) -> Queue:
         if self.bucket_rng is None:

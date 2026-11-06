@@ -226,8 +226,11 @@ class DynamicCutSampler(CutSampler):
             predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
             diagnostics=self.diagnostics,
         )
-        self.cuts_iter = DurationBatcher(
-            self.cuts_iter,
+        self.cuts_iter = iter(self._create_batcher(self.cuts_iter))
+
+    def _create_batcher(self, examples: Iterable) -> "DurationBatcher":
+        return DurationBatcher(
+            examples,
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             constraint=self.constraint,
@@ -235,7 +238,6 @@ class DynamicCutSampler(CutSampler):
             quadratic_duration=self.quadratic_duration,
             diagnostics=self.diagnostics,
         )
-        self.cuts_iter = iter(self.cuts_iter)
 
     def _capture_cuts_state(self) -> Optional[list]:
         sources = (
@@ -292,6 +294,21 @@ class DynamicCutSampler(CutSampler):
         return None
 
 
+def detuplify(
+    cuts: List[Union[Cut, Tuple[Cut]]],
+) -> Union[CutSet, Tuple[CutSet]]:
+    """Helper to do the right thing whether we sampled single cuts or cut tuples."""
+    if isinstance(cuts[0], tuple):
+        if len(cuts[0]) == 1:
+            cuts = CutSet.from_cuts(cs[0] for cs in cuts)
+            return cuts
+        else:
+            tuple_of_cut_lists = list(zip(*cuts))
+            return tuple([CutSet.from_cuts(cs) for cs in tuple_of_cut_lists])
+    else:
+        return CutSet.from_cuts(cuts)
+
+
 # Note: this class is a subset of SimpleCutSampler and is "datapipes" ready.
 class DurationBatcher:
     def __init__(
@@ -328,20 +345,6 @@ class DurationBatcher:
         self.cuts_iter = None
 
     def _collect_batch(self) -> Union[CutSet, Tuple[CutSet]]:
-        def detuplify(
-            cuts: List[Union[Cut, Tuple[Cut]]],
-        ) -> Union[CutSet, Tuple[CutSet]]:
-            """Helper to do the right thing whether we sampled single cuts or cut tuples."""
-            if isinstance(cuts[0], tuple):
-                if len(cuts[0]) == 1:
-                    cuts = CutSet.from_cuts(cs[0] for cs in cuts)
-                    return cuts
-                else:
-                    tuple_of_cut_lists = list(zip(*cuts))
-                    return tuple([CutSet.from_cuts(cs) for cs in tuple_of_cut_lists])
-            else:
-                return CutSet.from_cuts(cuts)
-
         self.constraint.reset()
         cuts = []
         while True:
