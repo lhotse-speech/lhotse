@@ -664,6 +664,35 @@ class TestLazyShufflerStateful:
 
         assert first_k + remaining == all_items
 
+    def test_restore_with_exhausted_source_does_not_poison_next_pass(self):
+        """Regression: when the source was exhausted at checkpoint time, the
+        restored pass only drains the buffer and never reads the source. Restoring
+        the source anyway left its one-shot restore state pending, so the next pass
+        resumed the source at its end and yielded nothing."""
+        items = [_ToyItem(f"item-{idx}", idx) for idx in range(12)]
+
+        def make():
+            # The buffer is larger than the source, so the source is exhausted
+            # before the first item is yielded.
+            return LazyShuffler(
+                _IndexedGraphIterator(items), buffer_size=20, rng=random.Random(7)
+            )
+
+        reference = make()
+        expected_pass1 = list(reference)
+        expected_pass2 = list(reference)
+        assert len(expected_pass2) == len(items)
+
+        shuf1 = make()
+        first_k = consume(iter(shuf1), 5)
+        sd = shuf1.state_dict()
+        assert sd["source_exhausted"]
+
+        shuf2 = make()
+        shuf2.load_state_dict(sd)
+        assert first_k + list(shuf2) == expected_pass1
+        assert list(shuf2) == expected_pass2
+
 
 # ---------------------------------------------------------------------------
 # LazyFilter

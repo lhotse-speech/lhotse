@@ -1281,12 +1281,17 @@ class LazyShuffler(IteratorNode):
             )
         from lhotse.checkpoint import _rng_state_from_json
 
-        _try_restore_child_state(self.source, sd.get("source"))
+        self._source_exhausted = sd.get("source_exhausted", False)
+        if not self._source_exhausted:
+            # An exhausted source is never read again in the restored pass, so it would
+            # never consume its one-shot restore state; the next pass would then resume
+            # the source at its end and yield nothing. Like LazyIteratorMultiplexer, we
+            # only restore children that are still active.
+            _try_restore_child_state(self.source, sd.get("source"))
         self._buffer = deque(
             self.source[normalize_graph_token(token)] for token in sd.get("buffer", [])
         )
         self._startup = sd.get("startup", True)
-        self._source_exhausted = sd.get("source_exhausted", False)
         self.rng.setstate(_rng_state_from_json(sd["rng_state"]))
         self._restored = True
 
