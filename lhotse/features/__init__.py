@@ -1,8 +1,6 @@
 from .base import (
     FeatureExtractor,
     Features,
-    FeatureSet,
-    FeatureSetBuilder,
     create_default_feature_extractor,
 )
 from .fbank import TorchaudioFbank, TorchaudioFbankConfig

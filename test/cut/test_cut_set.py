@@ -10,7 +10,6 @@ from lhotse import (
     Fbank,
     FbankConfig,
     Features,
-    FeatureSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -639,8 +638,7 @@ def test_cut_set_decompose():
     assert sups[1].start == 11.5
     assert sups[1].end == 12.5
 
-    assert isinstance(feats, FeatureSet)
-    assert len(feats) == 1
+    assert feats == [c.features]
 
 
 def test_cut_set_decompose_doesnt_duplicate_recording():
@@ -658,9 +656,8 @@ def test_cut_set_decompose_doesnt_duplicate_recording():
 
     assert sups is None
 
-    assert isinstance(feats, FeatureSet)
     # not deduplicated features
-    assert len(feats) == 2
+    assert feats == [c.features, c2.features]
 
 
 def test_cut_set_decompose_output_dir():
@@ -679,7 +676,8 @@ def test_cut_set_decompose_output_dir():
         recs, sups, feats = cuts.decompose(output_dir=td)
         assert list(recs) == list(load_manifest(td / "recordings.jsonl.gz"))
         assert list(sups) == list(load_manifest(td / "supervisions.jsonl.gz"))
-        assert list(feats) == list(load_manifest(td / "features.jsonl.gz"))
+        assert list(feats) == [c.features]
+        assert list(load_jsonl(td / "features.jsonl.gz")) == [c.features.to_dict()]
 
 
 def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():

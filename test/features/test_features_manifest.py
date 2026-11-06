@@ -9,7 +9,7 @@ pytest.importorskip("lilcom", reason="The legacy fixtures store lilcom features.
 
 from lhotse import CutSet, Features, MonoCut
 from lhotse.array import Array, TemporalArray
-from lhotse.serialization import deserialize_custom_field, deserialize_item
+from lhotse.serialization import deserialize_custom_field, deserialize_item, load_json
 from lhotse.shar.utils import to_shar_placeholder
 from lhotse.testing.dummies import dummy_cut, dummy_features
 from lhotse.utils import fastcopy
@@ -265,3 +265,18 @@ def test_mono_cut_from_dict_accepts_both_feature_layouts():
         "channels": cut.features.channels,
     }
     assert MonoCut.from_dict(legacy_dict) == new == cut
+
+
+def test_cli_cut_simple_reads_legacy_feature_manifest(tmp_path):
+    from click.testing import CliRunner
+
+    from lhotse.bin.modes.cut import simple
+
+    legacy_manifest = "test/fixtures/dummy_feats/feature_manifest.json"
+    output = tmp_path / "cuts.jsonl.gz"
+    result = CliRunner().invoke(simple, ["-f", legacy_manifest, str(output)])
+    assert result.exit_code == 0, result.output
+    cuts = CutSet.from_file(output).to_eager()
+    expected = [Features.from_dict(d) for d in load_json(legacy_manifest)]
+    assert [cut.features for cut in cuts] == expected
+    assert [cut.duration for cut in cuts] == [0.5, 0.5, 1.0, 1.0]

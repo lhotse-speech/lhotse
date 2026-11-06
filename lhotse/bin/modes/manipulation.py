@@ -7,7 +7,7 @@ from typing import Optional
 
 import click
 
-from lhotse import FeatureSet, available_storage_backends
+from lhotse import available_storage_backends
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import CutSet
 from lhotse.features.io import default_features_storage_backend_name, get_writer
@@ -63,8 +63,8 @@ def copy_feats(
     max_jobs: int,
 ) -> None:
     """
-    Load INPUT_MANIFEST of type :class:`lhotse.FeatureSet` or `lhotse.CutSet`,
-    read every feature matrix using ``features.load()`` or ``cut.load_features()``,
+    Load INPUT_MANIFEST of type `lhotse.CutSet`,
+    read every feature matrix using ``cut.load_features()``,
     save them in STORAGE_PATH and save the updated manifest to OUTPUT_MANIFEST.
     """
     from lhotse.manipulation import combine as combine_manifests
@@ -72,13 +72,7 @@ def copy_feats(
 
     manifests = load_manifest_lazy_or_eager(input_manifest)
 
-    if isinstance(manifests, FeatureSet):
-        with get_writer(storage_type)(storage_path) as w:
-            # FeatureSet is copied in-memory and written (TODO: make it incremental if needed)
-            manifests = manifests.copy_feats(writer=w)
-            manifests.to_file(output_manifest)
-
-    elif isinstance(manifests, CutSet):
+    if isinstance(manifests, CutSet):
         # Group cuts by their underlying feature files.
         manifests = sorted(manifests, key=lambda cut: cut.features.storage_path)
         subsets = groupby(manifests, lambda cut: cut.features.storage_path)

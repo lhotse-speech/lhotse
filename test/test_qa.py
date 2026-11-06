@@ -1,8 +1,8 @@
 import pytest
 
-from lhotse import Features, FeatureSet, RecordingSet, SupervisionSet, validate
+from lhotse import Features, RecordingSet, SupervisionSet, validate
 from lhotse.qa import remove_missing_recordings_and_supervisions, validate_features
-from lhotse.testing.dummies import DummyManifest, as_lazy
+from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_features
 
 
 def test_validate_features_consistent_num_frames_does_not_raise():
@@ -62,6 +62,5 @@ def test_remove_missing_recordings_and_supervisions_lazy():
         assert [s.recording_id for s in fix_sups] == expected_ids
 
 
-def test_validate_feature_set_runs():
-    features = DummyManifest(FeatureSet, begin_id=0, end_id=100)
-    validate(features)
+def test_validate_features_runs():
+    validate(dummy_features(0))

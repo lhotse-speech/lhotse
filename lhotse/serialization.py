@@ -25,7 +25,7 @@ from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
-Manifest = Any  # Union['RecordingSet', 'SupervisionSet', 'FeatureSet', 'CutSet']
+Manifest = Any  # Union['RecordingSet', 'SupervisionSet', 'CutSet']
 
 
 def open_best(path: Pathlike, mode: str = "r"):
@@ -217,8 +217,7 @@ class SequentialJsonlWriter:
         try:
             return item.id in self.ignore_ids
         except AttributeError:
-            # The only case when this happens is for the FeatureSet -- Features do not have IDs.
-            # In that case we can't know if they are already written or not.
+            # Items without IDs (e.g. Features) can't be checked for being already written.
             return False
 
     def _maybe_open(self):
@@ -447,25 +446,31 @@ def extension_contains(ext: str, path: Pathlike) -> bool:
     return any(ext == sfx for sfx in Path(path).suffixes)
 
 
+def load_manifest_dicts(path: Pathlike) -> Iterable[dict]:
+    """
+    Read the raw dicts of a manifest stored in JSONL (lazily), JSON, or YAML.
+    """
+    if extension_contains(".jsonl", path):
+        return load_jsonl(path)
+    if extension_contains(".json", path):
+        return load_json(path)
+    if extension_contains(".yaml", path):
+        return load_yaml(path)
+    raise ValueError(f"Not a valid manifest (does the path exist?): {path}")
+
+
 def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manifest:
     """Generic utility for reading an arbitrary manifest."""
-    from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet
+    from lhotse import CutSet, RecordingSet, SupervisionSet
 
     # Determine the serialization format and read the raw data.
-    if extension_contains(".jsonl", path):
-        raw_data = load_jsonl(path)
-        if manifest_cls is None:
-            # Note: for now, we need to load the whole JSONL rather than read it in
-            # a streaming way, because we have no way to know which type of manifest
-            # we should decode later; since we're consuming the underlying generator
-            # each time we try, not materializing the list first could lead to data loss
-            raw_data = list(raw_data)
-    elif extension_contains(".json", path):
-        raw_data = load_json(path)
-    elif extension_contains(".yaml", path):
-        raw_data = load_yaml(path)
-    else:
-        raise ValueError(f"Not a valid manifest (does the path exist?): {path}")
+    raw_data = load_manifest_dicts(path)
+    if manifest_cls is None and extension_contains(".jsonl", path):
+        # Note: for now, we need to load the whole JSONL rather than read it in
+        # a streaming way, because we have no way to know which type of manifest
+        # we should decode later; since we're consuming the underlying generator
+        # each time we try, not materializing the list first could lead to data loss
+        raw_data = list(raw_data)
     data_set = None
 
     # The parse the raw data into Lhotse's data structures.
@@ -473,7 +478,7 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     if manifest_cls is not None:
         candidates = [manifest_cls]
     else:
-        candidates = [RecordingSet, SupervisionSet, FeatureSet, CutSet]
+        candidates = [RecordingSet, SupervisionSet, CutSet]
     for manifest_type in candidates:
         try:
             data_set = manifest_type.from_dicts(raw_data)
@@ -575,14 +580,7 @@ def load_manifest_lazy_or_eager(
 
 def resolve_manifest_set_class(item):
     """Returns the right *Set class for a manifest, e.g. Recording -> RecordingSet."""
-    from lhotse import (
-        Features,
-        FeatureSet,
-        Recording,
-        RecordingSet,
-        SupervisionSegment,
-        SupervisionSet,
-    )
+    from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
     from lhotse.cut import Cut, CutSet
 
     if isinstance(item, Recording):
@@ -591,8 +589,6 @@ def resolve_manifest_set_class(item):
         return SupervisionSet
     if isinstance(item, Cut):
         return CutSet
-    if isinstance(item, Features):
-        return FeatureSet
     raise NotALhotseManifest(
         f"No corresponding 'Set' class is known for item of type: {type(item)}"
     )

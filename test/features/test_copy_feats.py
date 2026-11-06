@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import pytest
 
-from lhotse import CutSet, FeatureSet, NumpyFilesWriter
+from lhotse import CutSet, NumpyFilesWriter
 from lhotse.utils import fastcopy
 
 
@@ -19,16 +19,6 @@ def test_features_copy_feats(cuts):
         data = cpy.load()
         assert isinstance(data, np.ndarray)
         ref_data = features.load()
-        np.testing.assert_almost_equal(data, ref_data)
-
-
-def test_feature_set_copy_feats(cuts):
-    feature_set = FeatureSet.from_features([cuts[0].features])
-    with TemporaryDirectory() as d, NumpyFilesWriter(d) as w:
-        cpy = feature_set.copy_feats(writer=w)
-        data = cpy[0].load()
-        assert isinstance(data, np.ndarray)
-        ref_data = feature_set[0].load()
         np.testing.assert_almost_equal(data, ref_data)
 
 

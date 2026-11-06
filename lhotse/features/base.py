@@ -1,36 +1,26 @@
-import logging
-import multiprocessing
 import pickle
 import warnings
 from abc import ABCMeta, abstractmethod
-from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, is_dataclass
-from itertools import chain, islice
-from math import isclose
-from pathlib import Path
+from itertools import chain
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Type, Union
 
 import numpy as np
 import torch
-from tqdm.auto import tqdm
 
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter
-from lhotse.lazy import AlgorithmMixin
-from lhotse.serialization import LazyMixin, Serializable, load_yaml, save_to_yaml
+from lhotse.serialization import load_yaml, save_to_yaml
 from lhotse.utils import (
     Pathlike,
     Seconds,
     asdict_nonull,
     compute_num_frames,
     compute_num_frames_from_samples,
-    exactly_one_not_null,
     fastcopy,
     ifnone,
-    split_manifest_lazy,
-    split_sequence,
     uuid4,
 )
 
@@ -241,9 +231,9 @@ class FeatureExtractor(metaclass=ABCMeta):
         * return a ``Features`` object with a description of the extracted features.
 
         Note, unlike in ``extract_from_recording_and_store``, the returned ``Features`` object
-        might not be suitable to store in a ``FeatureSet``, as it does not reference any particular
-        ``Recording``. Instead, this method is useful when extracting features from cuts - especially
-        ``MixedCut`` instances, which may be created from multiple recordings and channels.
+        does not reference any particular ``Recording``. This method is useful when extracting
+        features from cuts - especially ``MixedCut`` instances, which may be created from
+        multiple recordings and channels.
 
         :param samples: a numpy ndarray with the audio samples.
         :param sampling_rate: integer sampling rate of ``samples``.
@@ -636,317 +626,6 @@ class Features(TemporalArray):
             f"channels={self.channels}"
             f")"
         )
-
-
-class FeatureSet(Serializable, AlgorithmMixin):
-    """
-    Represents a feature manifest, and allows to read features for given recordings
-    within particular channels and time ranges.
-    It also keeps information about the feature extractor parameters used to obtain this set.
-    When a given recording/time-range/channel is unavailable, raises a KeyError.
-    """
-
-    def __init__(self, features: Optional[List[Features]] = None) -> None:
-        self.features = ifnone(features, [])
-
-    def __eq__(self, other: "FeatureSet") -> bool:
-        return self.features == other.features
-
-    @property
-    def data(self) -> Union[Dict[str, Features], Iterable[Features]]:
-        """Alias property for ``self.features``"""
-        return self.features
-
-    @staticmethod
-    def from_features(features: Union[Iterable[Features], LazyMixin]) -> "FeatureSet":
-        return (
-            FeatureSet([f for f in features])
-            if isinstance(features, LazyMixin)
-            else FeatureSet(list(features))
-        )
-
-    from_items = from_features
-
-    @staticmethod
-    def from_dicts(data: Iterable[dict]) -> "FeatureSet":
-        return FeatureSet(
-            features=[Features.from_dict(feature_data) for feature_data in data]
-        )
-
-    def to_dicts(self) -> Iterable[dict]:
-        return (f.to_dict() for f in self)
-
-    def with_path_prefix(self, path: Pathlike) -> "FeatureSet":
-        return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
-
-    def split(
-        self, num_splits: int, shuffle: bool = False, drop_last: bool = False
-    ) -> List["FeatureSet"]:
-        """
-        Split the :class:`~lhotse.FeatureSet` into ``num_splits`` pieces of equal size.
-
-        :param num_splits: Requested number of splits.
-        :param shuffle: Optionally shuffle the recordings order first.
-        :param drop_last: determines how to handle splitting when ``len(seq)`` is not divisible
-            by ``num_splits``. When ``False`` (default), the splits might have unequal lengths.
-            When ``True``, it may discard the last element in some splits to ensure they are
-            equally long.
-        :return: A list of :class:`~lhotse.FeatureSet` pieces.
-        """
-        return [
-            FeatureSet.from_features(subset)
-            for subset in split_sequence(
-                self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
-            )
-        ]
-
-    def split_lazy(
-        self, output_dir: Pathlike, chunk_size: int, prefix: str = ""
-    ) -> List["FeatureSet"]:
-        """
-        Splits a manifest (either lazily or eagerly opened) into chunks, each
-        with ``chunk_size`` items (except for the last one, typically).
-
-        In order to be memory efficient, this implementation saves each chunk
-        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
-
-        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
-            input manifest for this method.
-
-        :param it: any iterable of Lhotse manifests.
-        :param output_dir: directory where the split manifests are saved.
-            Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
-        :param chunk_size: the number of items in each chunk.
-        :param prefix: the prefix of each manifest.
-        :return: a list of lazily opened chunk manifests.
-        """
-        return split_manifest_lazy(
-            self, output_dir=output_dir, chunk_size=chunk_size, prefix=prefix
-        )
-
-    def shuffle(self, *args, **kwargs):
-        raise NotImplementedError("FeatureSet does not support shuffling.")
-
-    def subset(
-        self, first: Optional[int] = None, last: Optional[int] = None
-    ) -> "FeatureSet":
-        """
-        Return a new ``FeatureSet`` according to the selected subset criterion.
-        Only a single argument to ``subset`` is supported at this time.
-
-        :param first: int, the number of first supervisions to keep.
-        :param last: int, the number of last supervisions to keep.
-        :return: a new ``FeatureSet`` with the subset results.
-        """
-        assert exactly_one_not_null(
-            first, last
-        ), "subset() can handle only one non-None arg."
-
-        if first is not None:
-            assert first > 0
-            out = FeatureSet.from_items(islice(self, first))
-            return out
-
-        if last is not None:
-            assert last > 0
-            N = len(self)
-            if last > N:
-                return self
-            return FeatureSet.from_items(islice(self, N - last, N))
-
-    def find(
-        self,
-        recording_id: str,
-        channel_id: Union[int, List[int]] = 0,
-        start: Seconds = 0.0,
-        duration: Optional[Seconds] = None,
-        leeway: Seconds = 0.05,
-    ) -> Features:
-        """
-        Find and return a Features object that best satisfies the search criteria.
-        Raise a KeyError when no such object is available.
-
-        :param recording_id: str, requested recording ID.
-        :param channel_id: int, requested channel.
-        :param start: float, requested start time in seconds for the feature chunk.
-        :param duration: optional float, requested duration in seconds for the feature chunk.
-            By default, return everything from the start.
-        :param leeway: float, controls how strictly we have to match the requested start and duration criteria.
-            It is necessary to keep a small positive value here (default 0.05s), as there might be differences between
-            the duration of recording/supervision segment, and the duration of features. The latter one is constrained
-            to be a multiple of frame_shift, while the former can be arbitrary.
-        :return: a Features object satisfying the search criteria.
-        """
-        if duration is not None:
-            end = start + duration
-        # TODO: naive linear search; will likely require optimization
-        candidates = self._index_by_recording_id_and_cache()[recording_id]
-        candidates = (
-            f
-            for f in candidates
-            if f.channels == channel_id and f.start - leeway <= start < f.end + leeway
-            # filter edge case: start 1.5, features available till 1.0, duration is None
-        )
-        if duration is not None:
-            candidates = (f for f in candidates if f.end >= end - leeway)
-
-        candidates = list(candidates)
-
-        if not candidates:
-            raise KeyError(
-                f"No features available for recording '{recording_id}', channel {channel_id} in time range [{start}s,"
-                f" {'end' if duration is None else duration}s]"
-            )
-
-        # in case there is more than one candidate feature segment, select the best fit
-        # by minimizing the MSE of the time markers...
-        if duration is not None:
-            feature_info = min(
-                candidates, key=lambda f: (start - f.start) ** 2 + (end - f.end) ** 2
-            )
-        else:
-            feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
-
-        return feature_info
-
-    # This is a cache that significantly speeds up repeated ``find()`` queries.
-    _features_by_recording_id: Optional[Dict[str, List[Features]]] = None
-
-    def _index_by_recording_id_and_cache(self):
-        if self._features_by_recording_id is None:
-            from cytoolz import groupby
-
-            self._features_by_recording_id = groupby(
-                lambda feat: feat.recording_id, self
-            )
-        return self._features_by_recording_id
-
-    def load(
-        self,
-        recording_id: str,
-        channel_id: Union[int, List[int]] = 0,
-        start: Seconds = 0.0,
-        duration: Optional[Seconds] = None,
-    ) -> np.ndarray:
-        """
-        Find a Features object that best satisfies the search criteria and load the features as a numpy ndarray.
-        Raise a KeyError when no such object is available.
-        """
-        feature_info = self.find(
-            recording_id=recording_id,
-            channel_id=channel_id,
-            start=start,
-            duration=duration,
-        )
-        features = feature_info.load(start=start, duration=duration)
-        return features
-
-    def copy_feats(self, writer: FeaturesWriter) -> "FeatureSet":
-        """
-        For each manifest in this FeatureSet,
-        read the referenced feature array and save it using ``writer``.
-        Returns a copy of the manifest with updated fields related to the feature storage.
-        """
-        return FeatureSet.from_features(f.copy_feats(writer=writer) for f in self)
-
-    def compute_global_stats(
-        self, storage_path: Optional[Pathlike] = None
-    ) -> Dict[str, np.ndarray]:
-        """
-        Compute the global means and standard deviations for each feature bin in the manifest.
-        It follows the implementation in scikit-learn:
-        https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
-        which follows the paper:
-        "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
-
-        :param storage_path: an optional path to a file where the stats will be stored with pickle.
-        :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
-            shape of the arrays equal to the number of feature bins in this manifest.
-        """
-        return compute_global_stats(feature_manifests=self, storage_path=storage_path)
-
-    def __repr__(self) -> str:
-        return f"FeatureSet(len={len(self)})"
-
-    def __iter__(self) -> Iterable[Features]:
-        return iter(self.features)
-
-    def __getitem__(self, i: int) -> Features:
-        return self.features[i]
-
-    def __len__(self) -> int:
-        return len(self.features)
-
-
-class FeatureSetBuilder:
-    """
-    An extended constructor for the FeatureSet. Think of it as a class wrapper for a feature extraction script.
-    It consumes an iterable of Recordings, extracts the features specified by the FeatureExtractor config,
-    and saves stores them on the disk.
-
-    Eventually, we plan to extend it with the capability to extract only the features in
-    specified regions of recordings and to perform some time-domain data augmentation.
-    """
-
-    def __init__(
-        self,
-        feature_extractor: FeatureExtractor,
-        storage: FeaturesWriter,
-        augment_fn: Optional[AugmentFn] = None,
-    ):
-        self.feature_extractor = feature_extractor
-        self.storage = storage
-        self.augment_fn = augment_fn
-
-    def process_and_store_recordings(
-        self,
-        recordings: Sequence[Recording],
-        output_manifest: Optional[Pathlike] = None,
-        num_jobs: int = 1,
-    ) -> FeatureSet:
-        if num_jobs == 1:
-            # Avoid spawning subprocesses for single threaded processing
-            feature_set = FeatureSet.from_features(
-                tqdm(
-                    chain.from_iterable(
-                        map(self._process_and_store_recording, recordings)
-                    ),
-                    total=len(recordings),
-                    desc="Extracting and storing features",
-                )
-            )
-        else:
-            with ProcessPoolExecutor(
-                num_jobs, mp_context=multiprocessing.get_context("spawn")
-            ) as ex:
-                feature_set = FeatureSet.from_features(
-                    tqdm(
-                        chain.from_iterable(
-                            ex.map(self._process_and_store_recording, recordings)
-                        ),
-                        total=len(recordings),
-                        desc="Extracting and storing features in parallel",
-                    )
-                )
-        if output_manifest is not None:
-            feature_set.to_file(output_manifest)
-        return feature_set
-
-    def _process_and_store_recording(
-        self,
-        recording: Recording,
-    ) -> List[Features]:
-        results = []
-        for channel in recording.channel_ids:
-            results.append(
-                self.feature_extractor.extract_from_recording_and_store(
-                    recording=recording,
-                    storage=self.storage,
-                    channels=channel,
-                    augment_fn=self.augment_fn,
-                )
-            )
-        return results
 
 
 def store_feature_array(

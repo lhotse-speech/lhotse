@@ -242,11 +242,15 @@ def test_kaldi_import_with_feats_scp():
             "recordings.jsonl.gz"
         )
         supervision_set = lhotse.SupervisionSet.from_jsonl("supervisions.jsonl.gz")
-        feature_set = lhotse.FeatureSet.from_jsonl("features.jsonl.gz")
+        # Written by an older lhotse as a FeatureSet manifest.
+        features = [
+            lhotse.Features.from_dict(d)
+            for d in lhotse.serialization.load_jsonl("features.jsonl.gz")
+        ]
 
     assert out[0] == recording_set
     assert out[1] == supervision_set
-    assert out[2] == feature_set
+    assert out[2] == features
 
 
 def open_and_load(path):

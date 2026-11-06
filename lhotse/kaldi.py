@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from lhotse.array import Array
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
-from lhotse.features import Features, FeatureSet
+from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
@@ -82,7 +82,7 @@ def load_kaldi_data_dir(
     use_reco2dur: bool = True,
     num_jobs: int = 1,
     feature_type: str = "kaldi-fbank",
-) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
+) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[List[Features]]]:
     """
     Load a Kaldi data directory and convert it to a Lhotse RecordingSet and
     SupervisionSet manifests. For this to work, at least the wav.scp file must exist.
@@ -94,8 +94,9 @@ def load_kaldi_data_dir(
 
     :param path: Path to the Kaldi data directory.
     :param sampling_rate: Sampling rate of the recordings.
-    :param frame_shift: Optional, if specified, we will create a Features manifest
-        and store the frame_shift value in it.
+    :param frame_shift: Optional, if specified, we will read feats.scp into a list of
+        :class:`~lhotse.features.base.Features` manifests with this frame_shift.
+        They can be attached to cuts with ``CutSet.from_manifests(features=...)``.
     :param map_string_to_underscores: optional string, when specified, we will replace
         all instances of this string in SupervisonSegment IDs to underscores.
         This is to help with handling underscores in Kaldi
@@ -244,7 +245,7 @@ def load_kaldi_data_dir(
             for rec_id, spkr in speakers.items()
         )
 
-    feature_set = None
+    features = None
     if feats_scp.exists() and is_module_available("kaldi_native_io"):
         if frame_shift is not None:
             import kaldi_native_io
@@ -285,7 +286,6 @@ def load_kaldi_data_dir(
                             channels=0,
                         )
                     )
-            feature_set = FeatureSet.from_features(features)
         else:
             warnings.warn(
                 "Failed to import Kaldi 'feats.scp' to Lhotse: "
@@ -293,7 +293,7 @@ def load_kaldi_data_dir(
                 "Feature import omitted."
             )
 
-    return recording_set, supervision_set, feature_set
+    return recording_set, supervision_set, features
 
 
 def export_to_kaldi(

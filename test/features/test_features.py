@@ -1,6 +1,6 @@
 import pickle
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import Optional
+from typing import List, Optional
 
 import numpy as np
 import pytest
@@ -16,8 +16,6 @@ from lhotse.features import (
     Fbank,
     FeatureMixer,
     Features,
-    FeatureSet,
-    FeatureSetBuilder,
     KaldifeatFbank,
     LibrosaFbank,
     LogSpectrogram,
@@ -28,6 +26,7 @@ from lhotse.features import (
     TorchaudioSpectrogramConfig,
     WhisperFbank,
 )
+from lhotse.features.base import compute_global_stats
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
     KaldiWriter,
@@ -38,7 +37,7 @@ from lhotse.features.io import (
     NumpyFilesWriter,
     NumpyHdf5Writer,
 )
-from lhotse.testing.dummies import DummyManifest
+from lhotse.serialization import load_json
 from lhotse.utils import Seconds, is_module_available
 from lhotse.utils import nullcontext as does_not_raise
 from lhotse.utils import time_diff_to_num_frames
@@ -47,86 +46,52 @@ other_params = {}
 some_augmentation = None
 
 
+LEGACY_FEATURES_MANIFEST = "test/fixtures/dummy_feats/feature_manifest.json"
+
+
+def load_legacy_features() -> List[Features]:
+    return [Features.from_dict(d) for d in load_json(LEGACY_FEATURES_MANIFEST)]
+
+
 @mark.parametrize(
+    ["index", "start", "duration", "expected_num_frames"],
     [
-        "recording_id",
-        "channel",
-        "start",
-        "duration",
-        "exception_expectation",
-        "expected_num_frames",
-    ],
-    [
-        ("recording-1", 0, 0.0, None, does_not_raise(), 50),  # whole recording
-        (
-            "recording-1",
-            0,
-            0.0,
-            0.499,
-            does_not_raise(),
-            50,
-        ),  # practically whole recording
-        ("recording-2", 0, 0.0, 0.7, does_not_raise(), 70),
-        ("recording-2", 0, 0.5, 0.5, does_not_raise(), 50),
-        ("recording-2", 1, 0.25, 0.65, does_not_raise(), 65),
-        ("recording-nonexistent", 0, 0.0, None, raises(KeyError), None),  # no recording
-        ("recording-1", 1000, 0.0, None, raises(KeyError), None),  # no channel
-        (
-            "recording-2",
-            0,
-            0.5,
-            1.0,
-            raises(KeyError),
-            None,
-        ),  # no features between [1.0, 1.5]
-        ("recording-2", 0, 1.5, None, raises(KeyError), None),  # no features after 1.0
+        (0, 0.0, None, 50),  # whole recording
+        (0, 0.0, 0.499, 50),  # practically whole recording
+        (2, 0.0, 0.7, 70),
+        (2, 0.5, 0.5, 50),
+        (3, 0.25, 0.65, 65),
     ],
 )
 def test_load_features(
-    recording_id: str,
-    channel: int,
+    index: int,
     start: float,
-    duration: float,
-    exception_expectation,
-    expected_num_frames: Optional[float],
+    duration: Optional[float],
+    expected_num_frames: int,
 ):
-    # just test that it loads
-    feature_set = FeatureSet.from_json(
-        "test/fixtures/dummy_feats/feature_manifest.json"
-    )
-    with exception_expectation:
-        features = feature_set.load(
-            recording_id, channel_id=channel, start=start, duration=duration
-        )
-        # expect a matrix
-        assert len(features.shape) == 2
-        # expect time as the first dimension
-        assert features.shape[0] == expected_num_frames
+    features = load_legacy_features()[index].load(start=start, duration=duration)
+    assert features.shape == (expected_num_frames, 23)
+    assert features.dtype == np.float32
 
 
 def test_load_features_with_default_arguments():
-    feature_set = FeatureSet.from_json(
-        "test/fixtures/dummy_feats/feature_manifest.json"
-    )
-    features = feature_set.load("recording-1")
+    features = load_legacy_features()[0].load()
     assert features.shape == (50, 23)
 
 
 def test_compute_global_stats():
-    feature_set = FeatureSet.from_json(
-        "test/fixtures/dummy_feats/feature_manifest.json"
-    )
+    features = load_legacy_features()
     with NamedTemporaryFile() as f:
-        stats = feature_set.compute_global_stats(storage_path=f.name)
+        stats = compute_global_stats(features, storage_path=f.name)
         f.flush()
         read_stats = pickle.load(f)
     # Post-condition 1: feature dim is consistent
-    assert stats["norm_means"].shape == (feature_set[0].num_features,)
-    assert stats["norm_stds"].shape == (feature_set[0].num_features,)
+    assert stats["norm_means"].shape == (features[0].num_features,)
+    assert stats["norm_stds"].shape == (features[0].num_features,)
     # Post-condition 2: the iterative method yields very close results to
     # the "standard" method.
-    true_means = np.mean(np.concatenate([f.load() for f in feature_set]), axis=0)
-    true_stds = np.std(np.concatenate([f.load() for f in feature_set]), axis=0)
+    true_means = np.mean(np.concatenate([f.load() for f in features]), axis=0)
+    true_stds = np.std(np.concatenate([f.load() for f in features]), axis=0)
     np.testing.assert_almost_equal(stats["norm_means"], true_means, decimal=5)
     np.testing.assert_almost_equal(stats["norm_stds"], true_stds, decimal=5)
     # Post-condition 3: the serialization works correctly
@@ -172,21 +137,21 @@ def test_compute_global_stats():
     ],
 )
 @requires_sph2pipe
-def test_feature_set_builder(storage_fn):
+def test_extract_from_recording_and_store(storage_fn):
     recordings: RecordingSet = RecordingSet.from_json(
         "test/fixtures/audio.json"
     ).filter(lambda r: r.id != "recording-4")
     extractor = Fbank(FbankConfig(sampling_rate=8000))
     with storage_fn() as storage:
-        builder = FeatureSetBuilder(
-            feature_extractor=extractor,
-            storage=storage,
-        )
-        feature_set = builder.process_and_store_recordings(recordings=recordings)
+        feature_infos = [
+            extractor.extract_from_recording_and_store(
+                recording=recording, storage=storage, channels=channel
+            )
+            for recording in recordings
+            for channel in recording.channel_ids
+        ]
 
-    assert len(feature_set) == 6
-
-    feature_infos = list(feature_set)
+    assert len(feature_infos) == 6
 
     # Assert the properties shared by all features
     for features in feature_infos:
@@ -195,7 +160,7 @@ def test_feature_set_builder(storage_fn):
         # assert that duration is always a multiple of frame_shift
         assert features.num_frames == round(features.duration / features.frame_shift)
         # assert that num_features is preserved
-        assert features.num_features == builder.feature_extractor.config.num_filters
+        assert features.num_features == extractor.config.num_filters
         # assert that the storage type metadata matches
         assert features.storage_type == storage.name
         # assert that the metadata is consistent with the data shapes
@@ -241,14 +206,6 @@ def test_time_diff_to_num_frames(
         )
         == expected_num_frames
     )
-
-
-def test_add_feature_sets():
-    expected = DummyManifest(FeatureSet, begin_id=0, end_id=10)
-    feature_set_1 = DummyManifest(FeatureSet, begin_id=0, end_id=5)
-    feature_set_2 = DummyManifest(FeatureSet, begin_id=5, end_id=10)
-    combined = feature_set_1 + feature_set_2
-    assert combined.to_eager() == expected
 
 
 @pytest.mark.parametrize(
@@ -377,22 +334,18 @@ def test_feature_mixer_snr_does_not_depend_on_noise_length():
     assert gains[1] == pytest.approx(expected, rel=1e-5)
 
 
-def test_feature_set_prefix_path():
-    features = FeatureSet.from_features(
-        [
-            Features(
-                type="fbank",
-                num_frames=1000,
-                num_features=40,
-                frame_shift=0.01,
-                sampling_rate=16000,
-                storage_type="lilcom",
-                storage_path="feats/",
-                storage_key="12345.llc",
-                start=0,
-                duration=10,
-            )
-        ]
+def test_features_with_path_prefix():
+    features = Features(
+        type="fbank",
+        num_frames=1000,
+        num_features=40,
+        frame_shift=0.01,
+        sampling_rate=16000,
+        storage_type="lilcom",
+        storage_path="feats/",
+        storage_key="12345.llc",
+        start=0,
+        duration=10,
     )
-    for feat in features.with_path_prefix("/data"):
-        assert feat.storage_path == "/data/feats"
+    assert features.with_path_prefix("/data").storage_path == "/data/feats"
+    assert features.storage_path == "feats/"

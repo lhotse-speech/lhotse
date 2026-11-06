@@ -2,7 +2,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Union
 
-from lhotse import CutSet, FeatureSet, load_manifest
+from lhotse import CutSet, load_manifest
 from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
@@ -12,7 +12,6 @@ DEFAULT_DETECTED_MANIFEST_TYPES = ("recordings", "supervisions")
 TYPES_TO_CLASSES = {
     "recordings": RecordingSet,
     "supervisions": SupervisionSet,
-    "features": FeatureSet,
     "cuts": CutSet,
 }
 

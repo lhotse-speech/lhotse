@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
+from lhotse import CutSet, RecordingSet, SupervisionSet, combine
 from lhotse.cut.text import TextExample
 from lhotse.lazy import LazyJsonlIterator, LazyRepeater, LazyTxtIterator
 from lhotse.testing.dummies import DummyManifest, as_lazy
@@ -18,9 +18,7 @@ from lhotse.testing.fixtures import with_dill_enabled
 from lhotse.utils import fastcopy, is_module_available
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_combine_lazy(manifest_type):
     expected = DummyManifest(manifest_type, begin_id=0, end_id=200)
     with (
@@ -33,9 +31,7 @@ def test_combine_lazy(manifest_type):
         assert list(combined) == list(expected)
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_subset_first_lazy(manifest_type):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     expected = DummyManifest(manifest_type, begin_id=0, end_id=10)
@@ -43,9 +39,7 @@ def test_subset_first_lazy(manifest_type):
     assert subset == expected
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_subset_last_lazy(manifest_type):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     expected = DummyManifest(manifest_type, begin_id=190, end_id=200)
@@ -53,9 +47,7 @@ def test_subset_last_lazy(manifest_type):
     assert subset == expected
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @pytest.mark.parametrize(["first", "last"], [(None, None), (10, 10)])
 def test_subset_raises_lazy(manifest_type, first, last):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
@@ -63,9 +55,7 @@ def test_subset_raises_lazy(manifest_type, first, last):
         subset = any_set.subset(first=first, last=last)
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_map(manifest_type):
 
     expected = DummyManifest(manifest_type, begin_id=0, end_id=10)
@@ -85,9 +75,7 @@ def test_map(manifest_type):
         assert list(lazy_result) == list(expected)
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_filter(manifest_type):
 
     expected = DummyManifest(manifest_type, begin_id=0, end_id=5)
@@ -111,9 +99,7 @@ def test_filter(manifest_type):
         assert list(lazy_result) == list(expected)
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @pytest.mark.parametrize("preserve_id", [True, False])
 def test_repeat(manifest_type, preserve_id):
     data = DummyManifest(manifest_type, begin_id=0, end_id=10)
@@ -121,7 +107,7 @@ def test_repeat(manifest_type, preserve_id):
     expected = data + data
 
     eager_result = data.repeat(times=2, preserve_id=preserve_id)
-    if preserve_id or manifest_type == FeatureSet:
+    if preserve_id:
         assert list(eager_result) == list(expected)
     else:
         items = list(eager_result)
@@ -134,7 +120,7 @@ def test_repeat(manifest_type, preserve_id):
 
     with as_lazy(data) as lazy_data:
         lazy_result = lazy_data.repeat(times=2, preserve_id=preserve_id)
-        if preserve_id or manifest_type == FeatureSet:
+        if preserve_id:
             assert list(lazy_result) == list(expected)
         else:
             items = list(lazy_result)
@@ -146,9 +132,7 @@ def test_repeat(manifest_type, preserve_id):
                 assert i_modi == refi
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_repeat_infinite(manifest_type):
     data = DummyManifest(manifest_type, begin_id=0, end_id=10)
 
@@ -174,9 +158,7 @@ def test_repeat_infinite_terminates_with_empty_iterable():
     assert len(result) == 0
 
 
-@pytest.mark.parametrize(
-    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
-)
+@pytest.mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_to_eager(manifest_type):
     data = DummyManifest(manifest_type, begin_id=0, end_id=10)
 
@@ -192,10 +174,6 @@ def test_to_eager(manifest_type):
     [
         RecordingSet,
         SupervisionSet,
-        pytest.param(
-            FeatureSet,
-            marks=pytest.mark.xfail(reason="FeatureSet does not support shuffling."),
-        ),
         CutSet,
     ],
 )

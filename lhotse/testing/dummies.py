@@ -9,7 +9,7 @@ import torch
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut, MultiCut
-from lhotse.features import Features, FeatureSet
+from lhotse.features import Features
 from lhotse.features.io import MemoryRawWriter
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
@@ -39,11 +39,6 @@ def DummyManifest(
     if type_ == SupervisionSet:
         return SupervisionSet.from_segments(
             dummy_supervision(idx) for idx in range(begin_id, end_id)
-        )
-    if type_ == FeatureSet:
-        # noinspection PyTypeChecker
-        return FeatureSet.from_features(
-            dummy_features(idx, with_data=with_data) for idx in range(begin_id, end_id)
         )
     if type_ == CutSet:
         # noinspection PyTypeChecker

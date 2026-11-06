@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import pytest
 
-from lhotse import CutSet, FeatureSet, NumpyFilesWriter
+from lhotse import CutSet, NumpyFilesWriter
 from lhotse.utils import fastcopy
 
 

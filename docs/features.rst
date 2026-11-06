@@ -56,24 +56,32 @@ And the corresponding configuration class:
   :members:
   :noindex:
 
-The feature matrices manifest is a list of documents.
-These documents contain the information necessary to tie the features to a particular recording: ``start``, ``duration``,
-``channel`` and ``recording_id``.
-They also provide some useful information, such as the type of features, number of frames and feature dimension.
-Finally, they specify how the feature matrix is stored with ``storage_type`` (currently ``numpy`` or ``lilcom``),
-and where to find it with the ``storage_path``. In the future there might be more storage types.
+The feature matrix manifest, :class:`~lhotse.features.base.Features`, is attached to cuts as ``cut.features``.
+It is a :class:`~lhotse.array.TemporalArray` whose first axis is time: the nested ``array`` describes how the
+matrix is stored (``storage_type``, ``storage_path``, ``storage_key``) and its ``shape`` of ``(num_frames, num_features)``,
+while ``frame_shift`` and ``start`` place it in time. On top of that, it describes how the features were obtained:
+their ``type``, the ``sampling_rate`` and ``duration`` of the source audio, and the ``recording_id`` and ``channels``
+they were extracted from.
 
 .. code-block:: yaml
 
-    - channels: 0
-      duration: 16.04
-      num_features: 23
-      num_frames: 1604
-      recording_id: recording-1
-      start: 0.0
-      storage_path: test/fixtures/libri/storage/dc2e0952-f2f8-423c-9b8c-f5481652ee1d.llc
-      storage_type: lilcom
-      type: fbank
+    array:
+      shape: [1604, 23]
+      storage_key: dc2e0952-f2f8-423c-9b8c-f5481652ee1d.llc
+      storage_path: test/fixtures/libri/storage
+      storage_type: lilcom_files
+    temporal_dim: 0
+    frame_shift: 0.01
+    start: 0.0
+    type: fbank
+    sampling_rate: 16000
+    duration: 16.04
+    recording_id: recording-1
+    channels: 0
+
+Manifests written by older Lhotse versions store these fields flat (``num_frames``, ``num_features``,
+``storage_type``, ``storage_path``, ``storage_key``) and are still read correctly;
+the same names are also available as properties of :class:`~lhotse.features.base.Features`.
 
 
 Feature normalization
@@ -81,7 +89,7 @@ Feature normalization
 
 We will briefly discuss how to perform mean and variance normalization (a.k.a. CMVN) in Lhotse effectively. We compute and store unnormalized features, and it is up to the user to normalize them if they want to do so. There are three common ways to perform feature normalization:
 
-- **Global normalization**: we compute the means and variances using the whole data (``FeatureSet`` or ``CutSet``), and apply the same transform on every sample. The global statistics can be computed efficiently with ``FeatureSet.compute_global_stats()`` or ``CutSet.compute_global_feature_stats()``. They use an iterative algorithm that does not require loading the whole dataset into memory.
+- **Global normalization**: we compute the means and variances using the whole data (``CutSet``), and apply the same transform on every sample. The global statistics can be computed efficiently with ``CutSet.compute_global_feature_stats()``. They use an iterative algorithm that does not require loading the whole dataset into memory.
 - **Per-instance normalization**: we compute the means and variances separately for each data sample (i.e. a single feature matrix). Each feature matrix undergoes a different transform. This approach seems to be common in computer vision modeling.
 - **Sliding window ("online") normalization**: we compute the means and variances using a slice of the feature matrix with a specified duration, e.g. 3 seconds (a standard value in Kaldi). This is useful when we expect the model to work on incomplete inputs, e.g. streaming speech recognition. We currently recommend using `Torchaudio CMVN`_ for that.
 

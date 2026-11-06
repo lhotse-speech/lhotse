@@ -9,7 +9,6 @@ from lhotse import (
     AudioSource,
     CutSet,
     Features,
-    FeatureSet,
     MonoCut,
     MultiCut,
     Recording,
@@ -37,7 +36,8 @@ from lhotse.utils import nullcontext as does_not_raise
     [
         ("test/fixtures/audio.json", does_not_raise()),
         ("test/fixtures/supervision.json", does_not_raise()),
-        ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
+        # A standalone FeatureSet manifest: read it with Features.from_dict instead.
+        ("test/fixtures/dummy_feats/feature_manifest.json", pytest.raises(ValueError)),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
         ("test/fixtures/libri/cuts_multi.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
@@ -54,7 +54,8 @@ def test_load_any_lhotse_manifest(path, exception_expectation):
     [
         ("test/fixtures/audio.json", does_not_raise()),
         ("test/fixtures/supervision.json", does_not_raise()),
-        ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
+        # A standalone FeatureSet manifest: read it with Features.from_dict instead.
+        ("test/fixtures/dummy_feats/feature_manifest.json", pytest.raises(ValueError)),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
         ("test/fixtures/libri/cuts_multi.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
@@ -119,28 +120,6 @@ def supervision_set():
                         AlignmentItem(symbol="segment", start=0.3, duration=0.1),
                     ]
                 },
-            )
-        ]
-    )
-
-
-@pytest.fixture
-def feature_set():
-    return FeatureSet(
-        features=[
-            Features(
-                recording_id="irrelevant",
-                channels=0,
-                start=0.0,
-                duration=20.0,
-                type="fbank",
-                num_frames=2000,
-                num_features=20,
-                frame_shift=0.01,
-                sampling_rate=16000,
-                storage_type="lilcom",
-                storage_path="/irrelevant/",
-                storage_key="path.llc",
             )
         ]
     )
@@ -229,31 +208,6 @@ def cut_set():
         ("jsonl", True),
     ],
 )
-def test_feature_set_serialization(feature_set, format, compressed):
-    with NamedTemporaryFile(suffix=".gz" if compressed else "") as f:
-        if format == "jsonl":
-            feature_set.to_jsonl(f.name)
-            feature_set_deserialized = FeatureSet.from_jsonl(f.name)
-        if format == "json":
-            feature_set.to_json(f.name)
-            feature_set_deserialized = FeatureSet.from_json(f.name)
-        if format == "yaml":
-            feature_set.to_yaml(f.name)
-            feature_set_deserialized = FeatureSet.from_yaml(f.name)
-    assert feature_set_deserialized == feature_set
-
-
-@pytest.mark.parametrize(
-    ["format", "compressed"],
-    [
-        ("yaml", False),
-        ("yaml", True),
-        ("json", False),
-        ("json", True),
-        ("jsonl", False),
-        ("jsonl", True),
-    ],
-)
 def test_serialization(recording_set, format, compressed):
     with NamedTemporaryFile(suffix=".gz" if compressed else "") as f:
         if format == "jsonl":
@@ -319,17 +273,16 @@ def test_cut_set_serialization(cut_set, format, compressed):
 
 
 @pytest.fixture
-def manifests(recording_set, supervision_set, feature_set, cut_set):
+def manifests(recording_set, supervision_set, cut_set):
     return {
         "recording_set": recording_set,
         "supervision_set": supervision_set,
-        "feature_set": feature_set,
         "cut_set": cut_set,
     }
 
 
 @pytest.mark.parametrize(
-    "manifest_type", ["recording_set", "supervision_set", "feature_set", "cut_set"]
+    "manifest_type", ["recording_set", "supervision_set", "cut_set"]
 )
 @pytest.mark.parametrize(
     ["format", "compressed"],
@@ -353,7 +306,7 @@ def test_generic_serialization_classmethod(
 
 
 @pytest.mark.parametrize(
-    "manifest_type", ["recording_set", "supervision_set", "feature_set", "cut_set"]
+    "manifest_type", ["recording_set", "supervision_set", "cut_set"]
 )
 @pytest.mark.parametrize(
     ["format", "compressed"],
@@ -375,7 +328,7 @@ def test_generic_serialization(manifests, manifest_type, format, compressed):
 
 
 @pytest.mark.parametrize(
-    "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
+    "manifest_type", ["recording_set", "supervision_set", "cut_set"]
 )
 @pytest.mark.parametrize(
     ["format", "compressed"],
@@ -414,7 +367,7 @@ def test_sequential_jsonl_writer_with_dict_input():
 
 
 @pytest.mark.parametrize(
-    "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
+    "manifest_type", ["recording_set", "supervision_set", "cut_set"]
 )
 def test_in_memory_writer(manifests, manifest_type):
     manifest = manifests[manifest_type]
@@ -442,7 +395,7 @@ def test_sequential_jsonl_writer_overwrite(overwrite):
 
 
 @pytest.mark.parametrize(
-    "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
+    "manifest_type", ["recording_set", "supervision_set", "cut_set"]
 )
 def test_manifest_is_lazy(manifests, manifest_type):
     # Eager manifest is not lazy

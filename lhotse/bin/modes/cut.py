@@ -5,7 +5,8 @@ import click
 
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import CutSet, append_cuts, mix_cuts
-from lhotse.serialization import load_manifest_lazy_or_eager
+from lhotse.features import Features
+from lhotse.serialization import load_manifest_dicts, load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike
 
 
@@ -58,15 +59,20 @@ def simple(
     .. hint::
         ``--force-eager`` must be used when the RECORDING_MANIFEST is not sorted by recording ID.
     """
-    supervision_set, feature_set, recording_set = [
+    supervision_set, recording_set = [
         load_manifest_lazy_or_eager(p) if p is not None else None
-        for p in (supervision_manifest, feature_manifest, recording_manifest)
+        for p in (supervision_manifest, recording_manifest)
     ]
+    features = (
+        [Features.from_dict(data) for data in load_manifest_dicts(feature_manifest)]
+        if feature_manifest is not None
+        else None
+    )
 
     if (
         all(
-            m is None or m.is_lazy
-            for m in (supervision_set, feature_set, recording_set)
+            m is None or getattr(m, "is_lazy", False)
+            for m in (supervision_set, features, recording_set)
         )
         and not force_eager
     ):
@@ -74,13 +80,13 @@ def simple(
         CutSet.from_manifests(
             recordings=recording_set,
             supervisions=supervision_set,
-            features=feature_set,
+            features=features,
             output_path=output_cut_manifest,
             lazy=True,
         )
     else:
         cut_set = CutSet.from_manifests(
-            recordings=recording_set, supervisions=supervision_set, features=feature_set
+            recordings=recording_set, supervisions=supervision_set, features=features
         )
         cut_set.to_file(output_cut_manifest)
 

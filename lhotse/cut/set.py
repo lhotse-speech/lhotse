@@ -7,6 +7,7 @@ import secrets
 import warnings
 from collections import defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
+from contextlib import nullcontext
 from functools import partial, reduce
 from itertools import chain, islice
 from pathlib import Path
@@ -41,7 +42,7 @@ from lhotse.cut.mixed import MixedCut, MixTrack, _ensure_explicit_snr_reference
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
-from lhotse.features import FeatureExtractor, Features, FeatureSet
+from lhotse.features import FeatureExtractor, Features
 from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import (
     FeaturesWriter,
@@ -53,6 +54,7 @@ from lhotse.lazy import (
     IteratorNode,
     LazyFlattener,
     LazyIteratorChain,
+    LazyJsonlIterator,
     LazyManifestIterator,
     LazyMapper,
     LazySlicer,
@@ -65,7 +67,7 @@ from lhotse.lazy import (
     resolve_iterator_source,
     supports_graph_restore,
 )
-from lhotse.serialization import Serializable
+from lhotse.serialization import SequentialJsonlWriter, Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
@@ -110,15 +112,15 @@ class CutSet(Serializable, AlgorithmMixin):
     and you can select just the interesting bits to feed them to your models.
 
     :class:`~lhotse.cut.CutSet` can be created from any combination of :class:`~lhotse.audio.RecordingSet`,
-    :class:`~lhotse.supervision.SupervisionSet`, and :class:`~lhotse.features.base.FeatureSet`
+    :class:`~lhotse.supervision.SupervisionSet`, and :class:`~lhotse.features.base.Features`
     with :meth:`lhotse.cut.CutSet.from_manifests`::
 
         >>> from lhotse import CutSet
         >>> cuts = CutSet.from_manifests(recordings=my_recording_set)
-        >>> cuts2 = CutSet.from_manifests(features=my_feature_set)
+        >>> cuts2 = CutSet.from_manifests(features=my_features_list)
         >>> cuts3 = CutSet.from_manifests(
         ...     recordings=my_recording_set,
-        ...     features=my_feature_set,
+        ...     features=my_features_list,
         ...     supervisions=my_supervision_set,
         ... )
 
@@ -379,7 +381,7 @@ class CutSet(Serializable, AlgorithmMixin):
     def from_manifests(
         recordings: Optional[RecordingSet] = None,
         supervisions: Optional[SupervisionSet] = None,
-        features: Optional[FeatureSet] = None,
+        features: Optional[Iterable[Features]] = None,
         output_path: Optional[Pathlike] = None,
         random_ids: bool = False,
         tolerance: Seconds = 0.001,
@@ -398,7 +400,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
         :param recordings: an optional :class:`~lhotse.audio.RecordingSet` manifest.
         :param supervisions: an optional :class:`~lhotse.supervision.SupervisionSet` manifest.
-        :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
+        :param features: an optional iterable of :class:`~lhotse.features.base.Features` manifests.
         :param output_path: an optional path where the :class:`.CutSet` is stored.
         :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
             with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
@@ -867,11 +869,14 @@ class CutSet(Serializable, AlgorithmMixin):
 
     def decompose(
         self, output_dir: Optional[Pathlike] = None, verbose: bool = False
-    ) -> Tuple[Optional[RecordingSet], Optional[SupervisionSet], Optional[FeatureSet]]:
+    ) -> Tuple[
+        Optional[RecordingSet], Optional[SupervisionSet], Optional[Iterable[Features]]
+    ]:
         """
         Return a 3-tuple of unique (recordings, supervisions, features) found in
         this :class:`CutSet`. Some manifest sets may also be ``None``, e.g.,
-        if features were not extracted.
+        if features were not extracted. Features are returned as a list,
+        or as a lazy iterable over 'features.jsonl.gz' when ``output_dir`` is set.
 
         .. note:: :class:`.MixedCut` is iterated over its track cuts.
 
@@ -894,19 +899,28 @@ class CutSet(Serializable, AlgorithmMixin):
             SupervisionSet.open_writer(
                 output_dir / "supervisions.jsonl.gz" if output_dir is not None else None
             ) as sw,
-            FeatureSet.open_writer(
-                output_dir / "features.jsonl.gz" if output_dir is not None else None
+            (
+                SequentialJsonlWriter(output_dir / "features.jsonl.gz")
+                if output_dir is not None
+                else nullcontext()
             ) as fw,
         ):
+            features = []  # Only used when not writing to output_dir.
+            num_features = 0
 
             def save(cut: DataCut):
+                nonlocal num_features
                 if cut.has_recording and cut.recording_id not in stored_rids:
                     rw.write(cut.recording)
                     stored_rids.add(cut.recording_id)
                 if cut.has_features:
                     # Note: we have no way of saying if features are unique,
                     #       so we will always write them.
-                    fw.write(cut.features)
+                    num_features += 1
+                    if fw is None:
+                        features.append(cut.features)
+                    else:
+                        fw.write(cut.features)
                 for sup in cut.supervisions:
                     if sup.id not in stored_sids:
                         # Supervisions inside cuts are relative to cuts start,
@@ -922,7 +936,11 @@ class CutSet(Serializable, AlgorithmMixin):
                         if isinstance(track.cut, DataCut):
                             save(track.cut)
 
-        return rw.open_manifest(), sw.open_manifest(), fw.open_manifest()
+        if num_features == 0:
+            features = None
+        elif fw is not None:
+            features = LazyMapper(LazyJsonlIterator(fw.path), fn=Features.from_dict)
+        return rw.open_manifest(), sw.open_manifest(), features
 
     def describe(self, full: bool = False) -> None:
         """
@@ -3471,7 +3489,7 @@ def compute_supervisions_frame_mask(
 def create_cut_set_eager(
     recordings: Optional[RecordingSet] = None,
     supervisions: Optional[SupervisionSet] = None,
-    features: Optional[FeatureSet] = None,
+    features: Optional[Iterable[Features]] = None,
     output_path: Optional[Pathlike] = None,
     random_ids: bool = False,
     tolerance: Seconds = 0.001,
@@ -3489,7 +3507,7 @@ def create_cut_set_eager(
 
     :param recordings: an optional :class:`~lhotse.audio.RecordingSet` manifest.
     :param supervisions: an optional :class:`~lhotse.supervision.SupervisionSet` manifest.
-    :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
+    :param features: an optional iterable of :class:`~lhotse.features.base.Features` manifests.
     :param output_path: an optional path where the :class:`.CutSet` is stored.
     :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
         with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
@@ -3586,7 +3604,7 @@ def create_cut_set_lazy(
     output_path: Pathlike,
     recordings: Optional[RecordingSet] = None,
     supervisions: Optional[SupervisionSet] = None,
-    features: Optional[FeatureSet] = None,
+    features: Optional[Iterable[Features]] = None,
     random_ids: bool = False,
     tolerance: Seconds = 0.001,
 ) -> CutSet:
@@ -3617,7 +3635,7 @@ def create_cut_set_lazy(
     :param output_path: path to which we will write the cuts.
     :param recordings: an optional :class:`~lhotse.audio.RecordingSet` manifest.
     :param supervisions: an optional :class:`~lhotse.supervision.SupervisionSet` manifest.
-    :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
+    :param features: an optional iterable of :class:`~lhotse.features.base.Features` manifests.
     :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
         with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
     :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
@@ -3641,7 +3659,7 @@ def create_cut_set_lazy(
         ("supervisions", supervisions),
         ("features", features),
     ]:
-        if m is not None and not m.is_lazy:
+        if m is not None and not getattr(m, "is_lazy", True):
             logging.info(
                 f"Manifest passed in argument '{mtype}' is not opened lazily; "
                 f"open it with {type(m).__name__}.from_jsonl_lazy() to reduce the memory usage of this method."

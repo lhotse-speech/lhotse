@@ -6,14 +6,13 @@ from pytest import mark
 
 from lhotse import CutSet
 from lhotse.audio import RecordingSet
-from lhotse.features import FeatureSet
 from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
 from lhotse.testing.dummies import DummyManifest, as_lazy
 from lhotse.utils import nullcontext
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_split_even(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = manifest.split(num_splits=2)
@@ -22,7 +21,7 @@ def test_split_even(manifest_type):
     assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=50, end_id=100)
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_split_randomize(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = manifest.split(num_splits=2, shuffle=True)
@@ -34,7 +33,7 @@ def test_split_randomize(manifest_type):
     assert recombined_items != list(manifest)
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @mark.parametrize("drop_last", [True, False])
 def test_split_odd_1(manifest_type, drop_last):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
@@ -62,7 +61,7 @@ def test_split_odd_1(manifest_type, drop_last):
         )
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @mark.parametrize("drop_last", [True, False])
 def test_split_odd_2(manifest_type, drop_last):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=32)
@@ -90,14 +89,14 @@ def test_split_odd_2(manifest_type, drop_last):
         )
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_cannot_split_to_more_chunks_than_items(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=1)
     with pytest.raises(ValueError):
         manifest.split(num_splits=10)
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_split_lazy_even(manifest_type):
     with TemporaryDirectory() as d:
         manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
@@ -125,7 +124,7 @@ def test_split_lazy_edge_case_extra_shard(tmp_path):
         print(item)
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 def test_combine(manifest_type):
     expected = DummyManifest(manifest_type, begin_id=0, end_id=200)
     combined = combine(
@@ -144,7 +143,7 @@ def test_combine(manifest_type):
     assert combined_iterable.to_eager() == expected
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @mark.parametrize("lazy", [False, True])
 def test_subset_first(manifest_type, lazy):
     ctx = as_lazy if lazy else nullcontext
@@ -155,7 +154,7 @@ def test_subset_first(manifest_type, lazy):
         assert subset == expected
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @mark.parametrize("lazy", [False, True])
 def test_subset_last(manifest_type, lazy):
     ctx = as_lazy if lazy else nullcontext
@@ -166,7 +165,7 @@ def test_subset_last(manifest_type, lazy):
         assert subset == expected
 
 
-@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
 @mark.parametrize(["first", "last"], [(None, None), (10, 10)])
 def test_subset_raises(manifest_type, first, last):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)

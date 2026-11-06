@@ -73,7 +73,7 @@ def import_(
     from lhotse import CutSet
     from lhotse.kaldi import load_kaldi_data_dir
 
-    recording_set, maybe_supervision_set, maybe_feature_set = load_kaldi_data_dir(
+    recording_set, maybe_supervision_set, maybe_features = load_kaldi_data_dir(
         path=data_dir,
         sampling_rate=sampling_rate,
         frame_shift=frame_shift,
@@ -87,12 +87,10 @@ def import_(
     recording_set.to_file(manifest_dir / "recordings.jsonl.gz")
     if maybe_supervision_set is not None:
         maybe_supervision_set.to_file(manifest_dir / "supervisions.jsonl.gz")
-    if maybe_feature_set is not None:
-        maybe_feature_set.to_file(manifest_dir / "features.jsonl.gz")
     CutSet.from_manifests(
         recordings=recording_set,
         supervisions=maybe_supervision_set,
-        features=maybe_feature_set,
+        features=maybe_features,
         tolerance=0.1,
     ).to_file(manifest_dir / "cuts.jsonl.gz")
 

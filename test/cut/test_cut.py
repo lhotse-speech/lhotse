@@ -7,7 +7,8 @@ from pytest import approx
 from lhotse import MultiCut
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import CutSet, MixedCut, MonoCut, PaddingCut
-from lhotse.features import Features, FeatureSet
+from lhotse.features import Features
+from lhotse.serialization import load_jsonl, save_to_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import dummy_cut, dummy_multi_cut, dummy_supervision
 
@@ -20,11 +21,6 @@ def libri_recording_set():
 @pytest.fixture
 def libri_cut_set():
     return CutSet.from_json("test/fixtures/libri/cuts.json")
-
-
-@pytest.fixture
-def libri_features_set():
-    return FeatureSet.from_json("test/fixtures/libri/feature_manifest.json.gz")
 
 
 @pytest.fixture
@@ -155,24 +151,22 @@ def dummy_supervision_set():
 
 @pytest.fixture
 def dummy_feature_set():
-    return FeatureSet.from_features(
-        [
-            Features(
-                recording_id="rec1",
-                channels=0,
-                start=0,
-                duration=10,
-                type="fbank",
-                num_frames=1000,
-                num_features=23,
-                sampling_rate=16000,
-                storage_type="lilcom_files",
-                storage_path="feats",
-                storage_key="dummy.llc",
-                frame_shift=0.01,
-            )
-        ]
-    )
+    return [
+        Features(
+            recording_id="rec1",
+            channels=0,
+            start=0,
+            duration=10,
+            type="fbank",
+            num_frames=1000,
+            num_features=23,
+            sampling_rate=16000,
+            storage_type="lilcom_files",
+            storage_path="feats",
+            storage_key="dummy.llc",
+            frame_shift=0.01,
+        )
+    ]
 
 
 def test_make_cuts_from_recordings(dummy_recording_set):
@@ -570,27 +564,25 @@ def dummy_supervision_set_lazy():
 @pytest.fixture
 def dummy_feature_set_lazy():
     with NamedTemporaryFile(suffix=".jsonl.gz") as f:
-        feats = FeatureSet.from_features(
-            [
-                Features(
-                    recording_id="rec1",
-                    channels=0,
-                    start=0,
-                    duration=10,
-                    type="fbank",
-                    num_frames=1000,
-                    num_features=23,
-                    sampling_rate=16000,
-                    storage_type="lilcom_files",
-                    storage_path="feats",
-                    storage_key="dummy.llc",
-                    frame_shift=0.01,
-                )
-            ]
-        )
-        feats.to_file(f.name)
+        feats = [
+            Features(
+                recording_id="rec1",
+                channels=0,
+                start=0,
+                duration=10,
+                type="fbank",
+                num_frames=1000,
+                num_features=23,
+                sampling_rate=16000,
+                storage_type="lilcom_files",
+                storage_path="feats",
+                storage_key="dummy.llc",
+                frame_shift=0.01,
+            )
+        ]
+        save_to_jsonl((feat.to_dict() for feat in feats), f.name)
         f.flush()
-        yield FeatureSet.from_jsonl_lazy(f.name)
+        yield (Features.from_dict(data) for data in load_jsonl(f.name))
 
 
 class TestCreateCutSetLazy:

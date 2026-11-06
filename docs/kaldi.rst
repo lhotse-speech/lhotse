@@ -7,7 +7,7 @@ Data import/export
 We support importing Kaldi data directories that contain at least the ``wav.scp`` file,
 required to create the :class:`~lhotse.audio.RecordingSet`.
 Other files, such as ``segments``, ``utt2spk``, etc. are used to create the :class:`~lhotse.supervision.SupervisionSet`.
-We also support converting ``feats.scp`` to :class:`~lhotse.features.base.FeatureSet`, and reading features
+We also support converting ``feats.scp`` to a list of :class:`~lhotse.features.base.Features`, and reading features
 directly from Kaldi's scp/ark files via `kaldi_native_io`_ library (which is an optional Lhotse's dependency).
 
 We also allow to export a pair of :class:`~lhotse.audio.RecordingSet` and :class:`~lhotse.supervision.SupervisionSet`

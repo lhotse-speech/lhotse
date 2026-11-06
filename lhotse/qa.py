@@ -8,7 +8,7 @@ import numpy as np
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet, get_audio_duration_mismatch_tolerance
 from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
-from lhotse.features import Features, FeatureSet
+from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import compute_num_frames, is_equal_or_contains, overlaps
 
@@ -479,28 +479,6 @@ def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
                     f"SupervisionSet contains {count} supervisions that start at 0 for recording {rid} "
                     f"(channel {channel}). Did you forget to set supervision start times?"
                 )
-
-
-@register_validator
-def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
-    first = next(iter(features))
-    sampling_rate = first.sampling_rate
-    num_features = first.num_features
-    features_type = first.type
-    for idx, f in enumerate(features):
-        validate_features(f, read_data=read_data)
-        assert f.sampling_rate == sampling_rate, (
-            f"FeatureSet: mismatched sampling rate (the first Features manifest had {sampling_rate}, "
-            f"got {f.sampling_rate} in Features at index {idx})"
-        )
-        assert f.num_features == num_features, (
-            f"FeatureSet: mismatched num_features (the first Features manifest had {num_features}, "
-            f"got {f.num_features} in Features at index {idx})"
-        )
-        assert f.type == features_type, (
-            f"FeatureSet: mismatched feature_type (the first Features manifest had {features_type}, "
-            f"got {f.type} in Features at index {idx})"
-        )
 
 
 @register_validator
