@@ -13,6 +13,7 @@ from lhotse.dataset import (
     DynamicBucketingSampler,
     RoundRobinSampler,
     SimpleCutSampler,
+    WeightedSimpleCutSampler,
     ZipSampler,
 )
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
@@ -22,26 +23,39 @@ CUTS = DummyManifest(CutSet, begin_id=0, end_id=100)
 CUTS_MOD = CUTS.modify_ids(lambda cid: cid + "_alt")
 
 
-@pytest.mark.parametrize(
-    "sampler_type", [SimpleCutSampler, DynamicCutSampler, DynamicBucketingSampler]
-)
+@pytest.fixture
+def make_cuts(tmp_path):
+    """Opens dummy cuts ``[begin_id, end_id)`` as an indexed lazy CutSet."""
+
+    def make(begin_id: int = 0, end_id: int = 100, id_suffix: str = "") -> CutSet:
+        path = tmp_path / f"cuts-{begin_id}-{end_id}{id_suffix}.jsonl"
+        if not path.exists():
+            DummyManifest(CutSet, begin_id=begin_id, end_id=end_id).modify_ids(
+                lambda cid: cid + id_suffix
+            ).to_jsonl(path)
+        return CutSet.from_file(path, indexed=True)
+
+    return make
+
+
+@pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
 @pytest.mark.parametrize("checkpoint_step", [3, 9])
 @pytest.mark.parametrize("next_epoch", [3, 4])
 @pytest.mark.parametrize("same_instance", [False, True])
 def test_round_robin_restored_depleted_source_restarts(
-    sampler_type, checkpoint_step, next_epoch, same_instance
+    make_cuts, sampler_type, checkpoint_step, next_epoch, same_instance
 ):
     def make_sampler():
         kwargs = {"num_buckets": 2} if sampler_type is DynamicBucketingSampler else {}
         return RoundRobinSampler(
             sampler_type(
-                DummyManifest(CutSet, begin_id=0, end_id=4),
+                make_cuts(begin_id=0, end_id=4),
                 max_cuts=1,
                 shuffle=True,
                 **kwargs,
             ),
             sampler_type(
-                DummyManifest(CutSet, begin_id=100, end_id=112),
+                make_cuts(begin_id=100, end_id=112),
                 max_cuts=1,
                 shuffle=True,
                 **kwargs,
@@ -77,80 +91,94 @@ def test_round_robin_restored_depleted_source_restarts(
 
 # fmt: off
 SAMPLERS_TO_TEST = [
-    # Identically initialized SimpleCutSampler
-    lambda: (
-        SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-    ),
-    # Differently initialized SimpleCutSampler with the same CUTS
-    lambda: (
-        SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        SimpleCutSampler(CUTS, max_duration=11.1),
-    ),
-    # Differently initialized CutPairsSampler with the same CUTS
-    lambda: (
-        CutPairsSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True),
-        CutPairsSampler(CUTS, CUTS),
-    ),
     # Differently initialized ZipSampler with the same CUTS
-    lambda: (
-        ZipSampler(  # CUTS_SHUF just to randomize the order of the zipped-in cutset
-            SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-            SimpleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
+    lambda make_cuts: (
+        ZipSampler(
+            DynamicCutSampler(make_cuts(), max_duration=10.0, shuffle=True, drop_last=True),
+            DynamicCutSampler(make_cuts(id_suffix="_alt"), max_duration=10.0, shuffle=True, drop_last=True),
         ),
         ZipSampler(
-            SimpleCutSampler(CUTS, max_duration=11.1),
-            SimpleCutSampler(CUTS_MOD, max_duration=11.1),
+            DynamicCutSampler(make_cuts(), max_duration=11.1),
+            DynamicCutSampler(make_cuts(id_suffix="_alt"), max_duration=11.1),
         ),
     ),
     # Differently initialized ZipSampler with the same CUTS (cut pairs)
-    lambda: (
+    lambda make_cuts: (
         ZipSampler(
-            CutPairsSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True),
-            CutPairsSampler(CUTS_MOD, CUTS_MOD, max_source_duration=10.0, shuffle=True, drop_last=True),
+            DynamicCutSampler(make_cuts(), make_cuts(), max_duration=10.0, shuffle=True, drop_last=True),
+            DynamicCutSampler(make_cuts(id_suffix="_alt"), make_cuts(id_suffix="_alt"), max_duration=10.0, shuffle=True, drop_last=True),
         ),
         ZipSampler(
-            CutPairsSampler(CUTS, CUTS),
-            CutPairsSampler(CUTS_MOD, CUTS_MOD),
+            DynamicCutSampler(make_cuts(), make_cuts(), max_duration=11.1),
+            DynamicCutSampler(make_cuts(id_suffix="_alt"), make_cuts(id_suffix="_alt"), max_duration=11.1),
         ),
     ),
-    # Differently initialized BucketingSampler with the same CUTS
-    lambda: (
-        BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-        BucketingSampler(CUTS, max_duration=11.1, num_buckets=2),
+    lambda make_cuts: (
+        DynamicBucketingSampler(make_cuts(), max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+        DynamicBucketingSampler(make_cuts(), max_duration=10.0, num_buckets=2),
     ),
-    # Differently initialized BucketingSampler (using CutPairsSampler) with the same CUTS
-    lambda: (
-        BucketingSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True, num_buckets=2,
-                         sampler_type=CutPairsSampler),
-        BucketingSampler(CUTS, CUTS, num_buckets=2, sampler_type=CutPairsSampler),
-    ),
-    lambda: (
-        DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-        DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
-    ),
-    lambda: (
-        DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        DynamicCutSampler(CUTS, max_duration=10.0),
+    lambda make_cuts: (
+        DynamicCutSampler(make_cuts(), max_duration=10.0, shuffle=True, drop_last=True),
+        DynamicCutSampler(make_cuts(), max_duration=10.0),
     ),
     # Differently initialized RoundRobinSampler with the same CUTS
-    lambda: (
+    lambda make_cuts: (
         RoundRobinSampler(
-            SimpleCutSampler(CUTS.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
-            SimpleCutSampler(CUTS_MOD.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
+            DynamicCutSampler(make_cuts(end_id=50), max_duration=10.0, shuffle=True, drop_last=True),
+            DynamicCutSampler(make_cuts(end_id=50, id_suffix="_alt"), max_duration=10.0, shuffle=True, drop_last=True),
         ),
         RoundRobinSampler(
-            SimpleCutSampler(CUTS.subset(first=50), max_duration=11.1),
-            SimpleCutSampler(CUTS_MOD.subset(first=50), max_duration=11.1),
+            DynamicCutSampler(make_cuts(end_id=50), max_duration=11.1),
+            DynamicCutSampler(make_cuts(end_id=50, id_suffix="_alt"), max_duration=11.1),
         ),
     ),
+]
+
+NON_RESUMABLE_SAMPLERS = [
+    lambda: SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+    lambda: CutPairsSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True),
+    lambda: BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+    lambda: BucketingSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True, num_buckets=2,
+                             sampler_type=CutPairsSampler),
+    lambda: WeightedSimpleCutSampler(CUTS, [1.0] * len(CUTS), num_samples=50, max_duration=10.0),
 ]
 # fmt: on
 
 
+@pytest.mark.parametrize("create_sampler", NON_RESUMABLE_SAMPLERS)
+def test_eager_sampler_checkpointing_unsupported(create_sampler):
+    sampler = create_sampler()
+    with pytest.raises(NotImplementedError, match="does not support checkpointing"):
+        sampler.state_dict()
+    with pytest.raises(NotImplementedError, match="does not support checkpointing"):
+        sampler.load_state_dict({})
+
+
+@pytest.mark.parametrize(
+    "create_sampler",
+    [
+        lambda cuts: DynamicCutSampler(cuts, max_duration=10.0),
+        lambda cuts: DynamicBucketingSampler(cuts, max_duration=10.0, num_buckets=2),
+    ],
+)
+@pytest.mark.parametrize(
+    "make_input", [lambda path: CUTS, lambda path: CutSet.from_file(path)]
+)
+def test_dynamic_sampler_checkpointing_requires_indexed_input(
+    tmp_path, create_sampler, make_input
+):
+    path = tmp_path / "cuts.jsonl"
+    CUTS.to_jsonl(path)
+    sampler = create_sampler(make_input(path))
+    with pytest.raises(RuntimeError, match="requires indexed lazy inputs"):
+        sampler.state_dict()
+    with pytest.raises(RuntimeError, match="requires indexed lazy inputs"):
+        sampler.load_state_dict({})
+
+
 @pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
-def test_restore_sampler_state(create_samplers):
-    sampler, restored_sampler = create_samplers()
+def test_restore_sampler_state(make_cuts, create_samplers):
+    sampler, restored_sampler = create_samplers(make_cuts)
     # Iterate a full epoch through the sampler first to accumulate some sampling diagnostics.
     sampler.set_epoch(0)
     list(sampler)
@@ -207,8 +235,8 @@ def test_restore_sampler_state(create_samplers):
 
 
 @pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
-def test_restored_sampler_continues_as_normal(create_samplers):
-    sampler, restored_sampler = create_samplers()
+def test_restored_sampler_continues_as_normal(make_cuts, create_samplers):
+    sampler, restored_sampler = create_samplers(make_cuts)
 
     # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
     sampler.set_epoch(3)
@@ -236,8 +264,8 @@ def test_restored_sampler_continues_as_normal(create_samplers):
 
 
 @pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
-def test_restored_sampler_forced_to_start_from_scratch(create_samplers):
-    sampler, restored_sampler = create_samplers()
+def test_restored_sampler_forced_to_start_from_scratch(make_cuts, create_samplers):
+    sampler, restored_sampler = create_samplers(make_cuts)
 
     # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
     sampler.set_epoch(3)
@@ -262,8 +290,8 @@ def test_restored_sampler_forced_to_start_from_scratch(create_samplers):
 
 
 @pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
-def test_save_and_load_sampler_state(create_samplers):
-    sampler, restored_sampler = create_samplers()
+def test_save_and_load_sampler_state(make_cuts, create_samplers):
+    sampler, restored_sampler = create_samplers(make_cuts)
     sd = sampler.state_dict()
     with NamedTemporaryFile(suffix=".pt") as f:
         torch.save(sd, f.name)
@@ -280,37 +308,40 @@ class DummyDataset(torch.utils.data.Dataset):
 @pytest.mark.parametrize(
     "create_sampler",
     [
-        lambda: SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        lambda: BucketingSampler(
-            CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2
-        ),
-        lambda: ZipSampler(
-            SimpleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-            SimpleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
-        ),
-        lambda: RoundRobinSampler(
-            # subset to first 50 cuts so that total num batches is 10, not 20
-            SimpleCutSampler(
-                CUTS.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True
+        lambda make_cuts: ZipSampler(
+            DynamicCutSampler(
+                make_cuts(), max_duration=10.0, shuffle=True, drop_last=True
             ),
-            SimpleCutSampler(
-                CUTS_MOD.subset(first=50),
+            DynamicCutSampler(
+                make_cuts(id_suffix="_alt"),
                 max_duration=10.0,
                 shuffle=True,
                 drop_last=True,
             ),
         ),
-        lambda: DynamicCutSampler(
-            CUTS, max_duration=10.0, shuffle=True, drop_last=True
+        lambda make_cuts: RoundRobinSampler(
+            # subset to first 50 cuts so that total num batches is 10, not 20
+            DynamicCutSampler(
+                make_cuts(end_id=50), max_duration=10.0, shuffle=True, drop_last=True
+            ),
+            DynamicCutSampler(
+                make_cuts(end_id=50, id_suffix="_alt"),
+                max_duration=10.0,
+                shuffle=True,
+                drop_last=True,
+            ),
         ),
-        lambda: DynamicBucketingSampler(
-            CUTS, max_duration=10.0, shuffle=True, drop_last=True
+        lambda make_cuts: DynamicCutSampler(
+            make_cuts(), max_duration=10.0, shuffle=True, drop_last=True
+        ),
+        lambda make_cuts: DynamicBucketingSampler(
+            make_cuts(), max_duration=10.0, shuffle=True, drop_last=True
         ),
     ],
 )
 @pytest.mark.parametrize("num_workers", [0, 1])
-def test_e2e_restore_with_dataloader(num_workers, create_sampler):
-    sampler = create_sampler()
+def test_e2e_restore_with_dataloader(make_cuts, num_workers, create_sampler):
+    sampler = create_sampler(make_cuts)
     restored_sampler = deepcopy(
         sampler
     )  # keep fresh sampler for state restoration later
@@ -364,12 +395,21 @@ def test_e2e_restore_with_dataloader(num_workers, create_sampler):
     assert len(ep2_batches) == 10
 
 
-@pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
+@pytest.mark.parametrize(
+    "create_sampler",
+    [
+        lambda make_cuts, create=create: create(make_cuts)[0]
+        for create in SAMPLERS_TO_TEST
+    ]
+    + [lambda make_cuts, create=create: create() for create in NON_RESUMABLE_SAMPLERS],
+)
 @pytest.mark.parametrize("advance_epoch", [True, False])
-def test_epoch_diagnostics_reset_on_start_of_iteration(create_samplers, advance_epoch):
+def test_epoch_diagnostics_reset_on_start_of_iteration(
+    make_cuts, create_sampler, advance_epoch
+):
     # We only need one sampler for this test to check that it properly
     # resets the cut/batch counter if we re-iterate over the same epoch
-    sampler, _ = create_samplers()
+    sampler = create_sampler(make_cuts)
 
     assert sampler.diagnostics.current_epoch == 0
     assert sampler.diagnostics.total_cuts == 0
@@ -405,10 +445,10 @@ def test_epoch_diagnostics_reset_on_start_of_iteration(create_samplers, advance_
         assert sampler.diagnostics.total_batches == total_batches_pass1
 
 
-def test_load_state_dict_rejects_cross_rank_state():
+def test_load_state_dict_rejects_cross_rank_state(make_cuts):
     """Loading rank-M state on rank-N must raise — see DataModule per-rank gather."""
-    src = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=0)
-    dst = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
+    src = DynamicCutSampler(make_cuts(), max_duration=10.0, world_size=4, rank=0)
+    dst = DynamicCutSampler(make_cuts(), max_duration=10.0, world_size=4, rank=2)
     state = src.state_dict()
     with pytest.raises(
         RuntimeError, match="state was saved on rank=0 but is being loaded on rank=2"
@@ -416,18 +456,18 @@ def test_load_state_dict_rejects_cross_rank_state():
         dst.load_state_dict(state)
 
 
-def test_load_state_dict_same_rank_still_works():
+def test_load_state_dict_same_rank_still_works(make_cuts):
     """Same-rank restore (the legitimate per-rank-correct case) is unaffected."""
-    src = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
-    dst = SimpleCutSampler(CUTS, max_duration=10.0, world_size=4, rank=2)
+    src = DynamicCutSampler(make_cuts(), max_duration=10.0, world_size=4, rank=2)
+    dst = DynamicCutSampler(make_cuts(), max_duration=10.0, world_size=4, rank=2)
     dst.load_state_dict(src.state_dict())  # no raise
 
 
-def _make_randomized_round_robin(randomize):
+def _make_randomized_round_robin(make_cuts, randomize):
     return RoundRobinSampler(
         *[
-            SimpleCutSampler(
-                DummyManifest(CutSet, begin_id=start, end_id=start + size),
+            DynamicCutSampler(
+                make_cuts(begin_id=start, end_id=start + size),
                 max_cuts=2,
                 shuffle=True,
             )
@@ -451,9 +491,9 @@ def _remaining_batch_ids(sampler):
 @pytest.mark.parametrize("checkpoint_step", [1, 7, 15])
 @pytest.mark.parametrize("same_instance", [False, True])
 def test_randomized_round_robin_restores_batch_order(
-    randomize, checkpoint_step, same_instance
+    make_cuts, randomize, checkpoint_step, same_instance
 ):
-    sampler = _make_randomized_round_robin(randomize)
+    sampler = _make_randomized_round_robin(make_cuts, randomize)
     sampler.set_epoch(3)
     iter(sampler)
     for _ in range(checkpoint_step):
@@ -461,7 +501,9 @@ def test_randomized_round_robin_restores_batch_order(
     state = sampler.state_dict()
     # Advancing the original must not mutate the saved snapshot.
     expected = _remaining_batch_ids(sampler)
-    restored = sampler if same_instance else _make_randomized_round_robin(randomize)
+    restored = (
+        sampler if same_instance else _make_randomized_round_robin(make_cuts, randomize)
+    )
     restored.load_state_dict(deepcopy(state))
     iter(restored)
     assert _remaining_batch_ids(restored) == expected
@@ -469,7 +511,7 @@ def test_randomized_round_robin_restores_batch_order(
     # Explicitly discarding restored state must start the next epoch afresh.
     restored.allow_iter_to_reset_state()
     restored.set_epoch(4)
-    reference = _make_randomized_round_robin(randomize)
+    reference = _make_randomized_round_robin(make_cuts, randomize)
     reference.set_epoch(4)
     iter(restored)
     iter(reference)
@@ -477,9 +519,9 @@ def test_randomized_round_robin_restores_batch_order(
 
 
 @pytest.mark.parametrize("randomize", [False, True, [0.2, 0.3, 0.5]])
-def test_randomized_round_robin_restores_before_iteration(randomize):
-    sampler = _make_randomized_round_robin(randomize)
-    restored = _make_randomized_round_robin(randomize)
+def test_randomized_round_robin_restores_before_iteration(make_cuts, randomize):
+    sampler = _make_randomized_round_robin(make_cuts, randomize)
+    restored = _make_randomized_round_robin(make_cuts, randomize)
     restored.load_state_dict(sampler.state_dict())
     iter(sampler)
     iter(restored)
@@ -487,15 +529,15 @@ def test_randomized_round_robin_restores_before_iteration(randomize):
 
 
 @pytest.mark.parametrize("randomize", [False, True, [0.2, 0.3, 0.5]])
-def test_randomized_round_robin_loads_legacy_checkpoint(randomize):
-    sampler = _make_randomized_round_robin(randomize)
+def test_randomized_round_robin_loads_legacy_checkpoint(make_cuts, randomize):
+    sampler = _make_randomized_round_robin(make_cuts, randomize)
     iter(sampler)
     for _ in range(7):
         next(sampler)
     state = sampler.state_dict()
     state.pop("rng_state", None)
     expected = _remaining_batch_ids(sampler)
-    restored = _make_randomized_round_robin(randomize)
+    restored = _make_randomized_round_robin(make_cuts, randomize)
     restored.load_state_dict(state)
     iter(restored)
     actual = _remaining_batch_ids(restored)
@@ -506,9 +548,9 @@ def test_randomized_round_robin_loads_legacy_checkpoint(randomize):
 
 
 @pytest.mark.parametrize("wrapper", [RoundRobinSampler, ZipSampler])
-def test_randomized_round_robin_restores_under_wrapper(wrapper):
-    sampler = wrapper(_make_randomized_round_robin(True))
-    restored = wrapper(_make_randomized_round_robin(True))
+def test_randomized_round_robin_restores_under_wrapper(make_cuts, wrapper):
+    sampler = wrapper(_make_randomized_round_robin(make_cuts, True))
+    restored = wrapper(_make_randomized_round_robin(make_cuts, True))
     iter(sampler)
     for _ in range(7):
         next(sampler)
@@ -517,10 +559,10 @@ def test_randomized_round_robin_restores_under_wrapper(wrapper):
     assert _remaining_batch_ids(restored) == _remaining_batch_ids(sampler)
 
 
-def _make_epoch_boundary_sampler(sampler_type):
+def _make_epoch_boundary_sampler(make_cuts, sampler_type):
     kwargs = {"num_buckets": 2} if sampler_type is DynamicBucketingSampler else {}
     return sampler_type(
-        DummyManifest(CutSet, begin_id=0, end_id=30),
+        make_cuts(end_id=30),
         max_cuts=3,
         shuffle=True,
         seed=0,
@@ -533,24 +575,24 @@ def _ids(batch):
 
 
 @pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
-def test_restore_twice_then_next_epoch_starts_fresh(sampler_type):
+def test_restore_twice_then_next_epoch_starts_fresh(make_cuts, sampler_type):
     # Emulates torchdata's StatefulDataLoader restore order: load state into the index
     # sampler, call iter() on it, then load the same state into the sampler iterator,
     # which for a CutSampler is the same object, and keep calling next() without iter().
-    reference = _make_epoch_boundary_sampler(sampler_type)
+    reference = _make_epoch_boundary_sampler(make_cuts, sampler_type)
     reference.set_epoch(1)
     epoch1 = [_ids(b) for b in reference]
     reference.set_epoch(2)
     epoch2 = [_ids(b) for b in reference]
 
-    sampler = _make_epoch_boundary_sampler(sampler_type)
+    sampler = _make_epoch_boundary_sampler(make_cuts, sampler_type)
     sampler.set_epoch(1)
     iter(sampler)
     for _ in range(2):
         next(sampler)
     state = sampler.state_dict()
 
-    restored = _make_epoch_boundary_sampler(sampler_type)
+    restored = _make_epoch_boundary_sampler(make_cuts, sampler_type)
     restored.load_state_dict(deepcopy(state))
     iter(restored)
     restored.load_state_dict(deepcopy(state))
@@ -563,13 +605,15 @@ def test_restore_twice_then_next_epoch_starts_fresh(sampler_type):
 
 @pytest.mark.parametrize("num_workers", [0, 2])
 @pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
-def test_stateful_dataloader_resume_across_epoch_boundary(sampler_type, num_workers):
+def test_stateful_dataloader_resume_across_epoch_boundary(
+    make_cuts, sampler_type, num_workers
+):
     stateful_dataloader = pytest.importorskip("torchdata.stateful_dataloader")
 
     def make_dloader():
         return stateful_dataloader.StatefulDataLoader(
             _CutIdsDataset(),
-            sampler=_make_epoch_boundary_sampler(sampler_type),
+            sampler=_make_epoch_boundary_sampler(make_cuts, sampler_type),
             batch_size=None,
             num_workers=num_workers,
         )

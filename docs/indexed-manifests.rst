@@ -24,6 +24,8 @@ Typical examples are:
 
 When the underlying data is indexed, Lhotse can reconstruct a buffered example
 directly during checkpoint restore rather than replaying earlier batches.
+Sampler checkpointing requires indexed inputs: since Lhotse 2.0, eager
+``CutSet`` objects and streaming manifests cannot be checkpointed.
 
 Creating indexes
 ----------------
@@ -382,8 +384,8 @@ Indexed restore uses ``_graph_origin`` tokens attached to yielded items:
 Why this enables O(1) restore
 -----------------------------
 
-Replay-based restore starts from the beginning and skips already-consumed data.
-For large blends that is expensive.
+Replay-based restore would start from the beginning and skip already-consumed
+data, which is expensive for large blends. Lhotse 2.0 removed it entirely.
 
 Graph-token restore avoids replay:
 
@@ -392,11 +394,12 @@ Graph-token restore avoids replay:
 * iterator nodes restore their internal cursor/RNG state
 * iteration continues from the next batch
 
-For indexed datasets, Lhotse treats this as a strict contract:
+Lhotse treats this as a strict contract:
 
+* saving or loading the state of a sampler whose inputs are not all
+  O(1)-restorable is a hard error
 * missing indexed checkpoint state is a hard error
 * missing ``_graph_origin`` on graph-restorable buffered items is a hard error
-* Lhotse does not silently downgrade indexed exact restore to replay
 
 Worker-process restore
 ----------------------

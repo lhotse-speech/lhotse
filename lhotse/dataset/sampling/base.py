@@ -6,7 +6,18 @@ from bisect import bisect_left
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import torch
 from torch import distributed as dist
@@ -57,6 +68,41 @@ def restore_sources_state(sources, cuts_state: Optional[list]) -> None:
             src.load_state_dict(state)
         elif isinstance(src, IteratorNode):
             restore_state_dict(src, state)
+
+
+def has_graph_restorable_sources(sources) -> bool:
+    """
+    Return ``True`` when every source can be checkpointed in constant time.
+
+    Sampler checkpoints rebuild buffered examples from graph tokens, which requires
+    indexed lazy sources such as ``CutSet.from_file(..., indexed=True)`` or
+    ``CutSet.from_shar(..., indexed=True)``.
+    """
+    return len(sources) > 0 and all(
+        getattr(src, "has_constant_time_access", False) for src in sources
+    )
+
+
+def require_graph_restorable_sources(sampler: "CutSampler", sources) -> None:
+    """Raise unless every input of ``sampler`` can be checkpointed in constant time."""
+    if has_graph_restorable_sources(sources):
+        return
+    raise RuntimeError(
+        f"{type(sampler).__name__} checkpointing requires indexed lazy inputs, "
+        "e.g. CutSet.from_file(..., indexed=True) or CutSet.from_shar(..., indexed=True). "
+        "Eager CutSets and streaming manifests cannot be checkpointed: "
+        "the replay-based restore was removed in Lhotse 2.0. "
+        "See https://lhotse.readthedocs.io/en/latest/indexed-manifests.html"
+    )
+
+
+def raise_checkpointing_unsupported(sampler: "CutSampler") -> NoReturn:
+    raise NotImplementedError(
+        f"{type(sampler).__name__} does not support checkpointing since Lhotse 2.0. "
+        "Use DynamicCutSampler or DynamicBucketingSampler with indexed lazy inputs, "
+        "e.g. CutSet.from_file(..., indexed=True). "
+        "See https://lhotse.readthedocs.io/en/latest/indexed-manifests.html"
+    )
 
 
 class CutSampler(Sampler, Dillable):
@@ -125,6 +171,11 @@ class CutSampler(Sampler, Dillable):
         # When it is set, we will ignore the next call to iter(), which would have reset the
         # iteration state. This way we can resume training exactly from where it was left off.
         self._just_restored_state = False
+        # State read by load_state_dict() and applied by the first iter()/next() call,
+        # which keeps a freshly restored sampler picklable for DataLoader workers.
+        self._pending_restore: Optional[Dict[str, Any]] = None
+        # Sources whose iteration state was restored by this sampler.
+        self._restored_sources: tuple = ()
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
@@ -173,10 +224,10 @@ class CutSampler(Sampler, Dillable):
         """
         # When state was just restored from a checkpoint we must not let an external
         # caller clobber the saved iteration state.
-        # Honor the saved epoch and keep the deferred fast-forward / restored buffers intact.
+        # Honor the saved epoch and keep the pending / restored buffers intact.
         # Callers that explicitly want to discard restored
         # progress can call ``allow_iter_to_reset_state()`` themselves first.
-        if self._just_restored_state or getattr(self, "_needs_fast_forward", False):
+        if self._just_restored_state or self._pending_restore is not None:
             return
         if self.epoch != epoch:
             # Changing the epoch automatically tells the sampler to discard the progress
@@ -218,9 +269,8 @@ class CutSampler(Sampler, Dillable):
         Together with ``load_state_dict()``, this can be used to restore the
         training loop's state to the one stored in the state_dict.
 
-        When possible, this also captures the state of the underlying CutSet
-        iterator graph (via :func:`lhotse.checkpoint.collect_state_dict`),
-        enabling O(1) restoration instead of O(N) fast-forwarding.
+        This also captures the state of the underlying CutSet iterator graph
+        (via :func:`lhotse.checkpoint.collect_state_dict`) for O(1) restoration.
         """
         sd = {
             "epoch": self.epoch,
@@ -231,28 +281,22 @@ class CutSampler(Sampler, Dillable):
             "shuffle": self.shuffle,
             "diagnostics": self.diagnostics.state_dict(),
         }
-        pending_restore = getattr(self, "_needs_fast_forward", False)
-        cuts_state = (
-            deepcopy(self._cuts_state)
-            if pending_restore
-            else self._capture_cuts_state()
-        )
+        if self._pending_restore is not None:
+            # Not applied yet: the loaded state is still authoritative.
+            for key in ("cuts_state", "transforms_state"):
+                if self._pending_restore[key] is not None:
+                    sd[key] = deepcopy(self._pending_restore[key])
+            return sd
+        cuts_state = self._capture_cuts_state()
         if cuts_state is not None:
             sd["cuts_state"] = cuts_state
-        # Capture stateful transform RNG states (e.g. PerturbSpeed, PerturbVolume, ...).
-        # These are needed to restore augmentation decisions exactly when using the
-        # indexed O(1) restore path (which skips the O(N) fast-forward that would
-        # otherwise naturally advance the RNGs).
-        if pending_restore and self._transforms_state is not None:
-            sd["transforms_state"] = deepcopy(self._transforms_state)
-        elif self._transforms and not pending_restore:
-            transforms_state = []
-            for tfn in self._transforms:
-                if hasattr(tfn, "state_dict"):
-                    transforms_state.append(tfn.state_dict())
-                else:
-                    transforms_state.append(None)
-            sd["transforms_state"] = transforms_state
+        # Capture stateful transform RNG states (e.g. PerturbSpeed, PerturbVolume, ...),
+        # so that restored augmentation decisions match the uninterrupted run.
+        if self._transforms:
+            sd["transforms_state"] = [
+                tfn.state_dict() if hasattr(tfn, "state_dict") else None
+                for tfn in self._transforms
+            ]
         return sd
 
     def _capture_cuts_state(self) -> Optional[list]:
@@ -260,9 +304,6 @@ class CutSampler(Sampler, Dillable):
         Best-effort capture of source iterator graph state.
         """
         return capture_sources_state(getattr(self, "cuts", None))
-
-    def _restore_cuts_state(self, cuts_state: Optional[list]) -> None:
-        restore_sources_state(getattr(self, "cuts", ()), cuts_state)
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         """
@@ -279,8 +320,9 @@ class CutSampler(Sampler, Dillable):
             inside of this function (e.g., using ``import deepcopy``).
 
         .. note::
-            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
-            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+            For implementers of sub-classes of CutSampler: the loaded state is applied lazily by
+            ``_consume_pending_restore()``, which ``__iter__`` has to call before resetting the epoch.
+            Sub-classes with source iterators override ``_restore_iteration_state()``.
         """
         self.drop_last = state_dict.pop("drop_last")
         world_size = state_dict.pop("world_size")
@@ -309,12 +351,10 @@ class CutSampler(Sampler, Dillable):
         self.shuffle = shuffle
         self.epoch = state_dict.pop("epoch")
         self.diagnostics.load_state_dict(state_dict.pop("diagnostics"))
-        # cuts_state is optionally captured by the enhanced state_dict();
-        # it will be consumed by the subclass's load_state_dict / _fast_forward.
-        self._cuts_state = state_dict.pop("cuts_state", None)
-        # transforms_state is optionally captured for stateful augmentation transforms.
-        # It will be consumed by _fast_forward when using the indexed restore path.
-        self._transforms_state = state_dict.pop("transforms_state", None)
+        self._pending_restore = {
+            "cuts_state": state_dict.pop("cuts_state", None),
+            "transforms_state": state_dict.pop("transforms_state", None),
+        }
         assert (
             len(state_dict) == 0
         ), "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " + "\n- ".join(
@@ -362,21 +402,47 @@ class CutSampler(Sampler, Dillable):
             "Sub-classes of CutSampler have to implement self.num_cuts"
         )
 
-    def _restore_transforms_state(self) -> None:
+    def _restore_iteration_state(self, pending: Dict[str, Any]) -> None:
         """
-        Restore stateful transform RNG states from a previously saved checkpoint.
+        Apply the iteration state read by ``load_state_dict()``.
 
-        Called by the indexed O(1) restore path in ``_fast_forward()``.
-        When using the O(N) fast-forward fallback, transforms advance naturally
-        and this method should NOT be called.
+        The base implementation restores stateful transform RNGs. Samplers that own
+        source iterators extend it to rebuild those iterators from ``pending``.
         """
-        transforms_state = getattr(self, "_transforms_state", None)
+        transforms_state = pending["transforms_state"]
         if transforms_state is None:
             return
         for tfn, ts in zip(self._transforms, transforms_state):
             if ts is not None and hasattr(tfn, "load_state_dict"):
                 tfn.load_state_dict(ts)
-        self._transforms_state = None
+
+    def _restore_sources(self, sources, cuts_state: Optional[list]) -> None:
+        restore_sources_state(sources, cuts_state)
+        self._restored_sources = tuple(sources)
+
+    def _start_sources_afresh(self) -> None:
+        """
+        Make sources restored for the previous pass start a new pass from the beginning.
+
+        A source exhausted before the checkpoint is never read again in the restored
+        pass, so its one-shot "continue from the saved position" flags are never consumed.
+        Without clearing them, the next epoch would resume at its end and yield nothing.
+        """
+        from lhotse.lazy import _discard_pending_restore
+
+        for src in self._restored_sources:
+            _discard_pending_restore(src)
+        self._restored_sources = ()
+
+    def _consume_pending_restore(self) -> bool:
+        """
+        Apply the state read by ``load_state_dict()``, if any.
+        Returns ``True`` when ``__iter__`` must keep the restored iteration state.
+        """
+        if self._pending_restore is not None:
+            pending, self._pending_restore = self._pending_restore, None
+            self._restore_iteration_state(pending)
+        return self._just_restored_state
 
     def allow_iter_to_reset_state(self):
         """
@@ -386,33 +452,18 @@ class CutSampler(Sampler, Dillable):
         the progress in the current epoch and start from the beginning.
         """
         self._just_restored_state = False
-        # Dynamic samplers defer restoration to __iter__ via _needs_fast_forward.
-        # Clearing these fields allows users to intentionally discard the
-        # restored in-epoch progress and restart the epoch from scratch.
-        if hasattr(self, "_needs_fast_forward"):
-            self._needs_fast_forward = False
-        for attr in (
-            "_cuts_state",
-            "_transforms_state",
-            "_rng_state",
-            "_bucketer_state",
-        ):
-            if hasattr(self, attr):
-                setattr(self, attr, None)
+        self._pending_restore = None
 
     def __next__(self):
-        if getattr(self, "_needs_fast_forward", False):
-            # load_state_dict() was called on a sampler that is already being iterated,
-            # so __iter__() will not run to apply the deferred restore. torchdata's
-            # StatefulDataLoader does this: it restores the index sampler, calls iter() on it,
-            # and then restores the sampler iterator, which is the same object because
-            # CutSampler.__iter__ returns self. Apply the restore now. Otherwise the pending
-            # flag outlives the restored epoch: set_epoch() keeps ignoring new epochs and the
-            # next iter() rewinds to the checkpoint, replaying already-seen batches.
-            self._needs_fast_forward = False
-            self._fast_forward()
-        # Advancing one step should permit later iter(self) calls to reset epoch
-        # bookkeeping, but it should not discard deferred checkpoint state.
+        # load_state_dict() may be called on a sampler that is already being iterated,
+        # so __iter__() will not run to apply the pending restore. torchdata's
+        # StatefulDataLoader does this: it restores the index sampler, calls iter() on it,
+        # and then restores the sampler iterator, which is the same object because
+        # CutSampler.__iter__ returns self. Apply the restore now. Otherwise the pending
+        # state outlives the restored epoch: set_epoch() keeps ignoring new epochs and the
+        # next iter() rewinds to the checkpoint, replaying already-seen batches.
+        self._consume_pending_restore()
+        # Advancing one step permits later iter(self) calls to reset the epoch.
         self._just_restored_state = False
         # We use the following trick to ensure equal number of batches for each distributed
         # worker:

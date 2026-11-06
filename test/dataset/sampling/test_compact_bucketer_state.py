@@ -155,7 +155,7 @@ def manifest(tmp_path):
     return path
 
 
-def _sampler(path, compact, arity=1, concurrent=False):
+def _sampler(path, compact, arity=1):
     """Build a nested graph that requires the indexed restore path."""
     sources = [
         CutSet.from_file(path, indexed=True).repeat(times=2) for _ in range(arity)
@@ -168,7 +168,6 @@ def _sampler(path, compact, arity=1, concurrent=False):
         shuffle=True,
         seed=42,
         compact_state=compact,
-        concurrent=concurrent,
     )
 
 
@@ -213,10 +212,7 @@ def test_indexed_continuation(
     pending = restored.state_dict()
     assert isinstance(pending["bucketer_state"]["bucket_tokens"], bytes) == load_compact
     restored.load_state_dict(copy.deepcopy(pending))
-    with patch.object(
-        restored, "_replay_step", side_effect=AssertionError("Unexpected replay")
-    ):
-        assert [_ids(batch) for batch in restored] == expected
+    assert [_ids(batch) for batch in restored] == expected
 
 
 def test_direct_capture_and_snapshot_independence(manifest):
@@ -238,25 +234,6 @@ def test_direct_capture_and_snapshot_independence(manifest):
     for _ in range(10):
         next(iterator)
     assert unpack_bucket_tokens(payload) == expected["bucket_tokens"]
-
-
-def test_capture_with_concurrent_producer(manifest):
-    """Capture valid tokens while the normal producer refills bucket queues."""
-    sampler = _sampler(manifest, True, concurrent=True)
-    iterator = iter(sampler)
-    try:
-        for _ in range(12):
-            next(iterator)
-            tokens = unpack_bucket_tokens(
-                sampler.state_dict()["bucketer_state"]["bucket_tokens"]
-            )
-            assert len(tokens) == 3
-            for bucket in tokens:
-                for item in bucket:
-                    assert len(item) == 1
-                    assert sampler._bucketer.restore_sources[0][item[0]].id
-    finally:
-        sampler.cuts_iter.close()
 
 
 def test_custom_token_capture(manifest):

@@ -399,7 +399,7 @@ def test_indexed_o1_restore(cuts_a_path, cuts_b_path, n_consumed):
 
     def assert_state(state):
         sampler_sd = state.get("sampler_state", state)
-        assert "bucketer_state" in sampler_sd and "rng_state" in sampler_sd
+        assert "bucketer_state" in sampler_sd
 
     _assert_wrapper_restore(make, n_consumed=n_consumed, assert_state=assert_state)
 
@@ -420,8 +420,8 @@ def test_indexed_o1_restore_with_augmentation(cuts_a_path, cuts_b_path):
 
 @pytest.mark.parametrize("n_consumed", [1, 3])
 def test_shar_fields_o1_restore(tmp_path, n_consumed):
-    """O(1) indexed restore works with fields-based LazySharIterator."""
-    from lhotse.shar.readers.lazy import LazySharIterator
+    """O(1) indexed restore works with fields-based LazyIndexedSharIterator."""
+    from lhotse.shar import LazyIndexedSharIterator
 
     path_a = tmp_path / "cuts_a.000000.jsonl"
     path_b = tmp_path / "cuts_b.000000.jsonl"
@@ -429,8 +429,8 @@ def test_shar_fields_o1_restore(tmp_path, n_consumed):
     DummyManifest(CutSet, begin_id=100, end_id=130).to_jsonl(path_b)
 
     def make():
-        a = CutSet(LazySharIterator(fields={"cuts": [str(path_a)]}))
-        b = CutSet(LazySharIterator(fields={"cuts": [str(path_b)]}))
+        a = CutSet(LazyIndexedSharIterator(fields={"cuts": [str(path_a)]}))
+        b = CutSet(LazyIndexedSharIterator(fields={"cuts": [str(path_b)]}))
         return _make_wrapper(CutSet.mux(a, b, weights=[0.3, 0.7], seed=42))
 
     _assert_wrapper_restore(make, n_consumed=n_consumed)

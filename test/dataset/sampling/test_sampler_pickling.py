@@ -55,7 +55,13 @@ SAMPLERS_TO_TEST = [
         CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2
     ),
     DynamicBucketingSampler(
-        CUTS, CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2
+        CUTS,
+        CUTS_MOD,
+        max_duration=10.0,
+        shuffle=True,
+        drop_last=True,
+        num_buckets=2,
+        consistent_ids=False,
     ),
     DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
     DynamicCutSampler(CUTS, CUTS, max_duration=10.0, shuffle=True, drop_last=True),
@@ -70,7 +76,7 @@ def test_sampler_pickling(sampler):
         f.seek(0)
         restored = pickle.load(f)
 
-    assert sampler.state_dict() == restored.state_dict()
+    assert list(sampler) == list(restored)
 
 
 def create_samplers_to_test_filter():
@@ -109,8 +115,6 @@ def test_sampler_pickling_with_filter(sampler):
         f.seek(0)
         restored = pickle.load(f)
 
-    assert sampler.state_dict() == restored.state_dict()
-
     batches_original = [b for b in sampler]
     assert len(batches_original) == 1
     assert len(batches_original[0]) == 1
@@ -142,8 +146,6 @@ def test_sampler_pickling_with_filter_local_closure(with_dill_enabled, sampler):
         f.flush()
         f.seek(0)
         restored = pickle.load(f)
-
-    assert sampler.state_dict() == restored.state_dict()
 
     batches_original = [b for b in sampler]
     assert len(batches_original) == 1
