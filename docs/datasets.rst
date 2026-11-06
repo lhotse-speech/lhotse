@@ -52,14 +52,18 @@ A typical Lhotse's dataset API usage might look like this:
 Restoring sampler's state: continuing the training
 --------------------------------------------------
 
-All :class:`~lhotse.dataset.sampling.CutSampler` types can save their progress and pick up from that checkpoint.
+:class:`~lhotse.dataset.sampling.DynamicCutSampler` and :class:`~lhotse.dataset.sampling.DynamicBucketingSampler`
+can save their progress and pick up from that checkpoint, as can :class:`~lhotse.dataset.sampling.ZipSampler`
+and :class:`~lhotse.dataset.sampling.RoundRobinSampler` composed of them.
 For consistency with PyTorch tensors, the relevant methods are called ``.state_dict()`` and ``.load_state_dict()``.
-The following example illustrates how to save the sampler's state (pay attention to the last bit):
+Checkpointing requires indexed lazy inputs (see :doc:`indexed-manifests`), which let the sampler restore
+its exact position in O(1) time. The following example illustrates how to save the sampler's state (pay attention to the last bit):
 
 .. code-block::
 
+    cuts = CutSet.from_file("cuts.jsonl", indexed=True)
     dataset = ...  # Some task-specific dataset initialization
-    sampler = BucketingSampler(cuts, max_duration=200, shuffle=True, num_buckets=30)
+    sampler = DynamicBucketingSampler(cuts, max_duration=200, shuffle=True, num_buckets=30)
     dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=4)
     global_step = 0
     for epoch in range(30):
@@ -79,7 +83,8 @@ we can resume the training from where it left off like the following:
 .. code-block::
 
     # Creating a vanilla sampler, we will read the previous progress into it.
-    sampler = BucketingSampler(cuts, max_duration=200, shuffle=True, num_buckets=30)
+    cuts = CutSet.from_file("cuts.jsonl", indexed=True)
+    sampler = DynamicBucketingSampler(cuts, max_duration=200, shuffle=True, num_buckets=30)
 
     # Restore the sampler's state.
     state = torch.load('sampler-ckpt-ep5-step75000.pt')
@@ -87,7 +92,7 @@ we can resume the training from where it left off like the following:
 
     dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=4)
 
-    global_step = sampler.diagnostics.total_cuts  # <-- Restore the global step idx.
+    global_step = sampler.diagnostics.total_batches  # <-- Restore the global step idx.
     for epoch in range(sampler.epoch, 30):  # <-- Skip previous epochs that are already processed.
 
         dloader.sampler.set_epoch(epoch)
@@ -101,11 +106,17 @@ we can resume the training from where it left off like the following:
 
 .. note::
 
+    Since Lhotse 2.0, sampler checkpointing is not available for eager ``CutSet`` objects,
+    streaming (non-indexed) manifests, or the samplers designed for eager data
+    (:class:`~lhotse.dataset.sampling.SimpleCutSampler`, :class:`~lhotse.dataset.sampling.CutPairsSampler`,
+    :class:`~lhotse.dataset.sampling.BucketingSampler`, and :class:`~lhotse.dataset.sampling.WeightedSimpleCutSampler`).
+    Their ``state_dict()`` and ``load_state_dict()`` raise an error. Earlier versions restored them by
+    replaying the epoch from the start, which took O(N) time.
+
+.. note::
+
     In general, the sampler arguments may be different -- loading a ``state_dict`` will
     overwrite the arguments, and emit a warning for the user to be aware what happened.
-    :class:`~lhotse.dataset.sampling.BucketingSampler` is an exception -- the ``num_buckets``
-    and ``bucket_method`` must be consistent, otherwise we couldn't guarantee identical
-    outcomes after training resumption.
 
 .. note::
 
@@ -119,12 +130,6 @@ we can resume the training from where it left off like the following:
 
 .. note::
 
-    For replay-based sampler restore with a regular ``DataLoader``, the
-    ``num_workers`` setting can differ after resuming. For exact per-worker
-    restore with ``StatefulDataLoader``, it must match between save and restore.
-
-.. note::
-
     Calling ``set_epoch`` after ``load_state_dict`` is safe — it is a no-op while
     the restored state is still pending, so it will not wipe the saved RNG, cuts,
     or bucketer buffers. PyTorch Lightning relies on this: its ``fit_loop``
@@ -132,19 +137,13 @@ we can resume the training from where it left off like the following:
     discard the restored progress and start the epoch fresh, call
     ``sampler.allow_iter_to_reset_state()`` instead.
 
-.. note::
-
-    The approach described above relies on ``_fast_forward()`` which re-iterates
-    from the start and skips N batches (O(N) time). For a faster O(1) alternative
-    using binary index files, see the section below.
-
 
 Resumable Stateful Dataloading (Indexed)
 ----------------------------------------
 
 Lhotse supports O(1) checkpoint/restore of the entire dataloading pipeline when
-binary index files are available. This eliminates the slow ``_fast_forward()``
-re-iteration on training resumption.
+binary index files are available. Training resumes from the next batch without
+re-iterating the data that was already consumed.
 
 Indexed checkpointing relies on iterator nodes that can reconstruct their own
 outputs directly from graph-local restore tokens. This is what makes exact
@@ -196,7 +195,7 @@ package, ``pip install torchdata``). It is a drop-in replacement for
         IterableDatasetWrapper,
     )
 
-    cuts = CutSet.from_shar(in_dir="data/")
+    cuts = CutSet.from_shar(in_dir="data/", indexed=True)
     dataset = K2SpeechRecognitionDataset()
     sampler = DynamicCutSampler(cuts, max_duration=200, shuffle=True)
     iter_dset = IterableDatasetWrapper(dataset, sampler)
@@ -233,7 +232,8 @@ Requirements and limitations
   ``indexed_gzip`` installed and both ``.idx`` and ``.gzidx`` sidecars.
   Tar shards must be uncompressed. See :doc:`indexed-manifests`.
 * ``num_workers`` and ``world_size`` must match between save and restore.
-* Non-indexed pipelines still use replay-based restore.
+* Non-indexed pipelines (eager ``CutSet`` objects and streaming manifests)
+  cannot be checkpointed.
 
 Background-thread bucket fetching and clean shutdown
 ****************************************************

@@ -157,8 +157,8 @@ class RoundRobinSampler(CutSampler):
             inside of this function (e.g., using ``import deepcopy``).
 
         .. note::
-            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
-            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+            Every sub-sampler has to support checkpointing (see :class:`DynamicCutSampler`
+            and :class:`DynamicBucketingSampler`).
         """
         self.stop_early = state_dict.pop("stop_early")
         self.randomize = state_dict.pop("randomize")

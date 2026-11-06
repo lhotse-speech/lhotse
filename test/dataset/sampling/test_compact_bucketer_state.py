@@ -213,10 +213,7 @@ def test_indexed_continuation(
     pending = restored.state_dict()
     assert isinstance(pending["bucketer_state"]["bucket_tokens"], bytes) == load_compact
     restored.load_state_dict(copy.deepcopy(pending))
-    with patch.object(
-        restored, "_replay_step", side_effect=AssertionError("Unexpected replay")
-    ):
-        assert [_ids(batch) for batch in restored] == expected
+    assert [_ids(batch) for batch in restored] == expected
 
 
 def test_direct_capture_and_snapshot_independence(manifest):

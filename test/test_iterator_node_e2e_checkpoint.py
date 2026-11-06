@@ -9,7 +9,6 @@ import torch.utils.data
 from lhotse import CutSet
 from lhotse.cut.set import LazyCutMixer
 from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
-from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic_bucketing import DynamicBucketingSampler
 from lhotse.dataset.webdataset import LazyWebdatasetIterator, export_to_webdataset
 from lhotse.hf import LazyHFDatasetIterator
@@ -320,7 +319,7 @@ INDEXED_E2E_CASES = [
 ]
 INDEXED_E2E_NODE_NAMES = {case.values[0] for case in INDEXED_E2E_CASES}
 
-REPLAY_E2E_CASES = [
+STREAMING_E2E_CASES = [
     pytest.param(
         "LazyManifestIterator", _build_lazy_manifest, id="LazyManifestIterator"
     ),
@@ -336,7 +335,7 @@ REPLAY_E2E_CASES = [
         id="LazyHFDatasetIterator",
     ),
 ]
-REPLAY_E2E_NODE_NAMES = {case.values[0] for case in REPLAY_E2E_CASES}
+STREAMING_E2E_NODE_NAMES = {case.values[0] for case in STREAMING_E2E_CASES}
 
 UNIT_ONLY_NODES = {
     "LazyTxtIterator",
@@ -404,10 +403,8 @@ def _make_wrapper(cuts: CutSet) -> IterableDatasetWrapper:
 def _assert_exact_restore_with_wrapper(
     make_cuts: Callable[[Dict[str, Path]], CutSet],
     sources: Dict[str, Path],
-    monkeypatch,
     *,
     n_consumed: int = 2,
-    expect_o1: bool,
 ) -> None:
     def make():
         return _make_wrapper(make_cuts(sources))
@@ -423,19 +420,6 @@ def _assert_exact_restore_with_wrapper(
 
     wrapped_2 = make()
     wrapped_2.load_state_dict(state)
-
-    if expect_o1:
-        original_next = CutSampler.__next__
-
-        def _fail_on_replay(self):
-            raise RuntimeError("Unexpected O(N) replay during indexed restore.")
-
-        monkeypatch.setattr(CutSampler, "__next__", _fail_on_replay)
-        try:
-            iter(wrapped_2)
-        finally:
-            monkeypatch.setattr(CutSampler, "__next__", original_next)
-
     remaining = [_batch_signature(batch) for batch in wrapped_2]
     assert first_batches + remaining == all_batches
 
@@ -473,31 +457,25 @@ def test_iterator_node_checkpoint_matrix_is_complete():
         *UNIT_ONLY_NODES,
         *UNSUPPORTED_EXACT_RESTORE_NODES,
         *INDEXED_E2E_NODE_NAMES,
-        *REPLAY_E2E_NODE_NAMES,
+        *STREAMING_E2E_NODE_NAMES,
     }
     assert _all_iterator_node_names() == expected
 
 
-def test_iterator_node_chain_preserves_nested_graph_tokens(
-    iterator_node_sources, monkeypatch
-):
+def test_iterator_node_chain_preserves_nested_graph_tokens(iterator_node_sources):
     _assert_exact_restore_with_wrapper(
         _build_lazy_iterator_chain_over_indexed_shar,
         iterator_node_sources,
-        monkeypatch,
-        expect_o1=True,
     )
 
 
 @pytest.mark.parametrize(("node_name", "make_cuts"), INDEXED_E2E_CASES)
 def test_iterator_node_indexed_exact_restore(
-    node_name, make_cuts, iterator_node_sources, monkeypatch
+    node_name, make_cuts, iterator_node_sources
 ):
     _assert_exact_restore_with_wrapper(
         make_cuts,
         iterator_node_sources,
-        monkeypatch,
-        expect_o1=True,
     )
 
 
@@ -512,16 +490,14 @@ def test_iterator_node_indexed_worker_restore(
     )
 
 
-@pytest.mark.parametrize(("node_name", "make_cuts"), REPLAY_E2E_CASES)
-def test_iterator_node_replay_exact_restore(
-    node_name, make_cuts, iterator_node_sources, monkeypatch
+@pytest.mark.parametrize(("node_name", "make_cuts"), STREAMING_E2E_CASES)
+def test_iterator_node_streaming_checkpoint_raises(
+    node_name, make_cuts, iterator_node_sources
 ):
-    _assert_exact_restore_with_wrapper(
-        make_cuts,
-        iterator_node_sources,
-        monkeypatch,
-        expect_o1=False,
-    )
+    wrapped = _make_wrapper(make_cuts(iterator_node_sources))
+    next(iter(wrapped))
+    with pytest.raises(RuntimeError, match="requires indexed lazy inputs"):
+        wrapped.state_dict()
 
 
 @pytest.mark.parametrize("node_name", sorted(UNIT_ONLY_NODES))

@@ -4,7 +4,7 @@ Tests for Phase 5: Sampler & DataLoader integration with checkpointing.
 Tests that:
 - DynamicCutSampler.state_dict() captures cuts_state when available
 - DynamicCutSampler and DynamicBucketingSampler can restore mid-epoch
-- Old state_dicts (without cuts_state) still work via legacy _fast_forward
+- Checkpoints missing the iteration state needed for restore are rejected
 - IterableDatasetWrapper implements state_dict()/load_state_dict()
 """
 
@@ -16,7 +16,6 @@ import pytest
 from lhotse import CutSet
 from lhotse.dataset.cut_transforms import PerturbSpeed
 from lhotse.dataset.iterable_dataset import IterableDatasetWrapper
-from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.dataset.sampling.dynamic_bucketing import (
     DynamicBucketer,
@@ -30,6 +29,13 @@ from lhotse.testing.dummies import DummyManifest
 @pytest.fixture
 def cuts():
     return DummyManifest(CutSet, begin_id=0, end_id=100)
+
+
+@pytest.fixture
+def indexed_cuts(tmp_path, cuts):
+    path = tmp_path / "indexed_cuts.jsonl"
+    cuts.to_jsonl(path)
+    return CutSet.from_file(path, indexed=True)
 
 
 @pytest.fixture(params=["jsonl", "shar"])
@@ -207,17 +213,17 @@ class _CountingGraphRestoreSource(IteratorNode):
 
 
 class TestDynamicSamplerCheckpoint:
-    def test_state_dict_contains_diagnostics(self, cuts):
-        sampler = DynamicCutSampler(cuts, max_cuts=5, shuffle=False)
+    def test_state_dict_contains_diagnostics(self, indexed_cuts):
+        sampler = DynamicCutSampler(indexed_cuts, max_cuts=5, shuffle=False)
         iter(sampler)
         for _ in range(3):
             next(sampler)
         sd = sampler.state_dict()
         assert "diagnostics" in sd
 
-    def test_dynamic_sampler_restore_matches_uninterrupted(self, cuts):
+    def test_dynamic_sampler_restore_matches_uninterrupted(self, indexed_cuts):
         """Verify that restored sampler produces batches consistent with diagnostics."""
-        sampler1 = DynamicCutSampler(cuts, max_cuts=5, shuffle=False)
+        sampler1 = DynamicCutSampler(indexed_cuts, max_cuts=5, shuffle=False)
         iter(sampler1)
         batches_before = []
         for _ in range(3):
@@ -226,16 +232,16 @@ class TestDynamicSamplerCheckpoint:
         sd = sampler1.state_dict()
 
         # Restore into a new sampler
-        sampler2 = DynamicCutSampler(cuts, max_cuts=5, shuffle=False)
+        sampler2 = DynamicCutSampler(indexed_cuts, max_cuts=5, shuffle=False)
         sampler2.load_state_dict(sd.copy())
 
         # After restoration, the diagnostics should report 3 batches
         assert sampler2.diagnostics.current_epoch_stats.total_batches == 3
 
-    def test_dynamic_bucketing_sampler_restore(self, cuts):
+    def test_dynamic_bucketing_sampler_restore(self, indexed_cuts):
         """DynamicBucketingSampler can be checkpointed and restored."""
         sampler1 = DynamicBucketingSampler(
-            cuts, max_cuts=5, shuffle=False, num_buckets=2
+            indexed_cuts, max_cuts=5, shuffle=False, num_buckets=2
         )
         iter(sampler1)
         for _ in range(3):
@@ -244,37 +250,15 @@ class TestDynamicSamplerCheckpoint:
         sd = sampler1.state_dict()
 
         sampler2 = DynamicBucketingSampler(
-            cuts, max_cuts=5, shuffle=False, num_buckets=2
+            indexed_cuts, max_cuts=5, shuffle=False, num_buckets=2
         )
         sampler2.load_state_dict(sd.copy())
 
         assert sampler2.diagnostics.current_epoch_stats.total_batches == 3
 
 
-class TestBackwardCompatOldStateDict:
-    def test_old_state_dict_without_cuts_state(self, cuts):
-        """
-        Old state_dicts that lack 'cuts_state' key should still restore
-        correctly via the legacy _fast_forward path.
-        """
-        sampler1 = DynamicCutSampler(cuts, max_cuts=5, shuffle=False)
-        iter(sampler1)
-        for _ in range(3):
-            next(sampler1)
-
-        sd = sampler1.state_dict()
-        # Simulate an old state_dict by removing cuts_state
-        sd.pop("cuts_state", None)
-
-        sampler2 = DynamicCutSampler(cuts, max_cuts=5, shuffle=False)
-        sampler2.load_state_dict(sd.copy())
-
-        # Should still work via _fast_forward
-        assert sampler2.diagnostics.current_epoch_stats.total_batches == 3
-
-
 class TestIterableDatasetWrapperStateDict:
-    def test_state_dict_round_trip(self, cuts):
+    def test_state_dict_round_trip(self, indexed_cuts):
         """IterableDatasetWrapper.state_dict() and load_state_dict() round-trip."""
         import torch.utils.data
 
@@ -283,7 +267,7 @@ class TestIterableDatasetWrapperStateDict:
                 return item
 
         dataset = IdentityDataset()
-        sampler = DynamicCutSampler(cuts, max_cuts=10, shuffle=False)
+        sampler = DynamicCutSampler(indexed_cuts, max_cuts=10, shuffle=False)
         wrapper = IterableDatasetWrapper(dataset, sampler)
 
         wrapper.set_epoch(3)
@@ -297,7 +281,7 @@ class TestIterableDatasetWrapperStateDict:
         assert sd["epoch"] == 3
 
         # Create a fresh wrapper and restore
-        sampler2 = DynamicCutSampler(cuts, max_cuts=10, shuffle=False)
+        sampler2 = DynamicCutSampler(indexed_cuts, max_cuts=10, shuffle=False)
         wrapper2 = IterableDatasetWrapper(dataset, sampler2)
         wrapper2.load_state_dict(sd)
 
@@ -335,9 +319,7 @@ class TestIndexedSamplerStateCapture:
         assert sd["cuts_state"] is not None
         assert len(sd["cuts_state"]) == 1
 
-    def test_dynamic_sampler_indexed_restore_avoids_on_fast_forward(
-        self, tmp_path, monkeypatch
-    ):
+    def test_dynamic_sampler_indexed_restore_preserves_diagnostics(self, tmp_path):
         path = tmp_path / "cuts.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=50).to_jsonl(path)
         cs = CutSet.from_file(path, indexed=True)
@@ -355,20 +337,8 @@ class TestIndexedSamplerStateCapture:
         sampler2 = DynamicCutSampler(cs, max_cuts=5, shuffle=False)
         sampler2.load_state_dict(sd.copy())
 
-        called = {"on_fast_forward": False}
-        orig_next = CutSampler.__next__
+        iter(sampler2)
 
-        def _patched_next(self):
-            called["on_fast_forward"] = True
-            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
-
-        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
-        try:
-            iter(sampler2)
-        finally:
-            monkeypatch.setattr(CutSampler, "__next__", orig_next)
-
-        assert called["on_fast_forward"] is False
         assert sampler2.diagnostics.current_epoch_stats.total_batches == consumed
 
     def test_dynamic_sampler_indexed_shuffle_captures_lazy_shuffler_state(
@@ -389,9 +359,7 @@ class TestIndexedSamplerStateCapture:
         assert root_state["_type"] == "LazyShuffler"
         assert "_state" in root_state
 
-    def test_dynamic_sampler_indexed_shuffle_restore_is_exact(
-        self, tmp_path, monkeypatch
-    ):
+    def test_dynamic_sampler_indexed_shuffle_restore_is_exact(self, tmp_path):
         path = tmp_path / "cuts.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=50).to_jsonl(path)
 
@@ -414,21 +382,9 @@ class TestIndexedSamplerStateCapture:
         sampler2 = make_sampler()
         sampler2.load_state_dict(sd)
 
-        called = {"on_fast_forward": False}
-        orig_next = CutSampler.__next__
-
-        def _patched_next(self):
-            called["on_fast_forward"] = True
-            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
-
-        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
-        try:
-            iter(sampler2)
-        finally:
-            monkeypatch.setattr(CutSampler, "__next__", orig_next)
+        iter(sampler2)
 
         remaining = [[c.id for c in batch] for batch in sampler2]
-        assert called["on_fast_forward"] is False
         assert first_batches + remaining == all_batches
 
     def test_dynamic_bucketing_sampler_captures_cuts_state_for_indexed(self, tmp_path):
@@ -473,9 +429,7 @@ class TestIndexedSamplerStateCapture:
         assert root_state["_type"] == "LazyCutMixer"
         assert "_state" in root_state
 
-    def test_dynamic_bucketing_indexed_mix_restore_avoids_on_fast_forward(
-        self, tmp_path, monkeypatch
-    ):
+    def test_dynamic_bucketing_indexed_mix_restore(self, tmp_path):
         speech_path = tmp_path / "speech.jsonl"
         noise_path = tmp_path / "noise.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=50).to_jsonl(speech_path)
@@ -498,23 +452,10 @@ class TestIndexedSamplerStateCapture:
         sampler2 = make_sampler()
         sampler2.load_state_dict(sd.copy())
 
-        called = {"on_fast_forward": False}
-        orig_next = CutSampler.__next__
+        iter(sampler2)
 
-        def _patched_next(self):
-            called["on_fast_forward"] = True
-            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
-
-        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
-        try:
-            iter(sampler2)
-        finally:
-            monkeypatch.setattr(CutSampler, "__next__", orig_next)
-
-        assert called["on_fast_forward"] is False
-
-    def test_dynamic_bucketing_indexed_restore_avoids_on_fast_forward_and_preserves_diagnostics(
-        self, tmp_path, monkeypatch
+    def test_dynamic_bucketing_indexed_restore_restore_preserves_diagnostics(
+        self, tmp_path
     ):
         path = tmp_path / "cuts.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=50).to_jsonl(path)
@@ -527,7 +468,6 @@ class TestIndexedSamplerStateCapture:
         sd = sampler1.state_dict()
         assert "cuts_state" in sd and sd["cuts_state"] is not None
         assert "bucketer_state" in sd
-        assert "rng_state" in sd
 
         consumed = sampler1.diagnostics.current_epoch_stats.total_batches
         assert consumed == 3
@@ -535,24 +475,12 @@ class TestIndexedSamplerStateCapture:
         sampler2 = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
         sampler2.load_state_dict(sd.copy())
 
-        called = {"on_fast_forward": False}
-        orig_next = CutSampler.__next__
+        iter(sampler2)
 
-        def _patched_next(self):
-            called["on_fast_forward"] = True
-            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
-
-        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
-        try:
-            iter(sampler2)
-        finally:
-            monkeypatch.setattr(CutSampler, "__next__", orig_next)
-
-        assert called["on_fast_forward"] is False
         assert sampler2.diagnostics.current_epoch_stats.total_batches == consumed
 
     def test_dynamic_bucketing_indexed_restore_supports_iterator_node_roots(
-        self, tmp_path, monkeypatch
+        self, tmp_path
     ):
         path = tmp_path / "cuts.jsonl"
         DummyManifest(CutSet, begin_id=0, end_id=40).to_jsonl(path)
@@ -574,21 +502,9 @@ class TestIndexedSamplerStateCapture:
         sampler2 = make_sampler()
         sampler2.load_state_dict(sd.copy())
 
-        called = {"on_fast_forward": False}
-        orig_next = CutSampler.__next__
-
-        def _patched_next(self):
-            called["on_fast_forward"] = True
-            raise RuntimeError("Legacy O(N) fast-forward was used instead of O(1).")
-
-        monkeypatch.setattr(CutSampler, "__next__", _patched_next)
-        try:
-            iter(sampler2)
-        finally:
-            monkeypatch.setattr(CutSampler, "__next__", orig_next)
+        iter(sampler2)
 
         remaining = [[c.id for c in batch] for batch in sampler2]
-        assert called["on_fast_forward"] is False
         assert first_batches + remaining == all_batches
 
     @pytest.mark.parametrize(
@@ -609,7 +525,6 @@ class TestIndexedSamplerStateCapture:
         sd = sampler1.state_dict()
         if sampler_type is DynamicBucketingSampler:
             assert "bucketer_state" in sd
-            assert "rng_state" in sd
 
         expected_next = [c.id for c in next(sampler1)]
 
@@ -630,14 +545,10 @@ class TestIndexedSamplerStateCapture:
             next(sampler1)
         sd = sampler1.state_dict()
         sd.pop("bucketer_state", None)
-        sd.pop("rng_state", None)
 
         sampler2 = DynamicBucketingSampler(cs, max_cuts=5, shuffle=False, num_buckets=2)
         sampler2.load_state_dict(sd.copy())
-        with pytest.raises(
-            RuntimeError,
-            match="indexed datasets should never use O\\(N\\) fast-forward",
-        ):
+        with pytest.raises(RuntimeError, match="missing 'bucketer_state'"):
             iter(sampler2)
 
     def test_dynamic_bucketing_indexed_restore_requires_graph_tokens(self):
@@ -670,10 +581,7 @@ class TestIndexedSamplerStateCapture:
 
         sampler2 = DynamicCutSampler(cs, max_cuts=5, shuffle=False)
         sampler2.load_state_dict(sd.copy())
-        with pytest.raises(
-            RuntimeError,
-            match="indexed datasets should never use O\\(N\\) fast-forward",
-        ):
+        with pytest.raises(RuntimeError, match="missing 'cuts_state'"):
             iter(sampler2)
 
     @staticmethod
@@ -730,16 +638,12 @@ class TestIndexedSamplerStateCapture:
         assert sum(bucket.qsize() for bucket in restored.buckets) == 20
 
 
-class TestMixedSourceConstantTimeAccessRaises:
-    """Regression test for the silent-swallow bug.
-
-    When the iterator graph mixes O(1)-restorable leaves with non-O(1) ones,
-    LazyIteratorMultiplexer.has_constant_time_access is False (it requires
-    ALL children), so the bucketer never attaches _graph_origin and
-    `DynamicBucketer.get_state()` raises RuntimeError. Previously this was
-    silently swallowed because the outer top-level CutSet also reported
-    has_constant_time_access=False. We now walk to the leaves and re-raise
-    when at least one leaf is O(1) — that's evidence of mis-configuration.
+class TestNonConstantTimeSourcesRaise:
+    """
+    Checkpointing requires every leaf to be O(1)-restorable: a single streaming
+    leaf makes LazyIteratorMultiplexer.has_constant_time_access False
+    (it requires ALL children), so state_dict() must raise instead of
+    producing a checkpoint that cannot be restored.
     """
 
     def _make_streaming_leaf(self):
@@ -780,12 +684,10 @@ class TestMixedSourceConstantTimeAccessRaises:
         for _ in range(3):
             next(sampler)
 
-        # Now state_dict() must raise — one of the muxed sources is O(1) but
-        # the other isn't, so we shouldn't silently degrade to O(N) replay.
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="requires indexed lazy inputs"):
             sampler.state_dict()
 
-    def test_all_streaming_falls_back_to_replay(self, cuts):
+    def test_all_streaming_raises(self, cuts):
         from lhotse.lazy import LazyIteratorMultiplexer
 
         leaf_cls = self._make_streaming_leaf()
@@ -799,9 +701,5 @@ class TestMixedSourceConstantTimeAccessRaises:
         for _ in range(3):
             next(sampler)
 
-        # All leaves are non-O(1) — there's no way to do O(1) restore, so
-        # falling back to O(N) replay is the only option. state_dict() must
-        # succeed (just without rng_state / bucketer_state populated).
-        sd = sampler.state_dict()
-        assert "rng_state" not in sd
-        assert "bucketer_state" not in sd
+        with pytest.raises(RuntimeError, match="requires indexed lazy inputs"):
+            sampler.state_dict()
