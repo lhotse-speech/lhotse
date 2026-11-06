@@ -14,6 +14,7 @@ from lhotse.utils import (
     is_module_available,
     is_torchaudio_available,
     nullcontext,
+    uuid4,
 )
 
 
@@ -939,3 +940,71 @@ def test_compress_invalid_params(
 
     with pytest.raises(ValueError):
         cut.compress(codec="mp3", compression_level=1.5)
+
+
+def _reverb_choices(cuts):
+    """For each cut, the chosen RIR recording ID or the simulated room seed."""
+    out = []
+    for cut in cuts:
+        tfm = cut.recording.transforms[-1]
+        out.append(tfm.rir.id if tfm.rir is not None else tfm.rir_generator.room_seed)
+    return out
+
+
+def _reverb_inputs():
+    from lhotse.testing.dummies import DummyManifest
+
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=20)
+    for c in cuts:
+        c.features = None
+    rirs = DummyManifest(RecordingSet, begin_id=100, end_id=110)
+    return cuts, rirs
+
+
+@pytest.mark.parametrize("with_rirs", [True, False])
+@pytest.mark.parametrize("seed", [0, 1234])
+def test_cut_set_reverb_rir_int_seed_is_reproducible(with_rirs, seed):
+    import random
+
+    cuts, rirs = _reverb_inputs()
+    rirs = rirs if with_rirs else None
+
+    random.seed(0)
+    a = _reverb_choices(cuts.reverb_rir(rirs, seed=seed))
+    random.seed(1)
+    uuid4()  # an unrelated draw from the global ID stream
+    b = _reverb_choices(cuts.reverb_rir(rirs, seed=seed))
+    assert a == b
+    # The choice is made per cut, not once for the whole set.
+    assert len(set(a)) > 1
+    # Order-independent: a cut gets the same RIR regardless of its position.
+    rev = _reverb_choices(CutSet(list(cuts)[::-1]).reverb_rir(rirs, seed=seed))
+    assert rev == a[::-1]
+    # A different seed gives different choices.
+    assert _reverb_choices(cuts.reverb_rir(rirs, seed=seed + 1)) != a
+
+
+@pytest.mark.parametrize("with_rirs", [True, False])
+def test_cut_set_reverb_rir_rng_seed_is_reproducible(with_rirs):
+    import random
+
+    cuts, rirs = _reverb_inputs()
+    rirs = rirs if with_rirs else None
+
+    random.seed(0)
+    a = _reverb_choices(cuts.reverb_rir(rirs, seed=random.Random(5)))
+    random.seed(1)
+    b = _reverb_choices(cuts.reverb_rir(rirs, seed=random.Random(5)))
+    assert a == b
+    assert len(set(a)) > 1
+
+
+def test_cut_set_reverb_rir_unseeded_keeps_legacy_behaviour():
+    import random
+
+    cuts, rirs = _reverb_inputs()
+    # A single RIR, chosen with the global `random` module, is used for the whole set.
+    random.seed(3)
+    expected = random.choice(list(rirs)).id
+    random.seed(3)
+    assert _reverb_choices(cuts.reverb_rir(rirs)) == [expected] * len(cuts)
