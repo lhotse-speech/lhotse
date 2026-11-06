@@ -602,3 +602,66 @@ def test_cli_shar_index_pack_from_object_store(tmp_path, ais_objects):
     result = CliRunner().invoke(cli, ["index", "shar-pack", str(output), directory])
     assert result.exit_code == 0, result.output
     assert CutSet.from_shar(in_dir=directory, index_pack=output)[0].id == cut.id
+
+
+def _upload_without_indexes(root, objects):
+    namespace = uuid4().hex
+    for path in sorted(root.iterdir()):
+        if not path.name.endswith((".idx", ".gzidx")):
+            objects[f"ais://bucket/{namespace}/{path.name}"] = path.read_bytes()
+    return f"ais://bucket/{namespace}"
+
+
+def test_shar_auto_create_index_false_raises_for_missing_local_index(tmp_path):
+    root = tmp_path / "shar"
+    _write_fields(root, compress=False)
+    for idx in root.glob("*.idx"):
+        idx.unlink()
+    with pytest.raises(FileNotFoundError, match="missing an index file"):
+        CutSet.from_shar(in_dir=root, indexed=True, auto_create_index=False)
+    assert not list(root.glob("*.idx"))
+    # The default keeps creating missing indexes on the fly.
+    cuts = CutSet.from_shar(in_dir=root, indexed=True)
+    assert cuts.is_indexed
+    assert list(root.glob("*.idx"))
+    # Once the indexes exist, auto_create_index=False reads them.
+    cuts = CutSet.from_shar(in_dir=root, indexed=True, auto_create_index=False)
+    assert [c.id for c in cuts] == [c.id for c in LazySharIterator(in_dir=root)]
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_shar_auto_create_index_false_raises_for_missing_remote_index(
+    tmp_path, ais_objects, mirror
+):
+    root = tmp_path / "shar"
+    _write_fields(root, compress=False)
+    objects, _ = ais_objects
+    in_dir = _upload_without_indexes(root, objects)
+    indexes_root = tmp_path / "mirror" if mirror else None
+    with pytest.raises(FileNotFoundError, match="missing an index file"):
+        CutSet.from_shar(
+            in_dir=in_dir,
+            indexed=True,
+            indexes_root=indexes_root,
+            auto_create_index=False,
+        )
+    assert not any(url.endswith(".idx") for url in objects)
+    assert not (mirror and list(indexes_root.rglob("*.idx")))
+    # The default builds them, after which auto_create_index=False works.
+    CutSet.from_shar(in_dir=in_dir, indexed=True, indexes_root=indexes_root)
+    cuts = CutSet.from_shar(
+        in_dir=in_dir, indexed=True, indexes_root=indexes_root, auto_create_index=False
+    )
+    assert len(cuts) == 3
+
+
+def test_indexed_manifest_iterator_auto_create_index_false(tmp_path):
+    from lhotse.lazy import LazyIndexedManifestIterator
+
+    path = tmp_path / "cuts.jsonl"
+    DummyManifest(CutSet, begin_id=0, end_id=3).to_file(path)
+    with pytest.raises(FileNotFoundError):
+        LazyIndexedManifestIterator(path, auto_create_index=False)
+    assert not index_exists(path)
+    assert len(LazyIndexedManifestIterator(path)) == 3  # default: created on the fly
+    assert len(LazyIndexedManifestIterator(path, auto_create_index=False)) == 3
