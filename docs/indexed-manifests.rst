@@ -73,6 +73,21 @@ installed, both plain and gzip JSONL shards are indexed as they are finalized:
    still requires the dependency. Shar writing reports indexing failures as
    warnings; completed source shards remain readable in streaming mode.
 
+By default, indexed readers create a missing index when they open a source,
+which reads the whole file and writes the sidecar next to it (or under
+``indexes_root``). In training jobs this can mean many processes indexing the
+same files at startup. Pass ``auto_create_index=False`` to
+``CutSet.from_shar``, :class:`~lhotse.shar.readers.indexed.LazyIndexedSharIterator`,
+:class:`~lhotse.lazy.LazyIndexedManifestIterator`,
+:class:`~lhotse.indexing.IndexedJsonlReader` or
+:class:`~lhotse.indexing.IndexedTarReader` to require pre-built indexes instead:
+a missing index then raises ``FileNotFoundError``, for local and remote
+(``s3://``, ``ais://``) sources alike.
+
+.. code-block:: python
+
+   cuts = CutSet.from_shar(in_dir="ais://bucket/shar", indexed=True, auto_create_index=False)
+
 Packing many sidecars into one ``.idxpack``
 -------------------------------------------
 

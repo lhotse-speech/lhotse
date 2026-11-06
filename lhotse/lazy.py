@@ -588,6 +588,8 @@ class LazyIndexedManifestIterator(IteratorNode):
         which materializes a Lhotse Cut / Recording / etc. Pass
         :class:`GraphOriginDict` to keep raw dicts that can still carry
         graph-restore metadata.
+    :param auto_create_index: when ``True`` (default), a missing index is created
+        automatically. When ``False``, a missing index raises :class:`FileNotFoundError`.
     """
 
     is_checkpointable = True
@@ -603,6 +605,7 @@ class LazyIndexedManifestIterator(IteratorNode):
         decode_error_callback: Optional[
             Callable[[BaseException, int, Pathlike], None]
         ] = None,
+        auto_create_index: bool = True,
     ) -> None:
         from lhotse.dataset.dataloading import PartitionedIndexedIterator
         from lhotse.indexing import IndexedJsonlReader
@@ -614,7 +617,9 @@ class LazyIndexedManifestIterator(IteratorNode):
         self.skip_decode_errors = skip_decode_errors
         self.decode_error_callback = decode_error_callback
         self._decode = decode if decode is not None else deserialize_item
-        self._reader = IndexedJsonlReader(path, index_path=index_path)
+        self._reader = IndexedJsonlReader(
+            path, index_path=index_path, auto_create_index=auto_create_index
+        )
         self._iter_state = PartitionedIndexedIterator(shuffle=shuffle, seed=seed)
 
     @property

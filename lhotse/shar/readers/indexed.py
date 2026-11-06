@@ -92,6 +92,11 @@ class LazyIndexedSharIterator(IteratorNode):
     :param index_pack_max_open_files: bound on the number of shard files kept
         open for reading through ``index_pack`` (shared by all readers of the
         same pack in a process).
+    :param auto_create_index: when ``True`` (default), a missing ``.idx`` file
+        is created on the fly by reading the whole shard. When ``False``, a missing
+        index raises :class:`FileNotFoundError` instead, so that indexes are only
+        ever built ahead of time (e.g. with ``lhotse index shar``). This applies to
+        local and remote (``s3://``, ``ais://``) shards alike.
     """
 
     is_checkpointable = True
@@ -109,7 +114,9 @@ class LazyIndexedSharIterator(IteratorNode):
         lazy: bool = False,
         index_pack: Optional[Union[Pathlike, IndexPack]] = None,
         index_pack_max_open_files: int = 32,
+        auto_create_index: bool = True,
     ) -> None:
+        self.auto_create_index = auto_create_index
         if index_path is not None and indexes_root is not None:
             raise ValueError(
                 "Pass either 'index_path' (explicit per-shard paths or directory) "
@@ -165,7 +172,7 @@ class LazyIndexedSharIterator(IteratorNode):
         self._validate_indexed_streams(
             streams=self.streams,
             index_streams=self._index_streams,
-            auto_create_index=True,
+            auto_create_index=self.auto_create_index,
         )
 
         # Build indexed readers for cuts JSONL shards and compute lengths.
@@ -188,6 +195,7 @@ class LazyIndexedSharIterator(IteratorNode):
             IndexedJsonlReader(
                 p,
                 index_path=cuts_idx_paths[i] if cuts_idx_paths else None,
+                auto_create_index=getattr(self, "auto_create_index", True),
             )
             for i, p in enumerate(self.streams["cuts"])
         ]
@@ -340,8 +348,10 @@ class LazyIndexedSharIterator(IteratorNode):
                     continue
                 if not auto_create_index:
                     raise FileNotFoundError(
-                        f"{context} is missing an index file. "
-                        f"Expected it at {idx_path if idx_path is not None else str(path) + '.idx'}."
+                        f"{context} is missing an index file for {path}. "
+                        f"Expected it at {idx_path if idx_path is not None else str(path) + '.idx'}. "
+                        "Build the indexes ahead of time (e.g. with 'lhotse index shar <in_dir>'), "
+                        "or pass auto_create_index=True to create them on the fly."
                     )
                 if kind == "jsonl":
                     create_jsonl_index(path, output_path=idx_path)
@@ -441,10 +451,15 @@ class LazyIndexedSharIterator(IteratorNode):
                 if self._index_streams and field in self._index_streams
                 else None
             )
+            auto_create_index = getattr(self, "auto_create_index", True)
             if extension_contains(".tar", path):
-                readers[field] = IndexedTarReader(path, index_path=ip)
+                readers[field] = IndexedTarReader(
+                    path, index_path=ip, auto_create_index=auto_create_index
+                )
             else:
-                readers[field] = IndexedJsonlReader(path, index_path=ip)
+                readers[field] = IndexedJsonlReader(
+                    path, index_path=ip, auto_create_index=auto_create_index
+                )
 
         self._indexed_readers[shard_idx] = readers
         return readers

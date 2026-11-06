@@ -495,6 +495,7 @@ class CutSet(Serializable, AlgorithmMixin):
         indexes_root: Optional[Pathlike] = None,
         index_pack: Optional[Pathlike] = None,
         index_pack_max_open_files: int = 32,
+        auto_create_index: bool = True,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -642,6 +643,11 @@ class CutSet(Serializable, AlgorithmMixin):
             Mutually exclusive with ``index_path`` and ``indexes_root``.
         :param index_pack_max_open_files: bound on the number of shard files kept open
             for reading through ``index_pack``.
+        :param auto_create_index: only used in indexed mode. When ``True`` (default),
+            a missing ``.idx`` file is created on the fly by reading the whole shard.
+            When ``False``, a missing index raises :class:`FileNotFoundError` instead,
+            so that indexes are only ever built ahead of time (e.g. with
+            ``lhotse index shar``). Auto-detection (``indexed=None``) never creates indexes.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
             :class:`~lhotse.shar.readers.lazy.LazyIndexedSharIterator`,
@@ -707,6 +713,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     indexes_root=indexes_root,
                     index_pack=index_pack,
                     index_pack_max_open_files=index_pack_max_open_files,
+                    auto_create_index=auto_create_index,
                 )
             )
 
