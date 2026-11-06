@@ -1890,6 +1890,7 @@ class CutSet(Serializable, AlgorithmMixin):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        seed: Optional[Union[int, random.Random]] = None,
     ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that contains original cuts convolved with
@@ -1908,13 +1909,22 @@ class CutSet(Serializable, AlgorithmMixin):
         :param rir_channels: The channels of the impulse response to use. By default, first channel will be used.
             If it is a multi-channel RIR, applying RIR will produce MixedCut. If no RIR is
             provided, we will generate one with as many channels as this argument specifies.
+        :param seed: Optional seed that makes the operation deterministic. An RIR is always picked
+            independently for each cut (and, for simulated RIRs, each cut gets its own room seed);
+            the seed only controls whether those choices are reproducible.
+            An ``int`` makes the choice for each cut a pure function of ``(seed, cut.id)``, so the result
+            is reproducible regardless of iteration order or how many times a lazy ``CutSet`` is iterated.
+            A ``random.Random`` instance is drawn from sequentially, cut by cut.
+            When ``None`` (default), the RIR for each cut is chosen with the global ``random`` module
+            and simulated rooms are seeded randomly, so the result is not deterministic.
         :return: a modified copy of the ``CutSet``.
         """
         rir_recordings = list(rir_recordings) if rir_recordings else None
         return self.map(
             partial(
-                _reverb_rir,
-                rir_recording=random.choice(rir_recordings) if rir_recordings else None,
+                _reverb_rir_per_cut,
+                seed=seed,
+                rir_recordings=rir_recordings,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
@@ -3899,8 +3909,17 @@ def _perturb_volume(cut, *args, **kwargs):
     return cut.perturb_volume(*args, **kwargs)
 
 
-def _reverb_rir(cut, *args, **kwargs):
-    return cut.reverb_rir(*args, **kwargs)
+def _reverb_rir_per_cut(cut, seed, rir_recordings, **kwargs):
+    if seed is None:
+        # Not deterministic: global `random` picks the RIR, and Cut.reverb_rir seeds
+        # simulated rooms randomly when no room_rng_seed is given.
+        if rir_recordings:
+            return cut.reverb_rir(rir_recording=random.choice(rir_recordings), **kwargs)
+        return cut.reverb_rir(**kwargs)
+    rng = seed if isinstance(seed, random.Random) else random.Random(f"{seed}_{cut.id}")
+    if rir_recordings:
+        return cut.reverb_rir(rir_recording=rng.choice(rir_recordings), **kwargs)
+    return cut.reverb_rir(room_rng_seed=rng.getrandbits(63), **kwargs)
 
 
 def _normalize_loudness(cut, *args, **kwargs):

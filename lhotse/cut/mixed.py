@@ -1119,18 +1119,19 @@ class MixedCut(Cut):
         #    different speakers in the same room.
 
         # First simulate the room config (will only be used if RIR is not provided)
-        uuid4_str = str(uuid4())
-        # The room RNG seed is based on the cut ID. This ensures that all tracks in the
-        # mixed cut will have the same room configuration.
+        # The room RNG seed is shared by all tracks so they have the same room configuration.
+        # The source RNG seed differs per track so each track has a different source position.
+        # When the caller provides room_rng_seed, the source seeds are derived from it
+        # (and the track index) so the result is fully determined by the caller's seed.
         if room_rng_seed is None:
+            uuid4_str = str(uuid4())
             room_rng_seed = hash_str_to_int(uuid4_str + self.id)
-        # The source RNG seed is based on the track ID. This ensures that each track
-        # will have a different source position.
+            track_seed_strs = [uuid4_str + track.cut.id for track in self.tracks]
+        else:
+            track_seed_strs = [f"{room_rng_seed}_{i}" for i in range(len(self.tracks))]
         source_rng_seeds = [source_rng_seed] * len(self.tracks)
         if source_rng_seed is None:
-            source_rng_seeds = [
-                hash_str_to_int(uuid4_str + track.cut.id) for track in self.tracks
-            ]
+            source_rng_seeds = [hash_str_to_int(s) for s in track_seed_strs]
             source_rng_seed = source_rng_seeds[0]
 
         # Apply same RIR to all tracks after mixing (default)
@@ -1154,6 +1155,8 @@ class MixedCut(Cut):
                     early_only=early_only,
                     rir_channels=rir_channels if rir_channels is not None else [0],
                     rir_generator=rir_generator,
+                    # This transform belongs to this cut only: the same audio on every load.
+                    reset_rir_generator=rir_generator is not None,
                 )
             )
             return fastcopy(

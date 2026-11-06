@@ -19,6 +19,7 @@ from lhotse.dataset import (
     PerturbSpeed,
     PerturbTempo,
     PerturbVolume,
+    ReverbWithImpulseResponse,
 )
 from lhotse.testing.dummies import DummyManifest
 from lhotse.tools import libsox_available
@@ -480,3 +481,47 @@ class TestTransformStateDictRoundTrip:
         results_original = [self._ids(tfn(b)) for b in more_batches]
         results_restored = [self._ids(tfn2(b)) for b in more_batches]
         assert results_original == results_restored
+
+    @staticmethod
+    def _synthetic_rir_seeds(cutset):
+        seeds = []
+        for cut in cutset:
+            if isinstance(cut, MixedCut):
+                transforms = list(cut.transforms or [])
+            else:
+                transforms = list(cut.recording.transforms or [])
+            for tfm in transforms:
+                gen = getattr(tfm, "rir_generator", None)
+                if gen is not None:
+                    seeds.append((cut.id, gen.room_seed, gen.source_seed))
+        return seeds
+
+    @pytest.mark.parametrize("mixed", [False, True])
+    def test_reverb_rir_synthetic_seeds_checkpoint(self, mixed):
+        """Synthetic RIR room/source seeds must come from the transform's RNG
+        (which is checkpointed), not from lhotse's process-global ID stream."""
+        batches = self._make_batches(n=6)
+        if mixed:
+            batches = [
+                CutSet([c.mix(c, preserve_id="left") for c in b]) for b in batches
+            ]
+
+        def make_tfn():
+            return ReverbWithImpulseResponse(p=0.5, randgen=random.Random(42))
+
+        # 1. Uninterrupted run
+        tfn = make_tfn()
+        full = [self._synthetic_rir_seeds(tfn(b)) for b in batches]
+        assert any(full)
+
+        # 2. Interrupted run: save state, consume some IDs from lhotse's
+        # global stream (as unrelated code would), restore into a fresh transform.
+        tfn = make_tfn()
+        first = [self._synthetic_rir_seeds(tfn(b)) for b in batches[:3]]
+        sd = tfn.state_dict()
+        lhotse.utils.uuid4()
+        tfn = make_tfn()
+        tfn.load_state_dict(sd)
+        rest = [self._synthetic_rir_seeds(tfn(b)) for b in batches[3:]]
+
+        assert first + rest == full

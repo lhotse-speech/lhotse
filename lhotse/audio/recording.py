@@ -891,6 +891,8 @@ class Recording:
                 early_only=early_only,
                 rir_channels=rir_channels if rir_channels is not None else [0],
                 rir_generator=rir_generator,
+                # This transform belongs to this recording only: the same audio on every load.
+                reset_rir_generator=rir_generator is not None,
             )
         )
         return fastcopy(
