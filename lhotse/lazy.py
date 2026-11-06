@@ -151,6 +151,30 @@ def _try_restore_child_state(obj: Any, state: Optional[dict]) -> None:
         obj.load_state_dict(state)
 
 
+def _restore_exhausted_child_state(obj: Any, state: Optional[dict]) -> None:
+    """
+    Restore a child that was already exhausted in the pass being restored.
+
+    The parent never reads such a child again in that pass, so the child's next
+    iteration is a new pass. Its cross-pass state (RNG states, epoch and iteration
+    counters) is restored so later passes match an uninterrupted run, but its
+    one-shot "continue from the saved position" flags are cleared; otherwise the
+    next pass would resume at the end of the child and yield nothing.
+    """
+    _try_restore_child_state(obj, state)
+    _discard_pending_restore(obj)
+
+
+def _discard_pending_restore(obj: Any) -> None:
+    obj = resolve_iterator_source(obj)
+    for holder in (obj, getattr(obj, "_iter_state", None)):
+        if holder is not None and getattr(holder, "_restored", False):
+            holder._restored = False
+    if isinstance(obj, IteratorNode):
+        for child in obj.iter_children():
+            _discard_pending_restore(child)
+
+
 class GraphOriginDict(dict):
     """``dict`` subclass that can carry runtime attributes (e.g. ``_graph_origin``).
 
@@ -862,8 +886,8 @@ class LazyIteratorChain(IteratorNode):
             # resolved seed) are enough to reconstruct permutation deterministically.
             self._restored = True
             return
-        # Sequential path: only restore sources that will still be iterated
-        # (at or after current_iter_idx in iter_order).
+        # Sequential path: sources before current_iter_idx in iter_order were
+        # already exhausted in the restored pass and are not read again in it.
         order = (
             self._iter_order
             if self._iter_order is not None
@@ -873,9 +897,10 @@ class LazyIteratorChain(IteratorNode):
         for i, (s, inner_sd) in enumerate(
             zip(self.sources, sd.get("inner_states", []))
         ):
-            if i not in active or inner_sd is None:
-                continue
-            _try_restore_child_state(s, inner_sd)
+            if i in active:
+                _try_restore_child_state(s, inner_sd)
+            else:
+                _restore_exhausted_child_state(s, inner_sd)
         self._restored = True
 
 
@@ -1037,8 +1062,10 @@ class LazyIteratorMultiplexer(IteratorNode):
             zip(self.sources, sd.get("inner_states", []))
         ):
             if active is not None and i not in active:
-                continue
-            _try_restore_child_state(s, inner_sd)
+                # Not read again in the restored pass.
+                _restore_exhausted_child_state(s, inner_sd)
+            else:
+                _try_restore_child_state(s, inner_sd)
         self._restored = True
 
 
@@ -1281,12 +1308,17 @@ class LazyShuffler(IteratorNode):
             )
         from lhotse.checkpoint import _rng_state_from_json
 
-        _try_restore_child_state(self.source, sd.get("source"))
+        self._source_exhausted = sd.get("source_exhausted", False)
+        if self._source_exhausted:
+            # The restored pass never reads an exhausted source again, so its next
+            # iteration is a new pass that must start from the beginning.
+            _restore_exhausted_child_state(self.source, sd.get("source"))
+        else:
+            _try_restore_child_state(self.source, sd.get("source"))
         self._buffer = deque(
             self.source[normalize_graph_token(token)] for token in sd.get("buffer", [])
         )
         self._startup = sd.get("startup", True)
-        self._source_exhausted = sd.get("source_exhausted", False)
         self.rng.setstate(_rng_state_from_json(sd["rng_state"]))
         self._restored = True
 

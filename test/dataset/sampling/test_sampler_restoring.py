@@ -515,3 +515,88 @@ def test_randomized_round_robin_restores_under_wrapper(wrapper):
     restored.load_state_dict(sampler.state_dict())
     iter(restored)
     assert _remaining_batch_ids(restored) == _remaining_batch_ids(sampler)
+
+
+def _make_epoch_boundary_sampler(sampler_type):
+    kwargs = {"num_buckets": 2} if sampler_type is DynamicBucketingSampler else {}
+    return sampler_type(
+        DummyManifest(CutSet, begin_id=0, end_id=30),
+        max_cuts=3,
+        shuffle=True,
+        seed=0,
+        **kwargs,
+    )
+
+
+def _ids(batch):
+    return [cut.id for cut in batch]
+
+
+@pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
+def test_restore_twice_then_next_epoch_starts_fresh(sampler_type):
+    # Emulates torchdata's StatefulDataLoader restore order: load state into the index
+    # sampler, call iter() on it, then load the same state into the sampler iterator,
+    # which for a CutSampler is the same object, and keep calling next() without iter().
+    reference = _make_epoch_boundary_sampler(sampler_type)
+    reference.set_epoch(1)
+    epoch1 = [_ids(b) for b in reference]
+    reference.set_epoch(2)
+    epoch2 = [_ids(b) for b in reference]
+
+    sampler = _make_epoch_boundary_sampler(sampler_type)
+    sampler.set_epoch(1)
+    iter(sampler)
+    for _ in range(2):
+        next(sampler)
+    state = sampler.state_dict()
+
+    restored = _make_epoch_boundary_sampler(sampler_type)
+    restored.load_state_dict(deepcopy(state))
+    iter(restored)
+    restored.load_state_dict(deepcopy(state))
+    assert [_ids(next(restored)) for _ in range(2)] == epoch1[2:4]
+
+    # A new epoch requested after the restored batches were consumed must be honored.
+    restored.set_epoch(2)
+    assert [_ids(b) for b in restored] == epoch2
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+@pytest.mark.parametrize("sampler_type", [DynamicCutSampler, DynamicBucketingSampler])
+def test_stateful_dataloader_resume_across_epoch_boundary(sampler_type, num_workers):
+    stateful_dataloader = pytest.importorskip("torchdata.stateful_dataloader")
+
+    def make_dloader():
+        return stateful_dataloader.StatefulDataLoader(
+            _CutIdsDataset(),
+            sampler=_make_epoch_boundary_sampler(sampler_type),
+            batch_size=None,
+            num_workers=num_workers,
+        )
+
+    # Each epoch is cut short after `limit` batches, like Lightning's limit_train_batches.
+    limit, split, total = 4, 6, 12
+    dloader = make_dloader()
+    expected, state = [], None
+    for epoch in range(total // limit):
+        dloader.sampler.set_epoch(epoch)
+        for _, batch in zip(range(limit), dloader):
+            expected.append(batch)
+            if len(expected) == split:
+                state = deepcopy(dloader.state_dict())
+
+    dloader = make_dloader()
+    dloader.load_state_dict(state)
+    actual = []
+    for epoch in range(split // limit, total // limit):
+        dloader.sampler.set_epoch(epoch)
+        num_batches = limit - split % limit if epoch == split // limit else limit
+        for _, batch in zip(range(num_batches), dloader):
+            actual.append(batch)
+
+    assert actual == expected[split:]
+
+
+class _CutIdsDataset(torch.utils.data.Dataset):
+    def __getitem__(self, cuts):
+        return [c.id for c in cuts]

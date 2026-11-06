@@ -401,6 +401,16 @@ class CutSampler(Sampler, Dillable):
                 setattr(self, attr, None)
 
     def __next__(self):
+        if getattr(self, "_needs_fast_forward", False):
+            # load_state_dict() was called on a sampler that is already being iterated,
+            # so __iter__() will not run to apply the deferred restore. torchdata's
+            # StatefulDataLoader does this: it restores the index sampler, calls iter() on it,
+            # and then restores the sampler iterator, which is the same object because
+            # CutSampler.__iter__ returns self. Apply the restore now. Otherwise the pending
+            # flag outlives the restored epoch: set_epoch() keeps ignoring new epochs and the
+            # next iter() rewinds to the checkpoint, replaying already-seen batches.
+            self._needs_fast_forward = False
+            self._fast_forward()
         # Advancing one step should permit later iter(self) calls to reset epoch
         # bookkeeping, but it should not discard deferred checkpoint state.
         self._just_restored_state = False
