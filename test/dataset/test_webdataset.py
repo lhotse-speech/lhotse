@@ -1,4 +1,6 @@
+import io
 import pickle
+import tarfile
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
@@ -8,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from lhotse import CutSet
 from lhotse.dataset import DynamicCutSampler, IterableDatasetWrapper
-from lhotse.dataset.webdataset import export_to_webdataset
+from lhotse.dataset.webdataset import export_to_webdataset, mini_webdataset
 from lhotse.utils import fastcopy
 
 webdataset = pytest.importorskip(
@@ -58,6 +60,60 @@ def test_cutset_from_webdataset():
             np.testing.assert_almost_equal(
                 c.load_features(), cds.load_features(), decimal=1
             )
+
+
+def test_cutset_from_webdataset_ids_with_periods():
+    cut = CutSet.from_file("test/fixtures/libri/cuts.json")[0]
+    ids = ["spk1.utt1", "spk1.utt2", "v1.2.3-4", "plain", "foo", "foo.v2"]
+    cuts = CutSet.from_cuts(fastcopy(cut, id=cut_id) for cut_id in ids)
+
+    with NamedTemporaryFile(suffix=".tar") as f:
+        export_to_webdataset(cuts, output_path=f.name)
+        f.flush()
+
+        cuts_ds = CutSet.from_webdataset(f.name)
+
+        assert list(cuts_ds.ids) == ids
+
+        for c, cds in zip(cuts, cuts_ds):
+            np.testing.assert_equal(c.load_audio(), cds.load_audio())
+            np.testing.assert_almost_equal(
+                c.load_features(), cds.load_features(), decimal=1
+            )
+
+
+def test_mini_webdataset_pickle():
+    cuts = CutSet.from_file("test/fixtures/libri/cuts.json")
+
+    with NamedTemporaryFile(suffix=".tar") as f:
+        export_to_webdataset(cuts, output_path=f.name)
+        f.flush()
+
+        ds = pickle.loads(pickle.dumps(mini_webdataset(f.name)))
+
+        assert [pickle.loads(sample["data"])["id"] for sample in ds] == list(cuts.ids)
+
+
+def test_cutset_from_webdataset_with_extra_member():
+    cut = CutSet.from_file("test/fixtures/libri/cuts.json")[0]
+    cuts = CutSet.from_cuts([fastcopy(cut, id="plain")])
+
+    with NamedTemporaryFile(suffix=".tar") as f:
+        export_to_webdataset(cuts, output_path=f.name)
+        f.flush()
+
+        with tarfile.open(f.name, "a") as tar:
+            member = tarfile.TarInfo("plain.meta.json")
+            member.size = 2
+            tar.addfile(member, io.BytesIO(b"{}"))
+
+            member = tarfile.TarInfo("._plain.data")
+            member.size = 4
+            tar.addfile(member, io.BytesIO(b"\x00\x05\x16\x07"))
+
+        cuts_ds = CutSet.from_webdataset(f.name)
+
+        assert list(cuts_ds.ids) == list(cuts.ids)
 
 
 def test_cutset_from_webdataset_sharded():

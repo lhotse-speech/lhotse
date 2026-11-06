@@ -411,7 +411,8 @@ def mini_webdataset(
     from webdataset import DataPipeline, SimpleShardList, reraise_exception
     from webdataset import split_by_node as split_by_node_
     from webdataset import split_by_worker as split_by_worker_
-    from webdataset import tarfile_to_samples, warn_and_continue
+    from webdataset import warn_and_continue
+    from webdataset.filters import pipelinefilter
 
     wds = DataPipeline(SimpleShardList(urls=urls))
     if split_by_node:
@@ -421,11 +422,29 @@ def mini_webdataset(
     if shuffle_shards:
         wds.append(create_shard_shuffler(epoch=epoch))
     wds.append(
-        tarfile_to_samples(
+        pipelinefilter(_tarfile_to_cut_samples)(
             handler=warn_and_continue if ignore_error_shards else reraise_exception,
         )
     )
     return wds
+
+
+def _split_cut_key(path: str):
+    # Cut IDs may contain periods; lhotse writes one "<cut.id>.data" member per cut.
+    # Dot-prefixed names (macOS "._" files) go to base_plus_ext, which skips them.
+    from webdataset.tariterators import base_plus_ext
+
+    if path.endswith(".data") and not path.rsplit("/", 1)[-1].startswith("."):
+        return path[: -len(".data")], "data"
+    return base_plus_ext(path)
+
+
+def _tarfile_to_cut_samples(src, handler):
+    from webdataset.tariterators import group_by_keys, tar_file_expander, url_opener
+
+    streams = url_opener(src, handler=handler)
+    files = tar_file_expander(streams, handler=handler)
+    return group_by_keys(files, keys=_split_cut_key, handler=handler)
 
 
 def create_shard_shuffler(epoch: int):
