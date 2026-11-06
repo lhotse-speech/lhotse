@@ -116,7 +116,9 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         # Generate a random RIR if not provided.
         if self.rir is None:
-            rir_ = self.rir_generator(nsource=1)
+            # Use a fresh copy of the generator so that its RNGs start from their seeds on
+            # every call: loading the same cut twice then yields the same audio.
+            rir_ = FastRandomRIRGenerator(**self.rir_generator.to_dict())(nsource=1)
         else:
             from lhotse import Recording
 

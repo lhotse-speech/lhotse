@@ -36,22 +36,25 @@ class ReverbWithImpulseResponse:
         if self.random is None:
             self.random = random.Random()
         return CutSet.from_cuts(
-            (
-                cut.reverb_rir(
-                    rir_recording=(
-                        self.random.choice(self.rir_recordings)
-                        if self.rir_recordings
-                        else None
-                    ),
-                    normalize_output=self.normalize_output,
-                    early_only=self.early_only,
-                    affix_id=not self.preserve_id,
-                    rir_channels=self.rir_channels,
-                )
-                if self.random.random() <= self.p
-                else cut
-            )
-            for cut in cuts
+            self._reverb(cut) if self.random.random() <= self.p else cut for cut in cuts
+        )
+
+    def _reverb(self, cut):
+        if self.rir_recordings:
+            rir_recording = self.random.choice(self.rir_recordings)
+            room_rng_seed = None
+        else:
+            # Synthetic RIR: draw the room seed from this transform's RNG so the
+            # simulated room is reproducible and restored by ``load_state_dict()``.
+            rir_recording = None
+            room_rng_seed = self.random.getrandbits(63)
+        return cut.reverb_rir(
+            rir_recording=rir_recording,
+            normalize_output=self.normalize_output,
+            early_only=self.early_only,
+            affix_id=not self.preserve_id,
+            rir_channels=self.rir_channels,
+            room_rng_seed=room_rng_seed,
         )
 
     def state_dict(self) -> dict:

@@ -99,6 +99,16 @@ class FastRandomRIRGenerator:
             if self.source_seed is not None
             else np.random.default_rng()
         )
+        # Seeded torch RNG for sampling virtual source distances, so that a seeded
+        # generator doesn't depend on torch's global RNG state.
+        torch_seed = (
+            self.source_seed if self.source_seed is not None else self.room_seed
+        )
+        self.torch_rng = (
+            torch.Generator().manual_seed(torch_seed % 2**64)
+            if torch_seed is not None
+            else None
+        )
 
     def to_dict(self):
         return asdict(self)
@@ -164,7 +174,7 @@ class FastRandomRIRGenerator:
         dist_prob = torch.linspace(self.alpha, 1.0, image).pow(2)
         dist_prob = dist_prob / dist_prob.sum()
         dist_select_idx = dist_prob.multinomial(
-            num_samples=image * nsource, replacement=True
+            num_samples=image * nsource, replacement=True, generator=self.torch_rng
         ).view(nsource, image)
         # the distance is sampled as a ratio between d_0 and each virtual sound sources
         dist_ratio = torch.stack(

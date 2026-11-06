@@ -8,9 +8,11 @@ import soundfile as sf
 import torch
 from numpy.testing import assert_allclose
 
-from lhotse import Recording
+from lhotse import CutSet, Recording
 from lhotse.augmentation import ReverbWithImpulseResponse
 from lhotse.augmentation.utils import FastRandomRIRGenerator
+from lhotse.testing.dummies import DummyManifest
+from lhotse.utils import is_torchaudio_available
 
 
 def impulse_recording(gain):
@@ -86,7 +88,7 @@ def test_fast_rir_sums_colliding_arrivals(monkeypatch, nsource):
     monkeypatch.setattr(
         torch.Tensor,
         "multinomial",
-        lambda self, num_samples, replacement: torch.zeros(
+        lambda self, num_samples, replacement, generator=None: torch.zeros(
             num_samples, dtype=torch.long
         ),
     )
@@ -113,3 +115,29 @@ def test_fast_rir_sums_colliding_arrivals(monkeypatch, nsource):
         arrival = int(np.ceil(distance * sr * 64 / 340))
         expected[i, arrival] = (1 + 2 * sr * coefficient**reflections) / distance
     np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-6)
+
+
+@pytest.mark.skipif(not is_torchaudio_available(), reason="Requires torchaudio")
+def test_seeded_fast_rir_does_not_depend_on_global_rng():
+    torch.manual_seed(0)
+    a = FastRandomRIRGenerator(room_seed=17, source_seed=23)()
+    torch.manual_seed(1)
+    b = FastRandomRIRGenerator(room_seed=17, source_seed=23)()
+    np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.skipif(not is_torchaudio_available(), reason="Requires torchaudio")
+@pytest.mark.parametrize("mixed", [False, True])
+def test_seeded_synthetic_reverb_cut_audio_is_reproducible(mixed):
+    cut = DummyManifest(CutSet, begin_id=0, end_id=1, with_data=True)[0]
+    cut.features = None
+    if mixed:
+        cut = cut.mix(cut, preserve_id="left")
+
+    rvb = cut.reverb_rir(room_rng_seed=123)
+    first = rvb.load_audio()
+    torch.manual_seed(7)
+    # Loading the same cut twice, or a fresh cut reverberated with the same seed, gives the same audio.
+    np.testing.assert_array_equal(rvb.load_audio(), first)
+    np.testing.assert_array_equal(cut.reverb_rir(room_rng_seed=123).load_audio(), first)
+    assert not np.array_equal(cut.reverb_rir(room_rng_seed=124).load_audio(), first)
