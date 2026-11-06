@@ -96,11 +96,11 @@ def prepare_primewords(
         for audio_path in wav_path.rglob("**/*.wav"):
 
             idx = audio_path.stem
-            speaker = speaker_dict[idx]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
                 logging.warning(f"{audio_path} has no transcript.")
                 continue
+            speaker = speaker_dict[idx]
             text = transcript_dict[idx]
             if not audio_path.is_file():
                 logging.warning(f"No such file: {audio_path}")

@@ -1,11 +1,14 @@
 from .adept import download_adept, prepare_adept
+from .aidatatang_200zh import download_aidatatang_200zh, prepare_aidatatang_200zh
 from .aishell import download_aishell, prepare_aishell
+from .aishell2 import prepare_aishell2
 from .aishell3 import download_aishell3, prepare_aishell3
 from .aishell4 import download_aishell4, prepare_aishell4
 from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
 from .atcosim import download_atcosim, prepare_atcosim
+from .audio_mnist import download_audio_mnist, prepare_audio_mnist
 from .babel import prepare_single_babel_language
 from .baker_zh import download_baker_zh, prepare_baker_zh
 from .bengaliai_speech import prepare_bengaliai_speech
@@ -29,6 +32,7 @@ from .earnings21 import download_earnings21, prepare_earnings21
 from .earnings22 import download_earnings22, prepare_earnings22
 from .ears import download_ears, prepare_ears
 from .edacc import download_edacc, prepare_edacc
+from .emilia import prepare_emilia
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
 from .fisher_spanish import prepare_fisher_spanish
@@ -69,9 +73,12 @@ from .mls import prepare_mls
 from .mobvoihotwords import download_mobvoihotwords, prepare_mobvoihotwords
 from .mtedx import download_mtedx, prepare_mtedx
 from .musan import download_musan, prepare_musan
+from .must_c import prepare_must_c
+from .notsofar1 import download_notsofar1, prepare_notsofar1
 from .nsc import prepare_nsc
 from .oto_speech import download_oto_speech, prepare_oto_speech
 from .peoples_speech import prepare_peoples_speech
+from .primewords import download_primewords, prepare_primewords
 from .radio import prepare_radio
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech
 from .rir_noise import download_rir_noise, prepare_rir_noise
@@ -90,6 +97,8 @@ from .speechio import prepare_speechio
 from .spgispeech import download_spgispeech, prepare_spgispeech
 from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
+from .tal_asr import prepare_tal_asr
+from .tal_csasr import prepare_tal_csasr
 from .tedlium import download_tedlium, prepare_tedlium
 from .tedlium2 import download_tedlium2, prepare_tedlium2
 from .thchs_30 import download_thchs_30, prepare_thchs_30
@@ -109,8 +118,11 @@ from .yesno import download_yesno, prepare_yesno
 __all__ = [
     "download_adept",
     "prepare_adept",
+    "download_aidatatang_200zh",
+    "prepare_aidatatang_200zh",
     "download_aishell",
     "prepare_aishell",
+    "prepare_aishell2",
     "download_aishell3",
     "prepare_aishell3",
     "download_aishell4",
@@ -122,7 +134,11 @@ __all__ = [
     "prepare_aspire",
     "download_atcosim",
     "prepare_atcosim",
+    "download_audio_mnist",
+    "prepare_audio_mnist",
     "prepare_single_babel_language",
+    "download_baker_zh",
+    "prepare_baker_zh",
     "prepare_bengaliai_speech",
     "prepare_broadcast_news",
     "download_but_reverb_db",
@@ -131,6 +147,7 @@ __all__ = [
     "prepare_bvcc",
     "prepare_callhome_egyptian",
     "prepare_callhome_english",
+    "prepare_cdsd",
     "download_chime6",
     "prepare_chime6",
     "download_cmu_arctic",
@@ -154,6 +171,7 @@ __all__ = [
     "prepare_ears",
     "download_edacc",
     "prepare_edacc",
+    "prepare_emilia",
     "prepare_eval2000",
     "prepare_fisher_english",
     "prepare_fisher_spanish",
@@ -189,6 +207,8 @@ __all__ = [
     "prepare_librimix_mini",
     "download_librispeech",
     "prepare_librispeech",
+    "download_librispeechmix",
+    "prepare_librispeechmix",
     "download_libritts",
     "download_librittsr",
     "prepare_libritts",
@@ -197,6 +217,8 @@ __all__ = [
     "prepare_ljspeech",
     "download_magicdata",
     "prepare_magicdata",
+    "download_mdcc",
+    "prepare_mdcc",
     "download_medical",
     "prepare_medical",
     "prepare_mgb2",
@@ -207,25 +229,41 @@ __all__ = [
     "prepare_mtedx",
     "download_musan",
     "prepare_musan",
+    "prepare_must_c",
+    "download_notsofar1",
+    "prepare_notsofar1",
     "prepare_nsc",
+    "download_oto_speech",
+    "prepare_oto_speech",
     "prepare_peoples_speech",
+    "download_primewords",
+    "prepare_primewords",
+    "prepare_radio",
     "download_reazonspeech",
     "prepare_reazonspeech",
-    "prepare_radio",
     "download_rir_noise",
     "prepare_rir_noise",
+    "download_sbcsae",
+    "prepare_sbcsae",
     "download_seamless_interaction",
     "prepare_seamless_interaction",
     "prepare_slu",
+    "download_spatial_librispeech",
+    "prepare_spatial_librispeech",
     "download_speechcommands",
     "prepare_speechcommands",
+    "prepare_speechio",
     "download_spgispeech",
     "prepare_spgispeech",
     "download_stcmds",
     "prepare_stcmds",
     "prepare_switchboard",
+    "prepare_tal_asr",
+    "prepare_tal_csasr",
     "download_tedlium",
     "prepare_tedlium",
+    "download_tedlium2",
+    "prepare_tedlium2",
     "download_thchs_30",
     "prepare_thchs_30",
     "download_this_american_life",
@@ -244,6 +282,7 @@ __all__ = [
     "download_voxpopuli",
     "prepare_voxpopuli",
     "prepare_wenet_speech",
+    "prepare_wenetspeech4tts",
     "download_wham",
     "prepare_wham",
     "download_xbmu_amdo31",

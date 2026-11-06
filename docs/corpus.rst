@@ -123,12 +123,14 @@ from disk instead of being prepared again. To start over, delete the files.
     - :func:`lhotse.recipes.prepare_aidatatang_200zh`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
+  * - AISHELL-2
+    - :func:`lhotse.recipes.prepare_aishell2`
   * - Aishell-3
     - :func:`lhotse.recipes.prepare_aishell3`
   * - AISHELL-4
     - :func:`lhotse.recipes.prepare_aishell4`
   * - AliMeeting
-    - :func:`lhotse.recipes.prepare_alimeeting`
+    - :func:`lhotse.recipes.prepare_ali_meeting`
   * - AMI
     - :func:`lhotse.recipes.prepare_ami`
   * - ASpIRE
@@ -139,12 +141,14 @@ from disk instead of being prepared again. To start over, delete the files.
     - :func:`lhotse.recipes.prepare_audio_mnist`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
+  * - Baker (Chinese Standard Mandarin Speech Corpus)
+    - :func:`lhotse.recipes.prepare_baker_zh`
   * - Bengali.AI Speech
     - :func:`lhotse.recipes.prepare_bengaliai_speech`
   * - BUT ReverbDB
     - :func:`lhotse.recipes.prepare_but_reverb_db`
   * - BVCC / VoiceMOS Challenge
-    - :func:`lhotse.recipes.bvcc`
+    - :func:`lhotse.recipes.prepare_bvcc`
   * - CallHome Egyptian
     - :func:`lhotse.recipes.prepare_callhome_egyptian`
   * - CallHome English
@@ -188,7 +192,7 @@ from disk instead of being prepared again. To start over, delete the files.
   * - FLEURS
     - :func:`lhotse.recipes.prepare_fleurs`
   * - Fluent Speech Commands
-    - :func:`lhotse.recipes.slu`
+    - :func:`lhotse.recipes.prepare_slu`
   * - GALE Arabic Broadcast Speech
     - :func:`lhotse.recipes.prepare_gale_arabic`
   * - GALE Mandarin Broadcast Speech
@@ -235,12 +239,14 @@ from disk instead of being prepared again. To start over, delete the files.
     - :func:`lhotse.recipes.prepare_ljspeech`
   * - MDCC
     - :func:`lhotse.recipes.prepare_mdcc`
+  * - MagicData
+    - :func:`lhotse.recipes.prepare_magicdata`
   * - Medical
     - :func:`lhotse.recipes.prepare_medical`
   * - MiniLibriMix
     - :func:`lhotse.recipes.prepare_librimix_mini`
   * - MTEDx
-    - :func:`lhotse.recipes.prepare_mtdex`
+    - :func:`lhotse.recipes.prepare_mtedx`
   * - MobvoiHotWord
     - :func:`lhotse.recipes.prepare_mobvoihotwords`
   * - Multilingual LibriSpeech (MLS)
@@ -257,6 +263,10 @@ from disk instead of being prepared again. To start over, delete the files.
     - :func:`lhotse.recipes.prepare_oto_speech`
   * - People's Speech
     - :func:`lhotse.recipes.prepare_peoples_speech`
+  * - Radio (web radio streams)
+    - :func:`lhotse.recipes.prepare_radio`
+  * - Primewords
+    - :func:`lhotse.recipes.prepare_primewords`
   * - ReazonSpeech
     - :func:`lhotse.recipes.prepare_reazonspeech`
   * - RIRs and Noises Corpus (OpenSLR 28)
@@ -273,12 +283,20 @@ from disk instead of being prepared again. To start over, delete the files.
     - :func:`lhotse.recipes.prepare_speechio`
   * - SPGISpeech
     - :func:`lhotse.recipes.prepare_spgispeech`
+  * - ST-CMDS
+    - :func:`lhotse.recipes.prepare_stcmds`
   * - Switchboard
     - :func:`lhotse.recipes.prepare_switchboard`
+  * - TAL_ASR
+    - :func:`lhotse.recipes.prepare_tal_asr`
+  * - TAL_CSASR
+    - :func:`lhotse.recipes.prepare_tal_csasr`
   * - TED-LIUM v2
     - :func:`lhotse.recipes.prepare_tedlium2`
   * - TED-LIUM v3
     - :func:`lhotse.recipes.prepare_tedlium`
+  * - THCHS-30
+    - :func:`lhotse.recipes.prepare_thchs_30`
   * - TIMIT
     - :func:`lhotse.recipes.prepare_timit`
   * - This American Life
@@ -308,7 +326,7 @@ from disk instead of being prepared again. To start over, delete the files.
   * - MGB2
     - :func:`lhotse.recipes.prepare_mgb2`
   * - XBMU-AMDO31
-    - :func:`lhotse.recipes.xbmu_amdo31`
+    - :func:`lhotse.recipes.prepare_xbmu_amdo31`
 
 
 .. list-table:: Currently supported video corpora
