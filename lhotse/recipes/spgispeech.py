@@ -30,8 +30,13 @@ from typing import Dict, Union
 from tqdm.auto import tqdm
 
 from lhotse.audio import Recording, RecordingSet
+from lhotse.cut import CutSet
 from lhotse.parallel import parallel_map
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
@@ -66,7 +71,7 @@ def prepare_spgispeech(
     output_dir: Pathlike,
     normalize_text: bool = True,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -75,7 +80,7 @@ def prepare_spgispeech(
     :param output_dir: Pathlike, the path where to write the manifests.
     :param normalize_text: Bool, if True, normalize the text (similar to ESPNet recipe).
     :param num_jobs: int, the number of jobs to use for parallel processing.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
 
     .. note::
         Unlike other recipes, output_dir is not Optional here because we write the manifests
@@ -166,9 +171,16 @@ def prepare_spgispeech(
                 )
                 sup_writer.write(segment)
 
+        recordings = RecordingSet.from_jsonl_lazy(rec_writer.path)
+        supervisions = SupervisionSet.from_jsonl_lazy(sup_writer.path)
         manifests[part] = {
-            "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
-            "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings,
+                supervisions,
+                output_path=output_dir / f"spgispeech_cuts_{part}.jsonl.gz",
+            ),
         }
 
     logging.warning(

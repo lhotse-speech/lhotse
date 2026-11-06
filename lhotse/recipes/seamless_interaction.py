@@ -34,6 +34,7 @@ from tqdm.auto import tqdm
 
 from lhotse import (
     AudioSource,
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -138,7 +139,7 @@ def prepare_seamless_interaction(
     output_dir: Pathlike,
     labels: Sequence[str] = LABELS,
     splits: Sequence[str] = SPLITS,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
     Prepare manifests for Seamless Interaction, with one two-channel recording per interaction.
 
@@ -157,7 +158,7 @@ def prepare_seamless_interaction(
     :param labels: which conversation types to prepare, "improvised" and/or "naturalistic".
     :param splits: which splits to prepare, among "train", "dev" and "test".
     :return: a Dict whose keys are the labels and the values are Dicts whose keys are the splits
-        and the values are Dicts with the keys 'recordings' and 'supervisions' (opened lazily).
+        and the values are Dicts with the keys 'recordings', 'supervisions', and 'cuts' (opened lazily).
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -193,6 +194,9 @@ def prepare_seamless_interaction(
                 SupervisionSet.open_writer(
                     output_dir / f"{prefix}_supervisions_{split}.jsonl.gz"
                 ) as sup_writer,
+                CutSet.open_writer(
+                    output_dir / f"{prefix}_cuts_{split}.jsonl.gz"
+                ) as cut_writer,
             ):
                 for paths in tqdm(
                     interactions.values(),
@@ -211,6 +215,9 @@ def prepare_seamless_interaction(
                     validate_recordings_and_supervisions(recordings, supervisions)
                     for recording in recordings:
                         rec_writer.write(recording)
+                        cut = recording.to_cut()
+                        cut.supervisions = list(supervisions)
+                        cut_writer.write(cut)
                     for segment in supervisions:
                         sup_writer.write(segment)
             if num_untranscribed:
@@ -223,6 +230,7 @@ def prepare_seamless_interaction(
                 manifests[label][split] = {
                     "recordings": recordings,
                     "supervisions": sup_writer.open_manifest(),
+                    "cuts": cut_writer.open_manifest(),
                 }
 
     return dict(manifests)

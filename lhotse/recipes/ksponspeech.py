@@ -30,9 +30,13 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 import soundfile as sf
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -86,9 +90,9 @@ def prepare_ksponspeech(
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
     normalize_text: str = "default",
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions.
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
@@ -97,7 +101,7 @@ def prepare_ksponspeech(
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
     :param normalize_text: str, the text normalization type, "default" or "none".
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -163,6 +167,7 @@ def prepare_ksponspeech(
             )
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
+            cuts_path = None
             if output_dir is not None:
                 supervision_set.to_file(
                     output_dir / f"ksponspeech_supervisions_{part}.jsonl.gz"
@@ -170,10 +175,14 @@ def prepare_ksponspeech(
                 recording_set.to_file(
                     output_dir / f"ksponspeech_recordings_{part}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"ksponspeech_cuts_{part}.jsonl.gz"
 
             manifests[part] = {
                 "recordings": recording_set,
                 "supervisions": supervision_set,
+                "cuts": create_cuts_per_recording(
+                    recording_set, supervision_set, output_path=cuts_path
+                ),
             }
 
     return manifests

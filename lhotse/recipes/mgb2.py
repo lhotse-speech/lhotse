@@ -28,6 +28,7 @@ from string import punctuation
 from typing import Dict, Union
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
@@ -35,7 +36,11 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.kaldi import load_kaldi_data_dir
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available, recursion_limit
 
 
@@ -63,7 +68,7 @@ def prepare_mgb2(
     buck_walter: bool = False,
     num_jobs: int = 1,
     mer_thresh: int = 80,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -74,7 +79,7 @@ def prepare_mgb2(
     :param buck_walter: Bool, use BuckWalter transliteration
     :param num_jobs: int, the number of jobs to use for parallel processing.
     :param mer_thresh: int, filter out segments based on mer (Match Error Rate)
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
 
     .. note::
         Unlike other recipes, output_dir is not Optional here because we write the manifests
@@ -181,6 +186,11 @@ def prepare_mgb2(
         manifests[part] = {
             "recordings": recordings,
             "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings,
+                supervisions,
+                output_path=output_dir / f"mgb2_cuts_{part}.jsonl.gz",
+            ),
         }
     return manifests
 

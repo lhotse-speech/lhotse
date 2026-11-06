@@ -8,6 +8,7 @@ from tqdm import tqdm
 
 from lhotse import CutSet, MonoCut, fix_manifests
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -83,7 +84,14 @@ def download_notsofar1(
 def prepare_notsofar1(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[
+    str, Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]
+]:
+    """
+    :return: a Dict whose keys are the dataset part, version and mic setting
+        ("single_channel", "multi_channel", "close_talk"), and the values are Dicts
+        with the keys "recordings", "supervisions", and "cuts".
+    """
     corpus_dir = Path(corpus_dir) / "benchmark-datasets"
     if output_dir is None:
         raise ValueError("output_dir must be provided")
@@ -115,6 +123,11 @@ def prepare_notsofar1(
                 manifests[part][version]["single_channel"] = {
                     "recordings": sc_recs,
                     "supervisions": sc_sups,
+                    "cuts": create_cuts_per_recording(
+                        sc_recs,
+                        sc_sups,
+                        output_path=output_dir / f"{tag}_cuts.jsonl.gz",
+                    ),
                 }
 
             if mc_cuts:
@@ -127,6 +140,11 @@ def prepare_notsofar1(
                 manifests[part][version]["multi_channel"] = {
                     "recordings": mc_recs,
                     "supervisions": mc_sups,
+                    "cuts": create_cuts_per_recording(
+                        mc_recs,
+                        mc_sups,
+                        output_path=output_dir / f"{tag}_cuts.jsonl.gz",
+                    ),
                 }
 
             if ihm_cuts:
@@ -139,6 +157,11 @@ def prepare_notsofar1(
                 manifests[part][version]["close_talk"] = {
                     "recordings": ihm_recs,
                     "supervisions": ihm_sups,
+                    "cuts": create_cuts_per_recording(
+                        ihm_recs,
+                        ihm_sups,
+                        output_path=output_dir / f"{tag}_cuts.jsonl.gz",
+                    ),
                 }
     return manifests
 

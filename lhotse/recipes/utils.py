@@ -4,10 +4,11 @@ from typing import Dict, Iterable, Optional, Sequence, Union
 
 from lhotse import CutSet, FeatureSet, load_manifest
 from lhotse.audio import RecordingSet
+from lhotse.cut import Cut
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
-DEFAULT_DETECTED_MANIFEST_TYPES = ("recordings", "supervisions")
+DEFAULT_DETECTED_MANIFEST_TYPES = ("recordings", "supervisions", "cuts")
 
 TYPES_TO_CLASSES = {
     "recordings": RecordingSet,
@@ -35,7 +36,9 @@ def read_manifests_if_cached(
     :param output_dir: Where to look for the files.
     :param prefix: Optional common prefix for the manifest files (underscore is automatically added).
     :param suffix: Optional common suffix for the manifest files ("json" by default).
-    :param types: Which types of manifests are searched for (default: 'recordings' and 'supervisions').
+    :param types: Which types of manifests are searched for (default: 'recordings', 'supervisions', and 'cuts').
+    :param lazy: When ``True``, all manifests are opened lazily.
+        Cuts stored as JSONL are always opened lazily, since they duplicate the recordings and supervisions.
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
     if isinstance(dataset_parts, str):
@@ -57,7 +60,7 @@ def read_manifests_if_cached(
             path = output_dir / f"{prefix}{manifest}_{part}.{suffix}"
             if not path.is_file():
                 continue
-            if lazy:
+            if lazy or (manifest == "cuts" and suffix.startswith("jsonl")):
                 manifests[part][manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(
                     path
                 )
@@ -85,6 +88,45 @@ def manifests_exist(
         if not path.is_file():
             return False
     return True
+
+
+def create_cuts_per_recording(
+    recordings: RecordingSet,
+    supervisions: Optional[SupervisionSet] = None,
+    output_path: Optional[Pathlike] = None,
+) -> CutSet:
+    """
+    Create a :class:`~lhotse.cut.CutSet` with one cut spanning each whole recording.
+    Each cut has the same ID as its recording and holds all of that recording's supervisions.
+    Long or multi-speaker recordings are not split, so downstream users can segment them
+    as they see fit, e.g. with :meth:`~lhotse.cut.CutSet.trim_to_supervisions`
+    or :meth:`~lhotse.cut.CutSet.cut_into_windows`.
+
+    When ``output_path`` is provided, the cuts are written to it one at a time and
+    a lazily opened :class:`~lhotse.cut.CutSet` is returned to keep the memory usage bounded.
+    Otherwise, an eager :class:`~lhotse.cut.CutSet` is returned.
+
+    :param recordings: the recordings to create cuts for (may be lazy).
+    :param supervisions: optional supervisions to attach to the cuts.
+    :param output_path: optional path where the cuts are written (e.g. ``cuts_train.jsonl.gz``).
+    :return: a :class:`~lhotse.cut.CutSet` with one cut per recording.
+    """
+    supervisions_by_recording = defaultdict(list)
+    for segment in supervisions if supervisions is not None else []:
+        supervisions_by_recording[segment.recording_id].append(segment)
+
+    def cuts() -> Iterable[Cut]:
+        for recording in recordings:
+            cut = recording.to_cut()
+            cut.supervisions = supervisions_by_recording.get(recording.id, [])
+            yield cut
+
+    if output_path is None:
+        return CutSet.from_cuts(cuts())
+    with CutSet.open_writer(output_path) as writer:
+        for cut in cuts():
+            writer.write(cut)
+    return CutSet.from_jsonl_lazy(output_path)
 
 
 def normalize_text_alimeeting(text: str, normalize: str = "m2met") -> str:

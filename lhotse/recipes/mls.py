@@ -12,8 +12,9 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse import CutSet, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 
@@ -22,7 +23,7 @@ def prepare_mls(
     output_dir: Optional[Pathlike] = None,
     opus: bool = True,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
     Prepare Multilingual LibriSpeech corpus.
 
@@ -32,7 +33,7 @@ def prepare_mls(
 
         {
             'english': {
-                'train': {'recordings': RecordingSet(...), 'supervisions': SupervisionSet(...)},
+                'train': {'recordings': RecordingSet(...), 'supervisions': SupervisionSet(...), 'cuts': CutSet(...)},
                 'dev': ...,
                 'test': ...
             },
@@ -44,7 +45,7 @@ def prepare_mls(
     :param output_dir: Optional path where the manifests should be stored.
     :param opus: Should we scan for OPUS files (otherwise we'll look for FLAC files).
     :param num_jobs: How many jobs should be used for creating recording manifests.
-    :return: A dict with structure: ``d[language][split] = {recordings, supervisions}``.
+    :return: A dict with structure: ``d[language][split] = {recordings, supervisions, cuts}``.
     """
     corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir) if output_dir is not None else None
@@ -82,11 +83,18 @@ def prepare_mls(
                 if output_dir is None
                 else output_dir / f"mls-{lang}_supervisions_{split}.jsonl.gz"
             )
+            cuts_path = (
+                None
+                if output_dir is None
+                else output_dir / f"mls-{lang}_cuts_{split}.jsonl.gz"
+            )
             if (
                 recordings_path is not None
                 and recordings_path.is_file()
                 and supervisions_path is not None
                 and supervisions_path.is_file()
+                and cuts_path is not None
+                and cuts_path.is_file()
             ):
                 logging.info(f"Skipping - {lang}/{split} - already exists!")
                 recordings = RecordingSet.from_file(recordings_path)
@@ -94,6 +102,7 @@ def prepare_mls(
                 manifests[lang][split] = {
                     "recordings": recordings,
                     "supervisions": supervisions,
+                    "cuts": CutSet.from_jsonl_lazy(cuts_path),
                 }
                 continue
 
@@ -129,16 +138,19 @@ def prepare_mls(
             recordings, supervisions = fix_manifests(recordings, supervisions)
             validate_recordings_and_supervisions(recordings, supervisions)
 
-            # Save for return.
-            manifests[lang][split] = {
-                "recordings": recordings,
-                "supervisions": supervisions,
-            }
-
             # Optional storage on disk.
             if output_dir is not None:
                 output_dir.mkdir(exist_ok=True, parents=True)
                 recordings.to_jsonl(recordings_path)
                 supervisions.to_jsonl(supervisions_path)
+
+            # Save for return.
+            manifests[lang][split] = {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(
+                    recordings, supervisions, output_path=cuts_path
+                ),
+            }
 
     return dict(manifests)

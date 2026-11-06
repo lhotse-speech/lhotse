@@ -20,8 +20,9 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
+from lhotse.cut import CutSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import manifests_exist
+from lhotse.recipes.utils import create_cuts_per_recording, manifests_exist
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, compute_num_samples
@@ -119,14 +120,14 @@ def prepare_peoples_speech(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
-    Prepare :class:`~lhotse.RecordingSet` and :class:`~lhotse.SupervisionSet` manifests
-    for The People's Speech.
+    Prepare :class:`~lhotse.RecordingSet`, :class:`~lhotse.SupervisionSet`,
+    and :class:`~lhotse.CutSet` manifests for The People's Speech.
 
     :param corpus_dir: Pathlike, the path of the main data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a dict with keys "recordings" and "supervisions" with lazily opened manifests.
+    :return: a dict with keys "recordings", "supervisions", and "cuts" with lazily opened manifests.
     """
     corpus_dir = Path(corpus_dir)
 
@@ -157,6 +158,7 @@ def prepare_peoples_speech(
 
         recording_set, supervision_set = _prepare_subset(part, corpus_dir, num_jobs)
 
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
                 output_dir
@@ -165,7 +167,16 @@ def prepare_peoples_speech(
             recording_set.to_file(
                 output_dir / f"peoples_speech_recordings_{part.split('/')[1]}.jsonl.gz"
             )
+            cuts_path = (
+                output_dir / f"peoples_speech_cuts_{part.split('/')[1]}.jsonl.gz"
+            )
 
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
     return manifests

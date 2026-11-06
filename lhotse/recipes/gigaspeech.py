@@ -61,7 +61,7 @@ def prepare_gigaspeech(
     output_dir: Optional[Pathlike],
     dataset_parts: Union[str, Sequence[str]] = "auto",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     if is_module_available("speechcolab"):
         from speechcolab.datasets.gigaspeech import GigaSpeech
     else:

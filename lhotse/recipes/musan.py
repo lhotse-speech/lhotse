@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -27,6 +28,7 @@ from lhotse import (
     validate,
     validate_recordings_and_supervisions,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 MUSAN_URL = "https://www.openslr.org/resources/17/musan.tar.gz"
@@ -66,7 +68,7 @@ def prepare_musan(
     output_dir: Optional[Pathlike] = None,
     parts: Sequence[str] = ("music", "speech", "noise"),
     use_vocals: bool = True,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     if not parts:
@@ -91,6 +93,17 @@ def prepare_musan(
         for part in manifests:
             for key, manifest in manifests[part].items():
                 manifest.to_file(output_dir / f"musan_{key}_{part}.jsonl.gz")
+
+    for part in manifests:
+        manifests[part]["cuts"] = create_cuts_per_recording(
+            manifests[part]["recordings"],
+            manifests[part].get("supervisions"),
+            output_path=(
+                output_dir / f"musan_cuts_{part}.jsonl.gz"
+                if output_dir is not None
+                else None
+            ),
+        )
 
     return manifests
 

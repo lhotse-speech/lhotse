@@ -26,12 +26,13 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     get_ffmpeg_torchaudio_info_enabled,
     set_ffmpeg_torchaudio_info_enabled,
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import manifests_exist
+from lhotse.recipes.utils import create_cuts_per_recording, manifests_exist
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -132,12 +133,12 @@ def prepare_bengaliai_speech(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Path to the Bengali.AI Speech dataset.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
 
@@ -194,6 +195,7 @@ def prepare_bengaliai_speech(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
                 output_dir / f"bengaliai_speech_supervisions_{part}.jsonl.gz"
@@ -201,7 +203,14 @@ def prepare_bengaliai_speech(
             recording_set.to_file(
                 output_dir / f"bengaliai_speech_recordings_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"bengaliai_speech_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
     return manifests

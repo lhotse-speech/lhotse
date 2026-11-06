@@ -34,6 +34,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -41,6 +42,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
 # Keep Markings such as vowel signs, all letters, and decimal numbers
@@ -124,7 +126,7 @@ def prepare_mtedx(
     output_dir: Optional[Pathlike] = None,
     languages: Optional[Union[str, Sequence[str]]] = "all",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
     Prepares manifest of all MTEDx languages requested.
 
@@ -178,7 +180,7 @@ def prepare_single_mtedx_language(
     output_dir: Optional[Pathlike] = None,
     language: str = "language",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests using a single MTEDx language.
 
@@ -194,7 +196,7 @@ def prepare_single_mtedx_language(
     :param output_dir: Path where the manifests are stored as .json files
     :param language: The two-letter language code.
     :param num_jobs: Number of threads to use when preparing data.
-    :return:
+    :return: a Dict whose key is the split, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
     """
     if isinstance(corpus_dir, str):
         corpus_dir = Path(corpus_dir)
@@ -229,11 +231,7 @@ def prepare_single_mtedx_language(
             recordings, supervisions = fix_manifests(recordings, supervisions)
             validate_recordings_and_supervisions(recordings, supervisions)
 
-            manifests[split] = {
-                "recordings": recordings,
-                "supervisions": supervisions,
-            }
-
+            cuts_path = None
             if output_dir is not None:
                 if isinstance(output_dir, str):
                     output_dir = Path(output_dir)
@@ -245,6 +243,15 @@ def prepare_single_mtedx_language(
                 supervisions.to_file(
                     output_dir / f"mtedx-{language}_supervisions_{split}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"mtedx-{language}_cuts_{split}.jsonl.gz"
+
+            manifests[split] = {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(
+                    recordings, supervisions, output_path=cuts_path
+                ),
+            }
 
     return dict(manifests)
 

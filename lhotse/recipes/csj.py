@@ -114,10 +114,14 @@ from typing import Callable, Dict, List, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -831,7 +835,7 @@ def prepare_manifests(
     dataset_parts: Union[str, Sequence[str]] = None,
     manifest_dir: Pathlike = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will
@@ -844,7 +848,7 @@ def prepare_manifests(
     :param manifest_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: int, to be passed to ThreadPoolExecutor.
     :return: a Dict whose key is the dataset part, and the value is Dicts
-        with the keys 'recordings' and 'supervisions'.
+        with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     assert (
         transcript_dir.is_dir()
@@ -896,15 +900,20 @@ def prepare_manifests(
             )
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
+            cuts_path = None
             if manifest_dir:
                 supervision_set.to_file(
                     manifest_dir / f"csj_supervisions_{part}.jsonl.gz"
                 )
                 recording_set.to_file(manifest_dir / f"csj_recordings_{part}.jsonl.gz")
+                cuts_path = manifest_dir / f"csj_cuts_{part}.jsonl.gz"
 
             manifests[part] = {
                 "recordings": recording_set,
                 "supervisions": supervision_set,
+                "cuts": create_cuts_per_recording(
+                    recording_set, supervision_set, output_path=cuts_path
+                ),
             }
     return manifests
 

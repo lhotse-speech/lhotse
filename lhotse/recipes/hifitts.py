@@ -29,6 +29,7 @@ from typing import Dict, Optional, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -36,7 +37,11 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.serialization import load_jsonl
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
@@ -108,14 +113,15 @@ def prepare_hifitts(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the HiFiTTS dataset.
 
     :param corpus_dir: Path or str, the path to the downloaded corpus main directory.
     :param output_dir: Path or str, the path where to write the manifests.
     :param num_jobs: How many concurrent workers to use for preparing each dataset partition.
-    :return: a dict with manifests for all the partitions
+    :return: a dict with manifests for all the partitions, each with the keys
+        "recordings", "supervisions", and "cuts"
         (example query: ``manifests['92_clean_train']['recordings']``).
     """
     corpus_dir = Path(corpus_dir)
@@ -161,6 +167,7 @@ def prepare_hifitts(
             partition_id = futures[future]
             recordings, supervisions = future.result()
 
+            cuts_path = None
             if output_dir is not None:
                 supervisions.to_file(
                     output_dir / f"hifitts_supervisions_{partition_id}.jsonl.gz"
@@ -168,10 +175,14 @@ def prepare_hifitts(
                 recordings.to_file(
                     output_dir / f"hifitts_recordings_{partition_id}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"hifitts_cuts_{partition_id}.jsonl.gz"
 
             manifests[partition_id] = {
                 "recordings": recordings,
                 "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(
+                    recordings, supervisions, output_path=cuts_path
+                ),
             }
 
     return manifests

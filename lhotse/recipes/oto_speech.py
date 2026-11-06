@@ -28,12 +28,14 @@ from typing import Dict, Tuple, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     fix_manifests,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import Pathlike, safe_extract
 
@@ -143,7 +145,7 @@ def prepare_oto_speech(
     output_dir: Pathlike,
     parts: Tuple[str, ...] = ("train",),
     target_sr: int = 16000,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """Prepares the dataset, utilizing Lhotse's lazy resampling and extraction caching."""
     corpus_dir = Path(corpus_dir)
     data_dir = corpus_dir / "data"
@@ -254,12 +256,22 @@ def prepare_oto_speech(
 
         recordings_path = output_dir / f"oto_recordings_{part}.jsonl.gz"
         supervisions_path = output_dir / f"oto_supervisions_{part}.jsonl.gz"
+        cuts_path = output_dir / f"oto_cuts_{part}.jsonl.gz"
 
         recordings.to_file(recordings_path)
         supervision_set.to_file(supervisions_path)
+        cuts = create_cuts_per_recording(
+            recordings, supervision_set, output_path=cuts_path
+        )
 
-        logger.info(f"Saved to:\n - {recordings_path}\n - {supervisions_path}")
+        logger.info(
+            f"Saved to:\n - {recordings_path}\n - {supervisions_path}\n - {cuts_path}"
+        )
 
-        manifests[part] = {"recordings": recordings, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recordings,
+            "supervisions": supervision_set,
+            "cuts": cuts,
+        }
 
     return dict(manifests)

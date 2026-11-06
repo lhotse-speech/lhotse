@@ -27,6 +27,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     get_ffmpeg_torchaudio_info_enabled,
     load_manifest,
     set_ffmpeg_torchaudio_info_enabled,
@@ -34,6 +35,7 @@ from lhotse import (
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
@@ -129,20 +131,24 @@ def disable_ffmpeg_torchaudio_info() -> None:
 def _read_cv_manifests_if_cached(
     output_dir: Optional[Pathlike],
     language: str,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns:
-        {'train': {'recordings': ..., 'supervisions': ...}, 'dev': ..., 'test': ...}
+        {'train': {'recordings': ..., 'supervisions': ..., 'cuts': ...}, 'dev': ..., 'test': ...}
     """
     if output_dir is None:
         return {}
     manifests = defaultdict(dict)
     for part in ["train", "dev", "test"]:
-        for manifest in ["recordings", "supervisions"]:
+        for manifest in ["recordings", "supervisions", "cuts"]:
             path = output_dir / f"cv_{manifest}_{language}_{part}.jsonl.gz"
             if not path.is_file():
                 continue
-            manifests[part][manifest] = load_manifest(path)
+            manifests[part][manifest] = (
+                CutSet.from_jsonl_lazy(path)
+                if manifest == "cuts"
+                else load_manifest(path)
+            )
     return manifests
 
 
@@ -246,7 +252,7 @@ def prepare_commonvoice(
     languages: Union[str, Sequence[str]] = "auto",
     splits: Union[str, Sequence[str]] = COMMONVOICE_DEFAULT_SPLITS,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -260,7 +266,7 @@ def prepare_commonvoice(
 
     Returns a dict with 3-level structure (lang -> split -> manifest-type)::
 
-        >>> {'en/fr/pl/...': {'train/dev/test': {'recordings/supervisions': manifest}}}
+        >>> {'en/fr/pl/...': {'train/dev/test': {'recordings/supervisions/cuts': manifest}}}
 
     :param corpus_dir: Pathlike, the path to the downloaded corpus.
     :param output_dir: Pathlike, the path where to write the manifests.
@@ -330,6 +336,11 @@ def prepare_commonvoice(
             lang_manifests[part] = {
                 "supervisions": supervision_set,
                 "recordings": recording_set,
+                "cuts": create_cuts_per_recording(
+                    recording_set,
+                    supervision_set,
+                    output_path=output_dir / f"cv-{lang}_cuts_{part}.jsonl.gz",
+                ),
             }
 
         manifests[lang] = lang_manifests

@@ -17,9 +17,10 @@ from typing import Dict, List, Optional, Union
 
 from cytoolz import sliding_window
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, recursion_limit
 
@@ -34,16 +35,17 @@ def prepare_broadcast_news(
     transcripts_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepare manifests for 1997 English Broadcast News corpus.
-    We create three manifests: one with recordings, one with segments supervisions,
-    and one with section supervisions. The latter can be used e.g. for topic segmentation.
+    We create four manifests: one with recordings, one with segments supervisions,
+    one with section supervisions, and one with cuts (one per recording, holding the
+    segment supervisions). The section supervisions can be used e.g. for topic segmentation.
 
     :param audio_dir: Path to ``LDC98S71`` package.
     :param transcripts_dir: Path to ``LDC98T28`` package.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'sections', 'segments'}``.
+    :return: A dict with manifests. The keys are: ``{'recordings', 'sections', 'segments', 'cuts'}``.
     """
     audio_paths = check_and_rglob(audio_dir, "*.sph")
     sgml_paths = check_and_rglob(transcripts_dir, "*.sgml")
@@ -69,6 +71,7 @@ def prepare_broadcast_news(
     recordings, segment_supervisions = fix_manifests(recordings, segment_supervisions)
     validate_recordings_and_supervisions(recordings, segment_supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -79,11 +82,15 @@ def prepare_broadcast_news(
         segment_supervisions.to_file(
             output_dir / "broadcast-news_segments_all.jsonl.gz"
         )
+        cuts_path = output_dir / "broadcast-news_cuts_all.jsonl.gz"
 
     return {
         "recordings": recordings,
         "sections": section_supervisions,
         "segments": segment_supervisions,
+        "cuts": create_cuts_per_recording(
+            recordings, segment_supervisions, output_path=cuts_path
+        ),
     }
 
 

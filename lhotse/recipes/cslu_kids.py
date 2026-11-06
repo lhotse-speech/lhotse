@@ -28,9 +28,10 @@ from typing import Dict, Optional, Union
 
 from tqdm import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
@@ -49,7 +50,7 @@ def prepare_cslu_kids(
     output_dir: Optional[Pathlike] = None,
     absolute_paths: Optional[bool] = True,
     normalize_text: Optional[bool] = True,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepare manifests for CSLU Kids corpus. The supervision contains either the
     prompted text, or a transcription of the spontaneous speech, depending on
@@ -64,7 +65,7 @@ def prepare_cslu_kids(
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param absolute_paths: Wheter to write absolute paths to audio sources (default = False)
     :param normalize_text: remove noise tags (<bn>, <bs>) from spontaneous speech transcripts (default = True)
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
     """
     corpus_dir = Path(corpus_dir) if isinstance(corpus_dir, str) else corpus_dir
 
@@ -138,6 +139,7 @@ def prepare_cslu_kids(
         "supervisions": supervisions,
     }
 
+    cuts_path = None
     if output_dir is not None:
         logging.info("Writing manifests to JSON files")
         output_dir = Path(output_dir)
@@ -148,5 +150,10 @@ def prepare_cslu_kids(
         manifests["supervisions"].to_file(
             output_dir / "cslu_kids_supervisions_all.jsonl.gz"
         )
+        cuts_path = output_dir / "cslu-kids_cuts_all.jsonl.gz"
+
+    manifests["cuts"] = create_cuts_per_recording(
+        recordings, supervisions, output_path=cuts_path
+    )
 
     return manifests

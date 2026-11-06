@@ -19,7 +19,11 @@ from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, compute_num_samples
@@ -107,6 +111,7 @@ def prepare_kespeech(
             )
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
+            cuts_path = None
             if output_dir is not None:
                 supervision_set.to_file(
                     output_dir / f"kespeech-asr_supervisions_{part}.jsonl.gz"
@@ -114,10 +119,14 @@ def prepare_kespeech(
                 recording_set.to_file(
                     output_dir / f"kespeech-asr_recordings_{part}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"kespeech-asr_cuts_{part}.jsonl.gz"
 
             manifests[part] = {
                 "recordings": recording_set,
                 "supervisions": supervision_set,
+                "cuts": create_cuts_per_recording(
+                    recording_set, supervision_set, output_path=cuts_path
+                ),
             }
     return manifests
 

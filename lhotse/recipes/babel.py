@@ -16,6 +16,7 @@ import tqdm
 from cytoolz import sliding_window
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -27,6 +28,7 @@ from lhotse.qa import (
     remove_missing_recordings_and_supervisions,
     trim_supervisions_to_recordings,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 BABELCODE2LANG = {
@@ -68,7 +70,7 @@ def prepare_single_babel_language(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     no_eval_ok: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests using a single BABEL LDC package.
 
@@ -84,7 +86,7 @@ def prepare_single_babel_language(
     :param output_dir: Path where the manifests are stored.json
     :param no_eval_ok: When set to True, this function won't emit a warning
         that the eval set was not found.
-    :return:
+    :return: a Dict whose key is the split, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     manifests = defaultdict(dict)
 
@@ -187,8 +189,7 @@ def prepare_single_babel_language(
             supervisions = trim_supervisions_to_recordings(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
-        manifests[split] = {"recordings": recordings, "supervisions": supervisions}
-
+        cuts_path = None
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -200,6 +201,15 @@ def prepare_single_babel_language(
             supervisions.to_file(
                 output_dir / f"babel-{language}_supervisions_{save_split}.jsonl.gz"
             )
+            cuts_path = output_dir / f"babel-{language}_cuts_{save_split}.jsonl.gz"
+
+        manifests[split] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return dict(manifests)
 

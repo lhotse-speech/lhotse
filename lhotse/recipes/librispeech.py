@@ -9,9 +9,13 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
@@ -116,7 +120,7 @@ def prepare_librispeech(
     output_dir: Optional[Pathlike] = None,
     normalize_text: str = "none",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -130,7 +134,7 @@ def prepare_librispeech(
     :param normalize_text: str, "none" or "lower",
         for "lower" the transcripts are converted to lower-case.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
     """
     corpus_dir = Path(corpus_dir)
     alignments_dir = Path(alignments_dir) if alignments_dir is not None else corpus_dir
@@ -220,6 +224,7 @@ def prepare_librispeech(
             )
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
+            cuts_path = None
             if output_dir is not None:
                 supervision_set.to_file(
                     output_dir / f"librispeech_supervisions_{part}.jsonl.gz"
@@ -227,10 +232,14 @@ def prepare_librispeech(
                 recording_set.to_file(
                     output_dir / f"librispeech_recordings_{part}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"librispeech_cuts_{part}.jsonl.gz"
 
             manifests[part] = {
                 "recordings": recording_set,
                 "supervisions": supervision_set,
+                "cuts": create_cuts_per_recording(
+                    recording_set, supervision_set, output_path=cuts_path
+                ),
             }
 
     return manifests

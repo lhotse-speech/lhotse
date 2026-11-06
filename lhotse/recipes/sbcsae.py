@@ -47,12 +47,14 @@ from typing import Dict, List, Optional, Tuple, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     fix_manifests,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import (
     Pathlike,
     fastcopy,
@@ -159,7 +161,7 @@ def prepare_sbcsae(
     output_dir: Optional[Pathlike] = None,
     geolocation: Optional[bool] = False,
     omit_realignments: Optional[bool] = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepares manifest for SBCSAE dataset.
 
@@ -171,7 +173,9 @@ def prepare_sbcsae(
     :param: geolocation: Include geographic coordinates of speakers' hometowns
         in the manifests.
     :param: omit_realignments: Only output original corpus segmentation.
-    :return: The manifests.
+    :return: The manifests: a Dict with keys "recordings", "supervisions", and "cuts",
+        and unless ``omit_realignments`` is set, also "asr_supervisions", "diar_supervisions",
+        "asr_cuts", and "diar_cuts".
     """
     # Resolve corpus_dir type
     if isinstance(corpus_dir, str):
@@ -237,14 +241,22 @@ def prepare_sbcsae(
     supervisions = SupervisionSet.from_segments(supervisions_)
     recordings, supervisions = fix_manifests(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         if isinstance(output_dir, str):
             output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_file(output_dir / "sbcsae_recordings.jsonl.gz")
         supervisions.to_file(output_dir / "sbcsae_supervisions.jsonl.gz")
+        cuts_path = output_dir / "sbcsae_cuts.jsonl.gz"
 
-    manifests = {"recordings": recordings, "supervisions": supervisions}
+    manifests = {
+        "recordings": recordings,
+        "supervisions": supervisions,
+        "cuts": create_cuts_per_recording(
+            recordings, supervisions, output_path=cuts_path
+        ),
+    }
 
     if not omit_realignments:
         asr_supervisions, diar_supervisions = apply_aligned_stms(
@@ -263,6 +275,16 @@ def prepare_sbcsae(
         manifests = {
             "asr_supervisions": asr_supervisions,
             "diar_supervisions": diar_supervisions,
+            "asr_cuts": create_cuts_per_recording(
+                recordings,
+                asr_supervisions,
+                output_path=output_dir / "sbcsae_cuts_asr_aligned.jsonl.gz",
+            ),
+            "diar_cuts": create_cuts_per_recording(
+                recordings,
+                diar_supervisions,
+                output_path=output_dir / "sbcsae_cuts_diar_aligned.jsonl.gz",
+            ),
             **manifests,
         }
 

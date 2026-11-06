@@ -25,6 +25,7 @@ from typing import Dict, Iterable, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
@@ -34,6 +35,7 @@ from lhotse import (
 from lhotse.recipes.utils import (
     DEFAULT_DETECTED_MANIFEST_TYPES,
     TYPES_TO_CLASSES,
+    create_cuts_per_recording,
     load_manifest,
     manifests_exist,
 )
@@ -132,7 +134,7 @@ def prepare_ears(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -140,7 +142,7 @@ def prepare_ears(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: the number of parallel workers parsing the data.
-    :return: a Dict whose keys are 'recordings' and 'supervisions'.
+    :return: a Dict whose keys are 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -216,10 +218,18 @@ def prepare_ears(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         supervisions.to_file(output_dir / f"ears_supervisions.jsonl.gz")
         recordings.to_file(output_dir / f"ears_recordings.jsonl.gz")
+        cuts_path = output_dir / "ears_cuts.jsonl.gz"
 
-    manifests = {"recordings": recordings, "supervisions": supervisions}
+    manifests = {
+        "recordings": recordings,
+        "supervisions": supervisions,
+        "cuts": create_cuts_per_recording(
+            recordings, supervisions, output_path=cuts_path
+        ),
+    }
 
     return manifests

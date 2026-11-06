@@ -19,6 +19,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.serialization import load_json
 from lhotse.utils import Pathlike, is_module_available
 
@@ -70,6 +71,8 @@ def prepare_daily_talk(
     :param corpus_dir: Pathlike, the path to the extracted corpus.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+        When ``output_dir`` is provided, a CutSet with one cut per recording is also written
+        to ``dailytalk_cuts_all.jsonl.gz``.
     """
     corpus_dir = Path(corpus_dir)
     meta = corpus_dir / "metadata.json"
@@ -116,6 +119,11 @@ def prepare_daily_talk(
         output_dir.mkdir(exist_ok=True, parents=True)
         recordings.to_file(output_dir / "dailytalk_recordings_all.jsonl.gz")
         supervisions.to_file(output_dir / "dailytalk_supervisions_all.jsonl.gz")
+        create_cuts_per_recording(
+            recordings,
+            supervisions,
+            output_path=output_dir / "dailytalk_cuts_all.jsonl.gz",
+        )
 
     return recordings, supervisions
 

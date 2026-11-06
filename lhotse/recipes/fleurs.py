@@ -25,6 +25,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -34,6 +35,7 @@ from lhotse import (
     set_ffmpeg_torchaudio_info_enabled,
 )
 from lhotse.parallel import parallel_map
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, is_module_available
 
 # The FLEURS languages are indicated by 2-letter ISO-codes followed by a
@@ -275,7 +277,7 @@ def prepare_fleurs(
     output_dir: Optional[Pathlike] = None,
     languages: Optional[Union[str, Sequence[str]]] = "all",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
     Prepares the manifest for all of the FLEURS languages requested.
 
@@ -285,8 +287,8 @@ def prepare_fleurs(
     :type output_dir: Pathlike,
     :param langauges: str or str sequence specifying the languages to prepare.
         The str 'all' prepares all 102 languages.
-    :return: The manifest
-    :rtype: Dict[str, Dict[str, Union[RecordingSet, Supervisions]]]]
+    :return: The manifests per language and split, with the keys 'recordings', 'supervisions', and 'cuts'.
+    :rtype: Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]
     """
 
     if isinstance(corpus_dir, str):
@@ -321,15 +323,22 @@ def prepare_fleurs(
             num_jobs=num_jobs,
         )
 
-    if output_dir is not None:
-        for l in manifests:
-            for dset in ("train", "dev", "test"):
+    for l in manifests:
+        for dset in ("train", "dev", "test"):
+            cuts_path = None
+            if output_dir is not None:
                 manifests[l][dset]["supervisions"].to_file(
                     output_dir / f"{l}" / f"fleurs-{l}_supervisions_{dset}.jsonl.gz"
                 )
                 manifests[l][dset]["recordings"].to_file(
                     output_dir / f"{l}" / f"fleurs-{l}_recordings_{dset}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"{l}" / f"fleurs-{l}_cuts_{dset}.jsonl.gz"
+            manifests[l][dset]["cuts"] = create_cuts_per_recording(
+                manifests[l][dset]["recordings"],
+                manifests[l][dset]["supervisions"],
+                output_path=cuts_path,
+            )
     return manifests
 
 

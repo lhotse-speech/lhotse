@@ -29,8 +29,15 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse import (
+    CutSet,
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+)
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, check_and_rglob, resumable_download, safe_extract
 
 
@@ -40,11 +47,11 @@ def prepare_callhome_english(
     transcript_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepare manifests for the CallHome American English corpus.
-    We create two manifests: one with recordings, and the other one with text
-    supervisions.
+    We create three manifests: one with recordings, one with text
+    supervisions, and one with cuts (one cut per recording).
 
     Depending on the value of transcript_dir, will prepare either
         * data for ASR task (expected LDC corpora ``LDC97S42`` and ``LDC97T14``)
@@ -57,7 +64,7 @@ def prepare_callhome_english(
     :param absolute_paths: Whether to return absolute or relative
         (to the corpus dir) paths for recordings.
     :return: A dict with manifests. The keys are:
-        ``{'recordings', 'supervisions'}``.
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
     # not sure if there is possible deeper level of integration,
     # as SRE does not contain/respect the train/eval/test splits?
@@ -77,11 +84,11 @@ def prepare_callhome_english_sre(
     rttm_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepare manifests for the Callhome American English portion prepartion.
-    We create two manifests: one with recordings, and the other one with text
-    supervisions.
+    We create three manifests: one with recordings, one with text
+    supervisions, and one with cuts (one cut per recording).
 
     :param audio_dir: Path to ``LDC2001S97`` package.
     :param rttm_dir: Path to the transcripts directory. If not provided,
@@ -91,7 +98,7 @@ def prepare_callhome_english_sre(
     :param absolute_paths: Whether to return absolute or relative
         (to the corpus dir) paths for recordings.
     :return: A dict with manifests.
-        The keys are: ``{'recordings', 'supervisions'}``.
+        The keys are: ``{'recordings', 'supervisions', 'cuts'}``.
     """
     if rttm_dir is None:
         rttm_dir = download_callhome_metadata()
@@ -107,12 +114,15 @@ def prepare_callhome_english_sre(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts = create_cuts_per_recording(recordings, supervisions)
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_json(output_dir / "recordings.json")
         supervisions.to_json(output_dir / "supervisions.json")
-    return {"recordings": recordings, "supervisions": supervisions}
+        cuts.to_json(output_dir / "cuts.json")
+    return {"recordings": recordings, "supervisions": supervisions, "cuts": cuts}
 
 
 def prepare_callhome_english_asr(
@@ -120,11 +130,11 @@ def prepare_callhome_english_asr(
     transcript_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepare manifests for the CallHome American English corpus.
-    We create two manifests: one with recordings, and the other one with text
-    supervisions.
+    We create three manifests: one with recordings, one with text
+    supervisions, and one with cuts (one cut per recording).
 
     :param audio_dir: Path to ``LDC97S42`` content
     :param transcript_dir: Path to the ``LDC97T14`` content
@@ -133,7 +143,7 @@ def prepare_callhome_english_asr(
     :param absolute_paths: Whether to return absolute or relative
         (to the corpus dir) paths for recordings.
     :return: A dict with manifests. The keys are:
-        ``{'recordings', 'supervisions'}``.
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
     audio_dir = Path(audio_dir)
     transcript_dir = Path(transcript_dir)
@@ -206,6 +216,7 @@ def prepare_callhome_english_asr(
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
+        cuts_path = None
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -215,8 +226,15 @@ def prepare_callhome_english_asr(
             supervisions.to_file(
                 output_dir / f"callhome-english_supervisions_{split}.jsonl.gz"
             )
+            cuts_path = output_dir / f"callhome-english_cuts_{split}.jsonl.gz"
 
-        manifests[split] = {"recordings": recordings, "supervisions": supervisions}
+        manifests[split] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return manifests
 

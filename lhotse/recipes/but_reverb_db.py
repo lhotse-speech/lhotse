@@ -54,6 +54,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import CutSet, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 BUT_REVERB_DB_URL = (
@@ -99,6 +100,7 @@ def prepare_but_reverb_db(
 
     :param corpus_dir: Pathlike, the path of the dir to store the dataset.
     :param output_dir: Pathlike, the path of the dir to write the manifests.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -125,16 +127,22 @@ def prepare_but_reverb_db(
         recording = Recording.from_file(wav_file, recording_id=recording_id)
         recordings[part].append(recording)
 
-    manifests = defaultdict(dict)
-    for part in parts:
-        manifests[part]["recordings"] = RecordingSet.from_recordings(recordings[part])
-
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        for part in parts:
-            manifests[part]["recordings"].to_file(
+
+    manifests = defaultdict(dict)
+    for part in parts:
+        recording_set = RecordingSet.from_recordings(recordings[part])
+        cuts_path = None
+        if output_dir is not None:
+            recording_set.to_file(
                 output_dir / f"but-reverb-db_{part}_recordings.jsonl.gz"
             )
+            cuts_path = output_dir / f"but-reverb-db_{part}_cuts.jsonl.gz"
+        manifests[part] = {
+            "recordings": recording_set,
+            "cuts": create_cuts_per_recording(recording_set, output_path=cuts_path),
+        }
 
     return manifests

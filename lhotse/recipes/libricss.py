@@ -27,6 +27,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, fastcopy
 
 # fmt: off
@@ -152,7 +153,8 @@ def prepare_libricss(
     :param segmented_cuts: bool, if True, it will return 1-minute (as described in the original paper)
         in the form of a CutSet. These are saved under the index ``segments`` in the returned Dict.
         May be useful for evaluating multi-talker ASR systems, e.g., in this paper: https://arxiv.org/abs/2109.08555.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict with the keys 'recordings', 'supervisions', 'cuts' (one cut per session),
+        and 'segments' (only when ``segmented_cuts=True``).
 
     """
     assert type in ["mdm", "sdm", "ihm-mix", "ihm"]
@@ -257,6 +259,7 @@ def prepare_libricss(
         cuts_segmented = CutSet.from_cuts(cuts_segmented)
         result_dict["segments"] = cuts_segmented
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
@@ -266,6 +269,11 @@ def prepare_libricss(
             cuts_segmented.to_file(
                 output_dir / f"libricss-{type}_segments_all.jsonl.gz"
             )
+        cuts_path = output_dir / f"libricss-{type}_cuts_all.jsonl.gz"
+
+    result_dict["cuts"] = create_cuts_per_recording(
+        recordings, supervisions, output_path=cuts_path
+    )
 
     return result_dict
 

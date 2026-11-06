@@ -34,13 +34,18 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     fix_manifests,
     validate_recordings_and_supervisions,
 )
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 LIBRITTS = (
@@ -141,7 +146,7 @@ def prepare_libritts(
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
     link_previous_utt: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -154,7 +159,7 @@ def prepare_libritts(
     :param link_previous_utt: If true adds previous utterance id to supervisions.
         Useful for reconstructing chains of utterances as they were read.
         If previous utterance was skipped from LibriTTS datasets previous_utt label is None.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys "recordings", "supervisions", and "cuts".
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -280,11 +285,19 @@ def prepare_libritts(
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
+        cuts_path = None
         if output_dir is not None:
             supervisions.to_file(output_dir / f"libritts_supervisions_{part}.jsonl.gz")
             recordings.to_file(output_dir / f"libritts_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"libritts_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recordings, "supervisions": supervisions}
+        manifests[part] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return manifests
 

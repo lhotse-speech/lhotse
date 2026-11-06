@@ -25,9 +25,10 @@ import tarfile
 from pathlib import Path
 from typing import Dict, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.serialization import load_json
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -73,12 +74,13 @@ def download_audio_mnist(
 def prepare_audio_mnist(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """Prepare manifests for the AudioMNIST corpus.
 
     :param: corpus_dir: We assume it is the github repo directory and it
       contains the following directories: data/{01,02,03,...,60}
     :param: output_dir: Directory where the manifests should be written.
+    :return: a Dict with the keys "recordings", "supervisions", and "cuts".
     """
     in_data_dir = Path(corpus_dir) / "data"
     assert (Path(in_data_dir) / "audioMNIST_meta.txt").is_file()
@@ -136,11 +138,19 @@ def prepare_audio_mnist(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         supervisions.to_file(output_dir / "audio_mnist_supervisions.jsonl.gz")
         recordings.to_file(output_dir / "audio_mnist_recordings.jsonl.gz")
+        cuts_path = output_dir / "audio_mnist_cuts.jsonl.gz"
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return {
+        "recordings": recordings,
+        "supervisions": supervisions,
+        "cuts": create_cuts_per_recording(
+            recordings, supervisions, output_path=cuts_path
+        ),
+    }

@@ -24,10 +24,11 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 from urllib.request import urlopen
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.recipes.nsc import check_dependencies
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available
 
@@ -68,7 +69,7 @@ def prepare_gale_mandarin(
     output_dir: Optional[Pathlike] = None,
     absolute_paths: Optional[bool] = True,
     segment_words: Optional[bool] = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for GALE Mandarin Broadcast speech corpus.
 
@@ -77,7 +78,8 @@ def prepare_gale_mandarin(
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param absolute_paths: Wheter to write absolute paths to audio sources (default = False)
     :param segment_words: Use `jieba` package to perform word segmentation (default = False)
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict whose keys are the splits ``{'train', 'dev'}`` and the values are dicts
+        with the keys: ``{'recordings', 'supervisions', 'cuts'}``.
     """
     assert len(audio_dirs) == len(
         transcript_dirs
@@ -138,13 +140,21 @@ def prepare_gale_mandarin(
         logging.info("Writing manifests to JSONL files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        for part in ["train", "dev"]:
+    for part in ["train", "dev"]:
+        cuts_path = None
+        if output_dir is not None:
             manifests[part]["recordings"].to_file(
                 output_dir / f"gale-mandarin_recordings_{part}.jsonl.gz"
             )
             manifests[part]["supervisions"].to_file(
                 output_dir / f"gale-mandarin_supervisions_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"gale-mandarin_cuts_{part}.jsonl.gz"
+        manifests[part]["cuts"] = create_cuts_per_recording(
+            manifests[part]["recordings"],
+            manifests[part]["supervisions"],
+            output_path=cuts_path,
+        )
 
     return manifests
 

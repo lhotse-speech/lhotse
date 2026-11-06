@@ -8,15 +8,16 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from tqdm import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
 
 def prepare_slu(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
 
     import pandas
 
@@ -115,11 +116,20 @@ def prepare_slu(
             "supervisions": supervision_set,
         }
 
-    if output_dir is not None:
-        for name in ["train", "valid", "test"]:
+    for name in ["train", "valid", "test"]:
+        cuts_path = None
+        if output_dir is not None:
             manifests[name]["recordings"].to_file(
                 output_dir / ("slu_recordings_" + name + ".jsonl.gz")
             )
             manifests[name]["supervisions"].to_file(
                 output_dir / ("slu_supervisions_" + name + ".jsonl.gz")
             )
+            cuts_path = output_dir / ("slu_cuts_" + name + ".jsonl.gz")
+        manifests[name]["cuts"] = create_cuts_per_recording(
+            manifests[name]["recordings"],
+            manifests[name]["supervisions"],
+            output_path=cuts_path,
+        )
+
+    return dict(manifests)

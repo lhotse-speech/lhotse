@@ -16,7 +16,7 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -175,6 +175,8 @@ def prepare_atcosim(
     :param partial_sym: str, partial symbol. When set to None, will output partial words
     :param unknown_sym: str, unknown symbol
     :return: The RecordingSet and SupervisionSet with the keys 'audio' and 'supervisions'.
+        A CutSet with one cut per recording is also written to ``atcosim_cuts_all.jsonl.gz``
+        in ``output_dir``.
     """
     if not is_module_available("pandas"):
         raise ImportError("Please 'pip install pandas' first.")
@@ -198,6 +200,10 @@ def prepare_atcosim(
             output_dir / f"atcosim_supervisions_all.jsonl.gz",
             overwrite=True,
         ) as sups_writer,
+        CutSet.open_writer(
+            output_dir / "atcosim_cuts_all.jsonl.gz",
+            overwrite=True,
+        ) as cuts_writer,
     ):
         for idx, row in tqdm(
             df.iterrows(),
@@ -246,6 +252,9 @@ def prepare_atcosim(
 
             recs_writer.write(recording)
             sups_writer.write(segment)
+            cut = recording.to_cut()
+            cut.supervisions = [segment]
+            cuts_writer.write(cut)
 
     recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
     supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)

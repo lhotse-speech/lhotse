@@ -29,8 +29,9 @@ import zipfile
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
@@ -84,13 +85,13 @@ def download_edacc(
 def prepare_edacc(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
 
     :param corpus_dir: a path to the unzipped EDACC directory (has ``edacc_v1.0`` inside).
     :param output_dir: an optional path where to write the manifests.
-    :return: a dict with structure ``{"dev|test": {"recordings|supervisions": <manifest>}}``
+    :return: a dict with structure ``{"dev|test": {"recordings|supervisions|cuts": <manifest>}}``
     """
     from lhotse.kaldi import load_kaldi_data_dir
 
@@ -140,10 +141,18 @@ def prepare_edacc(
         # Fix, validate, and save manifests.
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
-        manifests[split] = {"recordings": recordings, "supervisions": supervisions}
+        cuts_path = None
         if output_dir is not None:
             recordings.to_file(output_dir / f"edacc_recordings_{split}.jsonl.gz")
             supervisions.to_file(output_dir / f"edacc_supervisions_{split}.jsonl.gz")
+            cuts_path = output_dir / f"edacc_cuts_{split}.jsonl.gz"
+        manifests[split] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return manifests
 

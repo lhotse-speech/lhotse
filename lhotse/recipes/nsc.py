@@ -33,6 +33,7 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -41,6 +42,7 @@ from lhotse import (
 )
 from lhotse.parallel import parallel_map
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 logger = logging.getLogger(__name__)
@@ -134,15 +136,15 @@ def prepare_nsc(
     dataset_part: str = "PART3_SameCloseMic",
     output_dir: Optional[Pathlike] = None,
     num_jobs=1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions.
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path to the raw corpus distribution.
     :param dataset_part: str, name of the dataset part to be prepared.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict with the keys "recordings", "supervisions", and "cuts".
     """
     check_dependencies()
     corpus_dir = Path(corpus_dir)
@@ -162,13 +164,21 @@ def prepare_nsc(
     recordings, supervisions = fix_manifests(**manifests)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         supervisions.to_file(output_dir / f"nsc_supervisions_{dataset_part}.jsonl.gz")
         recordings.to_file(output_dir / f"nsc_recordings_{dataset_part}.jsonl.gz")
+        cuts_path = output_dir / f"nsc_cuts_{dataset_part}.jsonl.gz"
 
-    return manifests
+    return {
+        "recordings": recordings,
+        "supervisions": supervisions,
+        "cuts": create_cuts_per_recording(
+            recordings, supervisions, output_path=cuts_path
+        ),
+    }
 
 
 def prepare_part1(

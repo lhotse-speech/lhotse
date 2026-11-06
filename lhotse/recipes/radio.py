@@ -44,6 +44,7 @@ from typing import Dict, Optional, Union
 from tqdm import tqdm
 
 from lhotse.audio import Recording, RecordingSet
+from lhotse.cut import CutSet
 from lhotse.parallel import parallel_map
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
@@ -100,13 +101,12 @@ def prepare_radio(
     output_dir: Optional[Pathlike] = None,
     min_segment_duration: float = 0.5,
     num_jobs: int = 4,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Return the manifests which consist of recordings and supervisions
     :param corpus_dir: Path to the collected radio samples
     :param output_dir: Pathlike, the path where manifests are written
-    :return: A Dict whose key is the dataset part and the value is a Dict with
-        keys 'recordings' and 'supervisions'.
+    :return: A Dict with keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     segment_files = corpus_dir.rglob("segs/*/*.json")
@@ -120,21 +120,26 @@ def prepare_radio(
         with SupervisionSet.open_writer(
             output_dir / "radio_supervisions.jsonl.gz"
         ) as sup_writer:
-            for sups, reco in tqdm(
-                parallel_map(
-                    fun,
-                    segment_files,
-                    num_jobs=num_jobs,
-                ),
-                desc=f"Making recordings and supervisions",
-            ):
-                rec_writer.write(reco)
-                for sup in sups:
-                    sup_writer.write(sup)
+            with CutSet.open_writer(output_dir / "radio_cuts.jsonl.gz") as cut_writer:
+                for sups, reco in tqdm(
+                    parallel_map(
+                        fun,
+                        segment_files,
+                        num_jobs=num_jobs,
+                    ),
+                    desc=f"Making recordings and supervisions",
+                ):
+                    rec_writer.write(reco)
+                    for sup in sups:
+                        sup_writer.write(sup)
+                    cut = reco.to_cut()
+                    cut.supervisions = sups
+                    cut_writer.write(cut)
 
-            manifests = {
-                "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
-                "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
-            }
+    manifests = {
+        "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
+        "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+        "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
+    }
 
     return manifests

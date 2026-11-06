@@ -23,11 +23,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     compute_num_samples,
     fix_manifests,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, add_durations
 
@@ -39,7 +41,7 @@ def prepare_wenet_speech(
     dataset_parts: Union[str, Sequence[str]] = "all",
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir.
@@ -48,7 +50,7 @@ def prepare_wenet_speech(
     :param output_dir: Pathlike, the path where to write the manifests.
     :num_jobs Number of workers to extract manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with
-             the keys 'recordings' and 'supervisions'.
+             the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -92,15 +94,20 @@ def prepare_wenet_speech(
             recordings=recordings, supervisions=supervisions
         )
 
+        cuts_path = None
         if output_dir is not None:
             supervisions.to_file(
                 output_dir / f"wenetspeech_supervisions_{sub}.jsonl.gz"
             )
             recordings.to_file(output_dir / f"wenetspeech_recordings_{sub}.jsonl.gz")
+            cuts_path = output_dir / f"wenetspeech_cuts_{sub}.jsonl.gz"
 
         manifests[sub] = {
             "recordings": recordings,
             "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
         }
 
     return manifests

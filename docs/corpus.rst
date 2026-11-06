@@ -260,7 +260,14 @@ Adding new corpora
 .. hint::
     **Data preparation Python entry-point.** Each data preparation recipe should expose a single function
     called ``prepare_<corpus-name>``,
-    that produces dicts like: ``{'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}``.
+    that produces dicts like: ``{'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>, 'cuts': <CutSet>}``.
+
+.. hint::
+    **Cuts.** Recipes also return a :class:`~lhotse.cut.CutSet` with one cut per recording, spanning the whole
+    recording, with all of its supervisions attached. Long or multi-speaker recordings are not split, so users can
+    segment them as they see fit, e.g. with :meth:`~lhotse.cut.CutSet.trim_to_supervisions`.
+    Use :func:`lhotse.recipes.utils.create_cuts_per_recording` to create them; it writes the cuts incrementally
+    and returns a lazily opened :class:`~lhotse.cut.CutSet` when given an ``output_path``.
 
 
 .. hint::
@@ -270,12 +277,12 @@ Adding new corpora
 .. hint::
     **Pre-defined train/dev/test splits.** When a corpus defines standard split (e.g. train/dev/test),
     we return a dict with the following structure:
-    ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}, 'dev': ...}``
+    ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>, 'cuts': <CutSet>}, 'dev': ...}``
 
 .. hint::
     **Manifest naming convention.** The default naming convention is ``<corpus-name>_<manifest-type>_<split>.jsonl.gz``,
     i.e., we save the manifests in a compressed JSONL file. Here, ``<manifest-type>`` can be ``recordings``,
-    ``supervisions``, etc., and ``<split>`` can be ``train``, ``dev``, ``test``, etc. In case the corpus
+    ``supervisions``, ``cuts``, etc., and ``<split>`` can be ``train``, ``dev``, ``test``, etc. In case the corpus
     has no such split defined, we can use ``all`` as default. Other information, e.g., mic type, language, etc. may
     be included in the ``<corpus-name>``. Some examples are: ``cmu-indic_recordings_all.jsonl.gz``,
     ``ami-ihm_supervisions_dev.jsonl.gz``, ``mtedx-english_recordings_train.jsonl.gz``.

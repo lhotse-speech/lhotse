@@ -4,8 +4,9 @@ from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
 
@@ -163,7 +164,7 @@ def prepare_spatial_librispeech(
     dataset_parts: Union[str, Sequence[str]] = SPATIAL_LIBRISPEECH,
     normalize_text: str = "none",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -175,7 +176,7 @@ def prepare_spatial_librispeech(
     :param normalize_text: str, "none" or "lower",
         for "lower" the transcripts are converted to lower-case.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
 
     try:
@@ -253,6 +254,7 @@ def prepare_spatial_librispeech(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             recording_set.to_file(
                 output_dir / f"spatial-librispeech_recordings_{part}.jsonl.gz"
@@ -260,10 +262,14 @@ def prepare_spatial_librispeech(
             supervision_set.to_file(
                 output_dir / f"spatial-librispeech_supervisions_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"spatial-librispeech_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
             "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
         }
 
     return manifests

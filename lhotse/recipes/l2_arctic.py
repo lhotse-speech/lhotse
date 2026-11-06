@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -27,6 +28,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 SPEAKER_DESCRIPTION = """
@@ -111,14 +113,14 @@ PHONE_SET_DESCRIPTION = """
 def prepare_l2_arctic(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a dict with keys "read" and "spontaneous".
-        Each hold another dict of {'recordings': ..., 'supervisions': ...}
+    :return: a dict with keys "read" and "suitcase".
+        Each hold another dict of {'recordings': ..., 'supervisions': ..., 'cuts': ...}
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -187,13 +189,19 @@ def prepare_l2_arctic(
     if output_dir is not None:
         output_dir = Path(output_dir)
         makedirs(output_dir, exist_ok=True)
-        for key, manifests in splits.items():
+    for key, manifests in splits.items():
+        cuts_path = None
+        if output_dir is not None:
             manifests["recordings"].to_file(
                 output_dir / f"l2-arctic_recordings_{key}.jsonl.gz"
             )
             manifests["supervisions"].to_file(
                 output_dir / f"l2-arctic_supervisions_{key}.jsonl.gz"
             )
+            cuts_path = output_dir / f"l2-arctic_cuts_{key}.jsonl.gz"
+        manifests["cuts"] = create_cuts_per_recording(
+            manifests["recordings"], manifests["supervisions"], output_path=cuts_path
+        )
 
     return splits
 

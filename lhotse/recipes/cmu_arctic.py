@@ -30,6 +30,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -37,6 +38,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 BASE_URL = "http://festvox.org/cmu_arctic/packed/"
@@ -125,14 +127,14 @@ def download_cmu_arctic(
 def prepare_cmu_arctic(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     """
     Prepares and returns the CMU Arctic manifests,
     which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a dict of {'recordings': ..., 'supervisions': ...}
+    :return: a dict of {'recordings': ..., 'supervisions': ..., 'cuts': ...}
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -171,12 +173,20 @@ def prepare_cmu_arctic(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         recordings.to_file(output_dir / "cmu-arctic_recordings_all.jsonl.gz")
         supervisions.to_file(output_dir / "cmu-arctic_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "cmu-arctic_cuts_all.jsonl.gz"
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return {
+        "recordings": recordings,
+        "supervisions": supervisions,
+        "cuts": create_cuts_per_recording(
+            recordings, supervisions, output_path=cuts_path
+        ),
+    }
 
 
 def _get_speaker(dirname: str) -> str:

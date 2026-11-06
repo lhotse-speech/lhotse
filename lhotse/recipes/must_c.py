@@ -46,9 +46,10 @@ from typing import Dict, List, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.parallel import parallel_map
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.serialization import load_yaml
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
@@ -59,7 +60,7 @@ def prepare_must_c(
     output_dir: Pathlike,
     tgt_lang: str,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """Prepare manifests for the MUST-C corpus.
 
     :param: corpus_dir: We assume there is a folder {src_lang}-{tgt_lang} inside
@@ -68,6 +69,8 @@ def prepare_must_c(
     :param: tgt_lang: Target language, e.g., zh, de, etc.
     :param: src_lang: Source language, e.g., en.
     :param: num_jobs: Number of processes to use for parsing the data
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys
+        'recordings', 'supervisions', and 'cuts'.
     """
     src_lang = "en"
 
@@ -78,6 +81,7 @@ def prepare_must_c(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    manifests = {}
     for d in datasets:
         logging.info(f"Processing {d}")
         dataset_dir = in_data_dir / d
@@ -144,6 +148,19 @@ def prepare_must_c(
         ) as sup_writer:
             for sup in supervisions:
                 sup_writer.write(sup)
+
+        manifests[d] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings,
+                supervisions,
+                output_path=output_dir
+                / f"must_c_cuts_{src_lang}-{tgt_lang}_{d}.jsonl.gz",
+            ),
+        }
+
+    return manifests
 
 
 def parse_utterance(

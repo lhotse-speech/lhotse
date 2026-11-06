@@ -51,13 +51,14 @@ from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
-from lhotse.recipes.utils import normalize_text_tedlium
+from lhotse.recipes.utils import create_cuts_per_recording, normalize_text_tedlium
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 TEDLIUM_PARTS = ("train", "dev", "test")
@@ -92,12 +93,12 @@ def prepare_tedlium(
     dataset_parts: Union[str, Sequence[str]] = TEDLIUM_PARTS,
     num_jobs: int = 1,
     normalize_text: str = "none",
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the TED-LIUM v3 corpus.
 
     The manifests are created in a dict with three splits: train, dev and test.
-    Each split contains a RecordingSet and SupervisionSet in a dict under keys 'recordings' and 'supervisions'.
+    Each split contains a RecordingSet, SupervisionSet, and CutSet in a dict under keys 'recordings', 'supervisions', and 'cuts'.
 
     :param tedlium_root: Path to the unpacked TED-LIUM data.
     :param output_dir: Path where the manifests should be written.
@@ -137,14 +138,23 @@ def prepare_tedlium(
             supervisions = SupervisionSet.from_segments(segments)
             recordings, supervisions = fix_manifests(recordings, supervisions)
 
-            corpus[split] = {"recordings": recordings, "supervisions": supervisions}
-            validate_recordings_and_supervisions(**corpus[split])
+            validate_recordings_and_supervisions(recordings, supervisions)
 
+            cuts_path = None
             if output_dir is not None:
                 recordings.to_file(output_dir / f"tedlium_recordings_{split}.jsonl.gz")
                 supervisions.to_file(
                     output_dir / f"tedlium_supervisions_{split}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"tedlium_cuts_{split}.jsonl.gz"
+
+            corpus[split] = {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(
+                    recordings, supervisions, output_path=cuts_path
+                ),
+            }
 
     return corpus
 

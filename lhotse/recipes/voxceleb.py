@@ -52,6 +52,7 @@ from lhotse import (
 )
 from lhotse.manipulation import combine
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download
 
 VOXCELEB1_PARTS_URL = [
@@ -195,13 +196,14 @@ def prepare_voxceleb(
     voxceleb2_root: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the VoxCeleb v1 and v2 corpora.
 
     The manifests are created in a dict with three splits: train, dev and test, for each
     of the two versions.
-    Each split contains a RecordingSet and SupervisionSet in a dict under keys 'recordings' and 'supervisions'.
+    Each split contains a RecordingSet, SupervisionSet, and CutSet in a dict under keys
+    'recordings', 'supervisions', and 'cuts'.
 
     :param voxceleb1_root: Path to the VoxCeleb v1 dataset.
     :param voxceleb2_root: Path to the VoxCeleb v2 dataset.
@@ -273,9 +275,14 @@ def prepare_voxceleb(
         # Write the manifests to the output directory
         manifests[split]["recordings"] = recordings
         manifests[split]["supervisions"] = supervisions
+        cuts_path = None
         if output_dir is not None:
             recordings.to_file(output_dir / f"voxceleb_recordings_{split}.jsonl.gz")
             supervisions.to_file(output_dir / f"voxceleb_supervisions_{split}.jsonl.gz")
+            cuts_path = output_dir / f"voxceleb_cuts_{split}.jsonl.gz"
+        manifests[split]["cuts"] = create_cuts_per_recording(
+            recordings, supervisions, output_path=cuts_path
+        )
 
     # Write the trials cut sets to the output directory
     if output_dir is not None:

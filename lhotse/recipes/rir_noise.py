@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
 from lhotse import CutSet, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download
 
 RIR_NOISE_ZIP_URL = "https://www.openslr.org/resources/28/rirs_noises.zip"
@@ -110,6 +111,9 @@ def prepare_rir_noise(
     The corpus contains 4 things: point-source noises (point_noise), isotropic noises (iso_noise),
     real RIRs (real_rir), and simulated RIRs (sim_rir). We will prepare these parts
     in the corresponding dict keys.
+
+    :return: a Dict whose key is the part, and the value is Dicts with the keys
+        "recordings" and "cuts" (one cut without supervisions per recording).
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -159,5 +163,15 @@ def prepare_rir_noise(
                 manifest.to_file(
                     output_dir / f"{part.replace('_','-')}_{key}_all.jsonl.gz"
                 )
+
+    for part in manifests:
+        manifests[part]["cuts"] = create_cuts_per_recording(
+            manifests[part]["recordings"],
+            output_path=(
+                output_dir / f"{part.replace('_','-')}_cuts_all.jsonl.gz"
+                if output_dir is not None
+                else None
+            ),
+        )
 
     return manifests

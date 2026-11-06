@@ -47,9 +47,13 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 from tqdm import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.recipes.utils import TimeFormatConverter, normalize_text_chime6
+from lhotse.recipes.utils import (
+    TimeFormatConverter,
+    create_cuts_per_recording,
+    normalize_text_chime6,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, add_durations, resumable_download, safe_extract
 
@@ -133,7 +137,7 @@ def prepare_chime6(
     sox_path: Pathlike = "/usr/bin/sox",
     normalize_text: str = "kaldi",
     use_chime7_split: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir, either the original CHiME-5
@@ -163,7 +167,7 @@ def prepare_chime6(
         by using the `num_jobs` argument.
     :param use_chime7_split: bool, if True, use the new split for CHiME-7 challenge.
     :return: a Dict whose key is the dataset part ("train", "dev" and "eval"), and the
-        value is Dicts with the keys 'recordings' and 'supervisions'.
+        value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
 
     NOTE: If `perform_array_sync` is True, the synchronized data will be written to
         `output_dir`/CHiME6. This may take a long time and the output will occupy
@@ -402,6 +406,7 @@ def prepare_chime6(
         # Fix manifests
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             mic_affix = f"{mic}-ref" if use_reference_array else mic
             supervision_set.to_file(
@@ -410,10 +415,15 @@ def prepare_chime6(
             recording_set.to_file(
                 output_dir / f"chime6-{mic}_recordings_{part}.jsonl.gz"
             )
+            # Cuts hold the supervisions, so they follow the supervisions' naming.
+            cuts_path = output_dir / f"chime6-{mic_affix}_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
             "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
         }
 
     return manifests

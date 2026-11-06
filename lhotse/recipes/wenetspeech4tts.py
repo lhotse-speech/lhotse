@@ -26,13 +26,18 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     SupervisionSegment,
     SupervisionSet,
     fix_manifests,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording, RecordingSet
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 WENETSPEECH4TTS = (
@@ -47,7 +52,7 @@ def prepare_wenetspeech4tts(
     dataset_parts: Union[str, Sequence[str]] = "Basic",
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -57,7 +62,7 @@ def prepare_wenetspeech4tts(
         By default we will prepare all parts.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: the number of parallel workers parsing the data.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -170,6 +175,7 @@ def prepare_wenetspeech4tts(
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
+        cuts_path = None
         if output_dir is not None:
             supervisions.to_file(
                 output_dir / f"wenetspeech4tts_supervisions_{part}.jsonl.gz"
@@ -177,7 +183,14 @@ def prepare_wenetspeech4tts(
             recordings.to_file(
                 output_dir / f"wenetspeech4tts_recordings_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"wenetspeech4tts_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recordings, "supervisions": supervisions}
+        manifests[part] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return manifests

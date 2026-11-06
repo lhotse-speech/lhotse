@@ -25,7 +25,11 @@ from tqdm.auto import tqdm
 
 from lhotse import CutSet
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available, resumable_download
 
@@ -153,7 +157,8 @@ def prepare_gigast(
             if manifests_exist(
                 part=partition,
                 output_dir=output_dir,
-                prefix="gigast-de",
+                types=("supervisions", "cuts"),
+                prefix=f"gigast-{lang}",
                 suffix="jsonl.gz",
             ):
                 logging.info(
@@ -184,4 +189,9 @@ def prepare_gigast(
             supervisionset = SupervisionSet.from_segments(supervisions)
             supervisionset.to_file(
                 output_dir / f"gigast-{lang}_supervisions_{partition}.jsonl.gz"
+            )
+            create_cuts_per_recording(
+                m["recordings"],
+                supervisionset,
+                output_path=output_dir / f"gigast-{lang}_cuts_{partition}.jsonl.gz",
             )

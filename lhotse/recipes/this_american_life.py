@@ -21,6 +21,7 @@ from tqdm.auto import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download
 
@@ -184,6 +185,7 @@ def prepare_this_american_life_subset(
     recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -193,5 +195,12 @@ def prepare_this_american_life_subset(
         supervision_set.to_file(
             output_dir / f"this-american-life_supervisions_{subset}.jsonl.gz"
         )
+        cuts_path = output_dir / f"this-american-life_cuts_{subset}.jsonl.gz"
 
-    return {"recordings": recording_set, "supervisions": supervision_set}
+    return {
+        "recordings": recording_set,
+        "supervisions": supervision_set,
+        "cuts": create_cuts_per_recording(
+            recording_set, supervision_set, output_path=cuts_path
+        ),
+    }
