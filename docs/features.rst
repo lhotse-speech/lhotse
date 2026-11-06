@@ -82,6 +82,8 @@ they were extracted from.
 Manifests written by older Lhotse versions store these fields flat (``num_frames``, ``num_features``,
 ``storage_type``, ``storage_path``, ``storage_key``) and are still read correctly;
 the same names are also available as properties of :class:`~lhotse.features.base.Features`.
+The reverse does not hold: older Lhotse versions cannot read manifests with the nested layout,
+so upgrade every reader before writing manifests with a newer Lhotse.
 
 
 Feature normalization
