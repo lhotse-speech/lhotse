@@ -479,12 +479,13 @@ def resumable_download(
 ) -> None:
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
+    if file_exists and force_download:
+        logging.info(
+            f"Removing existing file and downloading from scratch because force_download=True: {filename}"
+        )
+        os.unlink(filename)
+        file_exists = False
     if file_exists:
-        if force_download:
-            logging.info(
-                f"Removing existing file and downloading from scratch because force_download=True: {filename}"
-            )
-            os.unlink(filename)
         file_size = os.path.getsize(filename)
 
         if completed_file_size and file_size == completed_file_size:

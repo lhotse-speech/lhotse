@@ -28,6 +28,7 @@ from lhotse.utils import (
     is_torchcodec_available,
     overlaps,
     overspans,
+    resumable_download,
     safe_extract,
     safe_extract_rar,
     streaming_shuffle,
@@ -350,3 +351,33 @@ def test_is_torchcodec_available_requires_minimum_version(
         assert is_torchcodec_available() is expected
     finally:
         is_torchcodec_available.cache_clear()
+
+
+@pytest.mark.parametrize("existing", [None, b"old contents longer than replacement"])
+@pytest.mark.parametrize("completed_file_size", [None, 36])
+def test_resumable_download_force_download(
+    tmp_path, monkeypatch, existing, completed_file_size
+):
+    destination = tmp_path / "download.bin"
+    if existing is not None:
+        destination.write_bytes(existing)
+    payload = b"replacement"
+    requests = []
+
+    def urlopen(request, context=None):
+        requests.append(request)
+        response = BytesIO(payload)
+        response.headers = {"content-length": str(len(payload))}
+        return response
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    resumable_download(
+        url="https://example.com/download.bin",
+        filename=destination,
+        force_download=True,
+        completed_file_size=completed_file_size,
+    )
+
+    assert destination.read_bytes() == payload
+    assert len(requests) == 1
+    assert requests[0].get_header("Range") == "bytes=0-"

@@ -76,6 +76,10 @@ from .radio import prepare_radio
 from .reazonspeech import download_reazonspeech, prepare_reazonspeech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .sbcsae import download_sbcsae, prepare_sbcsae
+from .seamless_interaction import (
+    download_seamless_interaction,
+    prepare_seamless_interaction,
+)
 from .slu import prepare_slu
 from .spatial_librispeech import (
     download_spatial_librispeech,
@@ -210,6 +214,8 @@ __all__ = [
     "prepare_radio",
     "download_rir_noise",
     "prepare_rir_noise",
+    "download_seamless_interaction",
+    "prepare_seamless_interaction",
     "prepare_slu",
     "download_speechcommands",
     "prepare_speechcommands",
