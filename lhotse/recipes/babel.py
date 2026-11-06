@@ -16,6 +16,7 @@ import tqdm
 from cytoolz import sliding_window
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -27,6 +28,7 @@ from lhotse.qa import (
     remove_missing_recordings_and_supervisions,
     trim_supervisions_to_recordings,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 BABELCODE2LANG = {
@@ -68,7 +70,7 @@ def prepare_single_babel_language(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     no_eval_ok: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests using a single BABEL LDC package.
 
@@ -81,10 +83,11 @@ def prepare_single_babel_language(
         - finally, it scans the selected location for SPHERE audio files and transcripts.
 
     :param corpus_dir: Path to the root of the LDC package with a BABEL language.
-    :param output_dir: Path where the manifests are stored.json
+    :param output_dir: Optional path where the manifests are stored as
+        ``babel-<language>_<manifest>_<part>.jsonl.gz``, with the parts ``dev``, ``eval`` and ``training``.
     :param no_eval_ok: When set to True, this function won't emit a warning
         that the eval set was not found.
-    :return:
+    :return: a Dict whose key is the split (``dev``, ``eval``, ``training``), and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     manifests = defaultdict(dict)
 
@@ -187,19 +190,26 @@ def prepare_single_babel_language(
             supervisions = trim_supervisions_to_recordings(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
-        manifests[split] = {"recordings": recordings, "supervisions": supervisions}
-
+        cuts_path = None
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
-            language = BABELCODE2LANG[lang_code]
-            save_split = "train" if split == "training" else split
+            language = BABELCODE2LANG[lang_code].lower()
             recordings.to_file(
-                output_dir / f"babel-{language}_recordings_{save_split}.jsonl.gz"
+                output_dir / f"babel-{language}_recordings_{split}.jsonl.gz"
             )
             supervisions.to_file(
-                output_dir / f"babel-{language}_supervisions_{save_split}.jsonl.gz"
+                output_dir / f"babel-{language}_supervisions_{split}.jsonl.gz"
             )
+            cuts_path = output_dir / f"babel-{language}_cuts_{split}.jsonl.gz"
+
+        manifests[split] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return dict(manifests)
 

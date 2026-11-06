@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
 from zipfile import ZipFile
 
-from lhotse import Recording, RecordingSet, SupervisionSet, validate
+from lhotse import CutSet, Recording, RecordingSet, SupervisionSet, validate
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 WHAM_URL = (
@@ -59,7 +60,15 @@ def download_wham(
 def prepare_wham(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare manifests of the WHAM noise recordings.
+
+    :param corpus_dir: Pathlike, the path of the ``wham_noise`` dir.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+    :return: a Dict whose keys are the parts ``tr``, ``cv`` and ``tt``, and the values are Dicts
+        with the keys 'recordings' and 'cuts' (this corpus has no supervisions).
+    """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
@@ -78,6 +87,14 @@ def prepare_wham(
         for split in manifests:
             for key, manifest in manifests[split].items():
                 manifest.to_file(output_dir / f"wham_{key}_{split}.jsonl.gz")
+
+    for split in manifests:
+        cuts_path = None
+        if output_dir is not None:
+            cuts_path = output_dir / f"wham_cuts_{split}.jsonl.gz"
+        manifests[split]["cuts"] = create_cuts_per_recording(
+            manifests[split]["recordings"], output_path=cuts_path
+        )
 
     return manifests
 

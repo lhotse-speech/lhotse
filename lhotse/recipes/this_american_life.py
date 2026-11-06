@@ -19,8 +19,9 @@ from urllib.error import HTTPError
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download
 
@@ -113,9 +114,18 @@ def download_this_american_life(
 def prepare_this_american_life(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the This American Life manifests.
+
+    :param corpus_dir: Pathlike, the path of the data dir (see :func:`download_this_american_life`).
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``this-american-life_{manifest}_{part}.jsonl.gz``). Optional.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with the
+        parts "train", "valid" and "test".
+    """
     manifests = {}
-    for subset in ["train", "dev", "test"]:
+    for subset in ["train", "valid", "test"]:
         manifests[subset] = prepare_this_american_life_subset(
             corpus_dir=corpus_dir,
             subset=subset,
@@ -129,7 +139,7 @@ def prepare_this_american_life_subset(
     corpus_dir: Pathlike,
     subset: str,
     output_dir: Optional[Pathlike] = None,
-):
+) -> Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]:
     if not is_module_available("nltk"):
         raise ImportError("Please 'pip install nltk' first.")
 
@@ -137,8 +147,7 @@ def prepare_this_american_life_subset(
 
     corpus_dir = Path(corpus_dir).absolute()
 
-    file_subset = "valid" if subset == "dev" else subset
-    with open(Path(corpus_dir) / f"{file_subset}-transcripts-aligned.json") as f:
+    with open(Path(corpus_dir) / f"{subset}-transcripts-aligned.json") as f:
         transcripts = json.load(f)
 
     recordings = []
@@ -184,6 +193,7 @@ def prepare_this_american_life_subset(
     recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -193,5 +203,12 @@ def prepare_this_american_life_subset(
         supervision_set.to_file(
             output_dir / f"this-american-life_supervisions_{subset}.jsonl.gz"
         )
+        cuts_path = output_dir / f"this-american-life_cuts_{subset}.jsonl.gz"
 
-    return {"recordings": recording_set, "supervisions": supervision_set}
+    return {
+        "recordings": recording_set,
+        "supervisions": supervision_set,
+        "cuts": create_cuts_per_recording(
+            recording_set, supervision_set, output_path=cuts_path
+        ),
+    }

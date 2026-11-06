@@ -16,8 +16,10 @@ from typing import Dict, List, Optional, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse.audio import RecordingSet
+from lhotse.cut import CutSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.fisher_english import create_recording
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
@@ -64,16 +66,18 @@ def prepare_fisher_spanish(
     transcript_dir_path: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests for Fisher Spanish.
     We create two manifests: one with recordings, and the other one with text supervisions.
 
     :param audio_dir_path: Path to audio directory (usually LDC2010S01).
     :param transcript_dir_path: Path to transcript directory (usually LDC2010T04).
-    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param output_dir: Directory where the manifests should be written as
+        ``fisher-spanish_<manifest>_all.jsonl.gz``. Can be omitted to avoid writing.
     :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict with the single part ``'all'``, holding a dict of manifests with the keys:
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
 
     audio_dir_path, transcript_dir_path = (
@@ -123,10 +127,20 @@ def prepare_fisher_spanish(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "fisher-spanish_recordings_all.jsonl")
-        supervisions.to_file(output_dir / "fisher-spanish_supervisions_all.jsonl")
+        recordings.to_file(output_dir / "fisher-spanish_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "fisher-spanish_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "fisher-spanish_cuts_all.jsonl.gz"
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }

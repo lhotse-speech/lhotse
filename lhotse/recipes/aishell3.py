@@ -20,6 +20,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
@@ -27,7 +28,11 @@ from lhotse import (
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 aishell3 = (
@@ -71,14 +76,14 @@ def download_aishell3(
 def prepare_aishell3(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -134,8 +139,10 @@ def prepare_aishell3(
                 id = id.split(".")[0]
                 tones = tone_labels.get(id, (None, None))
                 speaker = id[:7]
-                text = "".join([x for i, x in enumerate(text.split()) if i % 2 == 0])
-                pinyin = " ".join([x for i, x in enumerate(text.split()) if i % 2 == 1])
+                # The transcript alternates characters and their pinyin.
+                tokens = text.split()
+                text = "".join(tokens[0::2])
+                pinyin = " ".join(tokens[1::2])
                 if not audio_path.is_file():
                     logging.warning(f"No such file: {audio_path}")
                     continue
@@ -164,12 +171,20 @@ def prepare_aishell3(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
                 output_dir / f"aishell3_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(output_dir / f"aishell3_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"aishell3_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": supervision_set, "supervisions": recording_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
     return manifests

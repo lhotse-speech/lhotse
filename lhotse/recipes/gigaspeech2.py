@@ -8,13 +8,14 @@ import logging
 from collections import defaultdict
 from concurrent.futures.process import ProcessPoolExecutor
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import load_manifest
+from lhotse import CutSet, load_manifest
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -27,11 +28,11 @@ GIGASPEECH2_SPLITS = ("train_raw", "train_refined", "dev", "test")
 def _read_manifests_if_cached(
     output_dir: Optional[Pathlike],
     language: str,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns:
         {
-          "train_raw": {"recordings": ..., "supervisions": ...},
+          "train_raw": {"recordings": ..., "supervisions": ..., "cuts": ...},
           "train_refined": ...,
           "dev": ...,
           "test": ...,
@@ -41,11 +42,15 @@ def _read_manifests_if_cached(
         return {}
     manifests = defaultdict(dict)
     for part in ["train_raw", "train_refined", "dev", "test"]:
-        for manifest in ["recordings", "supervisions"]:
-            path = output_dir / f"gigaspeech2-{language}_{manifest}_{part}.jsonl.gz"
-            if not path.is_file():
-                continue
-            manifests[part][manifest] = load_manifest(path)
+        paths = {
+            manifest: output_dir / f"gigaspeech2-{language}_{manifest}_{part}.jsonl.gz"
+            for manifest in ["recordings", "supervisions", "cuts"]
+        }
+        if not all(path.is_file() for path in paths.values()):
+            continue
+        manifests[part]["recordings"] = load_manifest(paths["recordings"])
+        manifests[part]["supervisions"] = load_manifest(paths["supervisions"])
+        manifests[part]["cuts"] = CutSet.from_jsonl_lazy(paths["cuts"])
     return manifests
 
 
@@ -80,18 +85,45 @@ def _parse_utterance(
     return recording, segment
 
 
+def _iter_utterances(
+    lang: str, part_dir: Path, audio_infos: Sequence[str], num_jobs: int
+) -> Iterable[Tuple[Recording, SupervisionSegment]]:
+    """Yields the fixed and validated (recording, supervision) pair of each utterance."""
+    with ProcessPoolExecutor(num_jobs) as ex:
+        futures = [
+            ex.submit(_parse_utterance, lang, part_dir, audio_info)
+            for audio_info in tqdm(audio_infos, desc="Distributing tasks")
+        ]
+        for future in tqdm(futures, desc="Processing"):
+            result = future.result()
+            if result is None:
+                continue
+            recording, segment = result
+            recordings, segments = fix_manifests(
+                recordings=RecordingSet.from_recordings([recording]),
+                supervisions=SupervisionSet.from_segments([segment]),
+            )
+            validate_recordings_and_supervisions(
+                recordings=recordings, supervisions=segments
+            )
+            yield recordings[0], segments[0]
+
+
 def prepare_gigaspeech2(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     languages: Union[str, Sequence[str]] = "auto",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings and Supervisions.
+
     :param corpus_dir: Path to the GigaSpeech 2 dataset.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests (optional; without it
+        everything is kept in memory).
     :param languages: 'auto' (prepare all discovered data) or a list of language codes.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
+    :return: a Dict whose key is the language, and the value is a Dict whose key is the dataset part,
+        and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -127,6 +159,25 @@ def prepare_gigaspeech2(
                 logging.info(f"GigaSpeech 2 {lang} {part} already prepared - skipping.")
                 continue
 
+            part_dir = lang_dir / part.replace("_raw", "").replace("_refined", "")
+            with open(lang_dir / f"{part}.tsv") as f:
+                audio_infos = f.read().splitlines()
+            utterances = _iter_utterances(lang, part_dir, audio_infos, num_jobs)
+
+            if output_dir is None:
+                recordings, segments = [], []
+                for recording, segment in utterances:
+                    recordings.append(recording)
+                    segments.append(segment)
+                recordings = RecordingSet.from_recordings(recordings)
+                segments = SupervisionSet.from_segments(segments)
+                lang_manifests[part] = {
+                    "recordings": recordings,
+                    "supervisions": segments,
+                    "cuts": create_cuts_per_recording(recordings, segments),
+                }
+                continue
+
             with (
                 RecordingSet.open_writer(
                     output_dir / f"gigaspeech2-{lang}_recordings_{part}.jsonl.gz"
@@ -134,44 +185,22 @@ def prepare_gigaspeech2(
                 SupervisionSet.open_writer(
                     output_dir / f"gigaspeech2-{lang}_supervisions_{part}.jsonl.gz"
                 ) as sup_writer,
+                CutSet.open_writer(
+                    output_dir / f"gigaspeech2-{lang}_cuts_{part}.jsonl.gz"
+                ) as cut_writer,
             ):
-                part_dir = lang_dir / part.replace("_raw", "").replace("_refined", "")
-                tsv_path = lang_dir / f"{part}.tsv"
+                for recording, segment in utterances:
+                    rec_writer.write(recording)
+                    sup_writer.write(segment)
+                    cut = recording.to_cut()
+                    cut.supervisions = [segment]
+                    cut_writer.write(cut)
 
-                audio_infos = []
-                with open(tsv_path) as f:
-                    audio_infos = f.read().splitlines()
-
-                with ProcessPoolExecutor(num_jobs) as ex:
-                    futures = []
-                    for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
-                        futures.append(
-                            ex.submit(_parse_utterance, lang, part_dir, audio_info)
-                        )
-
-                    for future in tqdm(futures, desc="Processing"):
-                        result = future.result()
-                        if result is None:
-                            continue
-                        recording, segment = result
-
-                        # Fix and validate the recording + supervisions
-                        recordings, segments = fix_manifests(
-                            recordings=RecordingSet.from_recordings([recording]),
-                            supervisions=SupervisionSet.from_segments([segment]),
-                        )
-                        validate_recordings_and_supervisions(
-                            recordings=recordings, supervisions=segments
-                        )
-
-                        # Write the manifests
-                        rec_writer.write(recordings[0])
-                        sup_writer.write(segments[0])
-
-                lang_manifests[part] = {
-                    "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
-                    "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
-                }
+            lang_manifests[part] = {
+                "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
+                "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+                "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
+            }
 
         manifests[lang] = lang_manifests
 

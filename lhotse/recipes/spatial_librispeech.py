@@ -4,14 +4,20 @@ from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
 
 SPATIAL_LIBRISPEECH = ("train", "test")
 BASE_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1"
 META_DATA_URL = "https://docs-assets.developer.apple.com/ml-research/datasets/spatial-librispeech/v1/metadata.parquet"
+
+
+def _recording_id_from_path(path: Path) -> str:
+    # Module-level (not a lambda) so it can be pickled when num_jobs > 1.
+    return path.stem
 
 
 def _download_and_save_audio(target_file: Pathlike, url: str):
@@ -163,19 +169,18 @@ def prepare_spatial_librispeech(
     dataset_parts: Union[str, Sequence[str]] = SPATIAL_LIBRISPEECH,
     normalize_text: str = "none",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Optional Pathlike, the path where to write the manifests as
+        ``spatial-librispeech_<manifest>_<part>.jsonl.gz``. When ``None``, nothing is written.
     :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train', 'test'.
-        By default we will infer which parts are available in ``corpus_dir``.
     :param normalize_text: str, "none" or "lower",
         for "lower" the transcripts are converted to lower-case.
     :param num_jobs: int, number of parallel threads used for 'parse_utterance' calls.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
 
     try:
@@ -186,8 +191,9 @@ def prepare_spatial_librispeech(
         )
 
     corpus_dir = Path(corpus_dir)
-    output_dir = Path(output_dir) if output_dir is not None else corpus_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     if dataset_parts == "all":
@@ -213,7 +219,7 @@ def prepare_spatial_librispeech(
             part_dir,
             pattern="*.flac",
             num_jobs=num_jobs,
-            recording_id=lambda x: x.stem,
+            recording_id=_recording_id_from_path,
         )
 
         supervision_segments = []
@@ -253,6 +259,7 @@ def prepare_spatial_librispeech(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             recording_set.to_file(
                 output_dir / f"spatial-librispeech_recordings_{part}.jsonl.gz"
@@ -260,10 +267,14 @@ def prepare_spatial_librispeech(
             supervision_set.to_file(
                 output_dir / f"spatial-librispeech_supervisions_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"spatial-librispeech_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
             "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
         }
 
     return manifests

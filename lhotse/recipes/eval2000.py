@@ -18,7 +18,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from lhotse.audio import Recording, RecordingSet
+from lhotse.cut import CutSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
@@ -28,23 +30,22 @@ EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
 
 def prepare_eval2000(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
     transcript_path: Optional[Pathlike] = None,
     absolute_paths: bool = False,
     num_jobs: int = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests for Eval2000.
 
-    :param corpus_path: Path to global corpus
+    :param corpus_dir: Path to global corpus
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict with the single part ``"all"``, whose value is a dict with the keys
+        ``{'recordings', 'supervisions', 'cuts'}``.
     """
 
     corpus_dir = Path(corpus_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     audio_partition_dir_path = corpus_dir / EVAL2000_AUDIO_DIR / "hub5e_00" / "english"
     assert (
         audio_partition_dir_path.is_dir()
@@ -70,12 +71,22 @@ def prepare_eval2000(
     supervisions = SupervisionSet.from_segments(segments)
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_file(output_dir / "eval2000_recordings_all.jsonl.gz")
-        supervisions.to_file(output_dir / "eval2000_supervisions_unnorm.jsonl.gz")
-    return {"recordings": recordings, "supervisions": supervisions}
+        supervisions.to_file(output_dir / "eval2000_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "eval2000_cuts_all.jsonl.gz"
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }
 
 
 def make_segments(transcript_dir_path, omit_silence: bool = True):

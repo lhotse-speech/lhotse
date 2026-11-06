@@ -10,15 +10,17 @@ GitHub: https://github.com/keonlee9420/DailyTalk
 import logging
 import zipfile
 from pathlib import Path
-from typing import Tuple
+from typing import Dict, Optional, Union
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.serialization import load_json
 from lhotse.utils import Pathlike, is_module_available
 
@@ -61,15 +63,16 @@ def download_daily_talk(target_dir: Pathlike, force_download: bool = False) -> P
 
 def prepare_daily_talk(
     corpus_dir: Pathlike,
-    output_dir: Pathlike = None,
+    output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Tuple[RecordingSet, SupervisionSet]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Create RecordingSet and SupervisionSet manifests for DailyTalk from a raw corpus distribution.
 
     :param corpus_dir: Pathlike, the path to the extracted corpus.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+    :return: a Dict with the single part ``'all'``, whose value is a Dict with the keys
+        'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     meta = corpus_dir / "metadata.json"
@@ -111,13 +114,23 @@ def prepare_daily_talk(
         recordings=recordings, supervisions=supervisions
     )
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
         recordings.to_file(output_dir / "dailytalk_recordings_all.jsonl.gz")
         supervisions.to_file(output_dir / "dailytalk_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "dailytalk_cuts_all.jsonl.gz"
 
-    return recordings, supervisions
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }
 
 
 def make_recording_id(path: Path) -> str:

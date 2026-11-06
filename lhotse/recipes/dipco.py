@@ -22,9 +22,9 @@ from typing import Dict, Optional, Union
 
 from tqdm import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.recipes.utils import normalize_text_chime6
+from lhotse.recipes.utils import create_cuts_per_recording, normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, add_durations, resumable_download, safe_extract
 
@@ -78,11 +78,12 @@ def prepare_dipco(
     mic: Optional[str] = "mdm",
     normalize_text: Optional[str] = "kaldi",
     use_chime7_offset: Optional[bool] = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``dipco-{mic}_{manifest}_{part}.jsonl.gz``). Optional.
     :param mic: str, the microphone type to use, choose from "ihm" (close-talk) or "mdm"
         (multi-microphone array) settings. For MDM, there are 5 array devices with 7
         channels each, so the resulting recordings will have 35 channels.
@@ -91,7 +92,7 @@ def prepare_dipco(
         used in Kaldi's CHiME-6 recipe.
     :param use_chime7_offset: bool, if True, offset session IDs (from CHiME-7 challenge).
     :return: a Dict whose key is the dataset part ("dev" and "eval"), and the value is
-        Dicts with the keys 'recordings' and 'supervisions'.
+        Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     import json
 
@@ -115,9 +116,9 @@ def prepare_dipco(
         if mic == "ihm":
             global_spk_channel_map = {}
             for session in DATASET_PARTS[part]:
-                audio_paths = [
-                    p for p in (corpus_dir / "audio" / part).rglob(f"{session}_P*.wav")
-                ]
+                audio_paths = sorted(
+                    (corpus_dir / "audio" / part).rglob(f"{session}_P*.wav")
+                )
 
                 sources = []
                 for idx, audio_path in enumerate(audio_paths):
@@ -208,6 +209,7 @@ def prepare_dipco(
         # Fix manifests
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
                 output_dir / f"dipco-{mic}_supervisions_{part}.jsonl.gz"
@@ -215,10 +217,14 @@ def prepare_dipco(
             recording_set.to_file(
                 output_dir / f"dipco-{mic}_recordings_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"dipco-{mic}_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
             "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
         }
 
-    return manifests
+    return dict(manifests)

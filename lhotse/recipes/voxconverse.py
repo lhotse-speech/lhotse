@@ -16,8 +16,9 @@ from urllib.error import HTTPError
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download
 
@@ -84,7 +85,18 @@ def prepare_voxconverse(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     split_test: bool = False,  # test part is larger than dev part - split it into dev and test by default
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the VoxConverse manifests (diarization annotations as supervisions without text).
+
+    :param corpus_dir: Path to the corpus with the ``dev`` and ``test`` directories.
+    :param output_dir: Optional directory where the manifests are written as
+        ``voxconverse_<manifest>_<part>.jsonl.gz``.
+    :param split_test: When ``True``, the original dev set becomes ``train`` and
+        the original test set is split in half into ``dev`` and ``test``.
+    :return: A dict keyed by part (``dev`` and ``test``, or ``train``, ``dev`` and ``test``)
+        with the keys ``recordings``, ``supervisions`` and ``cuts``.
+    """
     corpus_dir = Path(corpus_dir).absolute()
 
     splits = {}
@@ -122,6 +134,7 @@ def prepare_voxconverse(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -131,10 +144,14 @@ def prepare_voxconverse(
             supervision_set.to_file(
                 output_dir / f"voxconverse_supervisions_{subset}.jsonl.gz"
             )
+            cuts_path = output_dir / f"voxconverse_cuts_{subset}.jsonl.gz"
 
         manifests[subset] = {
             "recordings": recording_set,
             "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
         }
 
     return manifests

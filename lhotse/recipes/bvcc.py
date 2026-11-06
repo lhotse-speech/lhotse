@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -10,6 +11,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 
@@ -27,7 +29,19 @@ def prepare_bvcc(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the BVCC (VoiceMOS 2022) manifests.
+
+    :param corpus_dir: Path to the directory with ``phase1-main`` and ``phase1-ood``.
+    :param output_dir: Optional directory where the manifests are written as
+        ``bvcc_<manifest>_<part>.jsonl.gz``.
+    :param num_jobs: Number of parallel jobs used to scan audio.
+    :return: A dict keyed by part (``main1_train``, ``main1_dev``, ``main1_test``,
+        ``ood1_train``, ``ood1_dev``, ``ood1_test``, ``ood1_unlabeled``) with the keys
+        ``recordings``, ``supervisions`` (MOS ratings, absent for the unrated
+        ``main1_test``, ``ood1_test`` and ``ood1_unlabeled``) and ``cuts``.
+    """
     corpus_dir = Path(corpus_dir)
 
     phase1_main = (corpus_dir / "phase1-main").resolve()
@@ -176,12 +190,18 @@ def prepare_bvcc(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        for part, d in manifests.items():
+    for part, d in manifests.items():
+        cuts_path = None
+        if output_dir is not None:
             d["recordings"].to_file(output_dir / f"bvcc_recordings_{part}.jsonl.gz")
             if "supervisions" in d:
                 d["supervisions"].to_file(
                     output_dir / f"bvcc_supervisions_{part}.jsonl.gz"
                 )
+            cuts_path = output_dir / f"bvcc_cuts_{part}.jsonl.gz"
+        d["cuts"] = create_cuts_per_recording(
+            d["recordings"], d.get("supervisions"), output_path=cuts_path
+        )
 
     return manifests
 

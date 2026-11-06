@@ -101,11 +101,11 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.audio.backend import read_sph
 from lhotse.qa import fix_manifests
-from lhotse.recipes.utils import normalize_text_ami
+from lhotse.recipes.utils import create_cuts_per_recording, normalize_text_ami
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, add_durations, resumable_download
 
@@ -591,7 +591,7 @@ def prepare_icsi(
     mic: Optional[str] = "ihm",
     normalize_text: str = "kaldi",
     save_to_wav: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param audio_dir: Pathlike, the path which holds the audio data
@@ -599,9 +599,9 @@ def prepare_icsi(
     :param output_dir: Pathlike, the path where to write the manifests - `None` means manifests aren't stored on disk.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
-    :param save_to_wav: bool, whether to save the sph audio to wav format
+    :param save_to_wav: bool, whether to save the sph audio to wav format (into ``output_dir/wavs``; requires ``output_dir``)
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
-        'recordings' and 'supervisions'.
+        'recordings', 'supervisions', and 'cuts'.
     """
     audio_dir = Path(audio_dir)
     transcripts_dir = (
@@ -614,8 +614,8 @@ def prepare_icsi(
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
 
-    if save_to_wav:
-        assert output_dir is not None, "output_dir must be specified when saving to wav"
+    if save_to_wav and output_dir is None:
+        raise ValueError("output_dir must be specified when saving to wav.")
 
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -667,13 +667,21 @@ def prepare_icsi(
         validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Write to output directory if a path is provided
+        cuts_path = None
         if output_dir is not None:
             audio_part.to_file(output_dir / f"icsi-{mic}_recordings_{part}.jsonl.gz")
             supervision_part.to_file(
                 output_dir / f"icsi-{mic}_supervisions_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"icsi-{mic}_cuts_{part}.jsonl.gz"
 
         # Combine all manifests into one dictionary
-        manifests[part] = {"recordings": audio_part, "supervisions": supervision_part}
+        manifests[part] = {
+            "recordings": audio_part,
+            "supervisions": supervision_part,
+            "cuts": create_cuts_per_recording(
+                audio_part, supervision_part, output_path=cuts_path
+            ),
+        }
 
     return dict(manifests)

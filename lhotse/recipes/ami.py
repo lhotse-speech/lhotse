@@ -35,10 +35,10 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
-from lhotse.recipes.utils import normalize_text_ami
+from lhotse.recipes.utils import create_cuts_per_recording, normalize_text_ami
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, add_durations, resumable_download
 
@@ -566,8 +566,13 @@ def prepare_audio_single(
 
     recordings = []
     for audio_path in tqdm(audio_paths, desc="Processing audio files"):
+        # The beamformed files are named "<session>_MDM8.wav", and live either in
+        # "beamformed/<session>/" (official layout) or in "<session>/audio/"
+        # (layout created by download_ami), so we take the session from the file name.
         session_name = (
-            audio_path.parts[-3] if mic != "mdm8-bf" else audio_path.parts[-2]
+            audio_path.parts[-3]
+            if mic != "mdm8-bf"
+            else audio_path.name.split("_MDM8")[0]
         )
         audio_sf = sf.SoundFile(str(audio_path))
         recordings.append(
@@ -699,7 +704,7 @@ def prepare_ami(
     max_words_per_segment: Optional[int] = None,
     merge_consecutive: bool = False,
     keep_punctuation: Optional[bool] = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param data_dir: Pathlike, the path of the data dir.
@@ -715,7 +720,7 @@ def prepare_ami(
         max_words_per_segment.
     :param keep_punctuation: bool, if True, keep punctuation marks.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
-        'recordings' and 'supervisions'.
+        'recordings', 'supervisions', and 'cuts'.
 
     Example usage:
     1. Prepare IHM-Mix data for ASR:
@@ -797,16 +802,21 @@ def prepare_ami(
         validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Write to output directory if a path is provided
+        cuts_path = None
         if output_dir is not None:
             audio_part.to_file(output_dir / f"ami-{mic}_recordings_{part}.jsonl.gz")
             supervision_part.to_file(
                 output_dir / f"ami-{mic}_supervisions_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"ami-{mic}_cuts_{part}.jsonl.gz"
 
         # Combine all manifests into one dictionary
         manifests[part] = {
             "recordings": audio_part,
             "supervisions": supervision_part,
+            "cuts": create_cuts_per_recording(
+                audio_part, supervision_part, output_path=cuts_path
+            ),
         }
 
     return dict(manifests)

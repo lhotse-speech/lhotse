@@ -34,9 +34,10 @@ import logging
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -45,7 +46,7 @@ def prepare_cmu_kids(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     absolute_paths: Optional[bool] = True,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for CMU Kids corpus. The prepared supervisions contain the
     prompt text as the `text`. Additionally, in the `custom` tag, we provide the
@@ -62,7 +63,7 @@ def prepare_cmu_kids(
     :param corpus_dir: Path to downloaded LDC corpus.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param absolute_paths: Wheter to write absolute paths to audio sources (default = False)
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict with a single part ``'all'``, whose value is a dict with the keys ``{'recordings', 'supervisions', 'cuts'}``.
     """
     corpus_dir = Path(corpus_dir) if isinstance(corpus_dir, str) else corpus_dir
     corpus_dir = corpus_dir.parent if corpus_dir.stem == "cmu_kids" else corpus_dir
@@ -138,6 +139,7 @@ def prepare_cmu_kids(
         "supervisions": supervisions,
     }
 
+    cuts_path = None
     if output_dir is not None:
         logging.info("Writing manifests to JSONL files")
         output_dir = Path(output_dir)
@@ -146,5 +148,10 @@ def prepare_cmu_kids(
         manifests["supervisions"].to_file(
             output_dir / "cmu-kids_supervisions_all.jsonl.gz"
         )
+        cuts_path = output_dir / "cmu-kids_cuts_all.jsonl.gz"
 
-    return manifests
+    manifests["cuts"] = create_cuts_per_recording(
+        recordings, supervisions, output_path=cuts_path
+    )
+
+    return {"all": manifests}

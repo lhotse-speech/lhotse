@@ -26,9 +26,10 @@ import logging
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional, Union
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -36,6 +37,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download
 
 ADEPT_URL = "https://zenodo.org/record/5117102/files/ADEPT.zip"
@@ -76,17 +78,14 @@ def download_adept(
 def prepare_adept(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param dataset_parts: string or sequence of strings representing dataset part names,
-        e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
-        By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict with the single part 'all' (the corpus has no splits), mapping to a Dict
+        with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -145,9 +144,20 @@ def prepare_adept(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         supervisions.to_file(output_dir / "adept_supervisions_all.jsonl.gz")
         recordings.to_file(output_dir / "adept_recordings_all.jsonl.gz")
+        cuts_path = output_dir / "adept_cuts_all.jsonl.gz"
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }

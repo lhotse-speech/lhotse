@@ -16,10 +16,11 @@ import tarfile
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.features import Fbank
 from lhotse.features.base import TorchaudioFeatureExtractor
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, fastcopy, resumable_download, safe_extract
 
@@ -51,13 +52,14 @@ def download_ljspeech(
 
 def prepare_ljspeech(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: The RecordingSet and SupervisionSet with the keys 'audio' and 'supervisions'.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``ljspeech_{manifest}_all.jsonl.gz``). Optional.
+    :return: a dict ``{"all": {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -98,11 +100,21 @@ def prepare_ljspeech(
     recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
 
+    cuts_path = None
     if output_dir is not None:
         supervision_set.to_file(output_dir / "ljspeech_supervisions_all.jsonl.gz")
         recording_set.to_file(output_dir / "ljspeech_recordings_all.jsonl.gz")
+        cuts_path = output_dir / "ljspeech_cuts_all.jsonl.gz"
 
-    return {"recordings": recording_set, "supervisions": supervision_set}
+    return {
+        "all": {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
+    }
 
 
 def feature_extractor() -> TorchaudioFeatureExtractor:

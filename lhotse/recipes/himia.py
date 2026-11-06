@@ -20,8 +20,9 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
@@ -288,14 +289,14 @@ def prepare_himia(
     corpus_dir: Pathlike,
     dataset_parts: Union[str, Sequence[str]] = "auto",
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir.
     :param dataset_parts: "auto", "himia"
         or a list of splits (e.g. "train", "dev", "test", "cw_test") to download.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     _validate_dataset_parts(dataset_parts)
     corpus_dir = Path(corpus_dir)
@@ -322,10 +323,18 @@ def prepare_himia(
             recording_set, supervision_set = _prepare_cw_test(corpus_dir)
         else:
             recording_set, supervision_set = _prepare_train_dev_test(corpus_dir, part)
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(output_dir / f"himia_supervisions_{part}.jsonl.gz")
             recording_set.to_file(output_dir / f"himia_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"himia_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
     return manifests

@@ -17,23 +17,28 @@ import numbers
 import shutil
 import tarfile
 import warnings
-from collections import defaultdict
 from concurrent.futures.process import ProcessPoolExecutor
 from contextlib import contextmanager
+from itertools import islice
 from multiprocessing import get_context as mp_get_context
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, Iterator, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     get_ffmpeg_torchaudio_info_enabled,
-    load_manifest,
     set_ffmpeg_torchaudio_info_enabled,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
@@ -126,26 +131,6 @@ def disable_ffmpeg_torchaudio_info() -> None:
         set_ffmpeg_torchaudio_info_enabled(enabled)
 
 
-def _read_cv_manifests_if_cached(
-    output_dir: Optional[Pathlike],
-    language: str,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """
-    Returns:
-        {'train': {'recordings': ..., 'supervisions': ...}, 'dev': ..., 'test': ...}
-    """
-    if output_dir is None:
-        return {}
-    manifests = defaultdict(dict)
-    for part in ["train", "dev", "test"]:
-        for manifest in ["recordings", "supervisions"]:
-            path = output_dir / f"cv_{manifest}_{language}_{part}.jsonl.gz"
-            if not path.is_file():
-                continue
-            manifests[part][manifest] = load_manifest(path)
-    return manifests
-
-
 def _parse_utterance(
     lang_path: Path,
     language: str,
@@ -179,77 +164,61 @@ def _parse_utterance(
     return recording, segment
 
 
-def _prepare_part(
+def _iter_part(
     lang: str,
     part: str,
     lang_path: Pathlike,
     num_jobs: int = 1,
-) -> Tuple[RecordingSet, SupervisionSet]:
+    chunk_size: int = 1000,
+) -> Iterator[Tuple[Recording, SupervisionSegment]]:
     """
-    Prepares part of CommonVoice data.
+    Yields (Recording, SupervisionSegment) pairs of one part of CommonVoice data,
+    scanning the audio files in chunks to keep the memory usage bounded.
 
     :param lang: string language code (e.g., "en").
     :param part: which split to prepare (e.g., "train", "validated", etc.).
     :param lang_path: path to a CommonVoice directory for a specific language
         (e.g., "/path/to/cv-corpus-13.0-2023-03-09/pl").
     :param num_jobs: How many concurrent workers to use for scanning of the audio files.
-    :return: a tuple of (RecordingSet, SupervisionSet) objects,
-        note that CommonVoice manifests may be fairly large in memory.
     """
 
     lang_path = Path(lang_path)
     tsv_path = lang_path / f"{part}.tsv"
 
     with disable_ffmpeg_torchaudio_info():
-        with ProcessPoolExecutor(
-            max_workers=num_jobs,
-            mp_context=mp_get_context("spawn"),
-        ) as ex:
-
-            futures = []
-            recordings = []
-            supervisions = []
-            audio_infos = []
-
-            with open(tsv_path, "r") as f:
-
-                # Note: using QUOTE_NONE as CV dataset contains unbalanced quotes, cleanup needed later
-                audio_infos = csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
-
-                for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
-                    futures.append(
-                        ex.submit(
-                            _parse_utterance,
-                            lang_path,
-                            lang,
-                            audio_info,
-                        )
-                    )
-
-            for future in tqdm(futures, desc="Processing"):
-                result = future.result()
-                if result is None:
-                    continue
-                recording, segment = result
-                recordings.append(recording)
-                supervisions.append(segment)
-
-    recording_set = RecordingSet.from_recordings(recordings)
-    supervision_set = SupervisionSet.from_segments(supervisions)
-
-    return recording_set, supervision_set
+        with (
+            ProcessPoolExecutor(
+                max_workers=num_jobs,
+                mp_context=mp_get_context("spawn"),
+            ) as ex,
+            open(tsv_path, "r") as f,
+        ):
+            # Note: using QUOTE_NONE as CV dataset contains unbalanced quotes, cleanup needed later
+            audio_infos = csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
+            while True:
+                chunk = list(islice(audio_infos, chunk_size))
+                if not chunk:
+                    break
+                futures = [
+                    ex.submit(_parse_utterance, lang_path, lang, audio_info)
+                    for audio_info in chunk
+                ]
+                for future in futures:
+                    result = future.result()
+                    if result is not None:
+                        yield result
 
 
 def prepare_commonvoice(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
     languages: Union[str, Sequence[str]] = "auto",
     splits: Union[str, Sequence[str]] = COMMONVOICE_DEFAULT_SPLITS,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
+    Returns the manifests which consist of the Recordings, Supervisions and Cuts.
+    When all the manifests of a split are available in the ``output_dir``, it will simply read and return them.
 
     This function expects the input directory structure of::
 
@@ -260,10 +229,15 @@ def prepare_commonvoice(
 
     Returns a dict with 3-level structure (lang -> split -> manifest-type)::
 
-        >>> {'en/fr/pl/...': {'train/dev/test': {'recordings/supervisions': manifest}}}
+        >>> {'en/fr/pl/...': {'train/dev/test': {'recordings/supervisions/cuts': manifest}}}
+
+    The files are written to ``output_dir`` as ``cv-<lowercase language code>_<manifest>_<split>.jsonl.gz``
+    (e.g. ``cv-zh-tw_cuts_train.jsonl.gz``).
+    When ``output_dir`` is given, the manifests are streamed to disk in a single pass
+    (which skips :func:`~lhotse.qa.fix_manifests`) and returned lazily.
 
     :param corpus_dir: Pathlike, the path to the downloaded corpus.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
     :param languages: 'auto' (prepare all discovered data) or a list of language codes.
     :param splits: by default ``['train', 'dev', 'test']``, can also include
         ``'validated'``, ``'invalidated'``, and ``'other'``.
@@ -272,16 +246,15 @@ def prepare_commonvoice(
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    assert output_dir is not None, (
-        "CommonVoice recipe requires to specify the output "
-        "manifest directory (output_dir cannot be None)."
-    )
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     if languages == "auto":
-        languages = set(COMMONVOICE_LANGS).intersection(
-            path.name for path in corpus_dir.glob("*")
+        languages = sorted(
+            set(COMMONVOICE_LANGS).intersection(
+                path.name for path in corpus_dir.glob("*")
+            )
         )
         if not languages:
             raise ValueError(
@@ -289,47 +262,72 @@ def prepare_commonvoice(
             )
     elif isinstance(languages, str):
         languages = [languages]
+    if isinstance(splits, str):
+        splits = [splits]
 
     manifests = {}
 
     for lang in tqdm(languages, desc="Processing CommonVoice languages"):
         logging.info(f"Language: {lang}")
         lang_path = corpus_dir / lang
-
-        # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        # Pattern: "cv_recordings_en_train.jsonl.gz" / "cv_supervisions_en_train.jsonl.gz"
-        lang_manifests = _read_cv_manifests_if_cached(
-            output_dir=output_dir, language=lang
-        )
+        # Corpus names are lowercase, e.g. "cv-zh-tw".
+        prefix = f"cv-{lang.lower()}"
+        lang_manifests = {}
 
         for part in tqdm(splits, desc=f"Spliting"):
             logging.info(f"Spliting {part}")
-            if part in lang_manifests:
+            # Maybe the manifests already exist: we can read them and save a bit of preparation time.
+            if manifests_exist(part=part, output_dir=output_dir, prefix=prefix):
                 logging.info(
                     f"{part} split of CommonVoice-{lang} already prepared - skipping."
                 )
+                lang_manifests.update(
+                    read_manifests_if_cached(
+                        dataset_parts=[part], output_dir=output_dir, prefix=prefix
+                    )
+                )
                 continue
-            recording_set, supervision_set = _prepare_part(
-                lang=lang,
-                part=part,
-                lang_path=lang_path,
-                num_jobs=num_jobs,
-            )
 
-            # Fix manifests
-            recording_set, supervision_set = fix_manifests(
-                recording_set, supervision_set
+            pairs = _iter_part(
+                lang=lang, part=part, lang_path=lang_path, num_jobs=num_jobs
             )
-            validate_recordings_and_supervisions(recording_set, supervision_set)
+            if output_dir is None:
+                recordings, supervisions = zip(*pairs)
+                recording_set, supervision_set = fix_manifests(
+                    RecordingSet.from_recordings(recordings),
+                    SupervisionSet.from_segments(supervisions),
+                )
+                validate_recordings_and_supervisions(recording_set, supervision_set)
+                lang_manifests[part] = {
+                    "recordings": recording_set,
+                    "supervisions": supervision_set,
+                    "cuts": create_cuts_per_recording(recording_set, supervision_set),
+                }
+                continue
 
-            supervision_set.to_file(
-                output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz"
-            )
-            recording_set.to_file(output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz")
-
+            paths = {
+                name: output_dir / f"{prefix}_{name}_{part}.jsonl.gz"
+                for name in ("recordings", "supervisions", "cuts")
+            }
+            with (
+                RecordingSet.open_writer(
+                    paths["recordings"], overwrite=True
+                ) as recs_writer,
+                SupervisionSet.open_writer(
+                    paths["supervisions"], overwrite=True
+                ) as sups_writer,
+                CutSet.open_writer(paths["cuts"], overwrite=True) as cuts_writer,
+            ):
+                for recording, segment in pairs:
+                    recs_writer.write(recording)
+                    sups_writer.write(segment)
+                    cut = recording.to_cut()
+                    cut.supervisions = [segment]
+                    cuts_writer.write(cut)
             lang_manifests[part] = {
-                "supervisions": supervision_set,
-                "recordings": recording_set,
+                "recordings": RecordingSet.from_jsonl_lazy(paths["recordings"]),
+                "supervisions": SupervisionSet.from_jsonl_lazy(paths["supervisions"]),
+                "cuts": CutSet.from_jsonl_lazy(paths["cuts"]),
             }
 
         manifests[lang] = lang_manifests

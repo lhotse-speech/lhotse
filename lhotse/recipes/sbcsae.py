@@ -42,17 +42,19 @@ from copy import deepcopy
 from dataclasses import dataclass
 from math import inf
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     fix_manifests,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import (
     Pathlike,
     fastcopy,
@@ -121,7 +123,11 @@ class Dummy_Spk_Iterator:
         return f"{self.ind:04d}_{name}"
 
 
-dummy_spk_iterator = Dummy_Spk_Iterator()
+ALIGNED_STM_URLS = {
+    "asr-aligned": "https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_asr.stm",
+    "diar-aligned": "https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_diar.stm",
+}
+SBCSAE_SEGMENTATIONS = ("original", *ALIGNED_STM_URLS)
 
 
 def download_sbcsae(
@@ -158,8 +164,8 @@ def prepare_sbcsae(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     geolocation: Optional[bool] = False,
-    omit_realignments: Optional[bool] = False,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+    segmentation: str = "original",
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifest for SBCSAE dataset.
 
@@ -167,12 +173,21 @@ def prepare_sbcsae(
         should be called SBCSAE. There is no consistent formatting between
         releases of the data. Check script comments for details if using an
         existing corpus download rather than Lhotse's download script.
-    :param: output_dir: Root directory where .json manifests are stored.
+    :param: output_dir: Root directory where the manifests are stored. Can be omitted to avoid writing.
     :param: geolocation: Include geographic coordinates of speakers' hometowns
         in the manifests.
-    :param: omit_realignments: Only output original corpus segmentation.
-    :return: The manifests.
+    :param: segmentation: Which segmentation of the corpus to return: ``"original"`` (the corpus segmentation),
+        or one of the realignments with improved segment boundaries, ``"asr-aligned"`` (aligned for ASR) or
+        ``"diar-aligned"`` (aligned for diarization; they are downloaded from
+        https://github.com/domklement/SBCSAE_alignments). The segmentation is part of the corpus name
+        of the written files: ``sbcsae``, ``sbcsae-asr-aligned``, or ``sbcsae-diar-aligned``.
+    :return: A Dict with the single part ``'all'``, whose value is a Dict with the keys
+        "recordings", "supervisions", and "cuts" for the requested segmentation.
     """
+    if segmentation not in SBCSAE_SEGMENTATIONS:
+        raise ValueError(
+            f"Unknown segmentation '{segmentation}', expected one of: {SBCSAE_SEGMENTATIONS}"
+        )
     # Resolve corpus_dir type
     if isinstance(corpus_dir, str):
         corpus_dir = Path(corpus_dir)
@@ -197,10 +212,14 @@ def prepare_sbcsae(
 
     supervisions = []
     trn_dir = corpus_dir / "TRN"
+    # A fresh iterator per call keeps the IDs of unknown speakers reproducible.
+    dummy_spk_iterator = Dummy_Spk_Iterator()
     for p in tqdm(
-        list(trn_dir.glob("*.trn")), "Collecting and normalizing transcripts ..."
+        sorted(trn_dir.glob("*.trn")), "Collecting and normalizing transcripts ..."
     ):
-        for supervision in _filename_to_supervisions(p, spk2gen_dict, spk2glob_dict):
+        for supervision in _filename_to_supervisions(
+            p, spk2gen_dict, spk2glob_dict, dummy_spk_iterator
+        ):
             supervisions.append(supervision)
 
     if len(supervisions) == 0:
@@ -215,7 +234,7 @@ def prepare_sbcsae(
             s_ = fastcopy(
                 s,
                 start=new_start,
-                duration=min(new_start + 0.02, s_reco.duration),
+                duration=min(0.02, s_reco.duration - new_start),
             )
         else:
             s_ = s
@@ -237,36 +256,31 @@ def prepare_sbcsae(
     supervisions = SupervisionSet.from_segments(supervisions_)
     recordings, supervisions = fix_manifests(recordings, supervisions)
 
+    corpus_name = "sbcsae"
+    if segmentation != "original":
+        supervisions = apply_aligned_stm(
+            list(recordings.ids), supervisions, segmentation
+        )
+        _, supervisions = fix_manifests(recordings, supervisions)
+        corpus_name = f"sbcsae-{segmentation}"
+
+    cuts_path = None
     if output_dir is not None:
-        if isinstance(output_dir, str):
-            output_dir = Path(output_dir)
+        output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "sbcsae_recordings.jsonl.gz")
-        supervisions.to_file(output_dir / "sbcsae_supervisions.jsonl.gz")
+        recordings.to_file(output_dir / f"{corpus_name}_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / f"{corpus_name}_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / f"{corpus_name}_cuts_all.jsonl.gz"
 
-    manifests = {"recordings": recordings, "supervisions": supervisions}
-
-    if not omit_realignments:
-        asr_supervisions, diar_supervisions = apply_aligned_stms(
-            list(recordings.ids), supervisions
-        )
-        _, asr_supervisions = fix_manifests(recordings, asr_supervisions)
-        _, diar_supervisions = fix_manifests(recordings, diar_supervisions)
-
-        asr_supervisions.to_file(
-            output_dir / "sbcsae_supervisions_asr_aligned.jsonl.gz"
-        )
-        diar_supervisions.to_file(
-            output_dir / "sbcsae_supervisions_diar_aligned.jsonl.gz"
-        )
-
-        manifests = {
-            "asr_supervisions": asr_supervisions,
-            "diar_supervisions": diar_supervisions,
-            **manifests,
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
         }
-
-    return manifests
+    }
 
 
 def generate_geolocations(corpus: Path, spk2glob_dict: dict):
@@ -415,7 +429,12 @@ def generate_speaker_map_dicts(doc_dir: Path):
     return spk2gen_dict, spk2glob_dict
 
 
-def _filename_to_supervisions(filename: Path, spk2gen_dict: dict, spk2glob_dict: dict):
+def _filename_to_supervisions(
+    filename: Path,
+    spk2gen_dict: dict,
+    spk2glob_dict: dict,
+    dummy_spk_iterator: Dummy_Spk_Iterator,
+):
     reco_id = filename.stem.split(".")[0]
     lines = filename.read_text(encoding="latin1")
     supervisions = []
@@ -1140,17 +1159,10 @@ def apply_stm(
     return sset
 
 
-def apply_aligned_stms(
-    recording_ids: List[str], processed_supervisions: SupervisionSet
-) -> Tuple[SupervisionSet, SupervisionSet]:
-    aligned_for_asr_stm = retrieve_stm_file(
-        "https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_asr.stm"
-    )
-    aligned_for_diar_stm = retrieve_stm_file(
-        "https://raw.githubusercontent.com/domklement/SBCSAE_alignments/main/alignments/stm/aligned_for_diar.stm"
-    )
-
-    asr_sup = apply_stm(recording_ids, processed_supervisions, aligned_for_asr_stm)
-    diar_sup = apply_stm(recording_ids, processed_supervisions, aligned_for_diar_stm)
-
-    return asr_sup, diar_sup
+def apply_aligned_stm(
+    recording_ids: List[str],
+    processed_supervisions: SupervisionSet,
+    segmentation: str,
+) -> SupervisionSet:
+    aligned_stm = retrieve_stm_file(ALIGNED_STM_URLS[segmentation])
+    return apply_stm(recording_ids, processed_supervisions, aligned_stm)

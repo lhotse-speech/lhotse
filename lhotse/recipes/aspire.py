@@ -34,9 +34,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
@@ -51,13 +52,16 @@ class AspireSegmentAnnotation(NamedTuple):
 
 def prepare_aspire(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, mic: str = "single"
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings, Supervisions, and Cuts.
+
     :param corpus_dir: Pathlike, the path of the corpus dir (LDC2017S21).
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``aspire-{mic}_{manifest}_{part}.jsonl.gz``). Optional.
     :param mic: str, the microphone type, either "single" or "multi".
-    :return: a Dict whose key is the dataset part ('dev' and 'dev_test'), and the value is Dicts with the keys 'recordings' and 'supervisions'.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with the
+        parts "dev" and "dev_test".
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -170,10 +174,22 @@ def prepare_aspire(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"aspire_supervisions_{part}.jsonl.gz")
-            recording_set.to_file(output_dir / f"aspire_recordings_{part}.jsonl.gz")
+            supervision_set.to_file(
+                output_dir / f"aspire-{mic}_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"aspire-{mic}_recordings_{part}.jsonl.gz"
+            )
+            cuts_path = output_dir / f"aspire-{mic}_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
-    return manifests
+    return dict(manifests)

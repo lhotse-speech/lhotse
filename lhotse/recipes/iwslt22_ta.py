@@ -23,6 +23,7 @@ import tqdm
 
 from lhotse import (
     AudioSource,
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -30,6 +31,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike
 
 # English annotation rules:
@@ -76,7 +78,7 @@ def prepare_iwslt22_ta(
     normalize_text: bool = False,
     langs: Optional[List[str]] = ["ta", "eng"],
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares manifests for the train dev and test1 splits.
 
@@ -88,7 +90,9 @@ def prepare_iwslt22_ta(
         to avoid writing.
     :param langs: str, list of language abbreviations for source and target languages.
     :param num_jobs: int, the number of jobs to use for parallel processing.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}`` with parts
+        ``train``, ``dev`` and ``test1``. Files are written as
+        ``iwslt22-ta_{manifest}_{part}.jsonl.gz``.
 
     """
     import soundfile as sf
@@ -164,13 +168,20 @@ def prepare_iwslt22_ta(
         for split in ("train", "dev", "test1"):
             sups_ = supervisions.filter(lambda s: s.recording_id in split_files[split])
             recs_ = recordings.filter(lambda r: r.id in split_files[split])
-            manifests[split] = {"recordings": recs_, "supervisions": sups_}
 
+            cuts_path = None
             if output_dir is not None:
                 output_dir = Path(output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
-                sups_.to_file(output_dir / f"iwslt22-ta_recordings_{split}.jsonl.gz")
-                recs_.to_file(output_dir / f"iwslt22-ta_supervisions_{split}.jsonl.gz")
+                recs_.to_file(output_dir / f"iwslt22-ta_recordings_{split}.jsonl.gz")
+                sups_.to_file(output_dir / f"iwslt22-ta_supervisions_{split}.jsonl.gz")
+                cuts_path = output_dir / f"iwslt22-ta_cuts_{split}.jsonl.gz"
+
+            manifests[split] = {
+                "recordings": recs_,
+                "supervisions": sups_,
+                "cuts": create_cuts_per_recording(recs_, sups_, output_path=cuts_path),
+            }
 
     return manifests
 
@@ -178,7 +189,7 @@ def prepare_iwslt22_ta(
 def _filename_to_supervisions(
     p: Path,
     translations_path: Path,
-    normalize_text: bool,
+    aggressive_normalization: bool,
     exclude: list,
     langs: list,
 ):
@@ -211,7 +222,7 @@ def _filename_to_supervisions(
             utt_id == utt_id_tgt
         ), f"The loaded source and target files are not sorted properly: {utt_id} {utt_id_tgt}"
 
-        if normalize_text:
+        if aggressive_normalization:
             # Aggressive Tunisian text normalization from https://aclanthology.org/2022.iwslt-1.29.pdf
             text = text_cleaning(text)
             if text.strip() == "":

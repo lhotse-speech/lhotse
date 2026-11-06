@@ -8,15 +8,24 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from tqdm import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
 
 def prepare_slu(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare manifests for the Fluent Speech Commands corpus.
+
+    :param corpus_dir: Pathlike, the path of the data dir.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
+    :return: a Dict whose keys are the parts ``train``, ``valid`` and ``test``, and the values are
+        Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
+    """
 
     import pandas
 
@@ -89,24 +98,23 @@ def prepare_slu(
         ["train", "valid", "test"], [train_wavs, valid_wavs, test_wavs]
     ):
         recordings = []
-        for wav in tqdm(dataset):
+        supervisions = []
+        for idx, wav in enumerate(tqdm(dataset)):
             recording = Recording.from_file(wav)
             recordings.append(recording)
-        recording_set = RecordingSet.from_recordings(recordings)
-
-        supervisions = []
-        for id, recording in tqdm(enumerate(recording_set)):
             supervisions.append(
                 SupervisionSegment(
-                    id=id,
+                    # Recording IDs (UUID file names) are unique across the splits.
+                    id=recording.id,
                     recording_id=recording.id,
                     start=0,
                     duration=recording.duration,
                     channel=0,
-                    text=transcripts[name][id],
-                    custom={"frames": frames[name][id]},
+                    text=transcripts[name][idx],
+                    custom={"frames": frames[name][idx]},
                 )
             )
+        recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
@@ -115,11 +123,20 @@ def prepare_slu(
             "supervisions": supervision_set,
         }
 
-    if output_dir is not None:
-        for name in ["train", "valid", "test"]:
+    for name in ["train", "valid", "test"]:
+        cuts_path = None
+        if output_dir is not None:
             manifests[name]["recordings"].to_file(
                 output_dir / ("slu_recordings_" + name + ".jsonl.gz")
             )
             manifests[name]["supervisions"].to_file(
                 output_dir / ("slu_supervisions_" + name + ".jsonl.gz")
             )
+            cuts_path = output_dir / ("slu_cuts_" + name + ".jsonl.gz")
+        manifests[name]["cuts"] = create_cuts_per_recording(
+            manifests[name]["recordings"],
+            manifests[name]["supervisions"],
+            output_path=cuts_path,
+        )
+
+    return dict(manifests)

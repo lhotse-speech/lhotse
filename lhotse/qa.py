@@ -460,8 +460,8 @@ def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
     for s in supervisions:
         validate_supervision(s)
         ids[s.id] += 1
-    assert (
-        ids.most_common(1)[0][1] <= 1
+    assert all(
+        count <= 1 for count in ids.values()
     ), "SupervisionSet has supervisions with duplicated IDs."
 
     # Catch errors in data preparation:

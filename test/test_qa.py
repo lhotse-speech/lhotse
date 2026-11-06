@@ -65,3 +65,7 @@ def test_remove_missing_recordings_and_supervisions_lazy():
 def test_validate_feature_set_runs():
     features = DummyManifest(FeatureSet, begin_id=0, end_id=100)
     validate(features)
+
+
+def test_validate_empty_supervision_set_does_not_raise():
+    validate(SupervisionSet.from_segments([]))

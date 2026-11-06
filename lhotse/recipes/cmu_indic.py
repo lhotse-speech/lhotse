@@ -25,6 +25,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -32,6 +33,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 BASE_URL = "http://festvox.org/h2r_indic/"
@@ -122,14 +124,14 @@ def download_cmu_indic(
 def prepare_cmu_indic(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepares and returns the CMU Indic manifests,
     which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a dict of {'recordings': ..., 'supervisions': ...}
+    :return: a dict with a single part ``'all'``, whose value is a dict with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -198,12 +200,23 @@ def prepare_cmu_indic(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_file(output_dir / "cmu-indic_recordings_all.jsonl.gz")
         supervisions.to_file(output_dir / "cmu-indic_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / "cmu-indic_cuts_all.jsonl.gz"
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }
 
 
 def _get_speaker(dirname: str) -> str:

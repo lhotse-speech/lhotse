@@ -5,8 +5,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, NamedTuple, Optional, Union
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
@@ -60,14 +61,14 @@ def prepare_heroico(
     speech_dir: Pathlike,
     transcript_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
 
     :param speech_dir: Pathlike, the path of the speech data dir.
     :param transcripts_dir: Pathlike, the path of the transcript data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the fold, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the fold, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     import soundfile
 
@@ -280,10 +281,18 @@ def prepare_heroico(
         audio, supervision = fix_manifests(audio, supervision)
         validate_recordings_and_supervisions(audio, supervision)
 
+        cuts_path = None
         if output_dir is not None:
             supervision.to_file(output_dir / f"heroico_supervisions_{fld}.jsonl.gz")
             audio.to_file(output_dir / f"heroico_recordings_{fld}.jsonl.gz")
+            cuts_path = output_dir / f"heroico_cuts_{fld}.jsonl.gz"
 
-        manifests[fld] = {"recordings": audio, "supervisions": supervision}
+        manifests[fld] = {
+            "recordings": audio,
+            "supervisions": supervision,
+            "cuts": create_cuts_per_recording(
+                audio, supervision, output_path=cuts_path
+            ),
+        }
 
     return manifests

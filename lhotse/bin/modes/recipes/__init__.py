@@ -65,6 +65,7 @@ from .mdcc import *
 from .medical import *
 from .mgb2 import *
 from .mls import *
+from .mobvoihotwords import *
 from .mtedx import *
 from .musan import *
 from .must_c import *

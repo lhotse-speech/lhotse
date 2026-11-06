@@ -42,13 +42,14 @@ You can call lhotse with the following commands
 import logging
 from itertools import groupby, repeat
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.parallel import parallel_map
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.serialization import load_yaml
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
@@ -56,28 +57,36 @@ from lhotse.utils import Pathlike, Seconds
 
 def prepare_must_c(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
-    tgt_lang: str,
+    output_dir: Optional[Pathlike] = None,
+    tgt_lang: Optional[str] = None,
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """Prepare manifests for the MUST-C corpus.
 
     :param: corpus_dir: We assume there is a folder {src_lang}-{tgt_lang} inside
         this directory.
-    :param: output_dir: Directory where the manifests should be written.
-    :param: tgt_lang: Target language, e.g., zh, de, etc.
+    :param: output_dir: Directory where the manifests should be written (optional);
+        they are named ``must-c-<src>-<tgt>_<manifest>_<part>.jsonl.gz``.
+    :param: tgt_lang: Target language, e.g., zh, de, etc. (required).
     :param: src_lang: Source language, e.g., en.
     :param: num_jobs: Number of processes to use for parsing the data
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys
+        'recordings', 'supervisions', and 'cuts'.
     """
+    if tgt_lang is None:
+        raise ValueError("tgt_lang is required, e.g., 'de'.")
     src_lang = "en"
+    corpus_name = f"must-c-{src_lang}-{tgt_lang}"
 
     in_data_dir = Path(corpus_dir) / f"{src_lang}-{tgt_lang}/data"
     assert in_data_dir.is_dir(), in_data_dir
 
     datasets = ["dev", "tst-COMMON", "tst-HE", "train"]
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
+    manifests = {}
     for d in datasets:
         logging.info(f"Processing {d}")
         dataset_dir = in_data_dir / d
@@ -133,17 +142,23 @@ def prepare_must_c(
             recordings=recordings, supervisions=supervisions
         )
 
-        with RecordingSet.open_writer(
-            output_dir / f"must_c_recordings_{src_lang}-{tgt_lang}_{d}.jsonl.gz"
-        ) as rec_writer:
-            for r in recordings:
-                rec_writer.write(r)
+        cuts_path = None
+        if output_dir is not None:
+            recordings.to_file(output_dir / f"{corpus_name}_recordings_{d}.jsonl.gz")
+            supervisions.to_file(
+                output_dir / f"{corpus_name}_supervisions_{d}.jsonl.gz"
+            )
+            cuts_path = output_dir / f"{corpus_name}_cuts_{d}.jsonl.gz"
 
-        with SupervisionSet.open_writer(
-            output_dir / f"must_c_supervisions_{src_lang}-{tgt_lang}_{d}.jsonl.gz"
-        ) as sup_writer:
-            for sup in supervisions:
-                sup_writer.write(sup)
+        manifests[d] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+
+    return manifests
 
 
 def parse_utterance(

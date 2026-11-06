@@ -9,13 +9,14 @@ Manuscript can be found at: https://arxiv.org/abs/2201.02419
 import logging
 import zipfile
 from pathlib import Path
-from typing import Dict, Sequence, Union
+from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
 
@@ -59,14 +60,17 @@ def download_mdcc(target_dir: Pathlike, force_download: bool = False) -> Path:
 def prepare_mdcc(
     corpus_dir: Pathlike,
     dataset_parts: Union[str, Sequence[str]] = "all",
-    output_dir: Pathlike = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    output_dir: Optional[Pathlike] = None,
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Create RecordingSet and SupervisionSet manifests for MDCC from a raw corpus distribution.
+    Create RecordingSet, SupervisionSet, and CutSet manifests for MDCC from a raw corpus distribution.
 
     :param corpus_dir: Pathlike, the path to the extracted corpus.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :param dataset_parts: string or sequence of strings representing dataset part names;
+        "all" (default) prepares every part in ``MDCC_PARTS``.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``mdcc_{manifest}_{part}.jsonl.gz``). Optional.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}``.
     """
     corpus_dir = Path(corpus_dir)
     audio_dir = corpus_dir / "audio"
@@ -123,13 +127,21 @@ def prepare_mdcc(
             recordings=recordings, supervisions=supervisions
         )
 
+        cuts_path = None
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(exist_ok=True, parents=True)
             recordings.to_file(output_dir / f"mdcc_recordings_{part}.jsonl.gz")
             supervisions.to_file(output_dir / f"mdcc_supervisions_{part}.jsonl.gz")
+            cuts_path = output_dir / f"mdcc_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recordings, "supervisions": supervisions}
+        manifests[part] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
 
     return manifests
 

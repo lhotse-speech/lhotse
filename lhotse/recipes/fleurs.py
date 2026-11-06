@@ -25,6 +25,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -34,6 +35,7 @@ from lhotse import (
     set_ffmpeg_torchaudio_info_enabled,
 )
 from lhotse.parallel import parallel_map
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, is_module_available
 
 # The FLEURS languages are indicated by 2-letter ISO-codes followed by a
@@ -275,28 +277,28 @@ def prepare_fleurs(
     output_dir: Optional[Pathlike] = None,
     languages: Optional[Union[str, Sequence[str]]] = "all",
     num_jobs: int = 1,
-) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]:
     """
     Prepares the manifest for all of the FLEURS languages requested.
 
     :param corpus_dir: Path to the root where the FLEURS data are stored.
     :type corpus_dir: Pathlike,
-    :param output_dir: The directory where the .jsonl.gz manifests will be written.
-    :type output_dir: Pathlike,
+    :param output_dir: Optional directory where the manifests will be written as
+        ``fleurs-<lang>_<manifest>_<part>.jsonl.gz`` (e.g. ``fleurs-en-us_cuts_dev.jsonl.gz``).
+    :type output_dir: Optional[Pathlike],
     :param langauges: str or str sequence specifying the languages to prepare.
         The str 'all' prepares all 102 languages.
-    :return: The manifest
-    :rtype: Dict[str, Dict[str, Union[RecordingSet, Supervisions]]]]
+    :return: The manifests per language and split, with the keys 'recordings', 'supervisions', and 'cuts'.
+    :rtype: Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]]
     """
 
     if isinstance(corpus_dir, str):
         corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    if isinstance(output_dir, str):
+    if output_dir is not None:
         output_dir = Path(output_dir)
-
-    output_dir.mkdir(mode=511, parents=True, exist_ok=True)
+        output_dir.mkdir(mode=511, parents=True, exist_ok=True)
 
     langs_list = DEFAULT_LANGUAGES
     if isinstance(languages, str) and languages != "all":
@@ -312,24 +314,29 @@ def prepare_fleurs(
         if not corpus_dir_lang.is_dir():
             logging.info(f"Skipping {lang}. No directory {corpus_dir_lang} found.")
             continue
-        output_dir_lang = output_dir / f"{lang}"
-        output_dir_lang.mkdir(mode=511, parents=True, exist_ok=True)
         manifests[lang] = prepare_single_fleurs_language(
             corpus_dir_lang,
-            output_dir_lang,
             language=lang,
             num_jobs=num_jobs,
         )
 
-    if output_dir is not None:
-        for l in manifests:
-            for dset in ("train", "dev", "test"):
+    for l in manifests:
+        corpus_name = "fleurs-" + l.lower().replace("_", "-")
+        for dset in ("train", "dev", "test"):
+            cuts_path = None
+            if output_dir is not None:
                 manifests[l][dset]["supervisions"].to_file(
-                    output_dir / f"{l}" / f"fleurs-{l}_supervisions_{dset}.jsonl.gz"
+                    output_dir / f"{corpus_name}_supervisions_{dset}.jsonl.gz"
                 )
                 manifests[l][dset]["recordings"].to_file(
-                    output_dir / f"{l}" / f"fleurs-{l}_recordings_{dset}.jsonl.gz"
+                    output_dir / f"{corpus_name}_recordings_{dset}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"{corpus_name}_cuts_{dset}.jsonl.gz"
+            manifests[l][dset]["cuts"] = create_cuts_per_recording(
+                manifests[l][dset]["recordings"],
+                manifests[l][dset]["supervisions"],
+                output_path=cuts_path,
+            )
     return manifests
 
 

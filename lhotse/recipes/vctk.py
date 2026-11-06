@@ -87,6 +87,7 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -94,6 +95,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 EDINBURGH_VCTK_URL = (
@@ -150,16 +152,17 @@ def prepare_vctk(
     output_dir: Optional[Pathlike] = None,
     use_edinburgh_vctk_url: Optional[bool] = False,
     mic_id: Optional[str] = "mic2",
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
+    Prepares and returns the VCTK manifests which consist of Recordings, Supervisions and Cuts.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param use_edinburgh_vctk_url: Bool, if use edinburgh_vctk_url to download the dataset, please set it as True.
-    :param mic_id: str, the default of mic_id is mic2.
-    :return: a dict with keys "read" and "spontaneous".
-        Each hold another dict of {'recordings': ..., 'supervisions': ...}
+    :param mic_id: str, the default of mic_id is mic2. With ``use_edinburgh_vctk_url``
+        it is appended to the corpus name of the written manifests (e.g. ``vctk-mic2``).
+    :return: a dict with the single part "all", mapping to a dict with the keys
+        "recordings", "supervisions", and "cuts".
 
     Note: when download the vctk dataset with the edinburgh url, there are some points should know:
         * All the speeches from speaker ``p315`` will be skipped due to the lack of the corresponding text files.
@@ -234,13 +237,24 @@ def prepare_vctk(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    cuts_path = None
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "vctk_recordings_all.jsonl.gz")
-        supervisions.to_file(output_dir / "vctk_supervisions_all.jsonl.gz")
+        corpus_name = f"vctk-{mic_id}" if use_edinburgh_vctk_url else "vctk"
+        recordings.to_file(output_dir / f"{corpus_name}_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / f"{corpus_name}_supervisions_all.jsonl.gz")
+        cuts_path = output_dir / f"{corpus_name}_cuts_all.jsonl.gz"
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return {
+        "all": {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
+    }
 
 
 def _parse_speaker_description(corpus_dir: Pathlike, use_edinburgh_vctk_url: bool):

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -27,6 +28,7 @@ from lhotse import (
     validate,
     validate_recordings_and_supervisions,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 MUSAN_URL = "https://www.openslr.org/resources/17/musan.tar.gz"
@@ -66,7 +68,19 @@ def prepare_musan(
     output_dir: Optional[Pathlike] = None,
     parts: Sequence[str] = ("music", "speech", "noise"),
     use_vocals: bool = True,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the MUSAN corpus.
+
+    :param corpus_dir: Path to the extracted MUSAN corpus.
+    :param output_dir: Optional directory where the manifests are written
+        (``musan_<manifest>_<part>.jsonl.gz``).
+    :param parts: Which parts to prepare: ``music``, ``speech``, ``noise``.
+    :param use_vocals: When ``False``, the music recordings with vocals are excluded
+        from both the recordings, supervisions and cuts.
+    :return: A dict keyed by part. ``music`` has ``recordings``, ``supervisions`` and ``cuts``;
+        ``speech`` and ``noise`` have ``recordings`` and ``cuts`` only.
+    """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     if not parts:
@@ -92,6 +106,17 @@ def prepare_musan(
             for key, manifest in manifests[part].items():
                 manifest.to_file(output_dir / f"musan_{key}_{part}.jsonl.gz")
 
+    for part in manifests:
+        manifests[part]["cuts"] = create_cuts_per_recording(
+            manifests[part]["recordings"],
+            manifests[part].get("supervisions"),
+            output_path=(
+                output_dir / f"musan_cuts_{part}.jsonl.gz"
+                if output_dir is not None
+                else None
+            ),
+        )
+
     return manifests
 
 
@@ -113,7 +138,9 @@ def prepare_music(
         for utt, genres, vocals, musician in read_annotations(file, max_fields=4)
     )
     if not use_vocals:
-        supervisions = supervisions.filter(lambda s: s.custom["vocals"] is False)
+        vocal_ids = {s.id for s in supervisions if s.custom["vocals"]}
+        supervisions = supervisions.filter(lambda s: s.id not in vocal_ids)
+        recordings = recordings.filter(lambda r: r.id not in vocal_ids)
     return {"recordings": recordings, "supervisions": supervisions}
 
 

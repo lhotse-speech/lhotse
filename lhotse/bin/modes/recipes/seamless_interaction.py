@@ -40,9 +40,10 @@ def seamless_interaction(
     splits: Sequence[str],
 ):
     """Seamless Interaction data preparation (one two-channel recording per conversation)."""
-    prepare_seamless_interaction(
-        corpus_dir, output_dir=output_dir, labels=labels, splits=splits
-    )
+    for label in labels:
+        prepare_seamless_interaction(
+            corpus_dir, output_dir=output_dir, label=label, splits=splits
+        )
 
 
 @download.command(context_settings=dict(show_default=True))

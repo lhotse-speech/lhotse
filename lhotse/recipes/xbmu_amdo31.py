@@ -33,8 +33,9 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, safe_extract
 
@@ -89,12 +90,12 @@ def download_xbmu_amdo31(
 
 def prepare_xbmu_amdo31(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -119,8 +120,7 @@ def prepare_xbmu_amdo31(
         recordings = []
         supervisions = []
         wav_path = corpus_dir / "data" / "wav" / f"{part}"
-        count = 0
-        for audio_path in wav_path.rglob("**/*.wav"):
+        for audio_path in sorted(wav_path.rglob("**/*.wav")):
             idx = audio_path.stem.split("-")[1]
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
@@ -133,10 +133,9 @@ def prepare_xbmu_amdo31(
                 continue
             recording = Recording.from_file(audio_path)
             recordings.append(recording)
-            count += 1
             segment = SupervisionSegment(
-                id=str(count) + "_" + idx,
-                recording_id=speaker + "-" + idx,
+                id=recording.id,
+                recording_id=recording.id,
                 start=0.0,
                 duration=recording.duration,
                 channel=0,
@@ -153,14 +152,22 @@ def prepare_xbmu_amdo31(
         recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"xbmu_amdo31_supervisions_{part}.jsonl.gz"
+                output_dir / f"xbmu-amdo31_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"xbmu_amdo31_recordings_{part}.jsonl.gz"
+                output_dir / f"xbmu-amdo31_recordings_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"xbmu-amdo31_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
-    return manifests
+    return dict(manifests)

@@ -47,9 +47,13 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 from tqdm import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.recipes.utils import TimeFormatConverter, normalize_text_chime6
+from lhotse.recipes.utils import (
+    TimeFormatConverter,
+    create_cuts_per_recording,
+    normalize_text_chime6,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, add_durations, resumable_download, safe_extract
 
@@ -133,7 +137,7 @@ def prepare_chime6(
     sox_path: Pathlike = "/usr/bin/sox",
     normalize_text: str = "kaldi",
     use_chime7_split: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir, either the original CHiME-5
@@ -163,7 +167,7 @@ def prepare_chime6(
         by using the `num_jobs` argument.
     :param use_chime7_split: bool, if True, use the new split for CHiME-7 challenge.
     :return: a Dict whose key is the dataset part ("train", "dev" and "eval"), and the
-        value is Dicts with the keys 'recordings' and 'supervisions'.
+        value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
 
     NOTE: If `perform_array_sync` is True, the synchronized data will be written to
         `output_dir`/CHiME6. This may take a long time and the output will occupy
@@ -263,15 +267,17 @@ def prepare_chime6(
         supervisions = []
 
         # Since CHiME-7 uses a different split, we need to change the sessions
-        if use_chime7_split:
-            DATASET_PARTS[part] = DATASET_PARTS_CHIME7[part]
+        # (without modifying the module-level tables, which would affect later calls).
+        part_sessions = (
+            DATASET_PARTS_CHIME7[part] if use_chime7_split else DATASET_PARTS[part]
+        )
         # Also, if the session is S19 or S20, we will look for its audio and transcriptions
         # in the train set, since it was originally in train.
 
         # First we create the recordings
         if mic == "ihm":
             global_spk_channel_map = {}
-            for session in DATASET_PARTS[part]:
+            for session in part_sessions:
                 part_ = (
                     "train" if use_chime7_split and session in ["S19", "S20"] else part
                 )
@@ -311,7 +317,7 @@ def prepare_chime6(
                 )
 
         else:
-            for session in DATASET_PARTS[part]:
+            for session in part_sessions:
                 part_ = (
                     "train" if use_chime7_split and session in ["S19", "S20"] else part
                 )
@@ -352,7 +358,7 @@ def prepare_chime6(
                 )
 
         # Then we create the supervisions
-        for session in DATASET_PARTS[part]:
+        for session in part_sessions:
             part_ = "train" if use_chime7_split and session in ["S19", "S20"] else part
 
             with open(chime6_dir / "transcriptions" / part_ / f"{session}.json") as f:
@@ -402,18 +408,25 @@ def prepare_chime6(
         # Fix manifests
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
+        cuts_path = None
         if output_dir is not None:
-            mic_affix = f"{mic}-ref" if use_reference_array else mic
+            corpus_name = (
+                f"chime6-{mic}-ref" if use_reference_array else f"chime6-{mic}"
+            )
             supervision_set.to_file(
-                output_dir / f"chime6-{mic_affix}_supervisions_{part}.jsonl.gz"
+                output_dir / f"{corpus_name}_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"chime6-{mic}_recordings_{part}.jsonl.gz"
+                output_dir / f"{corpus_name}_recordings_{part}.jsonl.gz"
             )
+            cuts_path = output_dir / f"{corpus_name}_cuts_{part}.jsonl.gz"
 
         manifests[part] = {
             "recordings": recording_set,
             "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
         }
 
     return manifests

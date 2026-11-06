@@ -18,8 +18,9 @@ from typing import Dict, List, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
@@ -30,7 +31,7 @@ def prepare_dihard3(
     output_dir: Optional[Pathlike] = None,
     uem_manifest: Optional[bool] = True,
     num_jobs: Optional[int] = 1,
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Prepare manifests for the DIHARD III corpus.
     We create two manifests: one with recordings, and the other one with supervisions containing speaker id
@@ -41,10 +42,11 @@ def prepare_dihard3(
     :param eval_audio_dir: Path to downloaded DIHARD III eval corpus (LDC2021E02), e.g.
         /data/corpora/LDC/LDC2021E02`
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :param uem_manifest: If True, also return a SupervisionSet describing the UEM segments (see use in
-        dataset.DiarizationDataset)
+    :param uem_manifest: If True, also return (and write as ``dihard3_uem_{part}.jsonl.gz``) a SupervisionSet describing
+        the UEM segments (see use in dataset.DiarizationDataset)
     :param num_jobs: int (default = 1), number of jobs to scan corpus directory for recordings
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :return: A dict whose keys are the parts ``{'dev', 'eval'}`` and the values are dicts with manifests.
+        The keys are: ``{'recordings', 'supervisions', 'cuts'}`` (and ``'uem'`` if ``uem_manifest`` is True).
     """
     manifests = defaultdict(dict)
     for part in tqdm(["dev", "eval"], desc="Preparing DIHARD parts"):
@@ -84,17 +86,25 @@ def prepare_dihard3(
         recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
+        cuts_path = None
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             recordings.to_file(output_dir / f"dihard3_recordings_{part}.jsonl.gz")
             supervisions.to_file(output_dir / f"dihard3_supervisions_{part}.jsonl.gz")
             if uem_manifest:
-                uem.to_json(output_dir / f"dihard3_uem_{part}.jsonl.gz")
-        manifests[part] = {"recordings": recordings, "supervisions": supervisions}
+                uem.to_file(output_dir / f"dihard3_uem_{part}.jsonl.gz")
+            cuts_path = output_dir / f"dihard3_cuts_{part}.jsonl.gz"
+        manifests[part] = {
+            "recordings": recordings,
+            "supervisions": supervisions,
+            "cuts": create_cuts_per_recording(
+                recordings, supervisions, output_path=cuts_path
+            ),
+        }
         if uem_manifest:
             manifests[part].update({"uem": uem})
-    return manifests
+    return dict(manifests)
 
 
 def parse_metadata(metadata_path: Pathlike) -> Dict[str, Dict[str, Union[str, bool]]]:

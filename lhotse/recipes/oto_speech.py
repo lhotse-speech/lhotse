@@ -23,17 +23,19 @@ import os
 import tarfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 from tqdm import tqdm
 
 from lhotse import (
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     fix_manifests,
 )
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import Pathlike, safe_extract
 
@@ -140,15 +142,25 @@ def load_channel_map(meta_path: Path) -> Dict[str, int]:
 
 def prepare_oto_speech(
     corpus_dir: Pathlike,
-    output_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
     parts: Tuple[str, ...] = ("train",),
     target_sr: int = 16000,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """Prepares the dataset, utilizing Lhotse's lazy resampling and extraction caching."""
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepares the dataset, utilizing Lhotse's lazy resampling and extraction caching.
+
+    :param corpus_dir: Pathlike, the path of the data dir (see :func:`download_oto_speech`).
+    :param output_dir: Pathlike, the path where to write the manifests (nothing is written when ``None``).
+        The tar shards are always unpacked inside ``corpus_dir``.
+    :param parts: the dataset parts to prepare (the release only has ``"train"``).
+    :param target_sr: the sampling rate of the lazily resampled recordings.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
+    """
     corpus_dir = Path(corpus_dir)
     data_dir = corpus_dir / "data"
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     labels_path = corpus_dir / "seglst.json"
     if not labels_path.exists():
@@ -252,14 +264,19 @@ def prepare_oto_speech(
         logger.info("Fixing and validating manifests...")
         recordings, supervision_set = fix_manifests(recordings, supervision_set)
 
-        recordings_path = output_dir / f"oto_recordings_{part}.jsonl.gz"
-        supervisions_path = output_dir / f"oto_supervisions_{part}.jsonl.gz"
+        cuts_path = None
+        if output_dir is not None:
+            recordings.to_file(output_dir / f"oto_recordings_{part}.jsonl.gz")
+            supervision_set.to_file(output_dir / f"oto_supervisions_{part}.jsonl.gz")
+            cuts_path = output_dir / f"oto_cuts_{part}.jsonl.gz"
+        cuts = create_cuts_per_recording(
+            recordings, supervision_set, output_path=cuts_path
+        )
 
-        recordings.to_file(recordings_path)
-        supervision_set.to_file(supervisions_path)
-
-        logger.info(f"Saved to:\n - {recordings_path}\n - {supervisions_path}")
-
-        manifests[part] = {"recordings": recordings, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recordings,
+            "supervisions": supervision_set,
+            "cuts": cuts,
+        }
 
     return dict(manifests)

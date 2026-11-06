@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 from zipfile import ZipFile
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import CutSet, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, resumable_download
 
@@ -42,7 +43,25 @@ def prepare_librimix_mini(
     with_precomputed_mixtures: bool = False,
     sampling_rate: int = 16000,
     min_segment_seconds: Seconds = 3.0,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare the manifests for MiniLibriMix from its metadata CSV.
+
+    The parts are not dataset splits but parallel views of the same mixtures
+    (sharing the recording IDs): ``sources`` (2-channel recordings, one channel
+    per source), ``mix`` (the pre-computed mixtures, only with
+    ``with_precomputed_mixtures=True``) and ``noise`` (only if the CSV has a
+    ``noise_path`` column).
+
+    :param librimix_csv: Pathlike, the path to the metadata CSV file.
+    :param output_dir: Pathlike, the path where to write the manifests
+        (``librimix-mini_{manifest}_{part}.jsonl.gz``). Optional.
+    :param with_precomputed_mixtures: when True, also create the ``mix`` part.
+    :param sampling_rate: the sampling rate to set in the recordings.
+    :param min_segment_seconds: mixtures not longer than this are dropped.
+    :return: a dict ``{part: {"recordings": ..., "supervisions": ..., "cuts": ...}}``
+        with the parts ``sources``, ``mix`` and ``noise`` as described above.
+    """
     import pandas as pd
 
     assert Path(librimix_csv).is_file(), f"No such file: {librimix_csv}"
@@ -77,14 +96,19 @@ def prepare_librimix_mini(
         audio_sources, supervision_sources
     )
     validate_recordings_and_supervisions(audio_sources, supervision_sources)
+    cuts_path = None
     if output_dir is not None:
-        audio_sources.to_file(output_dir / "librimix_recordings_sources.jsonl.gz")
+        audio_sources.to_file(output_dir / "librimix-mini_recordings_sources.jsonl.gz")
         supervision_sources.to_file(
-            output_dir / "librimix_supervisions_sources.jsonl.gz"
+            output_dir / "librimix-mini_supervisions_sources.jsonl.gz"
         )
+        cuts_path = output_dir / "librimix-mini_cuts_sources.jsonl.gz"
     manifests["sources"] = {
         "recordings": audio_sources,
         "supervisions": supervision_sources,
+        "cuts": create_cuts_per_recording(
+            audio_sources, supervision_sources, output_path=cuts_path
+        ),
     }
 
     # When requested, create an audio manifest for the pre-computed mixtures.
@@ -107,12 +131,19 @@ def prepare_librimix_mini(
         supervision_mix = make_corresponding_supervisions(audio_mix)
         audio_mix, supervision_mix = fix_manifests(audio_mix, supervision_mix)
         validate_recordings_and_supervisions(audio_mix, supervision_mix)
+        cuts_path = None
         if output_dir is not None:
-            audio_mix.to_file(output_dir / "librimix_recordings_mix.jsonl.gz")
-            supervision_mix.to_file(output_dir / "librimix_supervisions_mix.jsonl.gz")
-        manifests["premixed"] = {
+            audio_mix.to_file(output_dir / "librimix-mini_recordings_mix.jsonl.gz")
+            supervision_mix.to_file(
+                output_dir / "librimix-mini_supervisions_mix.jsonl.gz"
+            )
+            cuts_path = output_dir / "librimix-mini_cuts_mix.jsonl.gz"
+        manifests["mix"] = {
             "recordings": audio_mix,
             "supervisions": supervision_mix,
+            "cuts": create_cuts_per_recording(
+                audio_mix, supervision_mix, output_path=cuts_path
+            ),
         }
 
     # When the LibriMix CSV specifies noises, we create a separate RecordingSet for them,
@@ -134,17 +165,22 @@ def prepare_librimix_mini(
         supervision_noise = make_corresponding_supervisions(audio_noise)
         audio_noise, supervision_noise = fix_manifests(audio_noise, supervision_noise)
         validate_recordings_and_supervisions(audio_noise, supervision_noise)
+        cuts_path = None
         if output_dir is not None:
-            audio_noise.to_file(output_dir / "librimix_recordings_noise.jsonl.gz")
+            audio_noise.to_file(output_dir / "librimix-mini_recordings_noise.jsonl.gz")
             supervision_noise.to_file(
-                output_dir / "libirmix_supervisions_noise.jsonl.gz"
+                output_dir / "librimix-mini_supervisions_noise.jsonl.gz"
             )
+            cuts_path = output_dir / "librimix-mini_cuts_noise.jsonl.gz"
         manifests["noise"] = {
             "recordings": audio_noise,
             "supervisions": supervision_noise,
+            "cuts": create_cuts_per_recording(
+                audio_noise, supervision_noise, output_path=cuts_path
+            ),
         }
 
-    return manifests
+    return dict(manifests)
 
 
 def make_corresponding_supervisions(audio: RecordingSet) -> SupervisionSet:

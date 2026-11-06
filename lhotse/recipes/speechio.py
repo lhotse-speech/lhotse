@@ -12,9 +12,14 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
+from lhotse import CutSet
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import manifests_exist
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
 
@@ -42,20 +47,19 @@ def _parse_one_subset(
         if not os.path.exists(audio_path):
             logging.warning(f"Audio file {audio_path} does not exist - skipping.")
             continue
-        recording = Recording.from_file(audio_path)
-        recordings.append(recording)
         recording_id = recording_ids[idx]
+        recording = Recording.from_file(audio_path, recording_id=recording_id)
+        recordings.append(recording)
         text = texts[idx]
-        speaker = recording_id.split("_")[0]
 
+        # metadata.tsv has no speaker information (only ID, AUDIO, DURATION and TEXT).
         segment = SupervisionSegment(
-            id=f"{corpus_dir}-{recording_id}",
+            id=recording_id,
             recording_id=recording_id,
             start=0,
             duration=recording.duration,
             channel=0,
             language="Chinese",
-            speaker=speaker,
             text=text,
         )
         segments.append(segment)
@@ -90,12 +94,13 @@ def _prepare_subset(
 def prepare_speechio(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Path to the SpeechIO dataset.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
+        When all manifests of a part are already there, they are read instead of being recomputed.
+    :return: a Dict whose key is the dataset part (``SPEECHIO_ASR_ZH000xx``), and the value is Dicts with the keys 'recordings', 'supervisions', and 'cuts'.
     """
     corpus_dir = Path(corpus_dir)
 
@@ -123,16 +128,29 @@ def prepare_speechio(
             suffix="jsonl.gz",
         ):
             logging.info(f"SpeechIO subset: {part} already prepared - skipping.")
+            manifests.update(
+                read_manifests_if_cached(
+                    dataset_parts=[part], output_dir=output_dir, prefix="speechio"
+                )
+            )
             continue
 
         recording_set, supervision_set = _prepare_subset(part, corpus_dir)
 
+        cuts_path = None
         if output_dir is not None:
             supervision_set.to_file(
                 output_dir / f"speechio_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(output_dir / f"speechio_recordings_{part}.jsonl.gz")
+            cuts_path = output_dir / f"speechio_cuts_{part}.jsonl.gz"
 
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+        manifests[part] = {
+            "recordings": recording_set,
+            "supervisions": supervision_set,
+            "cuts": create_cuts_per_recording(
+                recording_set, supervision_set, output_path=cuts_path
+            ),
+        }
 
-    return manifests
+    return dict(manifests)

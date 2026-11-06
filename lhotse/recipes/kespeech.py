@@ -17,9 +17,14 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
+from lhotse import CutSet
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
+from lhotse.recipes.utils import (
+    create_cuts_per_recording,
+    manifests_exist,
+    read_manifests_if_cached,
+)
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, compute_num_samples
@@ -34,10 +39,20 @@ def text_normalize(line: str) -> str:
 
 def prepare_kespeech(
     corpus_dir: Pathlike,
-    output_dir: Optional[Pathlike],
+    output_dir: Optional[Pathlike] = None,
     dataset_parts: Union[str, Sequence[str]] = "all",
     num_jobs: int = 1,
-):
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
+    """
+    Prepare manifests for the KeSpeech ASR task.
+
+    :param corpus_dir: Path to the KeSpeech corpus root.
+    :param output_dir: Optional directory where the manifests are written.
+    :param dataset_parts: Parts to prepare, or ``"all"``.
+    :param num_jobs: Number of threads for reading audio metadata.
+    :return: A dict whose key is the dataset part, and the value is a dict with the keys
+        ``'recordings'``, ``'supervisions'``, and ``'cuts'``.
+    """
     corpus_dir = Path(corpus_dir)
     tasks_dir = corpus_dir / "Tasks" / "ASR"
 
@@ -107,6 +122,7 @@ def prepare_kespeech(
             )
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
+            cuts_path = None
             if output_dir is not None:
                 supervision_set.to_file(
                     output_dir / f"kespeech-asr_supervisions_{part}.jsonl.gz"
@@ -114,10 +130,14 @@ def prepare_kespeech(
                 recording_set.to_file(
                     output_dir / f"kespeech-asr_recordings_{part}.jsonl.gz"
                 )
+                cuts_path = output_dir / f"kespeech-asr_cuts_{part}.jsonl.gz"
 
             manifests[part] = {
                 "recordings": recording_set,
                 "supervisions": supervision_set,
+                "cuts": create_cuts_per_recording(
+                    recording_set, supervision_set, output_path=cuts_path
+                ),
             }
     return manifests
 

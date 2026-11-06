@@ -16,9 +16,9 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import CutSet, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import create_cuts_per_recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
@@ -163,18 +163,21 @@ def prepare_atcosim(
     foreign_sym: Optional[str] = "<unk>",
     partial_sym: Optional[str] = "<unk>",
     unknown_sym: Optional[str] = "<unk>",
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings and Supervisions.
+    When ``output_dir`` is given, the manifests are streamed to disk in a single pass
+    and returned lazily; otherwise, they are returned as eager manifests.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param output_dir: Pathlike, the path where to write the manifests. Can be omitted to avoid writing.
     :param silence_sym: str, silence symbol
     :param breath_sym: str, breath symbol
     :param foreign_sym: str, foreign symbol.
     :param partial_sym: str, partial symbol. When set to None, will output partial words
     :param unknown_sym: str, unknown symbol
-    :return: The RecordingSet and SupervisionSet with the keys 'audio' and 'supervisions'.
+    :return: a Dict with the single part ``'all'``, whose value is a Dict with the keys
+        'recordings', 'supervisions', and 'cuts'.
     """
     if not is_module_available("pandas"):
         raise ImportError("Please 'pip install pandas' first.")
@@ -182,23 +185,11 @@ def prepare_atcosim(
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
     csv_path = corpus_dir / "TXTdata/fulldata.csv"
     df = pd.read_csv(csv_path, quoting=csv.QUOTE_NONE)
 
-    with (
-        RecordingSet.open_writer(
-            output_dir / f"atcosim_recordings_all.jsonl.gz",
-            overwrite=True,
-        ) as recs_writer,
-        SupervisionSet.open_writer(
-            output_dir / f"atcosim_supervisions_all.jsonl.gz",
-            overwrite=True,
-        ) as sups_writer,
-    ):
+    def recordings_and_segments():
         for idx, row in tqdm(
             df.iterrows(),
             desc="Preparing",
@@ -243,15 +234,54 @@ def prepare_atcosim(
                 gender=row.speaker_id[1].upper(),
                 custom={"orig_text": row.transcription},
             )
+            yield recording, segment
 
+    if output_dir is None:
+        recordings, supervisions = [], []
+        for recording, segment in recordings_and_segments():
+            recordings.append(recording)
+            supervisions.append(segment)
+        recordings = RecordingSet.from_recordings(recordings)
+        supervisions = SupervisionSet.from_segments(supervisions)
+        return {
+            "all": {
+                "recordings": recordings,
+                "supervisions": supervisions,
+                "cuts": create_cuts_per_recording(recordings, supervisions),
+            }
+        }
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with (
+        RecordingSet.open_writer(
+            output_dir / "atcosim_recordings_all.jsonl.gz",
+            overwrite=True,
+        ) as recs_writer,
+        SupervisionSet.open_writer(
+            output_dir / "atcosim_supervisions_all.jsonl.gz",
+            overwrite=True,
+        ) as sups_writer,
+        CutSet.open_writer(
+            output_dir / "atcosim_cuts_all.jsonl.gz",
+            overwrite=True,
+        ) as cuts_writer,
+    ):
+        for recording, segment in recordings_and_segments():
             recs_writer.write(recording)
             sups_writer.write(segment)
-
-    recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
-    supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)
+            cut = recording.to_cut()
+            cut.supervisions = [segment]
+            cuts_writer.write(cut)
 
     logging.warning(
         "Manifests are lazily materialized. You may want to call `lhotse.qa.fix_manifests()`"
         " to ensure that all supervisions fall within the corresponding recordings."
     )
-    return recordings, supervisions
+    return {
+        "all": {
+            "recordings": RecordingSet.from_jsonl_lazy(recs_writer.path),
+            "supervisions": SupervisionSet.from_jsonl_lazy(sups_writer.path),
+            "cuts": CutSet.from_jsonl_lazy(cuts_writer.path),
+        }
+    }
