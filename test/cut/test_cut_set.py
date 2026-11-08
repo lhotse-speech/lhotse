@@ -1,4 +1,5 @@
 import pickle
+from contextlib import nullcontext
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
@@ -19,6 +20,7 @@ from lhotse import (
 )
 from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, MultiCut
 from lhotse.cut.describe import CutSetStatistics
+from lhotse.features.io import NumpyFilesWriter
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
@@ -523,6 +525,156 @@ def test_compute_cmvn_stats():
     assert stats["norm_stds"].shape == (cut_set[0].num_features,)
     assert (stats["norm_means"] == read_stats["norm_means"]).all()
     assert (stats["norm_stds"] == read_stats["norm_stds"]).all()
+
+
+@pytest.fixture
+def stored_feature_cut(tmp_path):
+    values = np.arange(60, dtype=np.float32).reshape(20, 3)
+    with NumpyFilesWriter(tmp_path / "features") as writer:
+        features = Features(
+            type="fbank",
+            num_frames=20,
+            num_features=3,
+            frame_shift=0.01,
+            sampling_rate=16000,
+            start=1.0,
+            duration=0.2,
+            storage_type=writer.name,
+            storage_path=str(writer.storage_path),
+            storage_key=writer.write("features", values),
+            recording_id="recording",
+            channels=0,
+        )
+    return (
+        MonoCut(id="cut", start=1.0, duration=0.2, channel=0, features=features),
+        values,
+    )
+
+
+@pytest.mark.parametrize("first_frame,num_frames", [(0, 20), (0, 6), (3, 6)])
+@pytest.mark.parametrize("lazy", [False, True])
+def test_compute_cmvn_stats_uses_cut_boundaries(
+    stored_feature_cut, first_frame, num_frames, lazy
+):
+    full_cut, values = stored_feature_cut
+    original = full_cut.to_dict()
+    cut = full_cut.truncate(offset=first_frame * 0.01, duration=num_frames * 0.01)
+    expected = values[first_frame : first_frame + num_frames].astype(np.float64)
+    np.testing.assert_array_equal(cut.load_features(), expected)
+    cuts = CutSet.from_cuts([cut])
+    with as_lazy(cuts) if lazy else nullcontext(cuts) as cuts:
+        stats = cuts.compute_global_feature_stats()
+    for name, expected_stat in (
+        ("norm_means", expected.mean(axis=0)),
+        ("norm_stds", expected.std(axis=0)),
+    ):
+        assert stats[name].shape == (3,)
+        assert stats[name].dtype == np.float64
+        np.testing.assert_allclose(stats[name], expected_stat)
+    assert full_cut.to_dict() == original
+    assert cut.features == full_cut.features
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_compute_cmvn_stats_uses_corrected_frame_count(stored_feature_cut, lazy):
+    full_cut, values = stored_feature_cut
+    cut = full_cut.truncate(offset=0.005)
+    # Rounding each boundary independently leaves one stored frame missing.
+    assert cut.num_frames == 20
+    assert cut.features.load(start=cut.start, duration=cut.duration).shape == (19, 3)
+    expected = np.concatenate([values[1:], values[-1:]]).astype(np.float64)
+    np.testing.assert_array_equal(cut.load_features(), expected)
+    cuts = CutSet.from_cuts([cut])
+    with as_lazy(cuts) if lazy else nullcontext(cuts) as cuts:
+        stats = cuts.compute_global_feature_stats()
+    np.testing.assert_allclose(stats["norm_means"], expected.mean(axis=0))
+    np.testing.assert_allclose(stats["norm_stds"], expected.std(axis=0))
+
+
+@pytest.mark.parametrize("padding_only", [False, True])
+@pytest.mark.parametrize("after_data_cut", [False, True])
+def test_compute_cmvn_stats_rejects_non_data_cuts(
+    stored_feature_cut, padding_only, after_data_cut
+):
+    full_cut, _ = stored_feature_cut
+    cut = full_cut.pad(duration=0.3)
+    if padding_only:
+        cut = cut.tracks[-1].cut
+    cuts = CutSet.from_cuts([full_cut, cut] if after_data_cut else [cut])
+    with pytest.raises((AttributeError, TypeError)):
+        cuts.compute_global_feature_stats()
+
+
+@pytest.mark.parametrize("max_cuts", [None, 1, 100])
+@pytest.mark.parametrize("lazy", [False, True])
+def test_compute_cmvn_stats_weights_truncated_cuts(
+    stored_feature_cut, tmp_path, caplog, max_cuts, lazy
+):
+    full_cut, values = stored_feature_cut
+    short_cut = full_cut.truncate(offset=0.02, duration=0.03)
+    long_cut = full_cut.truncate(offset=0.11, duration=0.07)
+    np.testing.assert_array_equal(short_cut.load_features(), values[2:5])
+    np.testing.assert_array_equal(long_cut.load_features(), values[11:18])
+    cuts = CutSet.from_cuts([dummy_cut(99).drop_features(), short_cut, long_cut])
+    original = list(cuts.to_dicts())
+    expected = (
+        values[2:5] if max_cuts == 1 else np.concatenate([values[2:5], values[11:18]])
+    )
+    expected = expected.astype(np.float64)
+    storage_path = tmp_path / "stats.pkl"
+    with as_lazy(cuts) if lazy else nullcontext(cuts) as selected_cuts:
+        stats = selected_cuts.compute_global_feature_stats(
+            max_cuts=max_cuts, storage_path=storage_path
+        )
+    assert "only 2/3 cuts have features" in caplog.text
+    with storage_path.open("rb") as f:
+        persisted = pickle.load(f)
+    for name, expected_stat in (
+        ("norm_means", expected.mean(axis=0)),
+        ("norm_stds", expected.std(axis=0)),
+    ):
+        np.testing.assert_allclose(stats[name], expected_stat)
+        np.testing.assert_array_equal(stats[name], persisted[name])
+    assert list(cuts.to_dicts()) == original
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_compute_cmvn_stats_without_features(stored_feature_cut, empty):
+    full_cut, _ = stored_feature_cut
+    cuts = CutSet.from_cuts([] if empty else [dummy_cut(99).drop_features()])
+    with pytest.raises(ValueError, match="Could not find any features"):
+        cuts.compute_global_feature_stats()
+
+
+@pytest.mark.parametrize("max_cuts,error", [(0, StopIteration), (-1, ValueError)])
+def test_compute_cmvn_stats_rejects_invalid_limit(stored_feature_cut, max_cuts, error):
+    full_cut, _ = stored_feature_cut
+    with pytest.raises(error):
+        CutSet.from_cuts([full_cut]).compute_global_feature_stats(max_cuts=max_cuts)
+
+
+def test_global_mvn_from_truncated_cuts(stored_feature_cut):
+    import torch
+
+    from lhotse.dataset import GlobalMVN
+
+    full_cut, values = stored_feature_cut
+    cuts = CutSet.from_cuts(
+        [
+            full_cut.truncate(offset=0.02, duration=0.03),
+            full_cut.truncate(offset=0.11, duration=0.07),
+        ]
+    )
+    features = torch.from_numpy(np.concatenate([values[2:5], values[11:18]]))
+    transform = GlobalMVN.from_cuts(cuts)
+    normalized = transform(features)
+    assert normalized.shape == features.shape
+    assert normalized.dtype == features.dtype
+    torch.testing.assert_close(
+        normalized.mean(dim=0), torch.zeros(3), atol=1e-6, rtol=0
+    )
+    torch.testing.assert_close(normalized.std(dim=0, unbiased=False), torch.ones(3))
+    torch.testing.assert_close(transform.inverse(normalized), features)
 
 
 @pytest.mark.parametrize("max_cuts", [None, 1])
