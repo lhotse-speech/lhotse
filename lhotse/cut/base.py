@@ -1043,7 +1043,9 @@ class Cut:
             }
         num_speakers = len(speaker_to_idx_map)
         if min_speaker_dim is not None:
-            num_speakers = min(min_speaker_dim, num_speakers)
+            # ``min_speaker_dim`` is a lower bound (e.g. CHiME-6 always has 4 speakers).
+            # Using min() here truncated the mask and dropped or crashed on later speakers.
+            num_speakers = max(min_speaker_dim, num_speakers)
         mask = np.zeros((num_speakers, self.num_frames))
         for supervision in self.supervisions:
             speaker_idx = speaker_to_idx_map[supervision.speaker]
@@ -1107,7 +1109,8 @@ class Cut:
             }
         num_speakers = len(speaker_to_idx_map)
         if min_speaker_dim is not None:
-            num_speakers = min(min_speaker_dim, num_speakers)
+            # Same lower bound as ``speakers_feature_mask``.
+            num_speakers = max(min_speaker_dim, num_speakers)
         mask = np.zeros((num_speakers, self.num_samples))
         for supervision in self.supervisions:
             speaker_idx = speaker_to_idx_map[supervision.speaker]
