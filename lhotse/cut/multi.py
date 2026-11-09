@@ -1,6 +1,6 @@
 import logging
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import partial, reduce
 from itertools import groupby
 from operator import add
@@ -421,9 +421,11 @@ class MultiCut(DataCut):
             cuts
         ), "All cuts must have a distinct channel"
 
-        data = cuts[0].to_dict()
-        data.pop("type")
-
+        data = {
+            field.name: getattr(cuts[0], field.name)
+            for field in fields(MultiCut)
+            if field.init
+        }
         return MultiCut(
             **{
                 **data,
