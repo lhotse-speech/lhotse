@@ -397,7 +397,23 @@ class MultiCut(DataCut):
                 custom=self.custom,
             )
 
-        return fastcopy(self, channel=channels)
+        # A MultiCut's channels must be a superset of each supervision's channels.
+        # Drop supervisions that no longer overlap the selection, and narrow the
+        # rest so they do not refer to a channel this cut no longer contains.
+        selected = set(channels)
+        supervisions = []
+        for supervision in self.supervisions:
+            original = to_list(supervision.channel)
+            kept = [channel for channel in original if channel in selected]
+            if not kept:
+                continue
+            if kept == original:
+                supervisions.append(supervision)
+                continue
+            supervisions.append(
+                fastcopy(supervision, channel=kept[0] if len(kept) == 1 else kept)
+            )
+        return fastcopy(self, channel=channels, supervisions=supervisions)
 
     @staticmethod
     def from_mono(*cuts: DataCut) -> "MultiCut":
