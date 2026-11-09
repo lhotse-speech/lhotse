@@ -213,25 +213,37 @@ def _make_indexed_sampler(tmp_path, concurrent: bool) -> DynamicBucketingSampler
     )
 
 
-@pytest.mark.parametrize(
-    ["save_concurrent", "load_concurrent"], [(False, True), (True, False), (True, True)]
-)
-def test_dynamic_bucketing_sampler_concurrent_rejects_resumption(
-    tmp_path, save_concurrent, load_concurrent
-):
-    sampler = _make_indexed_sampler(tmp_path, concurrent=save_concurrent)
+def test_dynamic_bucketing_sampler_disables_concurrency_for_indexed_input(tmp_path):
+    with pytest.warns(UserWarning, match="disabling concurrent bucketing"):
+        sampler = _make_indexed_sampler(tmp_path, concurrent=True)
+    assert sampler.concurrent is False
+
+    it = iter(sampler)
+    seen = [c.id for _ in range(5) for c in next(it)]
+    restored = _make_indexed_sampler(tmp_path, concurrent=False)
+    restored.load_state_dict(sampler.state_dict())
+    rest = [c.id for b in restored for c in b]
+    assert sorted(seen + rest) == sorted(c.id for c in restored.cuts[0])
+
+
+def test_dynamic_bucketing_sampler_keeps_concurrency_for_streaming_input():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=5, duration_bins=[1.5], concurrent=True
+    )
+    assert sampler.concurrent is True
+
+
+def test_dynamic_bucketing_sampler_rejects_legacy_concurrent_checkpoint(tmp_path):
+    sampler = _make_indexed_sampler(tmp_path, concurrent=False)
     it = iter(sampler)
     for _ in range(5):
         next(it)
-    # state_dict() keeps working: torchdata's StatefulDataLoader snapshots it on every step
-    # even when the user never saves a checkpoint.
     state = sampler.state_dict()
-    assert state["concurrent"] is save_concurrent
+    state["concurrent"] = True
 
-    restored = _make_indexed_sampler(tmp_path, concurrent=load_concurrent)
-    with pytest.raises(
-        RuntimeError, match="concurrent=True does not support checkpointing"
-    ):
+    restored = _make_indexed_sampler(tmp_path, concurrent=False)
+    with pytest.raises(RuntimeError, match="saved with concurrent=True"):
         restored.load_state_dict(state)
 
 

@@ -27,7 +27,7 @@ class _TokenWriter:
         try:
             self.pickler.dump(value)
         except (pickle.PicklingError, TypeError, AttributeError) as exc:
-            # Keep serialization failures out of the sampler's replay fallback.
+            # Report every unpicklable token as one checkpoint error type.
             raise ValueError("Cannot pickle compact bucket token.") from exc
 
     def start_bucket(self, count: int) -> None:

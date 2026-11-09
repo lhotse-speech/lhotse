@@ -121,8 +121,8 @@ class ZipSampler(CutSampler):
             inside of this function (e.g., using ``import deepcopy``).
 
         .. note::
-            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
-            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+            Every sub-sampler has to support checkpointing (see :class:`DynamicCutSampler`
+            and :class:`DynamicBucketingSampler`).
         """
         self.merge_batches = state_dict.pop("merge_batches")
         assert len(self.samplers) == len(state_dict["samplers"]), (

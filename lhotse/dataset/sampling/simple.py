@@ -2,7 +2,11 @@ import warnings
 from typing import Any, Dict, Optional
 
 from lhotse import CutSet, Seconds
-from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
+from lhotse.dataset.sampling.base import (
+    CutSampler,
+    TimeConstraint,
+    raise_checkpointing_unsupported,
+)
 from lhotse.dataset.sampling.data_source import DataSource
 
 
@@ -99,61 +103,15 @@ class SimpleCutSampler(CutSampler):
         return len(self.data_source)
 
     def state_dict(self) -> Dict[str, Any]:
-        """
-        Return the current state of the sampler in a state_dict.
-        Together with ``load_state_dict()``, this can be used to restore the
-        training loop's state to the one stored in the state_dict.
-        """
-        state_dict = super().state_dict()
-        state_dict.update(
-            {
-                "time_constraint": self.time_constraint.state_dict(),
-            }
-        )
-        return state_dict
+        raise_checkpointing_unsupported(self)
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        """
-        Restore the state of the sampler that is described in a state_dict.
-        This will result in the sampler yielding batches from where the previous training left it off.
-
-        .. caution::
-            The samplers are expected to be initialized with the same CutSets,
-            but this is not explicitly checked anywhere.
-
-        .. caution::
-            The input ``state_dict`` is being mutated: we remove each consumed key, and expect
-            it to be empty at the end of loading. If you don't want this behavior, pass a copy
-            inside of this function (e.g., using ``import deepcopy``).
-
-        .. note::
-            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
-            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
-        """
-        time_constraint = TimeConstraint(**state_dict.pop("time_constraint"))
-        if self.time_constraint != time_constraint:
-            warnings.warn(
-                "SimpleCutSampler.load_state_dict(): Inconsistent time_constraint:\n"
-                f"expected {self.time_constraint}\n"
-                f"received {time_constraint}\n"
-                f"We will overwrite the settings with the received state_dict."
-            )
-        self.time_constraint = time_constraint
-
-        super().load_state_dict(state_dict)
-
-        # Restore the data source's state
-        if self.shuffle:
-            self.data_source.shuffle(self.seed + self.epoch)
-        self.data_source.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
+        raise_checkpointing_unsupported(self)
 
     def __iter__(self) -> "SimpleCutSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
-        # Restored state with load_state_dict()? Skip resetting only this once.
-        if self._just_restored_state:
-            return self
         # Why reset the current epoch?
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps

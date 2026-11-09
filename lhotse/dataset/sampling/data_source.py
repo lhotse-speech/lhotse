@@ -76,13 +76,6 @@ class DataSource:
         self._remaining_duration = self._total_duration
         self.remaining_cuts = self._total_cuts
 
-    def fast_forward(self, steps: int) -> None:
-        """Advance the data source by ``steps`` amount of steps."""
-        assert steps >= 0
-        iter(self)
-        for i in range(steps):
-            next(self)
-
     def __iter__(self) -> "DataSource":
         self.reset()
         self._iter = iter(self._shuffled_items)
@@ -143,13 +136,6 @@ class WeightedDataSource(DataSource):
         self._reusable.clear()
         self._remaining_duration = self._total_duration
         self.remaining_cuts = self._total_cuts
-
-    def fast_forward(self, steps: int) -> None:
-        """Advance the data source by ``steps`` amount of steps."""
-        assert steps >= 0
-        iter(self)
-        for i in range(steps):
-            next(self.sampled_indexes)
 
     def __iter__(self) -> "WeightedDataSource":
         self.reset()
