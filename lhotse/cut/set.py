@@ -41,7 +41,7 @@ from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
-from lhotse.features.base import StatsAccumulator, compute_global_stats
+from lhotse.features.base import StatsAccumulator
 from lhotse.features.io import (
     FeaturesWriter,
     LilcomChunkyWriter,
@@ -2603,6 +2603,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param max_cuts: optionally, limit the number of cuts used for stats estimation. The cuts will be
             selected randomly in that case.
         :param extractor: optional FeatureExtractor, when provided, we ignore any pre-computed features.
+            Otherwise, cuts must be MonoCut or MultiCut instances, and only the frames within
+            each cut's boundaries contribute to the statistics.
 
         :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
             shape of the arrays equal to the number of feature bins in this manifest.
@@ -2634,14 +2636,25 @@ class CutSet(Serializable, AlgorithmMixin):
             logging.warning(
                 f"Computing global stats: only {sum(have_features)}/{len(have_features)} cuts have features."
             )
-        return compute_global_stats(
-            # islice(X, 50) is like X[:50] except it works with lazy iterables
-            feature_manifests=islice(
-                (cut.features for cut in self if cut.has_features),
-                max_cuts if max_cuts is not None else len(self),
-            ),
-            storage_path=storage_path,
+        # islice(X, 50) is like X[:50] except it works with lazy iterables.
+        cuts = islice(
+            (cut for cut in self if cut.has_features),
+            max_cuts if max_cuts is not None else len(self),
         )
+        first = next(cuts)
+        stats = StatsAccumulator(feature_dim=first.num_features)
+        for cut in chain([first], cuts):
+            if not isinstance(cut, DataCut):
+                raise TypeError(
+                    "Computing global stats from pre-computed features requires "
+                    f"MonoCut or MultiCut, but got {type(cut).__name__}."
+                )
+            stats.update(cut.load_features())
+        mvn = stats.get()
+        if storage_path is not None:
+            with open(storage_path, "wb") as f:
+                pickle.dump(mvn, f)
+        return mvn
 
     def with_features_path_prefix(self, path: Pathlike) -> "CutSet":
         return self.map(partial(_add_features_path_prefix_single, path=path))
