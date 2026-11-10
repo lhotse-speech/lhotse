@@ -120,7 +120,10 @@ class YamlMixin:
 def save_to_json(data: Any, path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
     with open_best(path, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        # Still streaming, but the encoder's many tiny chunks are written in batches.
+        chunks = json.JSONEncoder(indent=2, ensure_ascii=False).iterencode(data)
+        for batch in grouper(65536, chunks):
+            f.write("".join(batch))
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:
