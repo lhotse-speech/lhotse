@@ -1,4 +1,5 @@
 import ast
+import copy
 import functools
 import hashlib
 import inspect
@@ -168,18 +169,39 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
     Recursively convert a dataclass into a dict, removing all the fields with `None` value.
     Intended to use in place of dataclasses.asdict(), when the null values are not desired in the serialized document.
     """
+    if not hasattr(type(dclass), "__dataclass_fields__"):
+        raise TypeError("asdict() should be called on dataclass instances")
 
-    def non_null_dict_factory(collection):
-        d = dict(collection)
-        remove_keys = []
-        for key, val in d.items():
-            if val is None:
-                remove_keys.append(key)
-        for k in remove_keys:
-            del d[k]
-        return d
+    # Mirrors the recursion of dataclasses.asdict(), but builds each dict once,
+    # without the intermediate list of (name, value) pairs.
+    def convert(obj):
+        if type(obj) in (str, int, float, bool, type(None)):
+            return obj
+        if hasattr(type(obj), "__dataclass_fields__"):
+            return {
+                f.name: value
+                for f in fields(obj)
+                if (value := convert(getattr(obj, f.name))) is not None
+            }
+        if isinstance(obj, tuple) and hasattr(obj, "_fields"):  # namedtuple
+            return type(obj)(*map(convert, obj))
+        if isinstance(obj, (list, tuple)):
+            # A comprehension allocates less than list(<iterator of unknown length>).
+            values = [convert(v) for v in obj]
+            return values if type(obj) is list else type(obj)(values)
+        if isinstance(obj, dict):
+            # As for lists: a plain dict is built once and used directly.
+            items = {convert(k): convert(v) for k, v in obj.items()}
+            if type(obj) is dict:
+                return items
+            if hasattr(type(obj), "default_factory"):  # defaultdict
+                result = type(obj)(obj.default_factory)
+                result.update(items.items())
+                return result
+            return type(obj)(items.items())
+        return copy.deepcopy(obj)
 
-    return asdict(dclass, dict_factory=non_null_dict_factory)
+    return convert(dclass)
 
 
 class SetContainingAnything:
