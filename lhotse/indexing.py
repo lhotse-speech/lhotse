@@ -38,6 +38,7 @@ import struct
 import tarfile
 import tempfile
 import time
+from array import array
 from json import JSONDecodeError
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Union
@@ -255,7 +256,7 @@ def index_exists(data_path: Pathlike, index_path: Optional[Pathlike] = None) -> 
 _OFFSET_DTYPE = np.dtype("<u8")  # little-endian uint64
 
 
-def _write_index(offsets: list, path: Pathlike) -> None:
+def _write_index(offsets, path: Pathlike) -> None:
     """Atomically write ``offsets`` to *path*.
 
     Stages bytes through a per-call tmp sibling and ``os.replace``s into
@@ -267,7 +268,8 @@ def _write_index(offsets: list, path: Pathlike) -> None:
     array and computed ``len(self._offsets) - 1 == -1``, crashing the
     sampler deep inside ``__len__``.
     """
-    arr = np.array(offsets, dtype=_OFFSET_DTYPE)
+    # ``np.asarray`` wraps a uint64 buffer (e.g. ``array("Q")``) without a copy.
+    arr = np.asarray(offsets, dtype=_OFFSET_DTYPE)
     local_path = _as_local_path(path)
     if local_path is not None:
         local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +282,8 @@ def _write_index(offsets: list, path: Pathlike) -> None:
         )
         try:
             with open(tmp_path, "wb") as f:
-                f.write(arr.tobytes())
+                # Write the array buffer directly; ``tobytes()`` would copy it.
+                f.write(arr.data)
             os.replace(tmp_path, local_path)
         finally:
             try:
@@ -404,7 +407,8 @@ def create_jsonl_index(
     # which would make every ``s3://``/``ais://`` JSONL fail to index.
     # ``readline()`` returns the bytes including the trailing newline, so the
     # accumulated total exactly tracks the start-of-line byte offsets.
-    offsets = []
+    # A typed uint64 array stores 8 bytes per offset instead of a Python int.
+    offsets = array("Q")
     pos = 0
     if _is_gzip_jsonl(jsonl_path):
         indexed_gzip = _require_indexed_gzip()
