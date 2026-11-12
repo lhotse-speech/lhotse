@@ -102,13 +102,9 @@ class AudioMixer:
         total = self.num_samples_total
         mixed = np.zeros((self.num_channels, total), dtype=self.dtype)
         for offset, track in zip(self.offsets, self.tracks):
-            # Only two cases are possible here: either the track is mono, or it has the same
-            # number of channels as the mixer. For the latter case, we don't need to do anything
-            # special, as we can just add the track to the mix. For the former case, we need to
-            # add the mono track to all channels by repeating it.
-            if track.shape[0] == 1 and self.num_channels > 1:
-                track = np.tile(track, (self.num_channels, 1))
-            mixed[:, offset : offset + track.shape[1]] += track
+            # Keep one destination view and broadcast mono samples.
+            destination = mixed[:, offset : offset + track.shape[1]]
+            np.add(destination, track, out=destination)
         return mixed
 
     @property
