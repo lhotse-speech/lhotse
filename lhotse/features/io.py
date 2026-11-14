@@ -956,15 +956,12 @@ class LilcomChunkyReader(FeaturesReader):
         chunk_offsets = np.cumsum(chunk_offsets)
         chunk_offsets = chunk_offsets[left_chunk_idx:right_chunk_idx]
 
-        chunk_data = []
+        decompressed_chunks = []
+        lilcom = get_lilcom_module()
         with open(self.storage_path, "rb") as file:
             for offset, end in pairwise(chunk_offsets):
                 file.seek(offset)
-                chunk_data.append(file.read(end - offset))
-
-        # Read, decode, concat
-        lilcom = get_lilcom_module()
-        decompressed_chunks = [lilcom.decompress(data) for data in chunk_data]
+                decompressed_chunks.append(lilcom.decompress(file.read(end - offset)))
         if decompressed_chunks:
             arr = np.concatenate(decompressed_chunks, axis=0)
         else:
