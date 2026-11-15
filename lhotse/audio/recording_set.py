@@ -376,7 +376,13 @@ class RecordingSet(Serializable, AlgorithmMixin):
                 return next(item for idx, item in enumerate(self) if idx == index_or_id)
             else:
                 # string id passed, support just for backward compatibility, not recommended
-                return next(item for item in self if item.id == index_or_id)
+                recordings = (
+                    self.recordings
+                    if type(self).__iter__ is RecordingSet.__iter__
+                    and type(self.recordings) in (list, tuple)
+                    else self
+                )
+                return next(item for item in recordings if item.id == index_or_id)
 
     def __contains__(self, other: Union[str, Recording]) -> bool:
         if isinstance(other, str):
