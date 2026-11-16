@@ -128,6 +128,7 @@ class WeightedDataSource(DataSource):
         self.weights = weights
         self.num_samples = num_samples
         self.sampled_indexes = None
+        self.seed = None
 
     def reset(self) -> None:
         """Reset the iterable state of DataSource."""
@@ -140,7 +141,7 @@ class WeightedDataSource(DataSource):
     def __iter__(self) -> "WeightedDataSource":
         self.reset()
         self._iter = iter(self._shuffled_items)
-        self.sampled_indexes = np.random.choice(
+        self.sampled_indexes = np.random.default_rng(self.seed).choice(
             len(self.weights),
             self.num_samples,
             p=self.weights,
