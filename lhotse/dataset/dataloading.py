@@ -94,26 +94,32 @@ def resolve_seed(seed: Union[int, Literal["trng", "randomized"], None]) -> int:
     If it's "randomized", we'll check whether we're in a dataloading worker of ``torch.utils.data.DataLoader``.
     If we are, we expect that it was passed the result of :func:`~lhotse.dataset.dataloading.make_worker_init_fn`
     into its ``worker_init_fn`` argument, in which case we'll return a special seed exclusive to that worker.
-    If we are not in a dataloading worker (or ``num_workers`` was set to ``0``), we'll return Python's ``random``
-    module global seed.
+    If we are not in a dataloading worker (or ``num_workers`` was set to ``0``), we'll derive the seed from
+    the current state of Python's global ``random`` module, mixed with the DDP rank, so that each rank gets a
+    different seed that is still reproducible when the global RNG was seeded (e.g. with ``seed_everything``).
+
+    If it's ``None``, we'll derive the seed from the current state of Python's global ``random`` module.
+
+    Deriving the seed from the global RNG state does not advance the global RNG.
     """
 
     # Specific number provided: use it.
     if isinstance(seed, int):
         return seed
 
-    # No request for a specific type of random seed resolution: return Python's global random seed.
+    # No request for a specific type of random seed resolution: derive it from Python's global RNG.
     if seed is None:
-        return random.getstate()[1][0]
+        return _seed_from_global_rng()
 
     # Deterministic randomized random seed resolution:
     # Each dataloading worker and DDP rank gets a separate random seed.
-    # If we're not in a dataloading worker, use global RNG's current seed.
+    # If we're not in a dataloading worker, derive it from the global RNG and the DDP rank.
     if seed == "randomized":
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
-            # Not in a dataloader sub-process: get Python's global random seed.
-            return random.getstate()[1][0]
+            # Not in a dataloader sub-process: every rank may have seeded the global RNG
+            # identically (e.g. seed_everything(42)), so mix in the rank.
+            return _seed_from_global_rng(rank=get_rank())
         else:
             # In a dataloader sub-process: read out the seed we assigned to it.
             assert LHOTSE_PROCESS_SEED in os.environ, (
@@ -344,3 +350,16 @@ def get_rank() -> int:
         return dist.get_rank()
     else:
         return 0
+
+
+def _seed_from_global_rng(rank: int = 0) -> int:
+    """
+    Draw a seed in ``[0, 2**31)`` from a snapshot of Python's global ``random`` state
+    without advancing the global RNG. Each ``rank`` gets a different seed.
+
+    Note: ``random.getstate()[1][0]`` must not be used as a seed: it is the first word of the
+    Mersenne Twister state, which ``random.seed()`` always sets to ``0x80000000``.
+    """
+    snapshot = random.Random()
+    snapshot.setstate(random.getstate())
+    return random.Random(f"{snapshot.getrandbits(64)}:{rank}").getrandbits(31)
