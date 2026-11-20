@@ -169,15 +169,8 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
     Intended to use in place of dataclasses.asdict(), when the null values are not desired in the serialized document.
     """
 
-    def non_null_dict_factory(collection):
-        d = dict(collection)
-        remove_keys = []
-        for key, val in d.items():
-            if val is None:
-                remove_keys.append(key)
-        for k in remove_keys:
-            del d[k]
-        return d
+    def non_null_dict_factory(items):
+        return {key: value for key, value in items if value is not None}
 
     return asdict(dclass, dict_factory=non_null_dict_factory)
 

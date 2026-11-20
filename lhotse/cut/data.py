@@ -89,13 +89,17 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
 
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
-        if self.has_recording:
+        if self.has_recording and (
+            type(self.recording) is not Recording
+            or self.recording.transforms is not None
+        ):
             d["recording"] = self.recording.to_dict()
         if self.custom is not None:
             for k, v in self.custom.items():
                 if isinstance(v, Recording):
                     d["custom"][k] = v.to_dict()
-        return {**d, "type": type(self).__name__}
+        d["type"] = type(self).__name__
+        return d
 
     def iter_data(
         self,

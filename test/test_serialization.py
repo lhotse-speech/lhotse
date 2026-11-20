@@ -1,6 +1,12 @@
+import builtins
+import json
 import os
 import sys
 import types
+from collections import defaultdict
+from dataclasses import dataclass
+from io import StringIO
+from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -25,9 +31,10 @@ from lhotse.serialization import (
     SequentialJsonlWriter,
     load_manifest_lazy,
     open_best,
+    save_to_json,
 )
 from lhotse.supervision import AlignmentItem
-from lhotse.testing.dummies import DummyManifest
+from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
 from lhotse.utils import fastcopy
 from lhotse.utils import nullcontext as does_not_raise
 
@@ -690,3 +697,86 @@ def test_aistore_write_replaces_existing_object(monkeypatch):
         ) as stream:
             stream.write(content)
         assert objects["ais://bucket/index.idx"] == content
+
+
+def test_json_streams_large_transcripts():
+    class Output(StringIO):
+        def write(self, chunk):
+            # Each large transcript should reach the stream separately.
+            assert chunk.count("🎤") <= 1
+            return super().write(chunk)
+
+        def __exit__(self, *args):
+            pass
+
+    data = [{"text": "a" * 32768 + "🎤"} for _ in range(8)]
+    stream = Output()
+    save_to_json(data, stream)
+    assert stream.getvalue() == json.dumps(data, ensure_ascii=False, indent=2)
+
+
+@pytest.mark.parametrize("suffix", ["json", "jsonl", "yaml"])
+def test_cut_exports_recording_subclass(tmp_path, suffix):
+    @dataclass
+    class LocalRecording(Recording):
+        local_path: Path = Path("local.wav")
+
+        def to_dict(self):
+            result = super().to_dict()
+            del result["local_path"]
+            return result
+
+    recording = dummy_recording(0)
+    cut = LocalRecording(**vars(recording)).to_cut()
+    path = tmp_path / f"cuts.{suffix}"
+    CutSet.from_cuts([cut]).to_file(path)
+    assert load_manifest(path)[0].recording == recording
+
+
+def test_cut_custom_container_subclasses():
+    class Rows(list):
+        def __init__(self, rows):
+            super().__init__([next(rows), *rows])
+
+    class Mapping(dict):
+        def __init__(self, pairs):
+            super().__init__([next(pairs), *pairs])
+
+    rows = Rows(iter(["first", "second"]))
+    mapping = Mapping(iter([("rows", rows)]))
+    result = (
+        dummy_cut(0).with_custom("metadata", mapping).to_dict()["custom"]["metadata"]
+    )
+    assert type(result) is Mapping
+    assert type(result["rows"]) is Rows
+    assert result == mapping
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="defaultdict support in asdict")
+def test_cut_custom_defaultdict():
+    class Entries(defaultdict):
+        def update(self, *args, **kwargs):
+            raise AssertionError("Expected individual assignments")
+
+    entries = Entries(list)
+    entries["a"].append(1)
+    result = dummy_cut(0).with_custom("entries", entries).to_dict()["custom"]["entries"]
+    assert type(result) is Entries
+    assert result.default_factory is list
+    assert result == entries
+
+
+@pytest.mark.skipif(not hasattr(builtins, "frozendict"), reason="requires frozendict")
+def test_cut_custom_frozendict(tmp_path):
+    @dataclass
+    class Annotation:
+        label: str
+        score: float = None
+
+    metadata = builtins.frozendict(span=Annotation("speech"))
+    cut = dummy_cut(0).with_custom("metadata", metadata)
+    path = tmp_path / "cuts.json"
+    CutSet.from_cuts([cut]).to_json(path)
+    assert json.loads(path.read_text())[0]["custom"]["metadata"] == {
+        "span": {"label": "speech"}
+    }
