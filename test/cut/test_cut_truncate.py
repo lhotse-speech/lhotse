@@ -238,6 +238,40 @@ def test_truncate_mixed_cut_gap_or_padding(gapped_mixed_cut, offset):
     assert audio is not None
 
 
+@pytest.mark.parametrize(
+    ["offset", "duration", "expected_duration"],
+    [(26.0, None, 4.0), (28.0, None, 2.0), (28.0, 3.0, 2.0), (28.0, 2.0, 2.0)],
+)
+def test_truncate_mixed_cut_padding_does_not_exceed_cut_end(
+    gapped_mixed_cut, offset, duration, expected_duration
+):
+    truncated_cut = gapped_mixed_cut.truncate(offset=offset, duration=duration)
+    expected_num_samples = int(expected_duration * 16000)
+    assert isinstance(truncated_cut, PaddingCut)
+    assert truncated_cut.duration == expected_duration
+    assert truncated_cut.num_samples == expected_num_samples
+    assert truncated_cut.load_audio().shape == (1, expected_num_samples)
+
+
+@pytest.mark.parametrize("offset", [30.0, 31.0])
+@pytest.mark.parametrize("duration", [None, 1.0])
+def test_truncate_mixed_cut_at_or_past_the_end_raises(
+    gapped_mixed_cut, offset, duration
+):
+    with pytest.raises(
+        AssertionError, match="must be smaller than the duration of the cut"
+    ):
+        gapped_mixed_cut.truncate(offset=offset, duration=duration)
+
+
+def test_split_mixed_cut_in_trailing_padding(gapped_mixed_cut):
+    left, right = gapped_mixed_cut.split(timestamp=28.0)
+    assert isinstance(left, MixedCut)
+    assert left.duration == 28.0
+    assert isinstance(right, PaddingCut)
+    assert right.duration == 2.0
+
+
 def test_truncate_cut_set_lazy_result(cut_set):
     with as_lazy(cut_set, ".jsonl") as lazy_cuts:
         truncated_cut_set = lazy_cuts.truncate(max_duration=5, offset_type="start")

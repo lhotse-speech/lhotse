@@ -600,6 +600,13 @@ class MixedCut(Cut):
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
         old_duration = self.duration
+        remaining_duration = add_durations(
+            old_duration, -offset, sampling_rate=self.sampling_rate
+        )
+        assert remaining_duration > 0, (
+            f"Offset for truncate must be smaller than the duration of the cut "
+            f"(provided offset {offset} for a cut of duration {old_duration})."
+        )
         new_mix_end = (
             add_durations(old_duration, -offset, sampling_rate=self.sampling_rate)
             if duration is None
@@ -678,13 +685,19 @@ class MixedCut(Cut):
         ]
         # Edge case: no tracks with data left after truncation. This can happen if we truncated an offset region.
         # In this case, return a PaddingCut of the requested duration
+        # that does not extend past the end of this cut.
         if len([t for t in new_tracks if not isinstance(t.cut, PaddingCut)]) == 0:
+            padding_duration = (
+                remaining_duration
+                if duration is None
+                else min(duration, remaining_duration)
+            )
             return PaddingCut(
                 id=self.id if preserve_id else str(uuid4()),
-                duration=duration,
+                duration=padding_duration,
                 sampling_rate=self.sampling_rate,
                 feat_value=0.0,
-                num_samples=compute_num_samples(duration, self.sampling_rate),
+                num_samples=compute_num_samples(padding_duration, self.sampling_rate),
             )
 
         if len(new_tracks) == 1:
