@@ -1067,6 +1067,28 @@ def test_weighted_sampler_num_samples():
     assert num_cuts <= num_samples
 
 
+def test_weighted_sampler_partitions_one_draw_across_ranks():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    def batches(rank, world_size, epoch):
+        sampler = WeightedSimpleCutSampler(
+            cuts,
+            list(range(1, 101)),
+            num_samples=32,
+            max_cuts=4,
+            seed=42,
+            rank=rank,
+            world_size=world_size,
+        )
+        sampler.set_epoch(epoch)
+        return [list(batch.ids) for batch in sampler]
+
+    reference = batches(0, 1, 3)
+    assert batches(0, 2, 3) == reference[::2]
+    assert batches(1, 2, 3) == reference[1::2]
+    assert batches(0, 1, 4) != reference
+
+
 def test_weighted_sampler_across_epochs():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
     weight = [random.random() for i in range(100)]

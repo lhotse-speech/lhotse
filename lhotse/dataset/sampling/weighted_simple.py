@@ -56,7 +56,7 @@ class WeightedSimpleCutSampler(SimpleCutSampler):
         :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
-        :param seed: Random seed used to consistently shuffle the dataset across different processes.
+        :param seed: Seed for the weighted draw. All ranks use the same draw for a given epoch.
         """
         super().__init__(
             cuts=cuts,
@@ -86,5 +86,6 @@ class WeightedSimpleCutSampler(SimpleCutSampler):
         # than are actually available per epoch would have broken the checkpoint restoration.
         self.diagnostics.reset_current_epoch()
         # Reset the state to the beginning of the epoch.
+        self.data_source.seed = (self.seed + self.epoch) % (2**64)
         iter(self.data_source)
         return self
