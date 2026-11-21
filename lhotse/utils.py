@@ -7,6 +7,7 @@ import math
 import os
 import random
 import secrets
+import ssl
 import sys
 import urllib
 import uuid
@@ -477,6 +478,9 @@ def resumable_download(
     ssl_context: Optional[SSLContext] = None,
     additional_headers: Optional[Dict[str, str]] = None,
 ) -> None:
+    if ssl_context is None:
+        ssl_context = ssl._create_unverified_context()
+
     # Check if the file exists and get its size
     file_exists = os.path.exists(filename)
     if file_exists and force_download:
@@ -557,7 +561,7 @@ def resumable_download(
                     # but does not return the Content-Range header with 416 code
                     # This is out of spec, but let us check twice for pragmatic reasons.
                     head_req = urllib.request.Request(url, method="HEAD")
-                    head_res = urllib.request.urlopen(head_req)
+                    head_res = urllib.request.urlopen(head_req, context=ssl_context)
                     if head_res.headers.get("Accept-Ranges", "none") != "none":
                         content_length = head_res.headers.get("Content-Length")
                         content_range = f"bytes */{content_length}"

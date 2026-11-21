@@ -1,4 +1,5 @@
 import os
+import ssl
 import tempfile
 from pathlib import Path
 
@@ -118,3 +119,7 @@ def test_read_manifests_if_cached_requires_and_lazily_reads_cuts(
     assert isinstance(cached["dev"]["cuts"], CutSet)
     assert cached["dev"]["cuts"].is_lazy
     assert list(cached["dev"]["cuts"]) == list(cuts)
+
+
+def test_ssl_unverified_context():
+    assert ssl._create_default_https_context is ssl._create_unverified_context
