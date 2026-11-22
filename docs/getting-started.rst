@@ -59,6 +59,9 @@ and data requirements:
 * `Resumable, indexed dataloading <https://github.com/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb>`_ |tutorial07|
   (``torchdata`` is needed for the optional multi-worker example).
 
+* `Multichannel ASR with separate hypotheses and references <https://github.com/lhotse-speech/lhotse/blob/master/examples/08-multichannel-asr.ipynb>`_ |tutorial08|
+  (uses two short audio clips and a local English model on CPU).
+
 .. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb
 .. |tutorial01| image:: https://colab.research.google.com/assets/colab-badge.svg
@@ -76,6 +79,8 @@ and data requirements:
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/06-train-ais-batch.ipynb
 .. |tutorial07| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/07-resumable-indexed-dataloading.ipynb
+.. |tutorial08| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/08-multichannel-asr.ipynb
 
 
 Examples of use
