@@ -216,6 +216,29 @@ class TestMasksWithSupervisions:
         assert (mask[0, zeros[0]] == 0).all()
         assert (mask[1, zeros[1]] == 0).all()
 
+    def test_min_speaker_dim_is_a_lower_bound(self, supervisions):
+        cut = MonoCut(
+            "cut",
+            start=0,
+            duration=2,
+            channel=0,
+            recording=Mock(sampling_rate=16000),
+            features=Mock(sampling_rate=16000, frame_shift=0.01),
+            supervisions=supervisions,
+        )
+        feature_mask = cut.speakers_feature_mask()
+        padded = cut.speakers_feature_mask(min_speaker_dim=4)
+        assert feature_mask.shape[0] == 2
+        assert padded.shape == (4, feature_mask.shape[1])
+        assert (padded[:2] == feature_mask).all()
+        assert padded[2:].sum() == 0
+
+        # A bound below the actual speaker count must not drop speakers.
+        audio_mask = cut.speakers_audio_mask()
+        not_capped = cut.speakers_audio_mask(min_speaker_dim=1)
+        assert not_capped.shape == audio_mask.shape
+        assert (not_capped == audio_mask).all()
+
     def test_mixed_cut_audio_mask(self, supervisions):
         cut = MonoCut(
             "cut",
