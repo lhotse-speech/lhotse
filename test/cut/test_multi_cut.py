@@ -7,7 +7,12 @@ import pytest
 from lhotse import CutSet, Features, MonoCut, MultiCut, NumpyFilesWriter, Recording
 from lhotse.array import Array, TemporalArray
 from lhotse.features.io import MemoryRawWriter
-from lhotse.testing.dummies import dummy_alignment, dummy_recording, dummy_supervision
+from lhotse.testing.dummies import (
+    dummy_alignment,
+    dummy_multi_cut,
+    dummy_recording,
+    dummy_supervision,
+)
 
 
 @pytest.mark.parametrize("channels", [[1, 0], [1]])
@@ -156,6 +161,37 @@ def test_multi_cut_from_mono_preserves_manifests(in_memory, with_recording, tmp_
         else:
             assert result.load_audio() is None
     assert cut == original
+
+
+def test_with_channels_drops_supervisions_outside_the_selection():
+    cut = dummy_multi_cut(0, channel=[0, 1, 2], with_data=True)
+    per_channel = [
+        dummy_supervision(channel, channel=channel, text=f"ch{channel}")
+        for channel in (0, 1, 2)
+    ]
+    partially_shared = dummy_supervision(3, channel=[0, 1], text="partial")
+    shared = dummy_supervision(4, channel=[0, 1, 2], text="shared")
+    cut.supervisions = per_channel + [partially_shared, shared]
+    original_channels = [s.channel for s in cut.supervisions]
+    full_audio = cut.load_audio()
+
+    selected = cut.with_channels([2, 0])
+
+    assert selected.channel == [2, 0]
+    assert [(s.text, s.channel) for s in selected.supervisions] == [
+        ("ch0", 0),
+        ("ch2", 2),
+        ("partial", 0),
+        ("shared", [0, 2]),
+    ]
+    assert selected.supervisions[0] is per_channel[0]
+    assert selected.supervisions[1] is per_channel[2]
+    assert [s.channel for s in cut.supervisions] == original_channels
+    assert shared.channel == [0, 1, 2]
+    audio = selected.load_audio()
+    assert audio.shape[0] == 2
+    np.testing.assert_array_equal(audio[0], full_audio[2])
+    np.testing.assert_array_equal(audio[1], full_audio[0])
 
 
 def test_multi_cut_from_mono_requires_at_least_one_cut():
