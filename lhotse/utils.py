@@ -816,7 +816,7 @@ def measure_overlap(lhs: Any, rhs: Any) -> float:
     with regard to the shorter of the two spans.
     ."""
     lhs, rhs = sorted([lhs, rhs], key=lambda item: item.start)
-    overlapped_area = lhs.end - rhs.start
+    overlapped_area = min(lhs.end, rhs.end) - rhs.start
     if overlapped_area <= 0:
         return 0.0
     dur = min(lhs.end - lhs.start, rhs.end - rhs.start)
