@@ -55,6 +55,27 @@ def test_token_collater(add_bos, add_eos):
     assert reconstructed == test_sentences
 
 
+def test_token_collater_multiple_supervisions():
+    # Each cut has two supervisions. The second one contains characters that
+    # are not in any first supervision, and the joined text adds a space.
+    cuts = CutSet.from_cuts(
+        dummy_cut(
+            idx,
+            idx,
+            supervisions=[
+                dummy_supervision(idx, idx, text="ab"),
+                dummy_supervision(idx + 10, idx, text="cd"),
+            ],
+        )
+        for idx in range(2)
+    )
+
+    token_collater = TokenCollater(cuts)
+    tokens_batch, tokens_lens = token_collater(cuts)
+
+    assert token_collater.inverse(tokens_batch, tokens_lens) == ["ab cd", "ab cd"]
+
+
 def test_collate_audio_padding():
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     assert len(set(cut.num_samples for cut in cuts)) > 1

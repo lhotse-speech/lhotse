@@ -54,7 +54,11 @@ class TokenCollater:
         self.add_eos = add_eos
         self.add_bos = add_bos
 
-        tokens = {char for cut in cuts for char in cut.supervisions[0].text}
+        tokens = {
+            char
+            for cut in cuts
+            for char in " ".join(supervision.text for supervision in cut.supervisions)
+        }
         tokens_unique = (
             [pad_symbol, unk_symbol]
             + ([bos_symbol] if add_bos else [])
