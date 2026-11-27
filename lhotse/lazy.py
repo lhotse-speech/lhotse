@@ -399,6 +399,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
         """
         Return a new, lazily evaluated manifest that iterates over the original elements ``times``
         number of times.
+        The manifest must support being iterated more than once (e.g. not a generator).
 
         :param times: how many times to repeat (infinite by default).
         :param preserve_id: when ``True``, we won't update the element ID with repeat number.
@@ -1634,6 +1635,7 @@ class LazyFlattener(IteratorNode):
 class LazyRepeater(IteratorNode):
     """
     A wrapper over an iterable that enables to repeat it N times or infinitely (default).
+    The iterable must support being iterated more than once (e.g. a list, not a generator).
 
     Supports checkpointing via :meth:`state_dict` / :meth:`load_state_dict`.
     Captures the current epoch and the state of the inner ``source`` iterator.
@@ -1678,6 +1680,7 @@ class LazyRepeater(IteratorNode):
         restored = self._restored
         epoch = self._current_epoch if restored else 0
         self._restored = False
+        yielded_before = False
         while self.times is None or epoch < self.times:
             self._current_epoch = epoch
             if self.preserve_id:
@@ -1695,7 +1698,16 @@ class LazyRepeater(IteratorNode):
                 )
                 yield item
             if not at_least_once and not restored:
+                if yielded_before:
+                    raise ValueError(
+                        f"LazyRepeater: the source yielded no items in repeat {epoch} "
+                        "although it did in an earlier one, so it can most likely be "
+                        "iterated only once (e.g. it is a generator). Pass a list or an "
+                        "eager manifest (.to_eager()) instead, or open the manifest "
+                        "lazily (e.g. CutSet.from_jsonl_lazy())."
+                    )
                 return  # Detect empty iterables to avoid hanging the program.
+            yielded_before = yielded_before or at_least_once
             # After the first (possibly restored) epoch, behave normally.
             restored = False
             epoch += 1

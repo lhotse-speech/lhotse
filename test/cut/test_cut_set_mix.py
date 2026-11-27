@@ -78,6 +78,13 @@ def test_cut_set_mixing_less_noise_cuts_than_speech_cuts_lazy_noise_cutset():
         assert isinstance(c, MixedCut)
 
 
+def test_cut_set_mixing_generator_noise_cutset_raises():
+    speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    noise_cuts = CutSet(c for c in DummyManifest(CutSet, begin_id=100, end_id=103))
+    with pytest.raises(ValueError, match="iterated only once"):
+        list(speech_cuts.mix(noise_cuts))
+
+
 def test_cut_set_mixing_with_tag():
     speech_cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
     noise_cuts = DummyManifest(CutSet, begin_id=100, end_id=102)
