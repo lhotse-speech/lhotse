@@ -167,6 +167,16 @@ This also routes S3 requests through AIStore. To read S3 directly, leave
 ``AIS_ENDPOINT`` unset, install ``boto3``, and configure your AWS credentials.
 You can also use ``s3a://`` and ``s3n://``; Lhotse converts them to ``s3://``.
 
+For an S3-compatible object store (for example, Backblaze B2, Cloudflare R2, or MinIO), set the standard boto3 endpoint and region
+variables. Shard discovery and ``smart_open`` reads both use them::
+
+    export AWS_ENDPOINT_URL_S3=https://s3.example-region.example.com
+    export AWS_DEFAULT_REGION=example-region
+
+If the store rejects the default checksums of recent boto3 releases, also set
+``AWS_REQUEST_CHECKSUM_CALCULATION=when_required`` and
+``AWS_RESPONSE_CHECKSUM_VALIDATION=when_required``.
+
 To get the shard paths without opening them, use
 :func:`~lhotse.shar.readers.discover_shar_fields`::
 
